@@ -27,7 +27,6 @@ export default function Dashboard() {
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-bold text-white">Dashboard</h1>
-        <p className="text-xs text-indigo-400 italic mt-0.5">Every repair tracked. Every dollar counted. Every customer impressed.</p>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

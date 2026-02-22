@@ -37,7 +37,6 @@ export default function Layout() {
           </div>
         </div>
         <div className="text-[9px] text-indigo-400 italic mt-2 leading-tight">
-          Every repair tracked. Every dollar counted. Every customer impressed.
         </div>
       </div>
       <nav className="flex-1 p-3 space-y-1">

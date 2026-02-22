@@ -93,7 +93,6 @@ export default function Users() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-white">Team & Access</h1>
-          <p className="text-xs text-indigo-400 italic mt-0.5">Every repair tracked. Every dollar counted. Every customer impressed.</p>
         </div>
         <button onClick={() => setShowAdd(true)}
           className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-4 py-2.5 rounded-lg text-sm transition-colors">

@@ -86,7 +86,6 @@ export default function Settings() {
       {/* Header */}
       <div>
         <h1 className="text-xl font-bold text-white">Shop Settings</h1>
-        <p className="text-xs text-indigo-400 italic mt-0.5">Every repair tracked. Every dollar counted. Every customer impressed.</p>
       </div>
 
       {/* Market Tier Banner */}

@@ -32,7 +32,6 @@ export default function Portal() {
           </div>
           <div>
             <div className="font-bold text-sm text-white">{shop?.name || 'Auto Body Shop'}</div>
-            <div className="text-[10px] text-indigo-400 italic">Every repair tracked. Every dollar counted. Every customer impressed.</div>
           </div>
         </div>
         <button onClick={logout} className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-red-400 transition-colors">
