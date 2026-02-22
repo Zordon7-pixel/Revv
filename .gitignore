@@ -3,5 +3,4 @@ node_modules/
 *.db-shm
 *.db-wal
 .env
-/backend/.env
-frontend/dist/
+backend/.env
