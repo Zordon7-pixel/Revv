@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Users as UsersIcon, Plus, X, Shield, Wrench, Car, Trash2 } from 'lucide-react'
 import api from '../lib/api'
 
-const ROLES = ['admin', 'employee', 'staff', 'customer']
+const ROLES = ['admin', 'employee', 'staff']  // customers self-register via /register
 const ROLE_META = {
   owner:    { label: 'Owner',    icon: Shield, cls: 'text-purple-400 bg-purple-900/30 border-purple-700' },
   admin:    { label: 'Admin',    icon: Shield, cls: 'text-indigo-400 bg-indigo-900/30 border-indigo-700' },
@@ -12,9 +12,8 @@ const ROLE_META = {
 }
 
 export default function Users() {
-  const [users,     setUsers]     = useState([])
-  const [customers, setCustomers] = useState([])
-  const [showAdd,   setShowAdd]   = useState(false)
+  const [users,   setUsers]   = useState([])
+  const [showAdd, setShowAdd] = useState(false)
   const [saving,    setSaving]    = useState(false)
   const empty = { name:'', email:'', password:'', role:'employee', customer_id:'' }
   const [form, setForm] = useState(empty)
@@ -22,7 +21,6 @@ export default function Users() {
   useEffect(() => { load() }, [])
   function load() {
     api.get('/users').then(r => setUsers(r.data.users || []))
-    api.get('/customers').then(r => setCustomers(r.data.customers || []))
   }
 
   function set(k,v) { setForm(f=>({...f,[k]:v})) }
@@ -105,7 +103,7 @@ export default function Users() {
         {[
           { role:'admin',    desc:'Full access — dashboard, reports, profit, settings, RO management' },
           { role:'employee', desc:'Work access — update RO status, add notes. No financial data visible.' },
-          { role:'customer', desc:'Portal only — sees their own vehicle status in plain English + SMS button.' },
+          { role:'customer', desc:'Portal only — customers create their own accounts from the login page using the email on file.' },
         ].map(({ role, desc }) => {
           const meta = ROLE_META[role]
           const Icon = meta.icon
@@ -122,7 +120,21 @@ export default function Users() {
 
       <Section title="Admins" list={admins} />
       <Section title="Employees" list={employees} />
-      <Section title="Customer Logins" list={customerU} />
+      {/* Customer Logins — self-registration info */}
+      <div className="space-y-3">
+        <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Customer Logins</h3>
+        <div className="bg-emerald-900/10 border border-emerald-700/30 rounded-xl p-4 flex items-start gap-3">
+          <Car size={16} className="text-emerald-400 flex-shrink-0 mt-0.5" />
+          <div className="text-xs text-slate-300 leading-relaxed space-y-1">
+            <p><strong className="text-white">Customers register themselves.</strong> No passwords to set — no confusion.</p>
+            <p className="text-slate-400">When a customer drops off their vehicle, just tell them:<br/>
+              <span className="font-mono text-emerald-400">Go to {window.location.origin}/register</span> and use the email you gave us to create your account.
+            </p>
+            <p className="text-slate-500">They'll be automatically linked to their vehicle and repair orders.</p>
+          </div>
+        </div>
+        {customerU.length > 0 && <Section title="" list={customerU} />}
+      </div>
 
       {users.length === 0 && (
         <div className="bg-[#1a1d2e] rounded-xl p-8 text-center border border-[#2a2d3e]">
@@ -149,16 +161,9 @@ export default function Users() {
                   {ROLES.map(r=><option key={r} value={r}>{ROLE_META[r]?.label || r}</option>)}
                 </select>
               </div>
-              {form.role === 'customer' && (
-                <div>
-                  <label className={lbl}>Link to Customer Record</label>
-                  <select className={inp} value={form.customer_id} onChange={e=>set('customer_id',e.target.value)}>
-                    <option value="">— select customer —</option>
-                    {customers.map(c=><option key={c.id} value={c.id}>{c.name} {c.phone ? `· ${c.phone}` : ''}</option>)}
-                  </select>
-                  <p className="text-[10px] text-slate-500 mt-1">Link this login to a customer record so they can see their repair orders in the portal.</p>
-                </div>
-              )}
+              <p className="text-[10px] text-slate-500 bg-[#0f1117] rounded-lg px-3 py-2 border border-[#2a2d3e]">
+                💡 Customers create their own accounts — just add them to the <strong className="text-slate-400">Customers</strong> list with their email and tell them to visit /register.
+              </p>
               <div className="flex gap-3 pt-2">
                 <button type="button" onClick={close} className="flex-1 bg-[#0f1117] text-slate-400 rounded-lg py-2.5 text-sm border border-[#2a2d3e]">Cancel</button>
                 <button type="submit" disabled={saving} className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg py-2.5 text-sm disabled:opacity-50">
