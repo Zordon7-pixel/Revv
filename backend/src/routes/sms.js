@@ -1,12 +1,13 @@
 const router = require('express').Router();
 const auth = require('../middleware/auth');
 const { requireAdmin } = require('../middleware/roles');
-const { sendSMS, isConfigured } = require('../services/sms');
+const { sendSMS, isConfigured, getShopCreds } = require('../services/sms');
 
 router.get('/status', auth, requireAdmin, (req, res) => {
+  const creds = getShopCreds ? getShopCreds() : null;
   res.json({
     configured: isConfigured(),
-    phone: process.env.TWILIO_PHONE_NUMBER || null,
+    phone: creds ? creds.phoneNumber : null,
   });
 });
 

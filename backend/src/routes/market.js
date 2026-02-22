@@ -17,7 +17,7 @@ router.get('/rates', (req, res) => {
 
 // GET /api/market/shop  — returns current shop's location + rates + geofence
 router.get('/shop', auth, (req, res) => {
-  const shop = db.prepare('SELECT id, name, phone, address, city, state, zip, market_tier, labor_rate, parts_markup, tax_rate, lat, lng, geofence_radius, tracking_api_key FROM shops WHERE id = ?').get(req.user.shop_id);
+  const shop = db.prepare('SELECT id, name, phone, address, city, state, zip, market_tier, labor_rate, parts_markup, tax_rate, lat, lng, geofence_radius, tracking_api_key, twilio_account_sid, twilio_auth_token, twilio_phone_number FROM shops WHERE id = ?').get(req.user.shop_id);
   if (!shop) return res.status(404).json({ error: 'Shop not found' });
   res.json({
     ...shop,
@@ -28,7 +28,24 @@ router.get('/shop', auth, (req, res) => {
 
 // PUT /api/market/shop  — update shop location & rates
 router.put('/shop', auth, (req, res) => {
-  const { name, phone, address, city, state, zip, labor_rate, parts_markup, tax_rate, lat, lng, geofence_radius, tracking_api_key } = req.body;
+  const {
+    name,
+    phone,
+    address,
+    city,
+    state,
+    zip,
+    labor_rate,
+    parts_markup,
+    tax_rate,
+    lat,
+    lng,
+    geofence_radius,
+    tracking_api_key,
+    twilio_account_sid,
+    twilio_auth_token,
+    twilio_phone_number,
+  } = req.body;
 
   // If state is provided, look up market tier
   let market_tier = null;
@@ -55,13 +72,16 @@ router.put('/shop', auth, (req, res) => {
   if (lng             != null) { fields.push('lng = ?');             vals.push(parseFloat(lng)); }
   if (geofence_radius   != null) { fields.push('geofence_radius = ?');   vals.push(parseFloat(geofence_radius)); }
   if (tracking_api_key !== undefined) { fields.push('tracking_api_key = ?'); vals.push(tracking_api_key || null); }
+  if (twilio_account_sid !== undefined) { fields.push('twilio_account_sid = ?'); vals.push(twilio_account_sid); }
+  if (twilio_auth_token  !== undefined) { fields.push('twilio_auth_token = ?');  vals.push(twilio_auth_token); }
+  if (twilio_phone_number !== undefined) { fields.push('twilio_phone_number = ?'); vals.push(twilio_phone_number); }
 
   if (!fields.length) return res.status(400).json({ error: 'Nothing to update' });
 
   vals.push(req.user.shop_id);
   db.prepare(`UPDATE shops SET ${fields.join(', ')} WHERE id = ?`).run(...vals);
 
-  const updated = db.prepare('SELECT id, name, phone, address, city, state, zip, market_tier, labor_rate, parts_markup, tax_rate, lat, lng, geofence_radius, tracking_api_key FROM shops WHERE id = ?').get(req.user.shop_id);
+  const updated = db.prepare('SELECT id, name, phone, address, city, state, zip, market_tier, labor_rate, parts_markup, tax_rate, lat, lng, geofence_radius, tracking_api_key, twilio_account_sid, twilio_auth_token, twilio_phone_number FROM shops WHERE id = ?').get(req.user.shop_id);
   res.json({
     ...updated,
     sms_configured: isConfigured(),
