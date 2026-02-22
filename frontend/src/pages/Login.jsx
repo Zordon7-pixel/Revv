@@ -31,8 +31,13 @@ export default function Login() {
           <div className="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-indigo-900/50">
             <Wrench size={28} className="text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-white">REVV</h1>
-          <p className="text-slate-500 text-sm mt-1 italic">Every repair tracked. Every dollar counted.</p>
+          <h1 className="text-3xl font-bold text-white tracking-wide">REVV</h1>
+          <p className="text-xs font-semibold text-indigo-400 uppercase tracking-widest mt-2">Auto Body Shop Management</p>
+          <div className="mt-3 space-y-0.5">
+            <p className="text-slate-400 text-sm italic">Every repair tracked.</p>
+            <p className="text-slate-400 text-sm italic">Every dollar counted.</p>
+            <p className="text-indigo-400 text-sm italic font-medium">Every customer impressed.</p>
+          </div>
         </div>
         <form onSubmit={submit} className="bg-[#1a1d2e] rounded-2xl p-6 border border-[#2a2d3e] space-y-4">
           <div>
