@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Pencil, Save, X, Package, Plus, CheckCircle, AlertCircle, Clock, Truck, RefreshCw, ExternalLink } from 'lucide-react'
 import api from '../lib/api'
 import { STATUS_COLORS, STATUS_LABELS } from './RepairOrders'
+import StatusBadge from '../components/StatusBadge'
 import LibraryAutocomplete from '../components/LibraryAutocomplete'
 import { searchInsurers } from '../data/insurers'
 import { searchVendors } from '../data/vendors'
@@ -122,7 +123,7 @@ export default function RODetail() {
     } finally { setSaving(false) }
   }
 
-  if (!ro) return <div className="flex items-center justify-center h-64 text-slate-500">Loading...</div>
+  if (!ro) return <div className="flex items-center justify-center h-64 text-slate-500">Loading your shop data...</div>
 
   const p = ro.profit || {}
   const currentIdx = STAGES.indexOf(ro.status)
@@ -143,9 +144,7 @@ export default function RODetail() {
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <span className={`text-xs font-bold ${daysColor}`}>{daysIn}d in shop</span>
-          <span className="text-xs px-3 py-1.5 rounded-full font-bold uppercase" style={{background: STATUS_COLORS[ro.status]+'22', color: STATUS_COLORS[ro.status]}}>
-            {STATUS_LABELS[ro.status]}
-          </span>
+          <StatusBadge status={ro.status} />
           {currentIdx < STAGES.length - 1 && (
             <button onClick={advance} className="flex items-center gap-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
               → {STATUS_LABELS[STAGES[currentIdx+1]]}
@@ -449,7 +448,11 @@ export default function RODetail() {
         )}
 
         {parts.length === 0 ? (
-          <p className="text-xs text-slate-600 italic">No parts tracked yet. Add parts to keep everyone updated on delays.</p>
+          <div className="flex flex-col items-center justify-center py-16 gap-4 border border-dashed border-[#2a2d3e] rounded-xl">
+            <img src="/empty-parts.png" alt="No parts ordered" className="w-40 h-40 opacity-80 object-contain" />
+            <p className="text-slate-400 text-sm font-medium">Parts board is clear.</p>
+            <p className="text-slate-600 text-xs">No parts ordered yet.</p>
+          </div>
         ) : (
           <div className="space-y-2">
             {parts.map(p => {

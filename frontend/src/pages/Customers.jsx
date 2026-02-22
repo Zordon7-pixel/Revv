@@ -10,8 +10,8 @@ export default function Customers() {
 
   const filtered = customers.filter(c =>
     c.name.toLowerCase().includes(q.toLowerCase()) ||
-    (c.phone||'').includes(q) ||
-    (c.insurance_company||'').toLowerCase().includes(q.toLowerCase())
+    (c.phone || '').includes(q) ||
+    (c.insurance_company || '').toLowerCase().includes(q.toLowerCase())
   )
 
   return (
@@ -25,16 +25,29 @@ export default function Customers() {
         <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search by name, phone, insurer..."
           className="w-full bg-[#1a1d2e] border border-[#2a2d3e] rounded-lg pl-9 pr-4 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500" />
       </div>
-      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        {filtered.map(c => (
-          <div key={c.id} className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 hover:border-indigo-500/40 transition-colors">
-            <div className="font-semibold text-white text-sm mb-2">{c.name}</div>
-            {c.phone && <div className="flex items-center gap-2 text-xs text-slate-400 mb-1"><Phone size={11} /> {c.phone}</div>}
-            {c.insurance_company && <div className="flex items-center gap-2 text-xs text-slate-400"><Shield size={11} /> {c.insurance_company} {c.policy_number ? `· ${c.policy_number}` : ''}</div>}
-            {c.address && <div className="text-xs text-slate-500 mt-1.5">{c.address}</div>}
-          </div>
-        ))}
-      </div>
+
+      {customers.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-16 gap-4 bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl">
+          <img src="/empty-customers.png" alt="No customers" className="w-40 h-40 opacity-80 object-contain" />
+          <p className="text-slate-400 text-sm font-medium">Your customer book is waiting.</p>
+          <p className="text-slate-600 text-xs">No customers on file yet.</p>
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="text-center text-slate-500 text-sm py-10 border border-dashed border-[#2a2d3e] rounded-xl">
+          No customers match your search yet.
+        </div>
+      ) : (
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {filtered.map(c => (
+            <div key={c.id} className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 hover:border-indigo-500/40 transition-colors">
+              <div className="font-semibold text-white text-sm mb-2">{c.name}</div>
+              {c.phone && <div className="flex items-center gap-2 text-xs text-slate-400 mb-1"><Phone size={11} /> {c.phone}</div>}
+              {c.insurance_company && <div className="flex items-center gap-2 text-xs text-slate-400"><Shield size={11} /> {c.insurance_company} {c.policy_number ? `· ${c.policy_number}` : ''}</div>}
+              {c.address && <div className="text-xs text-slate-500 mt-1.5">{c.address}</div>}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
