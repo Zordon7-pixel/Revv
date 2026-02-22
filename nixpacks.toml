@@ -5,4 +5,4 @@ nixPkgs = ["nodejs_20", "python3", "gcc", "gnumake"]
 cmds = ["cd backend && npm install --build-from-source"]
 
 [start]
-cmd = "cd backend && node src/app.js"
+cmd = "cd backend && node src/db/seed.js; node src/app.js"
