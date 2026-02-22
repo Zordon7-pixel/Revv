@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { MapPin, Wrench, DollarSign, Save, RefreshCw, CheckCircle, Clock, ShieldCheck, Truck } from 'lucide-react'
+import { MapPin, Wrench, DollarSign, Save, RefreshCw, CheckCircle, Clock, ShieldCheck, Truck, Trash2 } from 'lucide-react'
 import api from '../lib/api'
 
 const TIER_COLORS = {
@@ -19,6 +19,7 @@ export default function Settings() {
   const [saved,  setSaved]        = useState(false)
   const [locating, setLocating]   = useState(false)
   const [locMsg,   setLocMsg]     = useState('')
+  const [clearing, setClearing]   = useState(false)
 
   useEffect(() => {
     api.get('/market/shop').then(r => {
@@ -97,6 +98,18 @@ export default function Settings() {
     } finally {
       setSaving(false)
     }
+  }
+
+  async function clearDemoData() {
+    if (!window.confirm('This will permanently delete all repair orders, customers, and vehicles.\n\nYour shop settings, staff accounts, and rates will NOT be touched.\n\nAre you sure?')) return
+    setClearing(true)
+    try {
+      await api.delete('/market/demo-data')
+      alert('Done! All demo data cleared. You\'re starting fresh.')
+      window.location.reload()
+    } catch(e) {
+      alert('Something went wrong. Try again.')
+    } finally { setClearing(false) }
   }
 
   const inp = 'w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition-colors'
@@ -303,6 +316,22 @@ export default function Settings() {
           {saved ? <><CheckCircle size={16} /> Saved!</> : saving ? 'Saving...' : <><Save size={16} /> Save Settings</>}
         </button>
       </form>
+
+      {/* Danger Zone */}
+      <div className="bg-[#1a1d2e] rounded-2xl p-5 border border-red-900/40 space-y-3">
+        <div className="flex items-center gap-2 text-red-400 font-semibold text-sm">
+          <Trash2 size={15} /> Danger Zone
+        </div>
+        <p className="text-xs text-slate-400 leading-relaxed">
+          Starting fresh? This clears all sample repair orders, customers, and vehicles — 
+          so you can begin entering real jobs. <strong className="text-white">Your shop info, staff accounts, and rate settings are not affected.</strong>
+        </p>
+        <button onClick={clearDemoData} disabled={clearing}
+          className="flex items-center gap-2 bg-red-900/40 hover:bg-red-900/70 border border-red-700/40 text-red-400 font-semibold text-sm px-4 py-2.5 rounded-xl transition-colors disabled:opacity-50">
+          <Trash2 size={14} /> {clearing ? 'Clearing…' : 'Clear All Demo Data'}
+        </button>
+      </div>
+
     </div>
   )
 }

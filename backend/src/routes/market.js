@@ -60,4 +60,22 @@ router.put('/shop', auth, (req, res) => {
   res.json(updated);
 });
 
+// DELETE /api/market/demo-data — wipe all sample ROs, customers, vehicles for fresh start
+// Leaves the shop record, users, and settings intact
+router.delete('/demo-data', auth, (req, res) => {
+  const { requireAdmin } = require('../middleware/roles');
+  const shopId = req.user.shop_id;
+  // Cascade: parts_orders → repair_orders → vehicles → customers
+  db.prepare('DELETE FROM parts_orders WHERE ro_id IN (SELECT id FROM repair_orders WHERE shop_id = ?)').run(shopId);
+  db.prepare('DELETE FROM job_status_log WHERE ro_id IN (SELECT id FROM repair_orders WHERE shop_id = ?)').run(shopId);
+  db.prepare('DELETE FROM time_entries WHERE shop_id = ?').run(shopId);
+  db.prepare('DELETE FROM schedules WHERE shop_id = ?').run(shopId);
+  db.prepare('DELETE FROM repair_orders WHERE shop_id = ?').run(shopId);
+  db.prepare('DELETE FROM vehicles WHERE shop_id = ?').run(shopId);
+  // Remove customer users first, then customers
+  db.prepare('DELETE FROM users WHERE shop_id = ? AND role = ?').run(shopId, 'customer');
+  db.prepare('DELETE FROM customers WHERE shop_id = ?').run(shopId);
+  res.json({ ok: true, message: 'All demo data cleared. Shop settings and staff accounts are untouched.' });
+});
+
 module.exports = router;
