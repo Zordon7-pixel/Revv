@@ -14,6 +14,11 @@ function enrichRO(ro) {
   const log      = db.prepare('SELECT * FROM job_status_log WHERE ro_id = ? ORDER BY created_at ASC').all(ro.id);
   const parts    = db.prepare('SELECT * FROM parts_orders WHERE ro_id = ? ORDER BY created_at ASC').all(ro.id);
   const profit   = calculateProfit(ro);
+  // Portal access flag — lets UI show "Generate Login" or "Reset Password"
+  if (customer) {
+    const portalUser = db.prepare('SELECT id FROM users WHERE customer_id = ? AND shop_id = ?').get(customer.id, ro.shop_id);
+    customer.has_portal_access = !!portalUser;
+  }
   return { ...ro, vehicle, customer, log, parts, profit };
 }
 

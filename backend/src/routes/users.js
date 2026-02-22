@@ -54,6 +54,34 @@ router.put('/:id', auth, requireAdmin, (req, res) => {
   res.json(db.prepare('SELECT id, name, email, role, customer_id, created_at FROM users WHERE id = ?').get(req.params.id));
 });
 
+// POST /api/users/portal-access — generate (or reset) portal credentials for a customer
+// Returns { email, password } — admin sees it once, texts it to the customer
+router.post('/portal-access', auth, requireAdmin, (req, res) => {
+  const { customer_id } = req.body;
+  if (!customer_id) return res.status(400).json({ error: 'customer_id required' });
+
+  const customer = db.prepare('SELECT * FROM customers WHERE id = ? AND shop_id = ?').get(customer_id, req.user.shop_id);
+  if (!customer) return res.status(404).json({ error: 'Customer not found' });
+  if (!customer.email) return res.status(400).json({ error: 'No email on file for this customer. Add their email first.' });
+
+  // Generate a readable password — avoids ambiguous chars (0/O, 1/l/I)
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+  const password = Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+
+  const existing = db.prepare('SELECT id FROM users WHERE shop_id = ? AND customer_id = ?').get(req.user.shop_id, customer_id);
+  if (existing) {
+    // Reset existing password
+    db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(bcrypt.hashSync(password, 10), existing.id);
+    res.json({ email: customer.email, password, reset: true });
+  } else {
+    // Create new portal account
+    const id = uuidv4();
+    db.prepare('INSERT INTO users (id, shop_id, name, email, password_hash, role, customer_id) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(id, req.user.shop_id, customer.name, customer.email.toLowerCase(), bcrypt.hashSync(password, 10), 'customer', customer_id);
+    res.json({ email: customer.email, password, reset: false });
+  }
+});
+
 // DELETE user (cannot delete yourself or the owner)
 router.delete('/:id', auth, requireAdmin, (req, res) => {
   if (req.params.id === req.user.id) return res.status(400).json({ error: 'Cannot delete your own account' });

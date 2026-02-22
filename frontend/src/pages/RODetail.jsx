@@ -40,6 +40,9 @@ export default function RODetail() {
   const [savingPart, setSavingPart] = useState(false)
   const [refreshingPart, setRefreshingPart] = useState(null)  // partId being refreshed
 
+  const [portalCreds, setPortalCreds]         = useState(null)
+  const [generatingAccess, setGeneratingAccess] = useState(false)
+
   const load = () => api.get(`/ros/${id}`).then(r => { setRo(r.data); setForm(r.data); setParts(r.data.parts || []) })
   useEffect(() => { load() }, [id])
 
@@ -75,6 +78,17 @@ export default function RODetail() {
 
   async function deletePart(partId) {
     await api.delete(`/parts/${partId}`); load()
+  }
+
+  async function generatePortalAccess() {
+    setGeneratingAccess(true)
+    try {
+      const { data } = await api.post('/users/portal-access', { customer_id: ro.customer?.id })
+      setPortalCreds(data)
+      load() // refresh has_portal_access flag
+    } catch(e) {
+      alert(e?.response?.data?.error || 'Could not generate access')
+    } finally { setGeneratingAccess(false) }
   }
 
   async function advance() {
@@ -305,6 +319,59 @@ export default function RODetail() {
           ? <textarea className={inp} rows={3} value={form.notes || ''} onChange={e => set('notes', e.target.value)} placeholder="Job notes..." />
           : <p className="text-sm text-slate-300">{ro.notes || <span className="text-slate-600 italic">No notes</span>}</p>
         }
+      </div>
+
+      {/* Customer Portal Access */}
+      <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide">📱 Customer Portal</h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              {ro.customer?.has_portal_access
+                ? '✓ Customer has portal access'
+                : 'Customer cannot track their vehicle yet'}
+            </p>
+          </div>
+          <button onClick={generatePortalAccess}
+            disabled={generatingAccess || !ro.customer?.email}
+            className="text-xs bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+            {generatingAccess ? 'Generating…'
+              : ro.customer?.has_portal_access ? 'Reset Password'
+              : 'Generate Login'}
+          </button>
+        </div>
+
+        {!ro.customer?.email && (
+          <p className="text-xs text-amber-400 mt-2">⚠️ No email on file — add it to the customer record first.</p>
+        )}
+
+        {portalCreds && (
+          <div className="mt-4 bg-emerald-900/20 border border-emerald-700/40 rounded-xl p-4 space-y-3">
+            <p className="text-xs font-bold text-emerald-400">
+              {portalCreds.reset ? '🔄 Password reset' : '✅ Portal access created'}
+            </p>
+            <div className="bg-[#0f1117] rounded-lg p-3 space-y-2 font-mono">
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500 text-xs">Link</span>
+                <span className="text-indigo-400 text-xs">{window.location.origin}/portal</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500 text-xs">Email</span>
+                <span className="text-white text-xs">{portalCreds.email}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500 text-xs">Password</span>
+                <span className="text-emerald-400 text-sm font-bold tracking-wider">{portalCreds.password}</span>
+              </div>
+            </div>
+            <button onClick={() => {
+              const msg = `Hi! You can track your vehicle repair here:\n${window.location.origin}/portal\n\nEmail: ${portalCreds.email}\nPassword: ${portalCreds.password}\n\nLog in to see your repair status, expected delivery, and parts updates.`
+              navigator.clipboard.writeText(msg).then(() => alert('Copied! Paste it into a text message.'))
+            }} className="w-full text-xs bg-emerald-700 hover:bg-emerald-600 text-white font-semibold rounded-lg py-2 transition-colors">
+              📋 Copy Message to Send Customer
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Parts Tracking */}
