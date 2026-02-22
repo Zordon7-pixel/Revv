@@ -57,29 +57,45 @@ export default function RepairOrders() {
                 <span className="ml-auto text-xs bg-[#2a2d3e] text-slate-400 px-2 py-0.5 rounded-full">{byStatus(stage).length}</span>
               </div>
               <div className="space-y-2">
-                {byStatus(stage).map(ro => (
+                {byStatus(stage).map(ro => {
+                  const daysIn = ro.intake_date ? Math.floor((Date.now() - new Date(ro.intake_date)) / 86400000) : 0
+                  const daysColor = daysIn > 14 ? 'text-red-400 bg-red-900/20' : daysIn > 7 ? 'text-yellow-400 bg-yellow-900/20' : 'text-emerald-400 bg-emerald-900/20'
+                  return (
                   <div key={ro.id} onClick={() => navigate(`/ros/${ro.id}`)}
                     className="bg-[#1a1d2e] border border-[#2a2d3e] hover:border-indigo-500/50 rounded-xl p-3 cursor-pointer transition-all group"
                     style={{borderLeft: `3px solid ${STATUS_COLORS[stage]}`}}>
-                    <div className="flex items-start justify-between gap-2 mb-1.5">
+                    <div className="flex items-start justify-between gap-2 mb-2">
                       <span className="text-xs font-bold text-indigo-400">{ro.ro_number}</span>
                       <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase ${ro.payment_type === 'cash' ? 'bg-emerald-900/40 text-emerald-400' : 'bg-blue-900/40 text-blue-400'}`}>
                         {ro.payment_type}
                       </span>
                     </div>
-                    <div className="text-sm font-semibold text-white truncate">{ro.year} {ro.make} {ro.model}</div>
-                    <div className="text-xs text-slate-400 truncate">{ro.customer_name}</div>
-                    <div className="text-[10px] text-slate-500 mt-1 truncate">{ro.color} · {ro.job_type}</div>
+                    <div className="text-sm font-bold text-white leading-tight">{ro.year} {ro.make} {ro.model}</div>
+                    <div className="text-xs text-slate-300 mt-0.5 truncate">{ro.customer_name}</div>
+                    <div className="text-[10px] text-slate-500 mt-1 capitalize">{ro.color} · {ro.job_type}</div>
+                    <div className="flex items-center justify-between mt-2">
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${daysColor}`}>
+                        {daysIn}d in shop
+                      </span>
+                      {ro.total > 0 && <span className="text-[10px] text-slate-400 font-medium">${ro.total?.toLocaleString()}</span>}
+                    </div>
+                    {ro.estimated_delivery && (
+                      <div className="text-[9px] text-slate-600 mt-1">Est: {ro.estimated_delivery}</div>
+                    )}
                     {stage !== 'delivery' && (
                       <button onClick={e => advanceStatus(ro, e)}
-                        className="mt-2 w-full flex items-center justify-center gap-1 text-[10px] text-slate-500 hover:text-indigo-400 hover:bg-indigo-900/20 rounded-lg py-1 transition-all opacity-0 group-hover:opacity-100">
+                        className="mt-2 w-full flex items-center justify-center gap-1 text-[10px] text-slate-500 hover:text-indigo-400 hover:bg-indigo-900/20 rounded-lg py-1.5 transition-all opacity-0 group-hover:opacity-100 border border-transparent hover:border-indigo-900/50">
                         Move to {STATUS_LABELS[STAGES[STAGES.indexOf(stage)+1]]} <ChevronRight size={10} />
                       </button>
                     )}
                   </div>
-                ))}
+                  )
+                })}
                 {byStatus(stage).length === 0 && (
-                  <div className="text-center text-slate-600 text-xs py-6 border border-dashed border-[#2a2d3e] rounded-xl">Empty</div>
+                  <div className="text-center text-slate-600 text-xs py-8 border border-dashed border-[#2a2d3e] rounded-xl leading-relaxed">
+                    <div className="text-lg mb-1">🚗</div>
+                    No jobs here
+                  </div>
                 )}
               </div>
             </div>

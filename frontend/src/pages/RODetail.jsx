@@ -1,17 +1,20 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, ChevronRight } from 'lucide-react'
+import { ArrowLeft, Pencil, Save, X } from 'lucide-react'
 import api from '../lib/api'
 import { STATUS_COLORS, STATUS_LABELS } from './RepairOrders'
 
-const STAGES = ['intake','estimate','approval','parts','repair','paint','qc','delivery']
+const STAGES = ['intake','estimate','approval','parts','repair','paint','qc','delivery','closed']
 
 export default function RODetail() {
   const { id } = useParams()
   const navigate = useNavigate()
   const [ro, setRo] = useState(null)
+  const [editing, setEditing] = useState(false)
+  const [form, setForm] = useState({})
+  const [saving, setSaving] = useState(false)
 
-  const load = () => api.get(`/ros/${id}`).then(r => setRo(r.data))
+  const load = () => api.get(`/ros/${id}`).then(r => { setRo(r.data); setForm(r.data) })
   useEffect(() => { load() }, [id])
 
   async function advance() {
@@ -22,22 +25,50 @@ export default function RODetail() {
     }
   }
 
+  async function save() {
+    setSaving(true)
+    try {
+      await api.put(`/ros/${id}`, {
+        parts_cost: +form.parts_cost || 0,
+        labor_cost: +form.labor_cost || 0,
+        sublet_cost: +form.sublet_cost || 0,
+        deductible_waived: +form.deductible_waived || 0,
+        referral_fee: +form.referral_fee || 0,
+        goodwill_repair_cost: +form.goodwill_repair_cost || 0,
+        deductible: +form.deductible || 0,
+        claim_number: form.claim_number,
+        insurer: form.insurer,
+        adjuster_name: form.adjuster_name,
+        adjuster_phone: form.adjuster_phone,
+        estimated_delivery: form.estimated_delivery,
+        notes: form.notes,
+      })
+      setEditing(false)
+      load()
+    } finally { setSaving(false) }
+  }
+
   if (!ro) return <div className="flex items-center justify-center h-64 text-slate-500">Loading...</div>
 
   const p = ro.profit || {}
   const currentIdx = STAGES.indexOf(ro.status)
+  const daysIn = ro.intake_date ? Math.floor((Date.now() - new Date(ro.intake_date)) / 86400000) : 0
+  const daysColor = daysIn > 14 ? 'text-red-400' : daysIn > 7 ? 'text-yellow-400' : 'text-emerald-400'
+  const inp = 'w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500'
+
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
   return (
     <div className="max-w-4xl mx-auto space-y-4">
-      <div className="flex items-center gap-3">
-        <button onClick={() => navigate('/ros')} className="text-slate-400 hover:text-white transition-colors">
-          <ArrowLeft size={20} />
-        </button>
-        <div>
+      {/* Header */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <button onClick={() => navigate('/ros')} className="text-slate-400 hover:text-white transition-colors"><ArrowLeft size={20} /></button>
+        <div className="flex-1 min-w-0">
           <h1 className="text-xl font-bold text-white">{ro.ro_number}</h1>
-          <p className="text-slate-500 text-sm">{ro.vehicle?.year} {ro.vehicle?.make} {ro.vehicle?.model} · {ro.customer?.name}</p>
+          <p className="text-slate-500 text-sm truncate">{ro.vehicle?.year} {ro.vehicle?.make} {ro.vehicle?.model} · {ro.customer?.name}</p>
         </div>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className={`text-xs font-bold ${daysColor}`}>{daysIn}d in shop</span>
           <span className="text-xs px-3 py-1.5 rounded-full font-bold uppercase" style={{background: STATUS_COLORS[ro.status]+'22', color: STATUS_COLORS[ro.status]}}>
             {STATUS_LABELS[ro.status]}
           </span>
@@ -46,101 +77,135 @@ export default function RODetail() {
               → {STATUS_LABELS[STAGES[currentIdx+1]]}
             </button>
           )}
+          {!editing
+            ? <button onClick={() => setEditing(true)} className="flex items-center gap-1 bg-[#2a2d3e] hover:bg-[#3a3d4e] text-slate-300 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
+                <Pencil size={12} /> Edit
+              </button>
+            : <div className="flex gap-1">
+                <button onClick={save} disabled={saving} className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
+                  <Save size={12} /> {saving ? 'Saving...' : 'Save'}
+                </button>
+                <button onClick={() => { setEditing(false); setForm(ro) }} className="flex items-center gap-1 bg-[#2a2d3e] text-slate-400 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
+                  <X size={12} />
+                </button>
+              </div>
+          }
         </div>
       </div>
 
-      {/* Progress Bar */}
+      {/* Progress */}
       <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Job Progress</span>
-          <span className="text-xs text-slate-500">{currentIdx + 1} of {STAGES.length} stages</span>
-        </div>
-        <div className="flex gap-1">
-          {STAGES.map((s, i) => (
-            <div key={s} className="flex-1 flex flex-col items-center gap-1">
-              <div className="w-full h-1.5 rounded-full" style={{background: i <= currentIdx ? STATUS_COLORS[s] : '#2a2d3e'}} />
-              <span className="text-[8px] text-slate-600 hidden sm:block">{STATUS_LABELS[s]}</span>
-            </div>
+        <div className="flex gap-1 mb-2">
+          {STAGES.slice(0,-1).map((s, i) => (
+            <div key={s} className="flex-1 h-2 rounded-full" style={{background: i <= currentIdx ? STATUS_COLORS[s] : '#2a2d3e'}} />
           ))}
+        </div>
+        <div className="flex justify-between text-[10px] text-slate-600">
+          <span>Intake</span><span>Delivery</span>
         </div>
       </div>
 
       <div className="grid md:grid-cols-2 gap-4">
         {/* Vehicle Info */}
         <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
-          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">Vehicle</h2>
+          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">🚗 Vehicle</h2>
           <div className="space-y-2">
             {[
               ['Year/Make/Model', `${ro.vehicle?.year} ${ro.vehicle?.make} ${ro.vehicle?.model}`],
               ['Color', ro.vehicle?.color],
               ['VIN', ro.vehicle?.vin],
               ['Plate', ro.vehicle?.plate],
-              ['Intake Date', ro.intake_date],
-              ['Est. Delivery', ro.estimated_delivery || '—'],
               ['Job Type', ro.job_type],
+              ['Intake Date', ro.intake_date],
             ].map(([k,v]) => (
               <div key={k} className="flex justify-between text-xs">
                 <span className="text-slate-500">{k}</span>
-                <span className="text-white font-medium text-right ml-4 truncate">{v || '—'}</span>
+                <span className="text-white font-medium capitalize">{v || '—'}</span>
               </div>
             ))}
+            <div className="flex justify-between text-xs">
+              <span className="text-slate-500">Est. Delivery</span>
+              {editing
+                ? <input type="date" value={form.estimated_delivery || ''} onChange={e => set('estimated_delivery', e.target.value)} className="bg-[#0f1117] border border-[#2a2d3e] rounded px-2 py-0.5 text-xs text-white focus:outline-none focus:border-indigo-500" />
+                : <span className="text-white font-medium">{ro.estimated_delivery || '—'}</span>
+              }
+            </div>
           </div>
         </div>
 
-        {/* Insurance / Payment */}
+        {/* Insurance */}
         <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
           <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">
             {ro.payment_type === 'cash' ? '💵 Cash Job' : '🏢 Insurance Claim'}
           </h2>
-          <div className="space-y-2">
-            {ro.payment_type === 'insurance' ? [
-              ['Insurer', ro.insurer],
-              ['Claim #', ro.claim_number],
-              ['Adjuster', ro.adjuster_name],
-              ['Adj. Phone', ro.adjuster_phone],
-              ['Deductible', ro.deductible ? `$${ro.deductible}` : '—'],
-            ].map(([k,v]) => (
-              <div key={k} className="flex justify-between text-xs">
-                <span className="text-slate-500">{k}</span>
-                <span className="text-white font-medium">{v || '—'}</span>
-              </div>
-            )) : (
-              <div className="text-xs text-slate-400">Customer pay — no insurance claim.</div>
-            )}
-          </div>
+          {ro.payment_type === 'insurance' ? (
+            <div className="space-y-2">
+              {editing ? (
+                <>
+                  <div><label className="text-[10px] text-slate-500">Insurer</label><input className={inp + ' mt-1'} value={form.insurer || ''} onChange={e => set('insurer', e.target.value)} /></div>
+                  <div><label className="text-[10px] text-slate-500">Claim #</label><input className={inp + ' mt-1'} value={form.claim_number || ''} onChange={e => set('claim_number', e.target.value)} /></div>
+                  <div><label className="text-[10px] text-slate-500">Adjuster Name</label><input className={inp + ' mt-1'} value={form.adjuster_name || ''} onChange={e => set('adjuster_name', e.target.value)} /></div>
+                  <div><label className="text-[10px] text-slate-500">Adjuster Phone</label><input className={inp + ' mt-1'} value={form.adjuster_phone || ''} onChange={e => set('adjuster_phone', e.target.value)} /></div>
+                  <div><label className="text-[10px] text-slate-500">Deductible ($)</label><input type="number" className={inp + ' mt-1'} value={form.deductible || ''} onChange={e => set('deductible', e.target.value)} /></div>
+                </>
+              ) : (
+                [['Insurer', ro.insurer], ['Claim #', ro.claim_number], ['Adjuster', ro.adjuster_name], ['Phone', ro.adjuster_phone], ['Deductible', ro.deductible ? `$${ro.deductible}` : '—']].map(([k,v]) => (
+                  <div key={k} className="flex justify-between text-xs">
+                    <span className="text-slate-500">{k}</span>
+                    <span className="text-white font-medium">{v || '—'}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          ) : <div className="text-xs text-slate-400">Customer pay — no claim.</div>}
         </div>
 
         {/* Profit Breakdown */}
         <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
-          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">💰 Profit Breakdown (NY Market)</h2>
-          <div className="space-y-2">
-            {[
-              ['Parts Cost', `$${ro.parts_cost?.toFixed(2)}`],
-              ['Labor', `$${ro.labor_cost?.toFixed(2)}`],
-              ['Sublet', `$${ro.sublet_cost?.toFixed(2)}`],
-              ['Total Billed', `$${ro.total?.toFixed(2)}`],
-            ].map(([k,v]) => (
-              <div key={k} className="flex justify-between text-xs">
-                <span className="text-slate-500">{k}</span>
-                <span className="text-white">{v}</span>
-              </div>
-            ))}
-            <div className="border-t border-[#2a2d3e] pt-2 space-y-1">
+          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">💰 Profit (NY Market)</h2>
+          {editing ? (
+            <div className="space-y-2">
+              {[
+                ['Parts Cost ($)', 'parts_cost'],
+                ['Labor Cost ($)', 'labor_cost'],
+                ['Sublet Cost ($)', 'sublet_cost'],
+                ['Deductible Waived ($)', 'deductible_waived'],
+                ['Referral Fee ($)', 'referral_fee'],
+                ['Goodwill Repair ($)', 'goodwill_repair_cost'],
+              ].map(([label, key]) => (
+                <div key={key}>
+                  <label className="text-[10px] text-slate-500">{label}</label>
+                  <input type="number" className={inp + ' mt-0.5'} value={form[key] || ''} onChange={e => set(key, e.target.value)} placeholder="0" />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {[
+                ['Parts Cost', `$${parseFloat(ro.parts_cost||0).toFixed(2)}`],
+                ['Labor', `$${parseFloat(ro.labor_cost||0).toFixed(2)}`],
+                ['Sublet', `$${parseFloat(ro.sublet_cost||0).toFixed(2)}`],
+                ['Total Billed', `$${parseFloat(ro.total||0).toFixed(2)}`],
+              ].map(([k,v]) => (
+                <div key={k} className="flex justify-between text-xs">
+                  <span className="text-slate-500">{k}</span><span className="text-white">{v}</span>
+                </div>
+              ))}
               {ro.deductible_waived > 0 && <div className="flex justify-between text-xs"><span className="text-red-400">Deductible Waived</span><span className="text-red-400">-${ro.deductible_waived}</span></div>}
               {ro.referral_fee > 0 && <div className="flex justify-between text-xs"><span className="text-red-400">Referral Fee</span><span className="text-red-400">-${ro.referral_fee}</span></div>}
               {ro.goodwill_repair_cost > 0 && <div className="flex justify-between text-xs"><span className="text-red-400">Goodwill Repair</span><span className="text-red-400">-${ro.goodwill_repair_cost}</span></div>}
+              <div className="border-t border-[#2a2d3e] pt-2 flex justify-between text-sm font-bold">
+                <span className="text-emerald-400">True Profit</span>
+                <span className="text-emerald-400">${parseFloat(ro.true_profit||0).toFixed(2)}</span>
+              </div>
             </div>
-            <div className="border-t border-[#2a2d3e] pt-2 flex justify-between text-sm font-bold">
-              <span className="text-emerald-400">True Profit</span>
-              <span className="text-emerald-400">${ro.true_profit?.toFixed(2)}</span>
-            </div>
-          </div>
+          )}
         </div>
 
         {/* Timeline */}
         <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
-          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">📋 Status Timeline</h2>
-          <div className="space-y-2">
+          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">📋 Timeline</h2>
+          <div className="space-y-2.5">
             {ro.log?.map((entry, i) => (
               <div key={i} className="flex items-start gap-2.5">
                 <div className="w-2 h-2 rounded-full mt-1 flex-shrink-0" style={{background: STATUS_COLORS[entry.to_status]}} />
@@ -155,12 +220,14 @@ export default function RODetail() {
         </div>
       </div>
 
-      {ro.notes && (
-        <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
-          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-2">Notes</h2>
-          <p className="text-sm text-slate-300">{ro.notes}</p>
-        </div>
-      )}
+      {/* Notes */}
+      <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
+        <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-2">Notes</h2>
+        {editing
+          ? <textarea className={inp} rows={3} value={form.notes || ''} onChange={e => set('notes', e.target.value)} placeholder="Job notes..." />
+          : <p className="text-sm text-slate-300">{ro.notes || <span className="text-slate-600 italic">No notes</span>}</p>
+        }
+      </div>
     </div>
   )
 }
