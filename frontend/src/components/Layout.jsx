@@ -2,6 +2,7 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useState } from 'react'
 import { LayoutDashboard, ClipboardList, Users, BarChart3, Settings, UserCog, LogOut, Menu, X, Wrench, Clock, CalendarDays } from 'lucide-react'
 import FeedbackButton from './FeedbackButton'
+import HelpDesk from './HelpDesk'
 import { isAdmin } from '../lib/auth'
 
 const allNav = [
@@ -93,6 +94,7 @@ export default function Layout() {
           <Outlet />
           <FeedbackButton />
         </main>
+        <HelpDesk />
       </div>
     </div>
   )
