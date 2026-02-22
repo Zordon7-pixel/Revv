@@ -103,6 +103,28 @@ export default function Portal() {
                 <p className="text-sm text-slate-300 leading-relaxed">{info.msg}</p>
               </div>
 
+              {/* Pending parts — plain English delay explanation */}
+              {ro.pending_parts?.length > 0 && (
+                <div className="px-5 pb-4">
+                  <div className="bg-amber-900/20 border border-amber-700/30 rounded-xl p-3">
+                    <div className="text-xs font-semibold text-amber-400 mb-2 flex items-center gap-1.5">
+                      ⏳ Still waiting on parts
+                    </div>
+                    <div className="space-y-1.5">
+                      {ro.pending_parts.map((p, i) => (
+                        <div key={i} className="flex items-center justify-between text-xs">
+                          <span className="text-slate-300">{p.part_name}</span>
+                          <span className={p.status === 'backordered' ? 'text-red-400 font-medium' : 'text-amber-400'}>
+                            {p.status === 'backordered' ? 'Backordered' : p.expected_date ? `Expected ${p.expected_date}` : 'On order'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-2">We'll move as fast as possible — call us if you have questions.</p>
+                  </div>
+                </div>
+              )}
+
               {/* Dates */}
               <div className="px-5 pb-5 flex gap-4 flex-wrap">
                 {ro.intake_date && (

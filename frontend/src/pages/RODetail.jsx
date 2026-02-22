@@ -1,8 +1,15 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Pencil, Save, X } from 'lucide-react'
+import { ArrowLeft, Pencil, Save, X, Package, Plus, CheckCircle, AlertCircle, Clock } from 'lucide-react'
 import api from '../lib/api'
 import { STATUS_COLORS, STATUS_LABELS } from './RepairOrders'
+
+const PART_STATUS_META = {
+  ordered:     { label: 'Ordered',     cls: 'text-blue-400  bg-blue-900/30  border-blue-700',  icon: Clock },
+  backordered: { label: 'Backordered', cls: 'text-red-400   bg-red-900/30   border-red-700',   icon: AlertCircle },
+  received:    { label: 'Received',    cls: 'text-emerald-400 bg-emerald-900/30 border-emerald-700', icon: CheckCircle },
+  cancelled:   { label: 'Cancelled',  cls: 'text-slate-500 bg-slate-900/30 border-slate-700', icon: X },
+}
 
 const STAGES = ['intake','estimate','approval','parts','repair','paint','qc','delivery','closed']
 
@@ -14,8 +21,27 @@ export default function RODetail() {
   const [form, setForm] = useState({})
   const [saving, setSaving] = useState(false)
 
-  const load = () => api.get(`/ros/${id}`).then(r => { setRo(r.data); setForm(r.data) })
+  const [parts, setParts]     = useState([])
+  const [showAddPart, setShowAddPart] = useState(false)
+  const [partForm, setPartForm] = useState({ part_name:'', part_number:'', vendor:'', quantity:1, unit_cost:'', expected_date:'', notes:'' })
+  const [savingPart, setSavingPart] = useState(false)
+
+  const load = () => api.get(`/ros/${id}`).then(r => { setRo(r.data); setForm(r.data); setParts(r.data.parts || []) })
   useEffect(() => { load() }, [id])
+
+  async function addPart(e) {
+    e.preventDefault(); setSavingPart(true)
+    try { await api.post(`/parts/ro/${id}`, partForm); load(); setShowAddPart(false); setPartForm({ part_name:'', part_number:'', vendor:'', quantity:1, unit_cost:'', expected_date:'', notes:'' }) }
+    finally { setSavingPart(false) }
+  }
+
+  async function updatePartStatus(partId, status) {
+    await api.put(`/parts/${partId}`, { status }); load()
+  }
+
+  async function deletePart(partId) {
+    await api.delete(`/parts/${partId}`); load()
+  }
 
   async function advance() {
     const idx = STAGES.indexOf(ro.status)
@@ -227,6 +253,110 @@ export default function RODetail() {
           ? <textarea className={inp} rows={3} value={form.notes || ''} onChange={e => set('notes', e.target.value)} placeholder="Job notes..." />
           : <p className="text-sm text-slate-300">{ro.notes || <span className="text-slate-600 italic">No notes</span>}</p>
         }
+      </div>
+
+      {/* Parts Tracking */}
+      <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Package size={15} className="text-indigo-400" />
+            <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide">Parts Tracker</h2>
+            {parts.filter(p => p.status === 'backordered').length > 0 && (
+              <span className="text-[10px] bg-red-900/40 text-red-400 border border-red-700/40 px-2 py-0.5 rounded-full font-semibold">
+                ⚠️ {parts.filter(p=>p.status==='backordered').length} backordered
+              </span>
+            )}
+            {parts.length > 0 && parts.every(p=>p.status==='received') && (
+              <span className="text-[10px] bg-emerald-900/40 text-emerald-400 border border-emerald-700/40 px-2 py-0.5 rounded-full font-semibold">
+                ✓ All parts in
+              </span>
+            )}
+          </div>
+          <button onClick={() => setShowAddPart(s=>!s)}
+            className="flex items-center gap-1.5 text-xs bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors">
+            <Plus size={12}/> Add Part
+          </button>
+        </div>
+
+        {/* Add Part Form */}
+        {showAddPart && (
+          <form onSubmit={addPart} className="bg-[#0f1117] rounded-xl p-4 border border-[#2a2d3e] mb-4 space-y-3">
+            <div className="grid grid-cols-2 gap-2">
+              <div className="col-span-2">
+                <label className="text-[10px] text-slate-500 block mb-1">Part Name *</label>
+                <input className={inp} required value={partForm.part_name} onChange={e=>setPartForm(f=>({...f,part_name:e.target.value}))} placeholder="Front bumper assembly" />
+              </div>
+              <div>
+                <label className="text-[10px] text-slate-500 block mb-1">Part Number</label>
+                <input className={inp} value={partForm.part_number} onChange={e=>setPartForm(f=>({...f,part_number:e.target.value}))} placeholder="OEM-12345" />
+              </div>
+              <div>
+                <label className="text-[10px] text-slate-500 block mb-1">Vendor</label>
+                <input className={inp} value={partForm.vendor} onChange={e=>setPartForm(f=>({...f,vendor:e.target.value}))} placeholder="LKQ, OEM, etc." />
+              </div>
+              <div>
+                <label className="text-[10px] text-slate-500 block mb-1">Expected Date</label>
+                <input type="date" className={inp} value={partForm.expected_date} onChange={e=>setPartForm(f=>({...f,expected_date:e.target.value}))} />
+              </div>
+              <div>
+                <label className="text-[10px] text-slate-500 block mb-1">Qty</label>
+                <input type="number" min="1" className={inp} value={partForm.quantity} onChange={e=>setPartForm(f=>({...f,quantity:e.target.value}))} />
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button type="button" onClick={()=>setShowAddPart(false)} className="flex-1 bg-[#1a1d2e] text-slate-400 rounded-lg py-2 text-xs border border-[#2a2d3e]">Cancel</button>
+              <button type="submit" disabled={savingPart} className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-lg py-2 text-xs disabled:opacity-50">
+                {savingPart ? 'Adding...' : 'Add Part'}
+              </button>
+            </div>
+          </form>
+        )}
+
+        {parts.length === 0 ? (
+          <p className="text-xs text-slate-600 italic">No parts tracked yet. Add parts to keep everyone updated on delays.</p>
+        ) : (
+          <div className="space-y-2">
+            {parts.map(p => {
+              const meta = PART_STATUS_META[p.status] || PART_STATUS_META.ordered
+              const Icon = meta.icon
+              return (
+                <div key={p.id} className="flex items-start gap-3 bg-[#0f1117] rounded-xl p-3 border border-[#2a2d3e]">
+                  <div className={`w-7 h-7 rounded-lg border flex items-center justify-center flex-shrink-0 ${meta.cls}`}>
+                    <Icon size={13}/>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm text-white font-medium">{p.part_name}</span>
+                      {p.part_number && <span className="text-[10px] text-slate-500">#{p.part_number}</span>}
+                      {p.quantity > 1 && <span className="text-[10px] text-slate-500">× {p.quantity}</span>}
+                    </div>
+                    <div className="flex items-center gap-3 mt-0.5 text-[10px] text-slate-500 flex-wrap">
+                      {p.vendor && <span>{p.vendor}</span>}
+                      {p.expected_date && p.status !== 'received' && <span className="text-amber-400">Expected: {p.expected_date}</span>}
+                      {p.received_date && <span className="text-emerald-400">Received: {p.received_date}</span>}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {/* Quick status toggle */}
+                    {p.status === 'ordered' && (
+                      <>
+                        <button onClick={()=>updatePartStatus(p.id,'backordered')} className="text-[10px] bg-red-900/30 text-red-400 border border-red-700/40 px-2 py-1 rounded-lg hover:bg-red-900/50 transition-colors">Backorder</button>
+                        <button onClick={()=>updatePartStatus(p.id,'received')} className="text-[10px] bg-emerald-900/30 text-emerald-400 border border-emerald-700/40 px-2 py-1 rounded-lg hover:bg-emerald-900/50 transition-colors">Received</button>
+                      </>
+                    )}
+                    {p.status === 'backordered' && (
+                      <button onClick={()=>updatePartStatus(p.id,'received')} className="text-[10px] bg-emerald-900/30 text-emerald-400 border border-emerald-700/40 px-2 py-1 rounded-lg hover:bg-emerald-900/50 transition-colors">Received ✓</button>
+                    )}
+                    <span className={`text-[10px] px-2 py-1 rounded-full border font-semibold ${meta.cls}`}>{meta.label}</span>
+                    <button onClick={()=>deletePart(p.id)} className="text-slate-600 hover:text-red-400 transition-colors ml-1">
+                      <X size={13}/>
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
       </div>
     </div>
   )

@@ -25,7 +25,7 @@ router.get('/my-ros', auth, (req, res) => {
   if (!req.user.customer_id) return res.status(403).json({ error: 'No customer profile linked to this account' });
 
   const ros = db.prepare(`
-    SELECT ro.ro_number, ro.status, ro.job_type, ro.intake_date, ro.estimated_delivery, ro.actual_delivery, ro.notes,
+    SELECT ro.id, ro.ro_number, ro.status, ro.job_type, ro.intake_date, ro.estimated_delivery, ro.actual_delivery,
            v.year, v.make, v.model, v.color, v.plate,
            s.name as shop_name, s.phone as shop_phone, s.address as shop_address
     FROM repair_orders ro
@@ -35,10 +35,21 @@ router.get('/my-ros', auth, (req, res) => {
     ORDER BY ro.created_at DESC
   `).all(req.user.customer_id, req.user.shop_id);
 
-  const enriched = ros.map(r => ({
-    ...r,
-    status_info: STATUS_MESSAGES[r.status] || { label: r.status, msg: 'Your vehicle is being worked on.', emoji: '🔧' },
-  }));
+  const enriched = ros.map(r => {
+    // Fetch pending parts — shown to customer when in 'parts' stage
+    const pendingParts = db.prepare(`
+      SELECT part_name, status, expected_date
+      FROM parts_orders
+      WHERE ro_id = ? AND status IN ('ordered','backordered')
+      ORDER BY created_at ASC
+    `).all(r.id);
+
+    return {
+      ...r,
+      status_info: STATUS_MESSAGES[r.status] || { label: r.status, msg: 'Your vehicle is being worked on.', emoji: '🔧' },
+      pending_parts: pendingParts,
+    };
+  });
 
   res.json({ ros: enriched });
 });

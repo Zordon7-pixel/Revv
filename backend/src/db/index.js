@@ -104,6 +104,26 @@ db.exec(`
 `);
 
 // Migrations — add columns to existing DBs without breaking them
+db.exec(`
+  CREATE TABLE IF NOT EXISTS parts_orders (
+    id           TEXT PRIMARY KEY,
+    shop_id      TEXT REFERENCES shops(id),
+    ro_id        TEXT REFERENCES repair_orders(id),
+    part_name    TEXT NOT NULL,
+    part_number  TEXT,
+    vendor       TEXT,
+    quantity     INTEGER DEFAULT 1,
+    unit_cost    REAL DEFAULT 0,
+    status       TEXT DEFAULT 'ordered',
+    ordered_date TEXT,
+    expected_date TEXT,
+    received_date TEXT,
+    notes        TEXT,
+    created_at   TEXT DEFAULT (datetime('now')),
+    updated_at   TEXT DEFAULT (datetime('now'))
+  );
+`);
+
 const migrations = [
   `ALTER TABLE shops ADD COLUMN city TEXT`,
   `ALTER TABLE shops ADD COLUMN state TEXT`,

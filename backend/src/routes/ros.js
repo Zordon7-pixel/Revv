@@ -9,11 +9,12 @@ const STATUSES = ['intake','estimate','approval','parts','repair','paint','qc','
 // Enrich RO with vehicle + customer
 function enrichRO(ro) {
   if (!ro) return null;
-  const vehicle = db.prepare('SELECT * FROM vehicles WHERE id = ?').get(ro.vehicle_id);
+  const vehicle  = db.prepare('SELECT * FROM vehicles WHERE id = ?').get(ro.vehicle_id);
   const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(ro.customer_id);
-  const log = db.prepare('SELECT * FROM job_status_log WHERE ro_id = ? ORDER BY created_at ASC').all(ro.id);
-  const profit = calculateProfit(ro);
-  return { ...ro, vehicle, customer, log, profit };
+  const log      = db.prepare('SELECT * FROM job_status_log WHERE ro_id = ? ORDER BY created_at ASC').all(ro.id);
+  const parts    = db.prepare('SELECT * FROM parts_orders WHERE ro_id = ? ORDER BY created_at ASC').all(ro.id);
+  const profit   = calculateProfit(ro);
+  return { ...ro, vehicle, customer, log, parts, profit };
 }
 
 // GET all ROs for shop

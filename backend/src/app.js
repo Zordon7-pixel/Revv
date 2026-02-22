@@ -17,6 +17,7 @@ app.use('/api/feedback', require('./routes/feedback'));
 app.use('/api/market',   require('./routes/market'));
 app.use('/api/portal',   require('./routes/portal'));
 app.use('/api/users',    require('./routes/users'));
+app.use('/api/parts',    require('./routes/parts'));
 
 // Serve frontend build
 const frontendDist = path.join(__dirname, '../../frontend/dist');
