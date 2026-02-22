@@ -18,7 +18,7 @@ export default function Login() {
       localStorage.setItem('sc_token', data.token)
       navigate(data.user.role === 'customer' ? '/portal' : '/')
     } catch {
-      setError('Invalid email or password')
+      setError('Wrong email or password.')
     } finally {
       setLoading(false)
     }
