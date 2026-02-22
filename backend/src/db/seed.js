@@ -8,7 +8,7 @@ function runSeed() {
 
   const shopId = uuidv4();
   db.prepare(`INSERT INTO shops (id, name, phone, address, city, state, zip, market_tier, labor_rate, parts_markup, tax_rate) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
-    shopId, "Premier Auto Body", "(555) 400-0100", "456 Commerce Blvd", "Houston", "TX", "77001", 2, 75, 0.35, 0.0825
+    shopId, "Miles Automotive", "(555) 400-0100", "123 Miles Ave", "New York", "NY", "10001", 1, 95, 0.40, 0.08875
   );
 
   const hash = bcrypt.hashSync('demo1234', 10);
@@ -99,7 +99,7 @@ function runSeed() {
   }
 
   console.log('✅ REVV seeded.');
-  console.log('   Shop: Premier Auto Body');
+  console.log('   Shop: Miles Automotive');
   console.log('   Owner login:    demo@shop.com / demo1234');
   console.log('   Employee login: employee@shop.com / demo1234');
   console.log('   Customer login: marcus@customer.com / demo1234 → /portal');
