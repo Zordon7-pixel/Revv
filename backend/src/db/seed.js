@@ -11,20 +11,26 @@ function runSeed() {
     shopId, "Premier Auto Body", "(555) 400-0100", "456 Commerce Blvd", "Houston", "TX", "77001", 2, 75, 0.35, 0.0825
   );
 
-  const userId = uuidv4();
   const hash = bcrypt.hashSync('demo1234', 10);
+
+  const userId = uuidv4();
   db.prepare(`INSERT INTO users (id, shop_id, name, email, password_hash, role) VALUES (?, ?, ?, ?, ?, ?)`).run(
     userId, shopId, "Shop Owner", "demo@shop.com", hash, "owner"
   );
 
+  // Demo employee account
+  db.prepare(`INSERT INTO users (id, shop_id, name, email, password_hash, role) VALUES (?, ?, ?, ?, ?, ?)`).run(
+    uuidv4(), shopId, "Alex Rivera", "employee@shop.com", hash, "employee"
+  );
+
   const customers = [
-    { name: "Marcus Johnson",   phone: "(555) 200-0101", insurance: "Progressive",  policy: "PRG-882341" },
-    { name: "Sofia Rodriguez",  phone: "(555) 200-0202", insurance: "Geico",        policy: "GCO-441892" },
-    { name: "James Chen",       phone: "(555) 200-0303", insurance: "State Farm",   policy: "STF-119283" },
-    { name: "Aaliyah Williams", phone: "(555) 200-0404", insurance: "Cash",         policy: "" },
-    { name: "Robert Kim",       phone: "(555) 200-0505", insurance: "Integon",      policy: "INT-776541" },
-    { name: "Diana Foster",     phone: "(555) 200-0606", insurance: "Allstate",     policy: "ALT-332211" },
-    { name: "Carlos Reyes",     phone: "(555) 200-0707", insurance: "Progressive",  policy: "PRG-991122" },
+    { name: "Marcus Johnson",   phone: "(555) 200-0101", email: "marcus@customer.com", insurance: "Progressive", policy: "PRG-882341" },
+    { name: "Sofia Rodriguez",  phone: "(555) 200-0202", email: "sofia@customer.com",  insurance: "Geico",       policy: "GCO-441892" },
+    { name: "James Chen",       phone: "(555) 200-0303", email: "james@customer.com",  insurance: "State Farm",  policy: "STF-119283" },
+    { name: "Aaliyah Williams", phone: "(555) 200-0404", email: "",                    insurance: "Cash",        policy: "" },
+    { name: "Robert Kim",       phone: "(555) 200-0505", email: "robert@customer.com", insurance: "Integon",     policy: "INT-776541" },
+    { name: "Diana Foster",     phone: "(555) 200-0606", email: "diana@customer.com",  insurance: "Allstate",    policy: "ALT-332211" },
+    { name: "Carlos Reyes",     phone: "(555) 200-0707", email: "carlos@customer.com", insurance: "Progressive", policy: "PRG-991122" },
   ];
 
   const vehicles = [
@@ -47,11 +53,13 @@ function runSeed() {
     { custIdx: 6, vehIdx: 6, jobType: "paint",     status: "delivery",  payType: "cash",      insurer: null,           claimSuffix: null,   deduct: 0,    deductWaived: 0,   refFee: 0,   parts: 400,  labor: 900,  date: "2026-02-05", delivered: "2026-02-11" },
   ];
 
+  let marcusCustId = null;
   ros.forEach((r, i) => {
     const custId = uuidv4();
+    if (r.custIdx === 0) marcusCustId = custId; // Marcus Johnson — portal demo account
     const c = customers[r.custIdx];
     db.prepare(`INSERT INTO customers (id, shop_id, name, phone, email, insurance_company, policy_number) VALUES (?, ?, ?, ?, ?, ?, ?)`).run(
-      custId, shopId, c.name, c.phone, '', c.insurance, c.policy
+      custId, shopId, c.name, c.phone, c.email, c.insurance, c.policy
     );
 
     const vehId = uuidv4();
@@ -83,9 +91,18 @@ function runSeed() {
     );
   });
 
+  // Customer portal demo account — Marcus Johnson can log in at /portal
+  if (marcusCustId) {
+    db.prepare(`INSERT INTO users (id, shop_id, name, email, password_hash, role, customer_id) VALUES (?, ?, ?, ?, ?, ?, ?)`).run(
+      uuidv4(), shopId, "Marcus Johnson", "marcus@customer.com", hash, "customer", marcusCustId
+    );
+  }
+
   console.log('✅ REVV seeded.');
   console.log('   Shop: Premier Auto Body');
-  console.log('   Login: demo@shop.com / demo1234');
+  console.log('   Owner login:    demo@shop.com / demo1234');
+  console.log('   Employee login: employee@shop.com / demo1234');
+  console.log('   Customer login: marcus@customer.com / demo1234 → /portal');
   console.log('   7 ROs: 5 active (all stages) + 2 completed');
 }
 
