@@ -14,16 +14,16 @@ router.get('/rates', (req, res) => {
   res.json(rates);
 });
 
-// GET /api/market/shop  — returns current shop's location + rates
+// GET /api/market/shop  — returns current shop's location + rates + geofence
 router.get('/shop', auth, (req, res) => {
-  const shop = db.prepare('SELECT id, name, phone, address, city, state, zip, market_tier, labor_rate, parts_markup, tax_rate FROM shops WHERE id = ?').get(req.user.shop_id);
+  const shop = db.prepare('SELECT id, name, phone, address, city, state, zip, market_tier, labor_rate, parts_markup, tax_rate, lat, lng, geofence_radius FROM shops WHERE id = ?').get(req.user.shop_id);
   if (!shop) return res.status(404).json({ error: 'Shop not found' });
   res.json(shop);
 });
 
 // PUT /api/market/shop  — update shop location & rates
 router.put('/shop', auth, (req, res) => {
-  const { name, phone, address, city, state, zip, labor_rate, parts_markup, tax_rate } = req.body;
+  const { name, phone, address, city, state, zip, labor_rate, parts_markup, tax_rate, lat, lng, geofence_radius } = req.body;
 
   // If state is provided, look up market tier
   let market_tier = null;
@@ -43,16 +43,19 @@ router.put('/shop', auth, (req, res) => {
   if (state        != null) { fields.push('state = ?');        vals.push(state.toUpperCase()); }
   if (zip          != null) { fields.push('zip = ?');          vals.push(zip); }
   if (market_tier  != null) { fields.push('market_tier = ?'); vals.push(market_tier); }
-  if (labor_rate   != null) { fields.push('labor_rate = ?');   vals.push(parseFloat(labor_rate)); }
-  if (parts_markup != null) { fields.push('parts_markup = ?'); vals.push(parseFloat(parts_markup)); }
-  if (tax_rate     != null) { fields.push('tax_rate = ?');     vals.push(parseFloat(tax_rate)); }
+  if (labor_rate      != null) { fields.push('labor_rate = ?');      vals.push(parseFloat(labor_rate)); }
+  if (parts_markup    != null) { fields.push('parts_markup = ?');    vals.push(parseFloat(parts_markup)); }
+  if (tax_rate        != null) { fields.push('tax_rate = ?');        vals.push(parseFloat(tax_rate)); }
+  if (lat             != null) { fields.push('lat = ?');             vals.push(parseFloat(lat)); }
+  if (lng             != null) { fields.push('lng = ?');             vals.push(parseFloat(lng)); }
+  if (geofence_radius != null) { fields.push('geofence_radius = ?'); vals.push(parseFloat(geofence_radius)); }
 
   if (!fields.length) return res.status(400).json({ error: 'Nothing to update' });
 
   vals.push(req.user.shop_id);
   db.prepare(`UPDATE shops SET ${fields.join(', ')} WHERE id = ?`).run(...vals);
 
-  const updated = db.prepare('SELECT id, name, phone, address, city, state, zip, market_tier, labor_rate, parts_markup, tax_rate FROM shops WHERE id = ?').get(req.user.shop_id);
+  const updated = db.prepare('SELECT id, name, phone, address, city, state, zip, market_tier, labor_rate, parts_markup, tax_rate, lat, lng, geofence_radius FROM shops WHERE id = ?').get(req.user.shop_id);
   res.json(updated);
 });
 

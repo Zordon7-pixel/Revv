@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { MapPin, Wrench, DollarSign, Percent, Save, RefreshCw, CheckCircle } from 'lucide-react'
+import { MapPin, Wrench, DollarSign, Save, RefreshCw, CheckCircle, Clock, ShieldCheck } from 'lucide-react'
 import api from '../lib/api'
 
 const TIER_COLORS = {
@@ -15,22 +15,27 @@ export default function Settings() {
   const [states, setStates] = useState([])
   const [form,   setForm]   = useState({})
   const [mkt,    setMkt]    = useState(null)   // suggested rates for selected state
-  const [saving, setSaving] = useState(false)
-  const [saved,  setSaved]  = useState(false)
+  const [saving, setSaving]       = useState(false)
+  const [saved,  setSaved]        = useState(false)
+  const [locating, setLocating]   = useState(false)
+  const [locMsg,   setLocMsg]     = useState('')
 
   useEffect(() => {
     api.get('/market/shop').then(r => {
       setShop(r.data)
       setForm({
-        name:         r.data.name         || '',
-        phone:        r.data.phone        || '',
-        address:      r.data.address      || '',
-        city:         r.data.city         || '',
-        state:        r.data.state        || '',
-        zip:          r.data.zip          || '',
-        labor_rate:   r.data.labor_rate   ?? 62,
-        parts_markup: r.data.parts_markup != null ? (r.data.parts_markup * 100).toFixed(0) : 30,
-        tax_rate:     r.data.tax_rate     != null ? (r.data.tax_rate * 100).toFixed(2)     : 7.00,
+        name:             r.data.name         || '',
+        phone:            r.data.phone        || '',
+        address:          r.data.address      || '',
+        city:             r.data.city         || '',
+        state:            r.data.state        || '',
+        zip:              r.data.zip          || '',
+        labor_rate:       r.data.labor_rate   ?? 62,
+        parts_markup:     r.data.parts_markup != null ? (r.data.parts_markup * 100).toFixed(0) : 30,
+        tax_rate:         r.data.tax_rate     != null ? (r.data.tax_rate * 100).toFixed(2)     : 7.00,
+        lat:              r.data.lat          ?? null,
+        lng:              r.data.lng          ?? null,
+        geofence_radius:  r.data.geofence_radius != null ? Math.round(r.data.geofence_radius * 3281) : 500,
       })
       if (r.data.state) fetchMarket(r.data.state)
     })
@@ -58,15 +63,32 @@ export default function Settings() {
     }))
   }
 
+  async function detectLocation() {
+    setLocating(true); setLocMsg('')
+    if (!navigator.geolocation) { setLocMsg('Geolocation not supported by this browser.'); setLocating(false); return }
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        setForm(f => ({ ...f, lat: pos.coords.latitude, lng: pos.coords.longitude }))
+        setLocMsg('✓ Location captured! Save settings to apply.')
+        setLocating(false)
+      },
+      () => { setLocMsg('Could not get location. Make sure location access is allowed.'); setLocating(false) },
+      { timeout: 10000, maximumAge: 0 }
+    )
+  }
+
   async function handleSave(e) {
     e.preventDefault()
     setSaving(true)
     try {
       await api.put('/market/shop', {
         ...form,
-        labor_rate:   parseFloat(form.labor_rate),
-        parts_markup: parseFloat(form.parts_markup) / 100,
-        tax_rate:     parseFloat(form.tax_rate) / 100,
+        labor_rate:       parseFloat(form.labor_rate),
+        parts_markup:     parseFloat(form.parts_markup) / 100,
+        tax_rate:         parseFloat(form.tax_rate) / 100,
+        lat:              form.lat != null ? parseFloat(form.lat) : undefined,
+        lng:              form.lng != null ? parseFloat(form.lng) : undefined,
+        geofence_radius:  form.geofence_radius ? parseFloat(form.geofence_radius) / 3281 : 0.5,
       })
       setSaved(true)
       setTimeout(() => setSaved(false), 2500)
@@ -202,6 +224,53 @@ export default function Settings() {
             <p>• <strong className="text-slate-400">Labor Rate</strong> — applied to all labor hours on repair orders</p>
             <p>• <strong className="text-slate-400">Parts Markup</strong> — gross margin above your cost on all parts</p>
             <p>• <strong className="text-slate-400">Tax Rate</strong> — sales tax applied to parts (labor is typically exempt)</p>
+          </div>
+        </div>
+
+        {/* Time Clock Geofencing */}
+        <div className="bg-[#1a1d2e] rounded-2xl p-5 border border-[#2a2d3e] space-y-4">
+          <div className="flex items-center gap-2 text-white font-semibold text-sm mb-1">
+            <ShieldCheck size={15} className="text-indigo-400" /> Time Clock Geofencing
+          </div>
+          <p className="text-xs text-slate-400">
+            Employees can only clock in or out when they are within this distance of the shop.
+            Set your shop's location first, then choose the radius.
+          </p>
+
+          <div className="flex items-center gap-3 flex-wrap">
+            <button type="button" onClick={detectLocation} disabled={locating}
+              className="flex items-center gap-2 bg-indigo-900/40 hover:bg-indigo-900/70 border border-indigo-700/40 text-indigo-300 text-xs font-semibold px-4 py-2 rounded-lg transition-colors disabled:opacity-50">
+              <MapPin size={13}/> {locating ? 'Detecting…' : form.lat ? 'Update Shop Location' : 'Set Shop Location'}
+            </button>
+            {form.lat && form.lng && (
+              <span className="text-[10px] text-slate-500 font-mono">
+                {parseFloat(form.lat).toFixed(4)}, {parseFloat(form.lng).toFixed(4)}
+              </span>
+            )}
+          </div>
+
+          {locMsg && <p className={`text-xs ${locMsg.startsWith('✓') ? 'text-emerald-400' : 'text-amber-400'}`}>{locMsg}</p>}
+
+          {!form.lat && (
+            <div className="bg-amber-900/20 border border-amber-700/40 rounded-lg p-3 text-xs text-amber-300">
+              ⚠️ No shop location set — geofencing is disabled. Employees can clock in from anywhere.
+            </div>
+          )}
+
+          <div>
+            <label className={lbl}>Geofence Radius (feet)</label>
+            <div className="flex items-center gap-4">
+              <input type="range" min="100" max="2640" step="50"
+                value={form.geofence_radius || 500}
+                onChange={e => setForm(f => ({...f, geofence_radius: +e.target.value}))}
+                className="flex-1 accent-indigo-500" />
+              <span className="text-sm font-bold text-indigo-400 min-w-[70px] text-right">
+                {(form.geofence_radius || 500).toLocaleString()} ft
+              </span>
+            </div>
+            <p className="text-[10px] text-slate-500 mt-1">
+              ≈ {((form.geofence_radius || 500) / 5280).toFixed(2)} miles · Default: 500 ft
+            </p>
           </div>
         </div>
 

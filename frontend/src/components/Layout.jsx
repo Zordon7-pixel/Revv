@@ -1,16 +1,18 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useState } from 'react'
-import { LayoutDashboard, ClipboardList, Users, BarChart3, Settings, UserCog, LogOut, Menu, X, Wrench } from 'lucide-react'
+import { LayoutDashboard, ClipboardList, Users, BarChart3, Settings, UserCog, LogOut, Menu, X, Wrench, Clock, CalendarDays } from 'lucide-react'
 import FeedbackButton from './FeedbackButton'
 import { isAdmin } from '../lib/auth'
 
 const allNav = [
-  { to: '/',         icon: LayoutDashboard, label: 'Dashboard',      adminOnly: false },
-  { to: '/ros',      icon: ClipboardList,   label: 'Repair Orders',  adminOnly: false },
-  { to: '/customers',icon: Users,           label: 'Customers',      adminOnly: false },
-  { to: '/reports',  icon: BarChart3,       label: 'Reports',        adminOnly: true  },
-  { to: '/team',     icon: UserCog,         label: 'Team',           adminOnly: true  },
-  { to: '/settings', icon: Settings,        label: 'Settings',       adminOnly: true  },
+  { to: '/',           icon: LayoutDashboard, label: 'Dashboard',      adminOnly: false },
+  { to: '/ros',        icon: ClipboardList,   label: 'Repair Orders',  adminOnly: false },
+  { to: '/customers',  icon: Users,           label: 'Customers',      adminOnly: false },
+  { to: '/timeclock',  icon: Clock,           label: 'Time Clock',     adminOnly: false },
+  { to: '/schedule',   icon: CalendarDays,    label: 'Schedule',       adminOnly: false },
+  { to: '/reports',    icon: BarChart3,       label: 'Reports',        adminOnly: true  },
+  { to: '/team',       icon: UserCog,         label: 'Team',           adminOnly: true  },
+  { to: '/settings',   icon: Settings,        label: 'Settings',       adminOnly: true  },
 ]
 
 export default function Layout() {

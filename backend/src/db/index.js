@@ -124,12 +124,49 @@ db.exec(`
   );
 `);
 
+db.exec(`
+  CREATE TABLE IF NOT EXISTS schedules (
+    id         TEXT PRIMARY KEY,
+    shop_id    TEXT REFERENCES shops(id),
+    user_id    TEXT REFERENCES users(id),
+    shift_date TEXT NOT NULL,
+    start_time TEXT NOT NULL,
+    end_time   TEXT NOT NULL,
+    notes      TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS time_entries (
+    id               TEXT PRIMARY KEY,
+    shop_id          TEXT REFERENCES shops(id),
+    user_id          TEXT REFERENCES users(id),
+    clock_in         TEXT,
+    clock_out        TEXT,
+    clock_in_lat     REAL,
+    clock_in_lng     REAL,
+    clock_out_lat    REAL,
+    clock_out_lng    REAL,
+    scheduled_start  TEXT,
+    is_late          INTEGER DEFAULT 0,
+    late_minutes     INTEGER DEFAULT 0,
+    total_hours      REAL,
+    adjusted_by      TEXT,
+    admin_note       TEXT,
+    created_at       TEXT DEFAULT (datetime('now')),
+    updated_at       TEXT DEFAULT (datetime('now'))
+  );
+`);
+
 const migrations = [
   `ALTER TABLE shops ADD COLUMN city TEXT`,
   `ALTER TABLE shops ADD COLUMN state TEXT`,
   `ALTER TABLE shops ADD COLUMN zip TEXT`,
   `ALTER TABLE shops ADD COLUMN market_tier INTEGER DEFAULT 3`,
   `ALTER TABLE shops ADD COLUMN parts_markup REAL DEFAULT 0.30`,
+  `ALTER TABLE shops ADD COLUMN lat REAL`,
+  `ALTER TABLE shops ADD COLUMN lng REAL`,
+  `ALTER TABLE shops ADD COLUMN geofence_radius REAL DEFAULT 0.5`,
   `ALTER TABLE users ADD COLUMN customer_id TEXT REFERENCES customers(id)`,
 ];
 migrations.forEach(sql => {

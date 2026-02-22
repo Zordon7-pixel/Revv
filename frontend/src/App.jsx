@@ -10,6 +10,8 @@ import Reports from './pages/Reports'
 import Settings from './pages/Settings'
 import Users from './pages/Users'
 import Portal from './pages/Portal'
+import TimeClock from './pages/TimeClock'
+import Schedule from './pages/Schedule'
 
 function PrivateRoute({ children }) {
   return localStorage.getItem('sc_token') ? children : <Navigate to="/login" />
@@ -35,6 +37,8 @@ export default function App() {
           <Route path="ros" element={<RepairOrders />} />
           <Route path="ros/:id" element={<RODetail />} />
           <Route path="customers" element={<Customers />} />
+          <Route path="timeclock" element={<TimeClock />} />
+          <Route path="schedule" element={<Schedule />} />
           <Route path="reports" element={<AdminRoute><Reports /></AdminRoute>} />
           <Route path="team" element={<AdminRoute><Users /></AdminRoute>} />
           <Route path="settings" element={<AdminRoute><Settings /></AdminRoute>} />
