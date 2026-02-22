@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
-import { MapPin, Wrench, DollarSign, Save, RefreshCw, CheckCircle, ShieldCheck, Truck, Trash2, MessageSquare } from 'lucide-react'
+import { MapPin, Wrench, DollarSign, Save, RefreshCw, CheckCircle, ShieldCheck, Truck, Trash2, MessageSquare, ChevronDown, X } from 'lucide-react'
 import api from '../lib/api'
-import { isAdmin } from '../lib/auth'
 
 const TIER_COLORS = {
   1: 'text-purple-400 bg-purple-900/30 border-purple-700',
@@ -21,10 +20,13 @@ export default function Settings() {
   const [locating, setLocating]   = useState(false)
   const [locMsg,   setLocMsg]     = useState('')
   const [clearing, setClearing]   = useState(false)
-  const [smsStatus, setSmsStatus] = useState({ configured: false, phone: null })
+  const [smsStatus, setSmsStatus] = useState({ configured: false, sms_phone: null })
+  const [smsLoading, setSmsLoading] = useState(true)
+  const [smsExamplesOpen, setSmsExamplesOpen] = useState(false)
+  const [showTestSmsModal, setShowTestSmsModal] = useState(false)
   const [testPhone, setTestPhone] = useState('')
   const [sendingTest, setSendingTest] = useState(false)
-  const admin = isAdmin()
+  const [testSmsResult, setTestSmsResult] = useState({ type: '', message: '' })
 
   useEffect(() => {
     api.get('/market/shop').then(r => {
@@ -45,17 +47,12 @@ export default function Settings() {
         tracking_api_key: r.data.tracking_api_key || '',
       })
       if (r.data.state) fetchMarket(r.data.state)
-      setSmsStatus({
-        configured: !!r.data.sms_configured,
-        phone: r.data.sms_phone || null,
-      })
     })
     api.get('/market/rates').then(r => setStates(r.data.states || []))
-    if (admin) {
-      api.get('/sms/status')
-        .then(r => setSmsStatus({ configured: !!r.data.configured, phone: r.data.phone || null }))
-        .catch(() => {})
-    }
+    api.get('/sms/status')
+      .then(r => setSmsStatus({ configured: !!r.data.configured, sms_phone: r.data.sms_phone || r.data.phone || null }))
+      .catch(() => setSmsStatus({ configured: false, sms_phone: null }))
+      .finally(() => setSmsLoading(false))
   }, [])
 
   function fetchMarket(stateCode) {
@@ -116,18 +113,20 @@ export default function Settings() {
 
   async function sendTestSMS() {
     if (!testPhone) {
-      alert('Enter a phone number to send a test SMS.')
+      setTestSmsResult({ type: 'error', message: 'Please enter a phone number first.' })
       return
     }
+
     setSendingTest(true)
+    setTestSmsResult({ type: '', message: '' })
     try {
       await api.post('/sms/test', {
         phone: testPhone,
         message: `REVV test SMS from ${form.name || 'your shop'} — notifications are connected.`,
       })
-      alert('Test SMS sent (or gracefully skipped if Twilio is not configured).')
+      setTestSmsResult({ type: 'success', message: 'Test SMS sent successfully.' })
     } catch (e) {
-      alert(e?.response?.data?.error || 'Failed to send test SMS.')
+      setTestSmsResult({ type: 'error', message: e?.response?.data?.error || 'Failed to send test SMS.' })
     } finally {
       setSendingTest(false)
     }
@@ -324,47 +323,109 @@ export default function Settings() {
 
         {/* SMS Notifications */}
         <div className="bg-[#1a1d2e] rounded-2xl p-5 border border-[#2a2d3e] space-y-4">
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <div className="flex items-center gap-2 text-white font-semibold text-sm mb-1">
-              <MessageSquare size={15} className="text-indigo-400" /> SMS Notifications
+          {smsLoading ? (
+            <div className="flex items-center gap-3 text-slate-400 text-sm">
+              <div className="w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+              Loading SMS setup status…
             </div>
-            <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border ${smsStatus.configured ? 'text-emerald-400 bg-emerald-900/30 border-emerald-700/50' : 'text-red-400 bg-red-900/30 border-red-700/50'}`}>
-              {smsStatus.configured ? 'SMS Active' : 'SMS Not Configured'}
-            </span>
-          </div>
-
-          <p className="text-xs text-slate-400">Env vars must be set on the server. These fields are for reference only.</p>
-
-          {admin ? (
-            <>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          ) : smsStatus.configured ? (
+            <div className="bg-emerald-900/20 border border-emerald-700/40 rounded-xl p-4 space-y-4">
+              <div className="flex items-start justify-between gap-3 flex-wrap">
                 <div>
-                  <label className={lbl}>TWILIO_ACCOUNT_SID</label>
-                  <input className={inp} type="password" value={smsStatus.configured ? '••••••••••••••••' : ''} readOnly placeholder="Set on server env" />
+                  <div className="text-emerald-300 font-semibold text-sm">✅ SMS Notifications Active</div>
+                  <p className="text-xs text-emerald-100/80 mt-1">Customers will receive automatic texts at every repair stage.</p>
+                  <p className="text-xs text-emerald-200 mt-2">Sending from: <span className="font-semibold">{smsStatus.sms_phone || 'Twilio number configured'}</span></p>
                 </div>
-                <div>
-                  <label className={lbl}>TWILIO_AUTH_TOKEN</label>
-                  <input className={inp} type="password" value={smsStatus.configured ? '••••••••••••••••' : ''} readOnly placeholder="Set on server env" />
-                </div>
-                <div className="md:col-span-2">
-                  <label className={lbl}>TWILIO_PHONE_NUMBER</label>
-                  <input className={inp} value={smsStatus.phone || ''} readOnly placeholder="+15551234567" />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 items-end">
-                <div>
-                  <label className={lbl}>Test Phone Number</label>
-                  <input className={inp} value={testPhone} onChange={e => setTestPhone(e.target.value)} placeholder="+15551234567" />
-                </div>
-                <button type="button" onClick={sendTestSMS} disabled={sendingTest}
-                  className="h-[42px] px-4 rounded-lg text-sm font-semibold bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50">
-                  {sendingTest ? 'Sending…' : 'Send Test SMS'}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowTestSmsModal(true)
+                    setTestSmsResult({ type: '', message: '' })
+                  }}
+                  className="h-[38px] px-4 rounded-lg text-xs font-semibold bg-[#6366f1] hover:bg-indigo-500 text-white transition-colors"
+                >
+                  Send Test SMS
                 </button>
               </div>
-            </>
+
+              <div className="rounded-lg border border-emerald-700/30 bg-[#0f1117] overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setSmsExamplesOpen(v => !v)}
+                  className="w-full flex items-center justify-between px-3 py-2 text-xs font-semibold text-emerald-200 hover:bg-emerald-900/20"
+                >
+                  Sample customer messages
+                  <ChevronDown size={14} className={`transition-transform ${smsExamplesOpen ? 'rotate-180' : ''}`} />
+                </button>
+                {smsExamplesOpen && (
+                  <div className="px-3 pb-3 text-xs text-slate-300 space-y-2">
+                    <p>• <span className="text-emerald-300 font-medium">Check-in:</span> “Your 2019 Honda Accord has been checked in at {form.name || '[Shop Name]'} and work has started.”</p>
+                    <p>• <span className="text-emerald-300 font-medium">Parts update:</span> “Quick update: we’re waiting on parts delivery. We’ll text you as soon as they arrive.”</p>
+                    <p>• <span className="text-emerald-300 font-medium">Ready:</span> “🎉 Your vehicle is ready for pickup!”</p>
+                    <p>• <span className="text-emerald-300 font-medium">Post-repair:</span> “Thanks for trusting {form.name || '[Shop Name]'}! Reply if you have any questions.”</p>
+                  </div>
+                )}
+              </div>
+            </div>
           ) : (
-            <p className="text-xs text-slate-500">Admin access required to view SMS environment details and send test messages.</p>
+            <div className="bg-[#0f1117] rounded-xl border border-[#2a2d3e] p-4 space-y-4">
+              <div>
+                <div className="flex items-center gap-2 text-white font-semibold text-sm">
+                  <MessageSquare size={15} className="text-indigo-400" /> 📱 SMS Customer Notifications
+                </div>
+                <p className="text-xs text-slate-400 mt-1">Send automatic texts to customers at every repair stage.</p>
+              </div>
+
+              <div className="border-y border-[#2a2d3e] py-4 space-y-4 text-xs text-slate-300">
+                <div>
+                  <p className="text-white font-medium">Step 1 → Create a free Twilio account</p>
+                  <a href="https://www.twilio.com/try-twilio" target="_blank" rel="noreferrer"
+                    className="inline-flex mt-2 text-xs font-semibold px-3 py-1.5 rounded-lg bg-[#6366f1] hover:bg-indigo-500 text-white transition-colors">
+                    Go to twilio.com →
+                  </a>
+                </div>
+
+                <div>
+                  <p className="text-white font-medium">Step 2 → Get your credentials</p>
+                  <p className="mt-1">From your Twilio dashboard, copy:</p>
+                  <p>• Account SID (starts with AC...)</p>
+                  <p>• Auth Token (click eye icon to reveal)</p>
+                </div>
+
+                <div>
+                  <p className="text-white font-medium">Step 3 → Buy a phone number</p>
+                  <p className="mt-1">Twilio Console → Phone Numbers → Buy a Number (~$1/mo)</p>
+                  <p>Choose a local area code for your shop city.</p>
+                </div>
+
+                <div>
+                  <p className="text-white font-medium">Step 4 → Enter credentials below and save to Railway</p>
+                  <p className="mt-1">Go to Railway → your REVV project → Variables → add the 3 vars below.</p>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <p className="text-xs text-slate-400">Reference fields (read-only reminder of what to set on server):</p>
+                <div className="grid grid-cols-1 gap-3">
+                  <div>
+                    <label className={lbl}>TWILIO_ACCOUNT_SID</label>
+                    <input className={inp} value="AC......................" readOnly />
+                  </div>
+                  <div>
+                    <label className={lbl}>TWILIO_AUTH_TOKEN</label>
+                    <input className={inp} type="password" value="••••••••••••••••••••••" readOnly />
+                  </div>
+                  <div>
+                    <label className={lbl}>TWILIO_PHONE_NUMBER</label>
+                    <input className={inp} value="+1..................." readOnly />
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-amber-900/20 border border-amber-700/40 rounded-lg p-3 text-xs text-amber-300">
+                ⚠️ These are set as server environment variables on Railway, not saved here. Once set, redeploy and this page will show SMS as Active.
+              </div>
+            </div>
           )}
         </div>
 
@@ -410,6 +471,65 @@ export default function Settings() {
           <Trash2 size={14} /> {clearing ? 'Clearing…' : 'Clear All Demo Data'}
         </button>
       </div>
+
+      {showTestSmsModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-[#1a1d2e] border border-[#2a2d3e] rounded-2xl p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-white">Send Test SMS</h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowTestSmsModal(false)
+                  setTestPhone('')
+                  setTestSmsResult({ type: '', message: '' })
+                }}
+                className="text-slate-400 hover:text-white"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div>
+              <label className={lbl}>Phone Number</label>
+              <input
+                className={inp}
+                value={testPhone}
+                onChange={e => setTestPhone(e.target.value)}
+                placeholder="+15551234567"
+              />
+            </div>
+
+            {testSmsResult.message && (
+              <p className={`text-xs ${testSmsResult.type === 'success' ? 'text-emerald-400' : 'text-red-400'}`}>
+                {testSmsResult.message}
+              </p>
+            )}
+
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowTestSmsModal(false)
+                  setTestPhone('')
+                  setTestSmsResult({ type: '', message: '' })
+                }}
+                className="px-3 py-2 rounded-lg text-xs font-semibold text-slate-300 hover:text-white"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={sendTestSMS}
+                disabled={sendingTest}
+                className="px-4 py-2 rounded-lg text-xs font-semibold bg-[#6366f1] hover:bg-indigo-500 text-white disabled:opacity-50"
+              >
+                {sendingTest ? 'Sending…' : 'Send Test SMS'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   )
