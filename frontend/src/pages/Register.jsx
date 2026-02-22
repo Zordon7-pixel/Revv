@@ -4,6 +4,7 @@ import { Wrench, Car } from 'lucide-react'
 import api from '../lib/api'
 
 export default function Register() {
+  const [name,     setName]     = useState('')
   const [email,    setEmail]    = useState('')
   const [password, setPassword] = useState('')
   const [confirm,  setConfirm]  = useState('')
@@ -18,7 +19,7 @@ export default function Register() {
     if (password.length < 6)  { setError('Password must be at least 6 characters.'); return }
     setLoading(true)
     try {
-      const { data } = await api.post('/auth/register', { email, password })
+      const { data } = await api.post('/auth/register', { email, password, name })
       localStorage.setItem('sc_token', data.token)
       navigate('/portal')
     } catch (e) {
@@ -46,13 +47,18 @@ export default function Register() {
           <div className="flex items-start gap-3 bg-indigo-900/20 border border-indigo-700/30 rounded-xl p-3">
             <Car size={16} className="text-indigo-400 flex-shrink-0 mt-0.5" />
             <p className="text-xs text-slate-300 leading-relaxed">
-              Use the <strong className="text-white">email you gave the shop</strong> when you dropped off your vehicle. You'll be linked to your repair automatically.
+              Create your account to track your vehicle's repair status in real time.
             </p>
           </div>
 
           <form onSubmit={submit} className="space-y-4">
             <div>
-              <label className={lbl}>Email on file with the shop</label>
+              <label className={lbl}>Your name</label>
+              <input type="text" value={name} onChange={e => setName(e.target.value)}
+                className={inp} placeholder="First Last" />
+            </div>
+            <div>
+              <label className={lbl}>Email address</label>
               <input type="email" value={email} onChange={e => setEmail(e.target.value)} required
                 className={inp} placeholder="your@email.com" />
             </div>
@@ -87,7 +93,7 @@ export default function Register() {
         </div>
 
         <p className="text-center text-[10px] text-slate-600 mt-4">
-          Don't see your vehicle after signing in? Contact the shop to make sure your email is on file.
+          Don't see your vehicle after signing in? Contact the shop to link your account.
         </p>
       </div>
     </div>

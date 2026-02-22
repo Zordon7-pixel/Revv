@@ -20,23 +20,16 @@ router.post('/login', (req, res) => {
   });
 });
 
-// POST /api/auth/register — customer self-registration
-// Customer enters the email the shop has on file + creates their own password
-// System finds the customer record, creates the user account, and links them
+// POST /api/auth/register — open customer self-registration
+// If email matches an existing customer record → linked automatically
+// If no match → account + blank customer record created; shop can link their RO later
 router.post('/register', (req, res) => {
-  const { email, password } = req.body;
+  const { email, password, name } = req.body;
   if (!email?.trim() || !password) return res.status(400).json({ error: 'Email and password are required.' });
   if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters.' });
 
   const emailNorm = email.trim().toLowerCase();
-
-  // Find customer record by email (shop must have entered this email)
-  const customer = db.prepare('SELECT * FROM customers WHERE LOWER(email) = ?').get(emailNorm);
-  if (!customer) {
-    return res.status(404).json({
-      error: "We don't have that email on file. Double-check the email you gave the shop, or contact them to update it."
-    });
-  }
+  const { v4: uuidv4 } = require('uuid');
 
   // Block if account already exists for this email
   const existingByEmail = db.prepare('SELECT id FROM users WHERE LOWER(email) = ?').get(emailNorm);
@@ -44,27 +37,40 @@ router.post('/register', (req, res) => {
     return res.status(409).json({ error: 'An account already exists with that email. Just sign in.' });
   }
 
-  // Block if this customer already has a login (linked by customer_id)
+  // Get the shop (single-tenant — one shop per deployment)
+  const shop = db.prepare('SELECT id FROM shops LIMIT 1').get();
+  if (!shop) return res.status(500).json({ error: 'Shop not configured.' });
+
+  // Try to match an existing customer record by email
+  let customer = db.prepare('SELECT * FROM customers WHERE LOWER(email) = ? AND shop_id = ?').get(emailNorm, shop.id);
+
+  // No match — create a blank customer record so the shop can link their RO later
+  if (!customer) {
+    const custId = uuidv4();
+    const displayName = name?.trim() || emailNorm.split('@')[0];
+    db.prepare(`INSERT INTO customers (id, shop_id, name, email) VALUES (?, ?, ?, ?)`)
+      .run(custId, shop.id, displayName, emailNorm);
+    customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(custId);
+  }
+
+  // Block if this customer already has a linked login
   const existingByCust = db.prepare('SELECT id, email FROM users WHERE customer_id = ?').get(customer.id);
   if (existingByCust) {
     return res.status(409).json({
-      error: `An account already exists for your vehicle. Sign in with ${existingByCust.email}.`
+      error: `An account already exists for this customer. Sign in with ${existingByCust.email}.`
     });
   }
 
-  // Create the user account — auto-link to the customer record
-  const { v4: uuidv4 } = require('uuid');
+  // Create the portal account, linked to the customer record
   const id = uuidv4();
-  db.prepare(`
-    INSERT INTO users (id, shop_id, name, email, password_hash, role, customer_id)
-    VALUES (?, ?, ?, ?, ?, 'customer', ?)
-  `).run(id, customer.shop_id, customer.name, emailNorm, bcrypt.hashSync(password, 10), customer.id);
+  db.prepare(`INSERT INTO users (id, shop_id, name, email, password_hash, role, customer_id) VALUES (?, ?, ?, ?, ?, 'customer', ?)`)
+    .run(id, shop.id, customer.name, emailNorm, bcrypt.hashSync(password, 10), customer.id);
 
-  const payload = { id, shop_id: customer.shop_id, role: 'customer', customer_id: customer.id };
+  const payload = { id, shop_id: shop.id, role: 'customer', customer_id: customer.id };
   const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '7d' });
   res.status(201).json({
     token,
-    user: { id, name: customer.name, email: emailNorm, role: 'customer', shop_id: customer.shop_id, customer_id: customer.id },
+    user: { id, name: customer.name, email: emailNorm, role: 'customer', shop_id: shop.id, customer_id: customer.id },
   });
 });
 
