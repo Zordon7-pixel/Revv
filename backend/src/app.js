@@ -3,6 +3,9 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 
+// Seed demo data on first run (safe to call every startup — skips if already seeded)
+try { require('./db/seed').runSeed(); } catch (e) { console.error('Seed error:', e.message); }
+
 const app = express();
 app.use(cors());
 app.use(express.json());
