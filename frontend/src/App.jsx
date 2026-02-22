@@ -8,9 +8,20 @@ import RODetail from './pages/RODetail'
 import Customers from './pages/Customers'
 import Reports from './pages/Reports'
 import Settings from './pages/Settings'
+import Users from './pages/Users'
+import Portal from './pages/Portal'
 
 function PrivateRoute({ children }) {
   return localStorage.getItem('sc_token') ? children : <Navigate to="/login" />
+}
+
+function AdminRoute({ children }) {
+  if (!localStorage.getItem('sc_token')) return <Navigate to="/login" />
+  try {
+    const role = JSON.parse(atob(localStorage.getItem('sc_token').split('.')[1])).role
+    if (!['owner','admin'].includes(role)) return <Navigate to="/" />
+  } catch {}
+  return children
 }
 
 export default function App() {
@@ -18,13 +29,15 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/portal" element={<PrivateRoute><Portal /></PrivateRoute>} />
         <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
           <Route index element={<Dashboard />} />
           <Route path="ros" element={<RepairOrders />} />
           <Route path="ros/:id" element={<RODetail />} />
           <Route path="customers" element={<Customers />} />
-          <Route path="reports" element={<Reports />} />
-          <Route path="settings" element={<Settings />} />
+          <Route path="reports" element={<AdminRoute><Reports /></AdminRoute>} />
+          <Route path="team" element={<AdminRoute><Users /></AdminRoute>} />
+          <Route path="settings" element={<AdminRoute><Settings /></AdminRoute>} />
         </Route>
       </Routes>
     </BrowserRouter>

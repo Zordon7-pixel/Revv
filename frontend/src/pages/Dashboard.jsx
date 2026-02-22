@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ClipboardList, DollarSign, CheckCircle, TrendingUp } from 'lucide-react'
 import api from '../lib/api'
+import { isAdmin } from '../lib/auth'
 import { STATUS_COLORS, STATUS_LABELS } from './RepairOrders'
 
 export default function Dashboard() {
@@ -12,11 +13,14 @@ export default function Dashboard() {
 
   if (!data) return <div className="flex items-center justify-center h-64 text-slate-500">Loading...</div>
 
+  const admin = isAdmin()
   const stats = [
-    { label: 'Active Jobs', value: data.active, icon: ClipboardList, color: 'text-indigo-400', bg: 'bg-indigo-900/30' },
-    { label: 'Completed', value: data.completed, icon: CheckCircle, color: 'text-emerald-400', bg: 'bg-emerald-900/30' },
-    { label: 'Total Revenue', value: `$${data.revenue?.toLocaleString('en-US', {minimumFractionDigits:0})}`, icon: DollarSign, color: 'text-yellow-400', bg: 'bg-yellow-900/30' },
-    { label: 'True Profit', value: `$${data.profit?.toLocaleString('en-US', {minimumFractionDigits:0})}`, icon: TrendingUp, color: 'text-pink-400', bg: 'bg-pink-900/30' },
+    { label: 'Active Jobs', value: data.active,    icon: ClipboardList, color: 'text-indigo-400',  bg: 'bg-indigo-900/30'  },
+    { label: 'Completed',   value: data.completed, icon: CheckCircle,   color: 'text-emerald-400', bg: 'bg-emerald-900/30' },
+    ...(admin ? [
+      { label: 'Total Revenue', value: `$${data.revenue?.toLocaleString('en-US',{minimumFractionDigits:0})}`, icon: DollarSign,  color: 'text-yellow-400', bg: 'bg-yellow-900/30' },
+      { label: 'True Profit',   value: `$${data.profit?.toLocaleString('en-US',{minimumFractionDigits:0})}`,  icon: TrendingUp, color: 'text-pink-400',   bg: 'bg-pink-900/30'   },
+    ] : []),
   ]
 
   return (

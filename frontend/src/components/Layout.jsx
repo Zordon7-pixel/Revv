@@ -1,14 +1,16 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useState } from 'react'
-import { LayoutDashboard, ClipboardList, Users, BarChart3, Settings, LogOut, Menu, X, Wrench } from 'lucide-react'
+import { LayoutDashboard, ClipboardList, Users, BarChart3, Settings, UserCog, LogOut, Menu, X, Wrench } from 'lucide-react'
 import FeedbackButton from './FeedbackButton'
+import { isAdmin } from '../lib/auth'
 
-const nav = [
-  { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/ros', icon: ClipboardList, label: 'Repair Orders' },
-  { to: '/customers', icon: Users, label: 'Customers' },
-  { to: '/reports', icon: BarChart3, label: 'Reports' },
-  { to: '/settings', icon: Settings, label: 'Settings' },
+const allNav = [
+  { to: '/',         icon: LayoutDashboard, label: 'Dashboard',      adminOnly: false },
+  { to: '/ros',      icon: ClipboardList,   label: 'Repair Orders',  adminOnly: false },
+  { to: '/customers',icon: Users,           label: 'Customers',      adminOnly: false },
+  { to: '/reports',  icon: BarChart3,       label: 'Reports',        adminOnly: true  },
+  { to: '/team',     icon: UserCog,         label: 'Team',           adminOnly: true  },
+  { to: '/settings', icon: Settings,        label: 'Settings',       adminOnly: true  },
 ]
 
 export default function Layout() {
@@ -19,6 +21,8 @@ export default function Layout() {
     localStorage.removeItem('sc_token')
     navigate('/login')
   }
+
+  const nav = allNav.filter(n => !n.adminOnly || isAdmin())
 
   const SidebarContent = () => (
     <div className="flex flex-col h-full">

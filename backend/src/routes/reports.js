@@ -1,8 +1,9 @@
 const router = require('express').Router();
 const db = require('../db');
 const auth = require('../middleware/auth');
+const { requireAdmin } = require('../middleware/roles');
 
-router.get('/summary', auth, (req, res) => {
+router.get('/summary', auth, requireAdmin, (req, res) => {
   const sid = req.user.shop_id;
   const total = db.prepare('SELECT COUNT(*) as n FROM repair_orders WHERE shop_id = ?').get(sid).n;
   const active = db.prepare("SELECT COUNT(*) as n FROM repair_orders WHERE shop_id = ? AND status NOT IN ('closed','delivery')").get(sid).n;

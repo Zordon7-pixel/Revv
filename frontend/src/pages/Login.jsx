@@ -16,7 +16,7 @@ export default function Login() {
     try {
       const { data } = await api.post('/auth/login', { email, password })
       localStorage.setItem('sc_token', data.token)
-      navigate('/')
+      navigate(data.user.role === 'customer' ? '/portal' : '/')
     } catch {
       setError('Invalid email or password')
     } finally {

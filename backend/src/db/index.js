@@ -110,6 +110,7 @@ const migrations = [
   `ALTER TABLE shops ADD COLUMN zip TEXT`,
   `ALTER TABLE shops ADD COLUMN market_tier INTEGER DEFAULT 3`,
   `ALTER TABLE shops ADD COLUMN parts_markup REAL DEFAULT 0.30`,
+  `ALTER TABLE users ADD COLUMN customer_id TEXT REFERENCES customers(id)`,
 ];
 migrations.forEach(sql => {
   try { db.exec(sql); } catch (_) { /* column already exists */ }
