@@ -1,15 +1,25 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Pencil, Save, X, Package, Plus, CheckCircle, AlertCircle, Clock } from 'lucide-react'
+import { ArrowLeft, Pencil, Save, X, Package, Plus, CheckCircle, AlertCircle, Clock, Truck, RefreshCw, ExternalLink } from 'lucide-react'
 import api from '../lib/api'
 import { STATUS_COLORS, STATUS_LABELS } from './RepairOrders'
 
 const PART_STATUS_META = {
-  ordered:     { label: 'Ordered',     cls: 'text-blue-400  bg-blue-900/30  border-blue-700',  icon: Clock },
-  backordered: { label: 'Backordered', cls: 'text-red-400   bg-red-900/30   border-red-700',   icon: AlertCircle },
+  ordered:     { label: 'Ordered',     cls: 'text-blue-400   bg-blue-900/30   border-blue-700',   icon: Clock },
+  backordered: { label: 'Backordered', cls: 'text-red-400    bg-red-900/30    border-red-700',    icon: AlertCircle },
   received:    { label: 'Received',    cls: 'text-emerald-400 bg-emerald-900/30 border-emerald-700', icon: CheckCircle },
-  cancelled:   { label: 'Cancelled',  cls: 'text-slate-500 bg-slate-900/30 border-slate-700', icon: X },
+  cancelled:   { label: 'Cancelled',  cls: 'text-slate-500  bg-slate-900/30  border-slate-700',  icon: X },
 }
+
+const TRACKING_META = {
+  pending:          { label: 'Tracking Pending',    cls: 'text-slate-400',  dot: '#64748b' },
+  in_transit:       { label: 'In Transit',          cls: 'text-blue-400',   dot: '#3b82f6' },
+  out_for_delivery: { label: 'Out for Delivery',    cls: 'text-amber-400',  dot: '#f59e0b' },
+  delivered:        { label: 'Delivered to Shop',   cls: 'text-emerald-400',dot: '#10b981' },
+  exception:        { label: 'Shipping Exception',  cls: 'text-red-400',    dot: '#ef4444' },
+  expired:          { label: 'Tracking Expired',    cls: 'text-slate-500',  dot: '#64748b' },
+}
+const CARRIER_LABELS = { ups:'UPS', fedex:'FedEx', usps:'USPS', dhl:'DHL', unknown:'Carrier' }
 
 const STAGES = ['intake','estimate','approval','parts','repair','paint','qc','delivery','closed']
 
@@ -23,16 +33,37 @@ export default function RODetail() {
 
   const [parts, setParts]     = useState([])
   const [showAddPart, setShowAddPart] = useState(false)
-  const [partForm, setPartForm] = useState({ part_name:'', part_number:'', vendor:'', quantity:1, unit_cost:'', expected_date:'', notes:'' })
+  const [partForm, setPartForm] = useState({ part_name:'', part_number:'', vendor:'', quantity:1, unit_cost:'', expected_date:'', notes:'', tracking_number:'' })
   const [savingPart, setSavingPart] = useState(false)
+  const [refreshingPart, setRefreshingPart] = useState(null)  // partId being refreshed
 
   const load = () => api.get(`/ros/${id}`).then(r => { setRo(r.data); setForm(r.data); setParts(r.data.parts || []) })
   useEffect(() => { load() }, [id])
 
   async function addPart(e) {
     e.preventDefault(); setSavingPart(true)
-    try { await api.post(`/parts/ro/${id}`, partForm); load(); setShowAddPart(false); setPartForm({ part_name:'', part_number:'', vendor:'', quantity:1, unit_cost:'', expected_date:'', notes:'' }) }
-    finally { setSavingPart(false) }
+    try {
+      await api.post(`/parts/ro/${id}`, partForm)
+      load()
+      setShowAddPart(false)
+      setPartForm({ part_name:'', part_number:'', vendor:'', quantity:1, unit_cost:'', expected_date:'', notes:'', tracking_number:'' })
+    } finally { setSavingPart(false) }
+  }
+
+  async function refreshTracking(partId) {
+    setRefreshingPart(partId)
+    try {
+      const { data } = await api.post(`/tracking/check/${partId}`)
+      if (data.manual && data.tracking_url) {
+        window.open(data.tracking_url, '_blank')
+      } else {
+        load()
+      }
+    } catch (e) {
+      alert(e?.response?.data?.error || 'Could not refresh tracking')
+    } finally {
+      setRefreshingPart(null)
+    }
   }
 
   async function updatePartStatus(partId, status) {
@@ -302,6 +333,11 @@ export default function RODetail() {
                 <label className="text-[10px] text-slate-500 block mb-1">Qty</label>
                 <input type="number" min="1" className={inp} value={partForm.quantity} onChange={e=>setPartForm(f=>({...f,quantity:e.target.value}))} />
               </div>
+              <div className="col-span-2">
+                <label className="text-[10px] text-slate-500 block mb-1">📦 Tracking Number (optional — UPS / FedEx / USPS / DHL)</label>
+                <input className={inp} value={partForm.tracking_number} onChange={e=>setPartForm(f=>({...f,tracking_number:e.target.value}))} placeholder="1Z999AA10123456784 or 94001116990045349715" />
+                <p className="text-[9px] text-slate-600 mt-0.5">Carrier is auto-detected. Status updates automatically when you have a tracking API key in Settings.</p>
+              </div>
             </div>
             <div className="flex gap-2">
               <button type="button" onClick={()=>setShowAddPart(false)} className="flex-1 bg-[#1a1d2e] text-slate-400 rounded-lg py-2 text-xs border border-[#2a2d3e]">Cancel</button>
@@ -335,6 +371,37 @@ export default function RODetail() {
                       {p.expected_date && p.status !== 'received' && <span className="text-amber-400">Expected: {p.expected_date}</span>}
                       {p.received_date && <span className="text-emerald-400">Received: {p.received_date}</span>}
                     </div>
+
+                    {/* Tracking row */}
+                    {p.tracking_number && (
+                      <div className="mt-1.5 flex items-center gap-2 flex-wrap">
+                        <Truck size={11} className="text-slate-500 flex-shrink-0"/>
+                        <span className="text-[10px] font-mono text-slate-500">{CARRIER_LABELS[p.carrier] || 'Track'}: {p.tracking_number}</span>
+                        {p.tracking_status && TRACKING_META[p.tracking_status] && (
+                          <span className={`text-[10px] font-semibold flex items-center gap-1 ${TRACKING_META[p.tracking_status].cls}`}>
+                            <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{background: TRACKING_META[p.tracking_status].dot}} />
+                            {TRACKING_META[p.tracking_status].label}
+                          </span>
+                        )}
+                        {p.tracking_detail && p.tracking_status !== 'delivered' && (
+                          <span className="text-[10px] text-slate-500 italic">{p.tracking_detail}</span>
+                        )}
+                        {p.tracking_updated_at && (
+                          <span className="text-[9px] text-slate-600">· updated {new Date(p.tracking_updated_at).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})}</span>
+                        )}
+                        {/* Carrier link */}
+                        <a href={`/api/tracking/url?carrier=${p.carrier||''}&num=${encodeURIComponent(p.tracking_number)}`}
+                          target="_blank" rel="noopener" onClick={e => { e.preventDefault(); api.get(`/tracking/url?carrier=${p.carrier||''}&num=${encodeURIComponent(p.tracking_number)}`).then(r=>window.open(r.data.url,'_blank')) }}
+                          className="text-[10px] text-indigo-400 hover:text-indigo-300 flex items-center gap-0.5 transition-colors">
+                          <ExternalLink size={9}/> Track
+                        </a>
+                        {/* Refresh button */}
+                        <button onClick={() => refreshTracking(p.id)} disabled={refreshingPart === p.id}
+                          className="text-[10px] text-slate-500 hover:text-amber-400 flex items-center gap-0.5 transition-colors disabled:opacity-50">
+                          <RefreshCw size={9} className={refreshingPart === p.id ? 'animate-spin' : ''}/> Refresh
+                        </button>
+                      </div>
+                    )}
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
                     {/* Quick status toggle */}

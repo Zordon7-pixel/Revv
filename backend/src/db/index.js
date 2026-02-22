@@ -167,7 +167,13 @@ const migrations = [
   `ALTER TABLE shops ADD COLUMN lat REAL`,
   `ALTER TABLE shops ADD COLUMN lng REAL`,
   `ALTER TABLE shops ADD COLUMN geofence_radius REAL DEFAULT 0.5`,
+  `ALTER TABLE shops ADD COLUMN tracking_api_key TEXT`,
   `ALTER TABLE users ADD COLUMN customer_id TEXT REFERENCES customers(id)`,
+  `ALTER TABLE parts_orders ADD COLUMN tracking_number TEXT`,
+  `ALTER TABLE parts_orders ADD COLUMN carrier TEXT`,
+  `ALTER TABLE parts_orders ADD COLUMN tracking_status TEXT`,
+  `ALTER TABLE parts_orders ADD COLUMN tracking_detail TEXT`,
+  `ALTER TABLE parts_orders ADD COLUMN tracking_updated_at TEXT`,
 ];
 migrations.forEach(sql => {
   try { db.exec(sql); } catch (_) { /* column already exists */ }

@@ -4,6 +4,7 @@ const auth   = require('../middleware/auth');
 const { v4: uuidv4 } = require('uuid');
 
 const STATUSES = ['ordered', 'backordered', 'received', 'cancelled'];
+const { detectCarrier } = require('./tracking');
 
 // GET all parts for an RO
 router.get('/ro/:roId', auth, (req, res) => {
@@ -18,16 +19,20 @@ router.post('/ro/:roId', auth, (req, res) => {
   const ro = db.prepare('SELECT id FROM repair_orders WHERE id = ? AND shop_id = ?').get(req.params.roId, req.user.shop_id);
   if (!ro) return res.status(404).json({ error: 'RO not found' });
 
-  const { part_name, part_number, vendor, quantity, unit_cost, expected_date, notes } = req.body;
+  const { part_name, part_number, vendor, quantity, unit_cost, expected_date, notes, tracking_number } = req.body;
   if (!part_name?.trim()) return res.status(400).json({ error: 'Part name required' });
+
+  // Auto-detect carrier if tracking number provided
+  const carrier = tracking_number ? (detectCarrier(tracking_number) || 'unknown') : null;
 
   const id = uuidv4();
   const today = new Date().toISOString().split('T')[0];
   db.prepare(`
-    INSERT INTO parts_orders (id, shop_id, ro_id, part_name, part_number, vendor, quantity, unit_cost, status, ordered_date, expected_date, notes)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ordered', ?, ?, ?)
+    INSERT INTO parts_orders (id, shop_id, ro_id, part_name, part_number, vendor, quantity, unit_cost, status, ordered_date, expected_date, notes, tracking_number, carrier)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ordered', ?, ?, ?, ?, ?)
   `).run(id, req.user.shop_id, req.params.roId, part_name.trim(), part_number||null, vendor||null,
-    parseInt(quantity)||1, parseFloat(unit_cost)||0, today, expected_date||null, notes||null);
+    parseInt(quantity)||1, parseFloat(unit_cost)||0, today, expected_date||null, notes||null,
+    tracking_number||null, carrier);
 
   res.status(201).json(db.prepare('SELECT * FROM parts_orders WHERE id = ?').get(id));
 });
@@ -37,7 +42,16 @@ router.put('/:id', auth, (req, res) => {
   const part = db.prepare('SELECT * FROM parts_orders WHERE id = ? AND shop_id = ?').get(req.params.id, req.user.shop_id);
   if (!part) return res.status(404).json({ error: 'Not found' });
 
-  const fields = ['part_name','part_number','vendor','quantity','unit_cost','status','expected_date','received_date','notes'];
+  // Auto-detect carrier when tracking number is updated
+  if (req.body.tracking_number !== undefined && req.body.tracking_number) {
+    req.body.carrier = detectCarrier(req.body.tracking_number) || 'unknown';
+    // Reset tracking status so it gets re-polled
+    req.body.tracking_status = null;
+    req.body.tracking_detail = null;
+    req.body.tracking_updated_at = null;
+  }
+
+  const fields = ['part_name','part_number','vendor','quantity','unit_cost','status','expected_date','received_date','notes','tracking_number','carrier','tracking_status','tracking_detail','tracking_updated_at'];
   const updates = {}; const vals = [];
   fields.forEach(f => { if (req.body[f] !== undefined) { updates[f] = req.body[f]; } });
 

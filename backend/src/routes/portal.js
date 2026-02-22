@@ -37,8 +37,9 @@ router.get('/my-ros', auth, (req, res) => {
 
   const enriched = ros.map(r => {
     // Fetch pending parts — shown to customer when in 'parts' stage
+    // Include tracking status but strip cost/part_number (customer-safe fields only)
     const pendingParts = db.prepare(`
-      SELECT part_name, status, expected_date
+      SELECT part_name, status, expected_date, tracking_status, tracking_detail, carrier
       FROM parts_orders
       WHERE ro_id = ? AND status IN ('ordered','backordered')
       ORDER BY created_at ASC

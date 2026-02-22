@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { MapPin, Wrench, DollarSign, Save, RefreshCw, CheckCircle, Clock, ShieldCheck } from 'lucide-react'
+import { MapPin, Wrench, DollarSign, Save, RefreshCw, CheckCircle, Clock, ShieldCheck, Truck } from 'lucide-react'
 import api from '../lib/api'
 
 const TIER_COLORS = {
@@ -36,6 +36,7 @@ export default function Settings() {
         lat:              r.data.lat          ?? null,
         lng:              r.data.lng          ?? null,
         geofence_radius:  r.data.geofence_radius != null ? Math.round(r.data.geofence_radius * 3281) : 500,
+        tracking_api_key: r.data.tracking_api_key || '',
       })
       if (r.data.state) fetchMarket(r.data.state)
     })
@@ -89,6 +90,7 @@ export default function Settings() {
         lat:              form.lat != null ? parseFloat(form.lat) : undefined,
         lng:              form.lng != null ? parseFloat(form.lng) : undefined,
         geofence_radius:  form.geofence_radius ? parseFloat(form.geofence_radius) / 3281 : 0.5,
+        tracking_api_key: form.tracking_api_key || null,
       })
       setSaved(true)
       setTimeout(() => setSaved(false), 2500)
@@ -271,6 +273,27 @@ export default function Settings() {
             <p className="text-[10px] text-slate-500 mt-1">
               ≈ {((form.geofence_radius || 500) / 5280).toFixed(2)} miles · Default: 500 ft
             </p>
+          </div>
+        </div>
+
+        {/* Parts Tracking */}
+        <div className="bg-[#1a1d2e] rounded-2xl p-5 border border-[#2a2d3e] space-y-4">
+          <div className="flex items-center gap-2 text-white font-semibold text-sm mb-1">
+            <Truck size={15} className="text-indigo-400" /> Parts Tracking (Auto-Sync)
+          </div>
+          <p className="text-xs text-slate-400 leading-relaxed">
+            Add your free <strong className="text-white">17track API key</strong> to automatically sync UPS, FedEx, USPS, and DHL tracking numbers. 
+            When a part is delivered, REVV marks it received automatically — and your customer portal updates instantly.
+          </p>
+          <div>
+            <label className={lbl}>17track API Key</label>
+            <input className={inp} type="password" value={form.tracking_api_key || ''} onChange={e => setForm(f => ({...f, tracking_api_key: e.target.value}))} placeholder="Paste your 17track API key here" />
+          </div>
+          <div className="bg-[#0f1117] rounded-xl p-3 text-xs text-slate-500 space-y-1">
+            <p>1. Go to <strong className="text-indigo-400">17track.net</strong> → sign up for free → Developer → API Key</p>
+            <p>2. Free tier: 40 trackings/day — plenty for a shop</p>
+            <p>3. Supports UPS, FedEx, USPS, DHL, and 2,000+ other carriers</p>
+            <p className="text-slate-600">Without a key: tracking numbers still show as clickable links to the carrier website.</p>
           </div>
         </div>
 

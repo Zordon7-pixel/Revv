@@ -1,6 +1,30 @@
 import { useEffect, useState } from 'react'
-import { Phone, Car, Calendar, LogOut, Wrench } from 'lucide-react'
+import { Phone, Car, Calendar, LogOut, Wrench, Truck } from 'lucide-react'
 import api from '../lib/api'
+
+const CARRIER_LABELS = { ups:'UPS', fedex:'FedEx', usps:'USPS', dhl:'DHL' }
+
+function trackingMessage(p) {
+  if (!p.tracking_status || p.tracking_status === 'pending') {
+    return p.status === 'backordered'
+      ? { text: 'Backordered — we\'re working on it', cls: 'text-red-400', icon: '⚠️' }
+      : p.expected_date
+        ? { text: `On order — expected ${p.expected_date}`, cls: 'text-amber-400', icon: '📦' }
+        : { text: 'On order', cls: 'text-amber-400', icon: '📦' }
+  }
+  switch (p.tracking_status) {
+    case 'in_transit':
+      return { text: `${CARRIER_LABELS[p.carrier] || 'Package'} is on the way`, cls: 'text-blue-400', icon: '🚚' }
+    case 'out_for_delivery':
+      return { text: 'Out for delivery today — arriving at the shop soon!', cls: 'text-amber-400 font-semibold', icon: '🚚' }
+    case 'delivered':
+      return { text: 'Delivered to the shop ✓', cls: 'text-emerald-400', icon: '✅' }
+    case 'exception':
+      return { text: 'Shipping update — we\'re monitoring it closely', cls: 'text-red-400', icon: '⚠️' }
+    default:
+      return { text: p.expected_date ? `Expected ${p.expected_date}` : 'On order', cls: 'text-amber-400', icon: '📦' }
+  }
+}
 
 const STATUS_PROGRESS = {
   intake:   1, estimate: 2, approval: 3, parts: 4,
@@ -103,24 +127,28 @@ export default function Portal() {
                 <p className="text-sm text-slate-300 leading-relaxed">{info.msg}</p>
               </div>
 
-              {/* Pending parts — plain English delay explanation */}
+              {/* Pending parts — with shipping tracking */}
               {ro.pending_parts?.length > 0 && (
                 <div className="px-5 pb-4">
                   <div className="bg-amber-900/20 border border-amber-700/30 rounded-xl p-3">
-                    <div className="text-xs font-semibold text-amber-400 mb-2 flex items-center gap-1.5">
+                    <div className="text-xs font-semibold text-amber-400 mb-2.5 flex items-center gap-1.5">
                       ⏳ Still waiting on parts
                     </div>
-                    <div className="space-y-1.5">
-                      {ro.pending_parts.map((p, i) => (
-                        <div key={i} className="flex items-center justify-between text-xs">
-                          <span className="text-slate-300">{p.part_name}</span>
-                          <span className={p.status === 'backordered' ? 'text-red-400 font-medium' : 'text-amber-400'}>
-                            {p.status === 'backordered' ? 'Backordered' : p.expected_date ? `Expected ${p.expected_date}` : 'On order'}
-                          </span>
-                        </div>
-                      ))}
+                    <div className="space-y-2.5">
+                      {ro.pending_parts.map((p, i) => {
+                        const msg = trackingMessage(p)
+                        return (
+                          <div key={i} className="flex items-start gap-2">
+                            <span className="text-sm flex-shrink-0 mt-0.5">{msg.icon}</span>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-xs text-white font-medium">{p.part_name}</div>
+                              <div className={`text-[11px] mt-0.5 ${msg.cls}`}>{msg.text}</div>
+                            </div>
+                          </div>
+                        )
+                      })}
                     </div>
-                    <p className="text-[10px] text-slate-500 mt-2">We'll move as fast as possible — call us if you have questions.</p>
+                    <p className="text-[10px] text-slate-500 mt-2.5">We'll move as fast as we can — call us if you have questions.</p>
                   </div>
                 </div>
               )}
