@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { MapPin, Wrench, DollarSign, Save, RefreshCw, CheckCircle, Clock, ShieldCheck, Truck, Trash2 } from 'lucide-react'
+import { MapPin, Wrench, DollarSign, Save, RefreshCw, CheckCircle, ShieldCheck, Truck, Trash2, MessageSquare } from 'lucide-react'
 import api from '../lib/api'
+import { isAdmin } from '../lib/auth'
 
 const TIER_COLORS = {
   1: 'text-purple-400 bg-purple-900/30 border-purple-700',
@@ -20,6 +21,10 @@ export default function Settings() {
   const [locating, setLocating]   = useState(false)
   const [locMsg,   setLocMsg]     = useState('')
   const [clearing, setClearing]   = useState(false)
+  const [smsStatus, setSmsStatus] = useState({ configured: false, phone: null })
+  const [testPhone, setTestPhone] = useState('')
+  const [sendingTest, setSendingTest] = useState(false)
+  const admin = isAdmin()
 
   useEffect(() => {
     api.get('/market/shop').then(r => {
@@ -40,8 +45,17 @@ export default function Settings() {
         tracking_api_key: r.data.tracking_api_key || '',
       })
       if (r.data.state) fetchMarket(r.data.state)
+      setSmsStatus({
+        configured: !!r.data.sms_configured,
+        phone: r.data.sms_phone || null,
+      })
     })
     api.get('/market/rates').then(r => setStates(r.data.states || []))
+    if (admin) {
+      api.get('/sms/status')
+        .then(r => setSmsStatus({ configured: !!r.data.configured, phone: r.data.phone || null }))
+        .catch(() => {})
+    }
   }, [])
 
   function fetchMarket(stateCode) {
@@ -97,6 +111,25 @@ export default function Settings() {
       setTimeout(() => setSaved(false), 2500)
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function sendTestSMS() {
+    if (!testPhone) {
+      alert('Enter a phone number to send a test SMS.')
+      return
+    }
+    setSendingTest(true)
+    try {
+      await api.post('/sms/test', {
+        phone: testPhone,
+        message: `REVV test SMS from ${form.name || 'your shop'} — notifications are connected.`,
+      })
+      alert('Test SMS sent (or gracefully skipped if Twilio is not configured).')
+    } catch (e) {
+      alert(e?.response?.data?.error || 'Failed to send test SMS.')
+    } finally {
+      setSendingTest(false)
     }
   }
 
@@ -287,6 +320,52 @@ export default function Settings() {
               ≈ {((form.geofence_radius || 500) / 5280).toFixed(2)} miles · Default: 500 ft
             </p>
           </div>
+        </div>
+
+        {/* SMS Notifications */}
+        <div className="bg-[#1a1d2e] rounded-2xl p-5 border border-[#2a2d3e] space-y-4">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-2 text-white font-semibold text-sm mb-1">
+              <MessageSquare size={15} className="text-indigo-400" /> SMS Notifications
+            </div>
+            <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border ${smsStatus.configured ? 'text-emerald-400 bg-emerald-900/30 border-emerald-700/50' : 'text-red-400 bg-red-900/30 border-red-700/50'}`}>
+              {smsStatus.configured ? 'SMS Active' : 'SMS Not Configured'}
+            </span>
+          </div>
+
+          <p className="text-xs text-slate-400">Env vars must be set on the server. These fields are for reference only.</p>
+
+          {admin ? (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className={lbl}>TWILIO_ACCOUNT_SID</label>
+                  <input className={inp} type="password" value={smsStatus.configured ? '••••••••••••••••' : ''} readOnly placeholder="Set on server env" />
+                </div>
+                <div>
+                  <label className={lbl}>TWILIO_AUTH_TOKEN</label>
+                  <input className={inp} type="password" value={smsStatus.configured ? '••••••••••••••••' : ''} readOnly placeholder="Set on server env" />
+                </div>
+                <div className="md:col-span-2">
+                  <label className={lbl}>TWILIO_PHONE_NUMBER</label>
+                  <input className={inp} value={smsStatus.phone || ''} readOnly placeholder="+15551234567" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 items-end">
+                <div>
+                  <label className={lbl}>Test Phone Number</label>
+                  <input className={inp} value={testPhone} onChange={e => setTestPhone(e.target.value)} placeholder="+15551234567" />
+                </div>
+                <button type="button" onClick={sendTestSMS} disabled={sendingTest}
+                  className="h-[42px] px-4 rounded-lg text-sm font-semibold bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50">
+                  {sendingTest ? 'Sending…' : 'Send Test SMS'}
+                </button>
+              </div>
+            </>
+          ) : (
+            <p className="text-xs text-slate-500">Admin access required to view SMS environment details and send test messages.</p>
+          )}
         </div>
 
         {/* Parts Tracking */}

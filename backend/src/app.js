@@ -24,6 +24,7 @@ app.use('/api/parts',    require('./routes/parts'));
 app.use('/api/timeclock', require('./routes/timeclock'));
 app.use('/api/schedule',  require('./routes/schedule'));
 app.use('/api/tracking',  require('./routes/tracking'));
+app.use('/api/sms', require('./routes/sms'));
 
 // Serve frontend build
 const frontendDist = path.join(__dirname, '../../frontend/dist');

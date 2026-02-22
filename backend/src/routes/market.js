@@ -2,6 +2,7 @@ const router = require('express').Router();
 const db = require('../db');
 const auth = require('../middleware/auth');
 const { getRatesForState, getAllStates } = require('../data/market-rates');
+const { isConfigured } = require('../services/sms');
 
 // GET /api/market/rates?state=TX  — returns suggested rates for a state
 router.get('/rates', (req, res) => {
@@ -18,7 +19,11 @@ router.get('/rates', (req, res) => {
 router.get('/shop', auth, (req, res) => {
   const shop = db.prepare('SELECT id, name, phone, address, city, state, zip, market_tier, labor_rate, parts_markup, tax_rate, lat, lng, geofence_radius, tracking_api_key FROM shops WHERE id = ?').get(req.user.shop_id);
   if (!shop) return res.status(404).json({ error: 'Shop not found' });
-  res.json(shop);
+  res.json({
+    ...shop,
+    sms_configured: isConfigured(),
+    sms_phone: process.env.TWILIO_PHONE_NUMBER || null,
+  });
 });
 
 // PUT /api/market/shop  — update shop location & rates
@@ -57,7 +62,11 @@ router.put('/shop', auth, (req, res) => {
   db.prepare(`UPDATE shops SET ${fields.join(', ')} WHERE id = ?`).run(...vals);
 
   const updated = db.prepare('SELECT id, name, phone, address, city, state, zip, market_tier, labor_rate, parts_markup, tax_rate, lat, lng, geofence_radius, tracking_api_key FROM shops WHERE id = ?').get(req.user.shop_id);
-  res.json(updated);
+  res.json({
+    ...updated,
+    sms_configured: isConfigured(),
+    sms_phone: process.env.TWILIO_PHONE_NUMBER || null,
+  });
 });
 
 // DELETE /api/market/demo-data — wipe all sample ROs, customers, vehicles for fresh start

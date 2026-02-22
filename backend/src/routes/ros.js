@@ -2,6 +2,8 @@ const router = require('express').Router();
 const db = require('../db');
 const auth = require('../middleware/auth');
 const { calculateProfit } = require('../services/profit');
+const { sendSMS, isConfigured } = require('../services/sms');
+const { getStatusMessage } = require('../services/notifications');
 const { v4: uuidv4 } = require('uuid');
 
 const STATUSES = ['intake','estimate','approval','parts','repair','paint','qc','delivery','closed'];
@@ -85,7 +87,115 @@ router.put('/:id/status', auth, (req, res) => {
   const extra = status === 'delivery' ? { actual_delivery: new Date().toISOString().split('T')[0] } : {};
   db.prepare(`UPDATE repair_orders SET status = ?, updated_at = ?, ${Object.keys(extra).map(k => k + ' = ?').join(', ') || 'notes = notes'} WHERE id = ?`).run(status, new Date().toISOString(), ...Object.values(extra), req.params.id);
   db.prepare(`INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by, note) VALUES (?, ?, ?, ?, ?, ?)`).run(uuidv4(), req.params.id, fromStatus, status, req.user.id, note || null);
-  res.json(enrichRO(db.prepare('SELECT * FROM repair_orders WHERE id = ?').get(req.params.id)));
+
+  const updatedRO = db.prepare('SELECT * FROM repair_orders WHERE id = ?').get(req.params.id);
+  res.json(enrichRO(updatedRO));
+
+  setImmediate(async () => {
+    try {
+      const smsContext = db.prepare(`
+        SELECT ro.status, c.phone AS customer_phone, v.year, v.make, v.model, s.name AS shop_name
+        FROM repair_orders ro
+        LEFT JOIN customers c ON c.id = ro.customer_id
+        LEFT JOIN vehicles v ON v.id = ro.vehicle_id
+        LEFT JOIN shops s ON s.id = ro.shop_id
+        WHERE ro.id = ? AND ro.shop_id = ?
+      `).get(req.params.id, req.user.shop_id);
+
+      if (!smsContext?.customer_phone) {
+        console.log(`[SMS] Skipped RO ${req.params.id}: customer phone missing`);
+        return;
+      }
+      if (!isConfigured()) {
+        console.log(`[SMS] Skipped RO ${req.params.id}: Twilio not configured`);
+        return;
+      }
+
+      const message = getStatusMessage(
+        smsContext.status,
+        smsContext.shop_name,
+        smsContext.year,
+        smsContext.make,
+        smsContext.model
+      );
+
+      if (!message) {
+        console.log(`[SMS] Skipped RO ${req.params.id}: no template for status ${smsContext.status}`);
+        return;
+      }
+
+      const result = await sendSMS(smsContext.customer_phone, message);
+      if (!result.ok) {
+        console.error(`[SMS] Failed for RO ${req.params.id}`);
+      } else {
+        console.log(`[SMS] Sent RO status update for ${req.params.id}`);
+      }
+    } catch (err) {
+      console.error(`[SMS] Unexpected error for RO ${req.params.id}:`, err.message);
+    }
+  });
+});
+
+// PATCH RO status (alias for clients using PATCH /api/ros/:id)
+router.patch('/:id', auth, (req, res) => {
+  const { status, note } = req.body || {};
+  if (!status) return res.status(400).json({ error: 'status is required' });
+  if (!STATUSES.includes(status)) return res.status(400).json({ error: 'Invalid status' });
+
+  const ro = db.prepare('SELECT * FROM repair_orders WHERE id = ? AND shop_id = ?').get(req.params.id, req.user.shop_id);
+  if (!ro) return res.status(404).json({ error: 'Not found' });
+
+  const fromStatus = ro.status;
+  const extra = status === 'delivery' ? { actual_delivery: new Date().toISOString().split('T')[0] } : {};
+  db.prepare(`UPDATE repair_orders SET status = ?, updated_at = ?, ${Object.keys(extra).map(k => k + ' = ?').join(', ') || 'notes = notes'} WHERE id = ?`).run(status, new Date().toISOString(), ...Object.values(extra), req.params.id);
+  db.prepare(`INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by, note) VALUES (?, ?, ?, ?, ?, ?)`).run(uuidv4(), req.params.id, fromStatus, status, req.user.id, note || null);
+
+  const updatedRO = db.prepare('SELECT * FROM repair_orders WHERE id = ?').get(req.params.id);
+  res.json(enrichRO(updatedRO));
+
+  setImmediate(async () => {
+    try {
+      const smsContext = db.prepare(`
+        SELECT ro.status, c.phone AS customer_phone, v.year, v.make, v.model, s.name AS shop_name
+        FROM repair_orders ro
+        LEFT JOIN customers c ON c.id = ro.customer_id
+        LEFT JOIN vehicles v ON v.id = ro.vehicle_id
+        LEFT JOIN shops s ON s.id = ro.shop_id
+        WHERE ro.id = ? AND ro.shop_id = ?
+      `).get(req.params.id, req.user.shop_id);
+
+      if (!smsContext?.customer_phone) {
+        console.log(`[SMS] Skipped RO ${req.params.id}: customer phone missing`);
+        return;
+      }
+      if (!isConfigured()) {
+        console.log(`[SMS] Skipped RO ${req.params.id}: Twilio not configured`);
+        return;
+      }
+
+      const message = getStatusMessage(
+        smsContext.status,
+        smsContext.shop_name,
+        smsContext.year,
+        smsContext.make,
+        smsContext.model
+      );
+
+      if (!message) {
+        console.log(`[SMS] Skipped RO ${req.params.id}: no template for status ${smsContext.status}`);
+        return;
+      }
+
+      const result = await sendSMS(smsContext.customer_phone, message);
+      if (!result.ok) {
+        console.error(`[SMS] Failed for RO ${req.params.id}`);
+      } else {
+        console.log(`[SMS] Sent RO status update for ${req.params.id}`);
+      }
+    } catch (err) {
+      console.error(`[SMS] Unexpected error for RO ${req.params.id}:`, err.message);
+    }
+  });
 });
 
 // DELETE RO
