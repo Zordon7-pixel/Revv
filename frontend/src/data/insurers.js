@@ -1,0 +1,57 @@
+// Major US auto insurance companies — pre-populated for faster RO entry
+// Fields: name, claims_phone, adjuster_portal, email_domain
+export const INSURERS = [
+  { name: "21st Century Insurance",    claims_phone: "1-888-244-6163",  portal: "https://www.21st.com",                 domain: "@21st.com" },
+  { name: "AAA Insurance",             claims_phone: "1-800-922-8228",  portal: "https://www.aaa.com/claims",           domain: "@aaa.com" },
+  { name: "Acceptance Insurance",      claims_phone: "1-800-321-0899",  portal: "https://www.acceptanceclaims.com",     domain: "@acceptanceinsurance.com" },
+  { name: "AICA",                      claims_phone: "1-800-424-2422",  portal: "",                                     domain: "" },
+  { name: "AIG",                       claims_phone: "1-800-706-4596",  portal: "https://www.aig.com/claims",           domain: "@aig.com" },
+  { name: "Allstate",                  claims_phone: "1-800-255-7828",  portal: "https://www.allstate.com/claims",      domain: "@allstate.com" },
+  { name: "American Family",           claims_phone: "1-800-692-6326",  portal: "https://www.amfam.com/claims",         domain: "@amfam.com" },
+  { name: "AMCO Insurance",            claims_phone: "1-800-362-2626",  portal: "https://www.nationalgeneral.com",      domain: "@nationalgeneral.com" },
+  { name: "Amica Mutual",              claims_phone: "1-800-242-6422",  portal: "https://www.amica.com/claims",         domain: "@amica.com" },
+  { name: "Bristol West",              claims_phone: "1-800-274-7865",  portal: "https://www.bristolwest.com/claims",   domain: "@bristolwest.com" },
+  { name: "Chubb",                     claims_phone: "1-800-252-4670",  portal: "https://www.chubb.com/claims",         domain: "@chubb.com" },
+  { name: "Cincinnati Insurance",      claims_phone: "1-800-245-7771",  portal: "https://www.cinfin.com/claims",        domain: "@cinfin.com" },
+  { name: "Country Financial",         claims_phone: "1-866-268-6879",  portal: "https://www.countryfinancial.com",     domain: "@countryfinancial.com" },
+  { name: "Dairyland Insurance",       claims_phone: "1-800-334-0090",  portal: "https://www.dairylandinsurance.com",   domain: "@dairylandinsurance.com" },
+  { name: "Donegal Insurance",         claims_phone: "1-800-877-0600",  portal: "https://www.donegalgroup.com",         domain: "@donegalgroup.com" },
+  { name: "Encompass Insurance",       claims_phone: "1-800-588-7400",  portal: "https://www.encompassinsurance.com",   domain: "@encompassins.com" },
+  { name: "Erie Insurance",            claims_phone: "1-800-367-3743",  portal: "https://www.erieinsurance.com/claims", domain: "@erieinsurance.com" },
+  { name: "Esurance",                  claims_phone: "1-800-378-7262",  portal: "https://www.esurance.com/claims",      domain: "@esurance.com" },
+  { name: "Farmers Insurance",         claims_phone: "1-800-435-7764",  portal: "https://www.farmers.com/claims",       domain: "@farmersinsurance.com" },
+  { name: "Fred Loya Insurance",       claims_phone: "1-800-554-5569",  portal: "https://www.fredloya.com",             domain: "@fredloya.com" },
+  { name: "GAINSCO",                   claims_phone: "1-866-424-6726",  portal: "https://www.gainsco.com",              domain: "@gainsco.com" },
+  { name: "GEICO",                     claims_phone: "1-800-841-3000",  portal: "https://www.geico.com/claims",         domain: "@geico.com" },
+  { name: "Hanover Insurance",         claims_phone: "1-800-628-0250",  portal: "https://www.hanover.com/claims",       domain: "@hanover.com" },
+  { name: "Hartford Insurance",        claims_phone: "1-800-243-5860",  portal: "https://www.thehartford.com/claims",   domain: "@thehartford.com" },
+  { name: "Infinity Insurance",        claims_phone: "1-800-334-1661",  portal: "https://www.infinityauto.com",         domain: "@infinityauto.com" },
+  { name: "Integon Insurance",         claims_phone: "1-888-993-4968",  portal: "https://www.integonclaims.com",        domain: "@ngic.com" },
+  { name: "Kemper Insurance",          claims_phone: "1-800-536-7376",  portal: "https://www.kemper.com/claims",        domain: "@kemper.com" },
+  { name: "Liberty Mutual",            claims_phone: "1-800-225-2467",  portal: "https://www.libertymutual.com/claims", domain: "@libertymutual.com" },
+  { name: "MAPFRE Insurance",          claims_phone: "1-800-922-8427",  portal: "https://www.mapfreinsurance.com",      domain: "@mapfreinsurance.com" },
+  { name: "Mercury Insurance",         claims_phone: "1-800-503-3724",  portal: "https://www.mercuryinsurance.com",     domain: "@mercuryinsurance.com" },
+  { name: "MetLife Auto & Home",       claims_phone: "1-800-854-6011",  portal: "https://www.metlife.com/claims",       domain: "@metlife.com" },
+  { name: "Mid-Century Insurance",     claims_phone: "1-800-435-7764",  portal: "https://www.farmers.com/claims",       domain: "@farmersinsurance.com" },
+  { name: "National General",          claims_phone: "1-800-462-2123",  portal: "https://www.nationalgeneral.com",      domain: "@nationalgeneral.com" },
+  { name: "Nationwide",                claims_phone: "1-800-421-3535",  portal: "https://www.nationwide.com/claims",    domain: "@nationwide.com" },
+  { name: "Norguard Insurance",        claims_phone: "1-800-792-2422",  portal: "https://www.norguard.com",             domain: "" },
+  { name: "Ocean Harbor Insurance",    claims_phone: "1-888-624-0906",  portal: "https://www.oceanharbor.com",          domain: "@oceanharbor.com" },
+  { name: "Permanent General",         claims_phone: "1-800-280-9000",  portal: "https://www.pgacauto.com",             domain: "@pgacauto.com" },
+  { name: "Praetorian Insurance",      claims_phone: "1-877-772-3827",  portal: "https://www.praetorianins.com",        domain: "" },
+  { name: "Progressive",               claims_phone: "1-800-776-4737",  portal: "https://www.progressive.com/claims",  domain: "@progressive.com" },
+  { name: "Safeco Insurance",          claims_phone: "1-800-332-3226",  portal: "https://www.safeco.com/claims",        domain: "@safeco.com" },
+  { name: "SafeAuto Insurance",        claims_phone: "1-800-723-3288",  portal: "https://www.safeauto.com",             domain: "@safeauto.com" },
+  { name: "Sentry Insurance",          claims_phone: "1-800-473-6879",  portal: "https://www.sentry.com/claims",        domain: "@sentry.com" },
+  { name: "State Auto Insurance",      claims_phone: "1-800-444-9950",  portal: "https://www.stateauto.com",            domain: "@stateauto.com" },
+  { name: "State Farm",                claims_phone: "1-800-732-5246",  portal: "https://www.statefarm.com/claims",     domain: "@statefarm.com" },
+  { name: "Travelers Insurance",       claims_phone: "1-800-252-4633",  portal: "https://www.travelers.com/claims",     domain: "@travelers.com" },
+  { name: "USAA",                      claims_phone: "1-800-531-8722",  portal: "https://www.usaa.com/claims",          domain: "@usaa.com" },
+  { name: "Victoria Insurance",        claims_phone: "1-800-888-7764",  portal: "https://www.victoriainsurance.com",    domain: "" },
+];
+
+export function searchInsurers(query) {
+  if (!query || query.length < 1) return [];
+  const q = query.toLowerCase();
+  return INSURERS.filter(i => i.name.toLowerCase().includes(q)).slice(0, 8);
+}

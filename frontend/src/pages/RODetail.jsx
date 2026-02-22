@@ -3,6 +3,9 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Pencil, Save, X, Package, Plus, CheckCircle, AlertCircle, Clock, Truck, RefreshCw, ExternalLink } from 'lucide-react'
 import api from '../lib/api'
 import { STATUS_COLORS, STATUS_LABELS } from './RepairOrders'
+import LibraryAutocomplete from '../components/LibraryAutocomplete'
+import { searchInsurers } from '../data/insurers'
+import { searchVendors } from '../data/vendors'
 
 const PART_STATUS_META = {
   ordered:     { label: 'Ordered',     cls: 'text-blue-400   bg-blue-900/30   border-blue-700',   icon: Clock },
@@ -199,7 +202,25 @@ export default function RODetail() {
             <div className="space-y-2">
               {editing ? (
                 <>
-                  <div><label className="text-[10px] text-slate-500">Insurer</label><input className={inp + ' mt-1'} value={form.insurer || ''} onChange={e => set('insurer', e.target.value)} /></div>
+                  <div>
+                    <label className="text-[10px] text-slate-500 block mb-1">Insurer</label>
+                    <LibraryAutocomplete
+                      value={form.insurer || ''}
+                      onChange={v => set('insurer', v)}
+                      onSelect={ins => {
+                        set('insurer', ins.name)
+                        if (!form.adjuster_phone && ins.claims_phone) set('adjuster_phone', ins.claims_phone)
+                      }}
+                      searchFn={searchInsurers}
+                      placeholder="State Farm, GEICO, Progressive..."
+                      renderItem={ins => (
+                        <div>
+                          <div className="text-xs text-white font-medium">{ins.name}</div>
+                          {ins.claims_phone && <div className="text-[10px] text-indigo-400">{ins.claims_phone}</div>}
+                        </div>
+                      )}
+                    />
+                  </div>
                   <div><label className="text-[10px] text-slate-500">Claim #</label><input className={inp + ' mt-1'} value={form.claim_number || ''} onChange={e => set('claim_number', e.target.value)} /></div>
                   <div><label className="text-[10px] text-slate-500">Adjuster Name</label><input className={inp + ' mt-1'} value={form.adjuster_name || ''} onChange={e => set('adjuster_name', e.target.value)} /></div>
                   <div><label className="text-[10px] text-slate-500">Adjuster Phone</label><input className={inp + ' mt-1'} value={form.adjuster_phone || ''} onChange={e => set('adjuster_phone', e.target.value)} /></div>
@@ -323,7 +344,19 @@ export default function RODetail() {
               </div>
               <div>
                 <label className="text-[10px] text-slate-500 block mb-1">Vendor</label>
-                <input className={inp} value={partForm.vendor} onChange={e=>setPartForm(f=>({...f,vendor:e.target.value}))} placeholder="LKQ, OEM, etc." />
+                <LibraryAutocomplete
+                  value={partForm.vendor || ''}
+                  onChange={v => setPartForm(f => ({...f, vendor: v}))}
+                  onSelect={v => setPartForm(f => ({...f, vendor: v.name}))}
+                  searchFn={searchVendors}
+                  placeholder="LKQ, NAPA, PPG..."
+                  renderItem={v => (
+                    <div>
+                      <div className="text-xs text-white font-medium">{v.name}</div>
+                      <div className="text-[10px] text-slate-400">{v.type}{v.phone ? ` · ${v.phone}` : ''}</div>
+                    </div>
+                  )}
+                />
               </div>
               <div>
                 <label className="text-[10px] text-slate-500 block mb-1">Expected Date</label>

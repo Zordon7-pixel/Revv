@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
 import { X } from 'lucide-react'
 import api from '../lib/api'
+import LibraryAutocomplete from './LibraryAutocomplete'
+import { searchInsurers } from '../data/insurers'
 
 const JOB_TYPES = ['collision','paint','detailing','glass','towing','key_programming','wheel_recon','car_wrap']
-const INSURERS = ['Progressive','Geico','State Farm','Integon','Other']
 
 export default function AddROModal({ onClose, onSaved }) {
   const [customers, setCustomers] = useState([])
@@ -110,10 +111,25 @@ export default function AddROModal({ onClose, onSaved }) {
               </div>
               {form.payment_type === 'insurance' && (
                 <>
-                  <div><label className={lbl}>Insurer</label>
-                    <select className={inp} value={form.insurer} onChange={e => set('insurer', e.target.value)}>
-                      {INSURERS.map(i => <option key={i}>{i}</option>)}
-                    </select></div>
+                  <div>
+                    <label className={lbl}>Insurer</label>
+                    <LibraryAutocomplete
+                      value={form.insurer}
+                      onChange={v => set('insurer', v)}
+                      onSelect={ins => {
+                        set('insurer', ins.name)
+                        if (!form.adjuster_phone && ins.claims_phone) set('adjuster_phone', ins.claims_phone)
+                      }}
+                      searchFn={searchInsurers}
+                      placeholder="State Farm, GEICO, Progressive..."
+                      renderItem={ins => (
+                        <div>
+                          <div className="text-xs text-white font-medium">{ins.name}</div>
+                          {ins.claims_phone && <div className="text-[10px] text-indigo-400">{ins.claims_phone}</div>}
+                        </div>
+                      )}
+                    />
+                  </div>
                   <div><label className={lbl}>Claim #</label><input className={inp} value={form.claim_number} onChange={e => set('claim_number', e.target.value)} placeholder="CLM-2026-XXXXX" /></div>
                   <div className="grid grid-cols-2 gap-2">
                     <div><label className={lbl}>Adjuster Name</label><input className={inp} value={form.adjuster_name} onChange={e => set('adjuster_name', e.target.value)} /></div>
