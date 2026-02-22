@@ -1,0 +1,10 @@
+[build]
+builder = "nixpacks"
+buildCommand = "cd frontend && npm install && npm run build && cd ../backend && npm install"
+
+[deploy]
+startCommand = "cd backend && node src/app.js"
+restartPolicyType = "always"
+
+[[services]]
+name = "revv"

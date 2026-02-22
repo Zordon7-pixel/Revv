@@ -1,0 +1,11 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body { background: #0f1117; color: #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+
+.kanban-scroll { overflow-x: auto; padding-bottom: 12px; }
+.kanban-scroll::-webkit-scrollbar { height: 6px; }
+.kanban-scroll::-webkit-scrollbar-thumb { background: #2a2d3e; border-radius: 3px; }
+
+.status-badge { @apply px-2 py-0.5 rounded-full text-xs font-bold uppercase tracking-wide; }
