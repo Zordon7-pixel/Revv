@@ -6,8 +6,9 @@ const existing = db.prepare('SELECT id FROM shops LIMIT 1').get();
 if (existing) { console.log('DB already seeded.'); process.exit(0); }
 
 const shopId = uuidv4();
-db.prepare(`INSERT INTO shops (id, name, phone, address, labor_rate, tax_rate) VALUES (?, ?, ?, ?, ?, ?)`).run(
-  shopId, "Premier Auto Body", "(555) 400-0100", "123 Main Street", 55, 0.0875
+// Demo shop in Texas (Tier 2: $75/hr labor, 35% parts markup, 8.25% tax)
+db.prepare(`INSERT INTO shops (id, name, phone, address, city, state, zip, market_tier, labor_rate, parts_markup, tax_rate) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+  shopId, "Premier Auto Body", "(555) 400-0100", "456 Commerce Blvd", "Houston", "TX", "77001", 2, 75, 0.35, 0.0825
 );
 
 const userId = uuidv4();

@@ -14,8 +14,13 @@ db.exec(`
     name TEXT NOT NULL,
     phone TEXT,
     address TEXT,
-    labor_rate REAL DEFAULT 55,
-    tax_rate REAL DEFAULT 0.0875,
+    city TEXT,
+    state TEXT,
+    zip TEXT,
+    market_tier INTEGER DEFAULT 3,
+    labor_rate REAL DEFAULT 62,
+    parts_markup REAL DEFAULT 0.30,
+    tax_rate REAL DEFAULT 0.0700,
     created_at TEXT DEFAULT (datetime('now'))
   );
 
@@ -97,5 +102,17 @@ db.exec(`
     created_at TEXT DEFAULT (datetime('now'))
   );
 `);
+
+// Migrations — add columns to existing DBs without breaking them
+const migrations = [
+  `ALTER TABLE shops ADD COLUMN city TEXT`,
+  `ALTER TABLE shops ADD COLUMN state TEXT`,
+  `ALTER TABLE shops ADD COLUMN zip TEXT`,
+  `ALTER TABLE shops ADD COLUMN market_tier INTEGER DEFAULT 3`,
+  `ALTER TABLE shops ADD COLUMN parts_markup REAL DEFAULT 0.30`,
+];
+migrations.forEach(sql => {
+  try { db.exec(sql); } catch (_) { /* column already exists */ }
+});
 
 module.exports = db;

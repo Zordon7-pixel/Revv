@@ -7,6 +7,7 @@ import RepairOrders from './pages/RepairOrders'
 import RODetail from './pages/RODetail'
 import Customers from './pages/Customers'
 import Reports from './pages/Reports'
+import Settings from './pages/Settings'
 
 function PrivateRoute({ children }) {
   return localStorage.getItem('sc_token') ? children : <Navigate to="/login" />
@@ -23,6 +24,7 @@ export default function App() {
           <Route path="ros/:id" element={<RODetail />} />
           <Route path="customers" element={<Customers />} />
           <Route path="reports" element={<Reports />} />
+          <Route path="settings" element={<Settings />} />
         </Route>
       </Routes>
     </BrowserRouter>
