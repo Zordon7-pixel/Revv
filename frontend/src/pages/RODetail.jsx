@@ -43,9 +43,15 @@ export default function RODetail() {
 
   const [portalCreds, setPortalCreds]         = useState(null)
   const [generatingAccess, setGeneratingAccess] = useState(false)
+  const [claimLink, setClaimLink] = useState(null)
+  const [linkCopied, setLinkCopied] = useState(false)
+  const [generatingLink, setGeneratingLink] = useState(false)
 
   const load = () => api.get(`/ros/${id}`).then(r => { setRo(r.data); setForm(r.data); setParts(r.data.parts || []) })
   useEffect(() => { load() }, [id])
+  useEffect(() => {
+    api.get(`/claim-links/ro/${id}`).then(r => setClaimLink(r.data)).catch(() => {})
+  }, [id])
 
   async function addPart(e) {
     e.preventDefault(); setSavingPart(true)
@@ -90,6 +96,29 @@ export default function RODetail() {
     } catch(e) {
       alert(e?.response?.data?.error || 'Could not generate access')
     } finally { setGeneratingAccess(false) }
+  }
+
+  async function generateClaimLink() {
+    setGeneratingLink(true)
+    try {
+      const r = await api.post(`/claim-links/${id}`)
+      setClaimLink({ token: r.data.token })
+      const url = `${window.location.origin}/claim/${r.data.token}`
+      await navigator.clipboard.writeText(url)
+      setLinkCopied(true)
+      setTimeout(() => setLinkCopied(false), 3000)
+    } catch (e) {
+      alert('Error generating link')
+    } finally {
+      setGeneratingLink(false)
+    }
+  }
+
+  async function copyClaimLink() {
+    const url = `${window.location.origin}/claim/${claimLink.token}`
+    await navigator.clipboard.writeText(url)
+    setLinkCopied(true)
+    setTimeout(() => setLinkCopied(false), 3000)
   }
 
   async function advance() {
@@ -249,6 +278,45 @@ export default function RODetail() {
               )}
             </div>
           ) : <div className="text-xs text-slate-400">Customer pay — no claim.</div>}
+        </div>
+
+        {/* Insurance Adjustor Panel */}
+        <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-5 space-y-4">
+          <h3 className="font-semibold text-white text-sm flex items-center gap-2">
+            🔗 Insurance Adjustor
+          </h3>
+          {!claimLink ? (
+            <div>
+              <p className="text-xs text-slate-500 mb-3">Generate a secure link to share with the insurance adjustor. They can view the RO details and submit their assessment without creating an account.</p>
+              <button onClick={generateClaimLink} disabled={generatingLink} className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium px-4 py-2 rounded-lg transition-colors disabled:opacity-50">
+                {generatingLink ? 'Generating...' : '🔗 Generate Adjustor Link'}
+              </button>
+            </div>
+          ) : claimLink.submitted_at ? (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 text-green-400 text-xs font-medium">✅ Assessment Received</div>
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div><span className="text-slate-500">Adjustor</span><p className="text-white">{claimLink.adjustor_name} — {claimLink.adjustor_company}</p></div>
+                <div><span className="text-slate-500">Submitted</span><p className="text-white">{new Date(claimLink.submitted_at).toLocaleDateString()}</p></div>
+                <div><span className="text-slate-500">Approved Labor</span><p className="text-white">${(claimLink.approved_labor||0).toLocaleString()}</p></div>
+                <div><span className="text-slate-500">Approved Parts</span><p className="text-white">${(claimLink.approved_parts||0).toLocaleString()}</p></div>
+                {claimLink.supplement_amount > 0 && <div><span className="text-slate-500">Supplement</span><p className="text-emerald-400 font-medium">${claimLink.supplement_amount.toLocaleString()}</p></div>}
+                {claimLink.adjustor_notes && <div className="col-span-2"><span className="text-slate-500">Notes</span><p className="text-white">{claimLink.adjustor_notes}</p></div>}
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <p className="text-xs text-slate-500">Link sent — waiting for adjustor assessment.</p>
+              <div className="flex gap-2">
+                <button onClick={copyClaimLink} className="bg-[#0f1117] border border-[#2a2d3e] text-white text-xs px-3 py-2 rounded-lg hover:border-indigo-500 transition-colors">
+                  {linkCopied ? '✓ Copied!' : '📋 Copy Link'}
+                </button>
+                <button onClick={generateClaimLink} className="text-slate-500 text-xs px-3 py-2 rounded-lg hover:text-white transition-colors">
+                  Regenerate
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Profit Breakdown */}

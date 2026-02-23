@@ -170,6 +170,25 @@ CREATE TABLE IF NOT EXISTS market_config (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS claim_links (
+  id UUID PRIMARY KEY,
+  shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+  ro_id UUID NOT NULL REFERENCES repair_orders(id) ON DELETE CASCADE,
+  token TEXT NOT NULL UNIQUE,
+  created_by UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  expires_at TIMESTAMPTZ,
+  adjustor_name TEXT,
+  adjustor_company TEXT,
+  adjustor_email TEXT,
+  approved_labor NUMERIC(12,2),
+  approved_parts NUMERIC(12,2),
+  supplement_amount NUMERIC(12,2),
+  adjustor_notes TEXT,
+  assessment_filename TEXT,
+  submitted_at TIMESTAMPTZ
+);
+
 CREATE INDEX IF NOT EXISTS idx_users_shop_id ON users(shop_id);
 CREATE INDEX IF NOT EXISTS idx_users_customer_id ON users(customer_id);
 CREATE INDEX IF NOT EXISTS idx_customers_shop_id ON customers(shop_id);
@@ -189,3 +208,6 @@ CREATE INDEX IF NOT EXISTS idx_time_entries_shop_id ON time_entries(shop_id);
 CREATE INDEX IF NOT EXISTS idx_time_entries_user_id ON time_entries(user_id);
 CREATE INDEX IF NOT EXISTS idx_time_entries_open_clock ON time_entries(shop_id, user_id, clock_out);
 CREATE INDEX IF NOT EXISTS idx_market_config_shop_id ON market_config(shop_id);
+CREATE INDEX IF NOT EXISTS idx_claim_links_shop_id ON claim_links(shop_id);
+CREATE INDEX IF NOT EXISTS idx_claim_links_ro_id ON claim_links(ro_id);
+CREATE INDEX IF NOT EXISTS idx_claim_links_token ON claim_links(token);

@@ -102,6 +102,25 @@ db.exec(`
     note TEXT,
     created_at TEXT DEFAULT (datetime('now'))
   );
+
+  CREATE TABLE IF NOT EXISTS claim_links (
+    id TEXT PRIMARY KEY,
+    shop_id TEXT NOT NULL,
+    ro_id TEXT NOT NULL,
+    token TEXT NOT NULL UNIQUE,
+    created_by TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now')),
+    expires_at TEXT,
+    adjustor_name TEXT,
+    adjustor_company TEXT,
+    adjustor_email TEXT,
+    approved_labor REAL,
+    approved_parts REAL,
+    supplement_amount REAL,
+    adjustor_notes TEXT,
+    assessment_filename TEXT,
+    submitted_at TEXT
+  );
 `);
 
 // Migrations — add columns to existing DBs without breaking them
