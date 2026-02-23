@@ -82,12 +82,63 @@ function AddShiftModal({ employees, prefill, onClose, onSaved }) {
   )
 }
 
+function EarlyAuthModal({ employee, onClose, onSuccess }) {
+  const [password, setPassword] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  async function submit() {
+    if (!password) return
+    setSaving(true)
+    setError('')
+    try {
+      await api.post('/timeclock/authorize-early', {
+        employee_id: employee.id,
+        admin_password: password,
+      })
+      onSuccess(employee.id)
+    } catch (e) {
+      setError(e?.response?.data?.message || 'Incorrect admin password')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+      <div className="bg-[#1a1d2e] rounded-2xl border border-[#2a2d3e] w-full max-w-sm p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="font-bold text-white text-sm">Admin Password Required</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={16}/></button>
+        </div>
+        <div className="text-xs text-slate-400">Authorize early clock-in for <span className="text-white font-semibold">{employee.name}</span> today.</div>
+        <input
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="Admin Password"
+          className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+        />
+        {error && <p className="text-xs text-red-400">{error}</p>}
+        <div className="flex justify-end gap-2">
+          <button onClick={onClose} className="text-slate-400 text-sm hover:text-white">Cancel</button>
+          <button onClick={submit} disabled={saving || !password} className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold px-4 py-2 rounded-lg disabled:opacity-50">
+            {saving ? 'Authorizing…' : 'Authorize'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function Schedule() {
   const [monday, setMonday] = useState(getMonday())
   const [shifts, setShifts] = useState([])
   const [employees, setEmployees] = useState([])
   const [showAdd, setShowAdd] = useState(false)
   const [prefill, setPrefill] = useState(null)
+  const [authModalEmployee, setAuthModalEmployee] = useState(null)
+  const [authorizedToday, setAuthorizedToday] = useState({})
   const admin = isAdmin()
 
   const weekDates = Array.from({ length: 7 }, (_, i) => {
@@ -105,6 +156,27 @@ export default function Schedule() {
     setEmployees(e.data.employees || [])
   }
   useEffect(() => { load() }, [monday])
+
+  useEffect(() => {
+    async function loadAuthStatus() {
+      if (!admin) return
+      const todayIso = isoDate(new Date())
+      const isCurrentWeek = weekDates.some(d => isoDate(d) === todayIso)
+      if (!isCurrentWeek || employees.length === 0) return
+
+      const statuses = {}
+      await Promise.all(employees.map(async (emp) => {
+        try {
+          const r = await api.get(`/timeclock/early-auth-status/${emp.id}`)
+          statuses[emp.id] = !!r.data?.authorized
+        } catch {
+          statuses[emp.id] = false
+        }
+      }))
+      setAuthorizedToday(statuses)
+    }
+    loadAuthStatus()
+  }, [admin, employees, monday])
 
   function prevWeek() { const d = new Date(monday); d.setDate(d.getDate()-7); setMonday(d) }
   function nextWeek() { const d = new Date(monday); d.setDate(d.getDate()+7); setMonday(d) }
@@ -199,12 +271,26 @@ export default function Schedule() {
                 const [eh, em] = s.end_time.split(':').map(Number)
                 return sum + (eh + em/60) - (sh + sm/60)
               }, 0)
+              const hasShiftToday = empShifts.some(s => s.shift_date === today)
+
               return (
-                <div key={emp.id} className="flex items-center justify-between text-xs">
+                <div key={emp.id} className="flex items-center justify-between text-xs gap-3">
                   <span className="text-white font-medium">{emp.name}</span>
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 flex-wrap justify-end">
                     <span className="text-slate-500">{empShifts.length} shift{empShifts.length!==1?'s':''}</span>
                     <span className="text-indigo-400 font-semibold">{totalHours.toFixed(1)}h scheduled</span>
+                    {hasShiftToday && (
+                      authorizedToday[emp.id] ? (
+                        <span className="text-[10px] bg-emerald-900/40 text-emerald-400 px-2 py-1 rounded-full font-semibold">✓ Authorized for today</span>
+                      ) : (
+                        <button
+                          onClick={() => setAuthModalEmployee(emp)}
+                          className="text-[10px] bg-amber-900/40 text-amber-300 border border-amber-700/40 px-2 py-1 rounded-full hover:bg-amber-800/40"
+                        >
+                          Allow Early Today
+                        </button>
+                      )
+                    )}
                   </div>
                 </div>
               )
@@ -219,6 +305,17 @@ export default function Schedule() {
           prefill={prefill}
           onClose={() => setShowAdd(false)}
           onSaved={() => { setShowAdd(false); load() }}
+        />
+      )}
+
+      {authModalEmployee && (
+        <EarlyAuthModal
+          employee={authModalEmployee}
+          onClose={() => setAuthModalEmployee(null)}
+          onSuccess={(employeeId) => {
+            setAuthorizedToday(prev => ({ ...prev, [employeeId]: true }))
+            setAuthModalEmployee(null)
+          }}
         />
       )}
     </div>

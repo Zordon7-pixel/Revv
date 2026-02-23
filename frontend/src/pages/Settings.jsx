@@ -27,6 +27,8 @@ export default function Settings() {
   const [testPhone, setTestPhone] = useState('')
   const [sendingTest, setSendingTest] = useState(false)
   const [testSmsResult, setTestSmsResult] = useState({ type: '', message: '' })
+  const [profile, setProfile] = useState({ name: '', phone: '' })
+  const [profileSaved, setProfileSaved] = useState(false)
 
   useEffect(() => {
     api.get('/market/shop').then(r => {
@@ -53,6 +55,7 @@ export default function Settings() {
       .then(r => setSmsStatus({ configured: !!r.data.configured, sms_phone: r.data.sms_phone || r.data.phone || null }))
       .catch(() => setSmsStatus({ configured: false, sms_phone: null }))
       .finally(() => setSmsLoading(false))
+    api.get('/users/me').then(r => setProfile({ name: r.data.name || '', phone: r.data.phone || '' }))
   }, [])
 
   function fetchMarket(stateCode) {
@@ -109,6 +112,12 @@ export default function Settings() {
     } finally {
       setSaving(false)
     }
+  }
+
+  async function saveProfile() {
+    await api.put('/users/me', profile)
+    setProfileSaved(true)
+    setTimeout(() => setProfileSaved(false), 3000)
   }
 
   async function sendTestSMS() {
@@ -178,6 +187,24 @@ export default function Settings() {
       )}
 
       <form onSubmit={handleSave} className="space-y-6">
+
+        {/* My Profile */}
+        <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-5 space-y-4">
+          <h2 className="font-semibold text-white text-sm">My Profile</h2>
+          <p className="text-xs text-slate-500">Your name and the phone number where REVV will send you notifications (late clock-ins, alerts).</p>
+          <div>
+            <label className={lbl}>Full Name</label>
+            <input className={inp} value={profile.name} onChange={e => setProfile(p => ({...p, name: e.target.value}))} placeholder="Your name" />
+          </div>
+          <div>
+            <label className={lbl}>Your Notification Phone</label>
+            <input className={inp} value={profile.phone} onChange={e => setProfile(p => ({...p, phone: e.target.value}))} placeholder="(212) 555-0100" />
+            <p className="text-xs text-slate-600 mt-1">REVV sends late clock-in alerts and other notifications here.</p>
+          </div>
+          <button onClick={saveProfile} type="button" className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium px-4 py-2 rounded-lg transition-colors">
+            {profileSaved ? '✓ Saved' : 'Save Profile'}
+          </button>
+        </div>
 
         {/* Shop Info */}
         <div className="bg-[#1a1d2e] rounded-2xl p-5 border border-[#2a2d3e] space-y-4">

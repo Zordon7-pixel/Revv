@@ -5,6 +5,19 @@ const auth    = require('../middleware/auth');
 const { requireAdmin } = require('../middleware/roles');
 const { v4: uuidv4 }   = require('uuid');
 
+// GET /api/users/me — get current user's profile
+router.get('/me', auth, (req, res) => {
+  const user = db.prepare('SELECT id, name, email, phone, role FROM users WHERE id = ?').get(req.user.id);
+  res.json(user);
+});
+
+// PUT /api/users/me — update current user's name and phone
+router.put('/me', auth, (req, res) => {
+  const { name, phone } = req.body;
+  db.prepare('UPDATE users SET name = ?, phone = ? WHERE id = ?').run(name || null, phone || null, req.user.id);
+  res.json({ ok: true });
+});
+
 // GET all users for this shop
 router.get('/', auth, requireAdmin, (req, res) => {
   const users = db.prepare(`
