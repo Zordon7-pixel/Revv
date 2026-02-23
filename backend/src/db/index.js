@@ -240,4 +240,36 @@ revocationMigrations.forEach(sql => {
   try { db.exec(sql); } catch (_) { /* column already exists */ }
 });
 
+db.exec(`
+  CREATE TABLE IF NOT EXISTS ro_photos (
+    id TEXT PRIMARY KEY,
+    ro_id TEXT,
+    user_id TEXT,
+    photo_url TEXT,
+    caption TEXT,
+    photo_type TEXT DEFAULT 'damage',
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS parts_requests (
+    id TEXT PRIMARY KEY,
+    ro_id TEXT,
+    requested_by TEXT,
+    part_name TEXT,
+    part_number TEXT,
+    quantity INTEGER DEFAULT 1,
+    status TEXT DEFAULT 'pending',
+    notes TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+`);
+
+const wave2Migrations = [
+  `ALTER TABLE repair_orders ADD COLUMN assigned_to TEXT`,
+  `ALTER TABLE repair_orders ADD COLUMN tech_notes TEXT`,
+];
+wave2Migrations.forEach(sql => {
+  try { db.exec(sql); } catch (_) { /* column already exists */ }
+});
+
 module.exports = db;

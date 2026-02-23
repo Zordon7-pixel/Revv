@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Pencil, Save, X, Package, Plus, CheckCircle, AlertCircle, Clock, Truck, RefreshCw, ExternalLink, Car, DollarSign, ClipboardList, Smartphone, AlertTriangle, Copy, Printer } from 'lucide-react'
+import { ArrowLeft, Pencil, Save, X, Package, PackageCheck, PackageX, Plus, CheckCircle, AlertCircle, Clock, Truck, RefreshCw, ExternalLink, Car, DollarSign, ClipboardList, Smartphone, AlertTriangle, Copy, Printer, User } from 'lucide-react'
 import api from '../lib/api'
 import { STATUS_COLORS, STATUS_LABELS } from './RepairOrders'
 import StatusBadge from '../components/StatusBadge'
 import LibraryAutocomplete from '../components/LibraryAutocomplete'
+import ROPhotos from '../components/ROPhotos'
 import { searchInsurers } from '../data/insurers'
 import { searchVendors } from '../data/vendors'
+import { isAdmin, isEmployee } from '../lib/auth'
 
 const PART_STATUS_META = {
   ordered:     { label: 'Ordered',     cls: 'text-blue-400   bg-blue-900/30   border-blue-700',   icon: Clock },
@@ -24,6 +26,13 @@ const TRACKING_META = {
   expired:          { label: 'Tracking Expired',    cls: 'text-slate-500',  dot: '#64748b' },
 }
 const CARRIER_LABELS = { ups:'UPS', fedex:'FedEx', usps:'USPS', dhl:'DHL', unknown:'Carrier' }
+
+const REQ_STATUS_META = {
+  pending:   { label: 'Pending',   cls: 'text-amber-400 bg-amber-900/30 border-amber-700/40',   Icon: Package },
+  ordered:   { label: 'Ordered',   cls: 'text-blue-400 bg-blue-900/30 border-blue-700/40',       Icon: PackageCheck },
+  received:  { label: 'Received',  cls: 'text-emerald-400 bg-emerald-900/30 border-emerald-700/40', Icon: PackageCheck },
+  cancelled: { label: 'Cancelled', cls: 'text-slate-500 bg-slate-900/30 border-slate-700/40',   Icon: PackageX },
+}
 
 const STAGES = ['intake','estimate','approval','parts','repair','paint','qc','delivery','closed']
 
@@ -47,11 +56,28 @@ export default function RODetail() {
   const [linkCopied, setLinkCopied] = useState(false)
   const [generatingLink, setGeneratingLink] = useState(false)
 
-  const load = () => api.get(`/ros/${id}`).then(r => { setRo(r.data); setForm(r.data); setParts(r.data.parts || []) })
+  const [shopUsers, setShopUsers] = useState([])
+  const [techNotes, setTechNotes] = useState('')
+  const [savingNotes, setSavingNotes] = useState(false)
+  const [partsRequests, setPartsRequests] = useState([])
+  const [showPartsReqForm, setShowPartsReqForm] = useState(false)
+  const [partsReqForm, setPartsReqForm] = useState({ part_name: '', part_number: '', quantity: 1, notes: '' })
+  const [submittingPartsReq, setSubmittingPartsReq] = useState(false)
+
+  const userIsAdmin = isAdmin()
+  const userIsEmployee = isEmployee()
+
+  const load = () => api.get(`/ros/${id}`).then(r => { setRo(r.data); setForm(r.data); setParts(r.data.parts || []); setTechNotes(r.data.tech_notes || '') })
+  const loadPartsRequests = () => api.get(`/parts-requests/${id}`).then(r => setPartsRequests(r.data.requests || [])).catch(() => {})
+
   useEffect(() => { load() }, [id])
   useEffect(() => {
     api.get(`/claim-links/ro/${id}`).then(r => setClaimLink(r.data)).catch(() => {})
   }, [id])
+  useEffect(() => {
+    api.get('/users').then(r => setShopUsers(r.data.users || [])).catch(() => {})
+  }, [])
+  useEffect(() => { loadPartsRequests() }, [id])
 
   async function addPart(e) {
     e.preventDefault(); setSavingPart(true)
@@ -150,6 +176,40 @@ export default function RODetail() {
       setEditing(false)
       load()
     } finally { setSaving(false) }
+  }
+
+  async function assignTech(userId) {
+    await api.patch(`/ros/${id}/assign`, { user_id: userId || null })
+    load()
+  }
+
+  async function saveTechNotes() {
+    setSavingNotes(true)
+    try {
+      await api.patch(`/ros/${id}`, { tech_notes: techNotes })
+    } finally {
+      setSavingNotes(false)
+    }
+  }
+
+  async function submitPartsRequest(e) {
+    e.preventDefault()
+    setSubmittingPartsReq(true)
+    try {
+      await api.post('/parts-requests', { ro_id: id, ...partsReqForm })
+      loadPartsRequests()
+      setShowPartsReqForm(false)
+      setPartsReqForm({ part_name: '', part_number: '', quantity: 1, notes: '' })
+    } catch (err) {
+      alert(err?.response?.data?.error || 'Could not submit request')
+    } finally {
+      setSubmittingPartsReq(false)
+    }
+  }
+
+  async function updatePartsReqStatus(reqId, status) {
+    await api.patch(`/parts-requests/${reqId}`, { status })
+    loadPartsRequests()
   }
 
   if (!ro) return <div className="flex items-center justify-center h-64 text-slate-500">Loading your shop data...</div>
@@ -392,6 +452,170 @@ export default function RODetail() {
           : <p className="text-sm text-slate-300">{ro.notes || <span className="text-slate-600 italic">No notes</span>}</p>
         }
       </div>
+
+      {/* Photos */}
+      <ROPhotos roId={ro.id} isAdmin={userIsAdmin} />
+
+      {/* Assigned Tech */}
+      {userIsEmployee && (
+        <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
+          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3 flex items-center gap-1.5">
+            <User size={12} /> Assigned Tech
+          </h2>
+          <div className="flex items-center gap-3 flex-wrap">
+            <span className="text-sm text-white font-medium">
+              {ro.assigned_tech ? ro.assigned_tech.name : <span className="text-slate-500 italic">Unassigned</span>}
+            </span>
+            {userIsAdmin && (
+              <select
+                value={ro.assigned_to || ''}
+                onChange={e => assignTech(e.target.value)}
+                className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-indigo-500"
+              >
+                <option value="">Unassigned</option>
+                {shopUsers
+                  .filter(u => ['owner', 'admin', 'employee', 'staff'].includes(u.role))
+                  .map(u => (
+                    <option key={u.id} value={u.id}>{u.name}</option>
+                  ))}
+              </select>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Tech Notes */}
+      {userIsEmployee && (
+        <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
+          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+            <ClipboardList size={12} /> Tech Notes
+          </h2>
+          <textarea
+            className={`${inp} w-full`}
+            rows={4}
+            value={techNotes}
+            onChange={e => setTechNotes(e.target.value)}
+            onBlur={saveTechNotes}
+            placeholder="Internal tech notes — not visible to customer..."
+          />
+          {savingNotes && <p className="text-[10px] text-slate-500 mt-1">Saving...</p>}
+        </div>
+      )}
+
+      {/* Parts Requests */}
+      {userIsEmployee && (
+        <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
+              <Package size={12} /> Parts Requests
+            </h2>
+            <button
+              onClick={() => setShowPartsReqForm(s => !s)}
+              className="flex items-center gap-1.5 text-xs bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors"
+            >
+              <Plus size={12} /> Request Part
+            </button>
+          </div>
+
+          {showPartsReqForm && (
+            <form onSubmit={submitPartsRequest} className="bg-[#0f1117] rounded-xl p-4 border border-[#2a2d3e] mb-4 space-y-3">
+              <div className="grid grid-cols-2 gap-2">
+                <div className="col-span-2">
+                  <label className="text-[10px] text-slate-500 block mb-1">Part Name *</label>
+                  <input
+                    className={inp + ' w-full'}
+                    required
+                    value={partsReqForm.part_name}
+                    onChange={e => setPartsReqForm(f => ({ ...f, part_name: e.target.value }))}
+                    placeholder="Front bumper cover"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-slate-500 block mb-1">Part Number</label>
+                  <input
+                    className={inp + ' w-full'}
+                    value={partsReqForm.part_number}
+                    onChange={e => setPartsReqForm(f => ({ ...f, part_number: e.target.value }))}
+                    placeholder="OEM-12345"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-slate-500 block mb-1">Qty</label>
+                  <input
+                    type="number"
+                    min="1"
+                    className={inp + ' w-full'}
+                    value={partsReqForm.quantity}
+                    onChange={e => setPartsReqForm(f => ({ ...f, quantity: +e.target.value }))}
+                  />
+                </div>
+                <div className="col-span-2">
+                  <label className="text-[10px] text-slate-500 block mb-1">Notes</label>
+                  <input
+                    className={inp + ' w-full'}
+                    value={partsReqForm.notes}
+                    onChange={e => setPartsReqForm(f => ({ ...f, notes: e.target.value }))}
+                    placeholder="OEM only, urgent, etc."
+                  />
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setShowPartsReqForm(false)} className="flex-1 bg-[#1a1d2e] text-slate-400 rounded-lg py-2 text-xs border border-[#2a2d3e]">Cancel</button>
+                <button type="submit" disabled={submittingPartsReq} className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-lg py-2 text-xs disabled:opacity-50">
+                  {submittingPartsReq ? 'Submitting...' : 'Submit Request'}
+                </button>
+              </div>
+            </form>
+          )}
+
+          {partsRequests.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-8 border border-dashed border-[#2a2d3e] rounded-xl">
+              <Package size={24} className="text-slate-600 mb-2" />
+              <p className="text-slate-500 text-sm">No parts requested yet</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {partsRequests.map(req => {
+                const meta = REQ_STATUS_META[req.status] || REQ_STATUS_META.pending
+                const Icon = meta.Icon
+                return (
+                  <div key={req.id} className="flex items-start gap-3 bg-[#0f1117] rounded-xl p-3 border border-[#2a2d3e]">
+                    <div className={`w-7 h-7 rounded-lg border flex items-center justify-center flex-shrink-0 ${meta.cls}`}>
+                      <Icon size={13} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm text-white font-medium">{req.part_name}</span>
+                        {req.part_number && <span className="text-[10px] text-slate-500">#{req.part_number}</span>}
+                        {req.quantity > 1 && <span className="text-[10px] text-slate-500">× {req.quantity}</span>}
+                      </div>
+                      {req.notes && <p className="text-[10px] text-slate-500 mt-0.5">{req.notes}</p>}
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      {userIsAdmin ? (
+                        <select
+                          value={req.status}
+                          onChange={e => updatePartsReqStatus(req.id, e.target.value)}
+                          className={`text-[10px] px-2 py-1 rounded-lg border font-semibold bg-transparent focus:outline-none ${meta.cls}`}
+                        >
+                          <option value="pending">Pending</option>
+                          <option value="ordered">Ordered</option>
+                          <option value="received">Received</option>
+                          <option value="cancelled">Cancelled</option>
+                        </select>
+                      ) : (
+                        <span className={`text-[10px] px-2 py-1 rounded-full border font-semibold ${meta.cls}`}>
+                          {meta.label}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Customer Portal Access */}
       <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">

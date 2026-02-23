@@ -64,6 +64,11 @@ app.use('/api/sms', require('./routes/sms'));
 app.use('/api/diagnostics', require('./routes/diagnostics'));
 app.use('/api/claim-links', require('./routes/claimLinks'));
 app.use('/api/claim-link', require('./routes/claimLinks'));
+app.use('/api/photos', require('./routes/photos'));
+app.use('/api/parts-requests', require('./routes/partsRequests'));
+
+// Serve uploaded files
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // Serve frontend build
 const frontendDist = path.join(__dirname, '../../frontend/dist');

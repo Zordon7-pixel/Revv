@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const db = require('../db');
 const auth = require('../middleware/auth');
+const { requireAdmin } = require('../middleware/roles');
 const { calculateProfit } = require('../services/profit');
 const { sendSMS, isConfigured } = require('../services/sms');
 const { getStatusMessage } = require('../services/notifications');
@@ -8,7 +9,7 @@ const { v4: uuidv4 } = require('uuid');
 
 const STATUSES = ['intake','estimate','approval','parts','repair','paint','qc','delivery','closed'];
 
-// Enrich RO with vehicle + customer
+// Enrich RO with vehicle + customer + assigned tech
 function enrichRO(ro) {
   if (!ro) return null;
   const vehicle  = db.prepare('SELECT * FROM vehicles WHERE id = ?').get(ro.vehicle_id);
@@ -16,12 +17,15 @@ function enrichRO(ro) {
   const log      = db.prepare('SELECT * FROM job_status_log WHERE ro_id = ? ORDER BY created_at ASC').all(ro.id);
   const parts    = db.prepare('SELECT * FROM parts_orders WHERE ro_id = ? ORDER BY created_at ASC').all(ro.id);
   const profit   = calculateProfit(ro);
+  const assigned_tech = ro.assigned_to
+    ? db.prepare('SELECT id, name, role FROM users WHERE id = ?').get(ro.assigned_to)
+    : null;
   // Portal access flag — lets UI show "Generate Login" or "Reset Password"
   if (customer) {
     const portalUser = db.prepare('SELECT id FROM users WHERE customer_id = ? AND shop_id = ?').get(customer.id, ro.shop_id);
     customer.has_portal_access = !!portalUser;
   }
-  return { ...ro, vehicle, customer, log, parts, profit };
+  return { ...ro, vehicle, customer, log, parts, profit, assigned_tech };
 }
 
 // GET all ROs for shop
@@ -72,7 +76,7 @@ router.post('/', auth, (req, res) => {
 router.put('/:id', auth, (req, res) => {
   const ro = db.prepare('SELECT * FROM repair_orders WHERE id = ? AND shop_id = ?').get(req.params.id, req.user.shop_id);
   if (!ro) return res.status(404).json({ error: 'Not found' });
-  const ALLOWED_RO_FIELDS = ['status','notes','assigned_to','estimate_amount','actual_amount','updated_at','insurance_company','adjuster_name','adjuster_phone','claim_number','deductible','auth_number','job_type','payment_type','insurer','adjuster_email','estimated_delivery','parts_cost','labor_cost','sublet_cost','tax','total','deductible_waived','referral_fee','goodwill_repair_cost'];
+  const ALLOWED_RO_FIELDS = ['status','notes','tech_notes','assigned_to','estimate_amount','actual_amount','updated_at','insurance_company','adjuster_name','adjuster_phone','claim_number','deductible','auth_number','job_type','payment_type','insurer','adjuster_email','estimated_delivery','parts_cost','labor_cost','sublet_cost','tax','total','deductible_waived','referral_fee','goodwill_repair_cost'];
   const updates = Object.fromEntries(Object.entries(req.body).filter(([k]) => ALLOWED_RO_FIELDS.includes(k)));
   if (Object.keys(updates).length > 0) {
     const profit = calculateProfit({ ...ro, ...updates });
@@ -143,14 +147,35 @@ router.put('/:id/status', auth, (req, res) => {
   });
 });
 
-// PATCH RO status (alias for clients using PATCH /api/ros/:id)
+// PATCH assign tech to RO (admin/owner only)
+router.patch('/:id/assign', auth, requireAdmin, (req, res) => {
+  const { user_id } = req.body;
+  const ro = db.prepare('SELECT * FROM repair_orders WHERE id = ? AND shop_id = ?').get(req.params.id, req.user.shop_id);
+  if (!ro) return res.status(404).json({ error: 'Not found' });
+  db.prepare('UPDATE repair_orders SET assigned_to = ?, updated_at = ? WHERE id = ?')
+    .run(user_id || null, new Date().toISOString(), req.params.id);
+  res.json(enrichRO(db.prepare('SELECT * FROM repair_orders WHERE id = ?').get(req.params.id)));
+});
+
+// PATCH RO — status transition OR general field update (tech_notes, etc.)
 router.patch('/:id', auth, (req, res) => {
-  const { status, note } = req.body || {};
-  if (!status) return res.status(400).json({ error: 'status is required' });
-  if (!STATUSES.includes(status)) return res.status(400).json({ error: 'Invalid status' });
+  const { status, note, ...otherFields } = req.body || {};
 
   const ro = db.prepare('SELECT * FROM repair_orders WHERE id = ? AND shop_id = ?').get(req.params.id, req.user.shop_id);
   if (!ro) return res.status(404).json({ error: 'Not found' });
+
+  if (!status) {
+    // General field update
+    const ALLOWED_PATCH_FIELDS = ['tech_notes'];
+    const updates = Object.fromEntries(Object.entries(otherFields).filter(([k]) => ALLOWED_PATCH_FIELDS.includes(k)));
+    if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'No valid fields to update' });
+    updates.updated_at = new Date().toISOString();
+    const setClauses = Object.keys(updates).map(k => `${k} = ?`).join(', ');
+    db.prepare(`UPDATE repair_orders SET ${setClauses} WHERE id = ?`).run(...Object.values(updates), req.params.id);
+    return res.json(enrichRO(db.prepare('SELECT * FROM repair_orders WHERE id = ?').get(req.params.id)));
+  }
+
+  if (!STATUSES.includes(status)) return res.status(400).json({ error: 'Invalid status' });
 
   const fromStatus = ro.status;
   const extra = status === 'delivery' ? { actual_delivery: new Date().toISOString().split('T')[0] } : {};
