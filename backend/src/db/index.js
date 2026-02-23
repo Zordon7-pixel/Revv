@@ -2,7 +2,7 @@ const Database = require('better-sqlite3');
 const path = require('path');
 require('dotenv').config();
 
-const dbPath = path.resolve(__dirname, '../../shopcommand.db');
+const dbPath = process.env.DATABASE_PATH || path.resolve(__dirname, '../../shopcommand.db');
 const db = new Database(dbPath);
 
 db.pragma('journal_mode = WAL');

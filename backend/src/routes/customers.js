@@ -17,10 +17,18 @@ router.get('/:id', auth, (req, res) => {
 });
 
 router.post('/', auth, (req, res) => {
-  const { name, phone, email, address, insurance_company, policy_number } = req.body;
-  const id = uuidv4();
-  db.prepare('INSERT INTO customers (id, shop_id, name, phone, email, address, insurance_company, policy_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(id, req.user.shop_id, name, phone || null, email || null, address || null, insurance_company || null, policy_number || null);
-  res.status(201).json(db.prepare('SELECT * FROM customers WHERE id = ?').get(id));
+  try {
+    const { name, phone, email, address, insurance_company, policy_number } = req.body;
+    if (!name || !name.trim()) return res.status(400).json({ error: 'Customer name is required.' });
+    const shop = db.prepare('SELECT id FROM shops WHERE id = ?').get(req.user.shop_id);
+    if (!shop) return res.status(401).json({ error: 'Session expired. Please log out and back in.' });
+    const id = uuidv4();
+    db.prepare('INSERT INTO customers (id, shop_id, name, phone, email, address, insurance_company, policy_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(id, req.user.shop_id, name.trim(), phone || null, email || null, address || null, insurance_company || null, policy_number || null);
+    res.status(201).json(db.prepare('SELECT * FROM customers WHERE id = ?').get(id));
+  } catch (err) {
+    console.error('Customer save error:', err.message);
+    res.status(500).json({ error: 'Error saving customer. Please try again.' });
+  }
 });
 
 router.put('/:id', auth, (req, res) => {
