@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { X } from 'lucide-react'
+import { X, CheckCircle } from 'lucide-react'
 import api from '../lib/api'
 import LibraryAutocomplete from './LibraryAutocomplete'
 import { searchInsurers } from '../data/insurers'
@@ -153,7 +153,7 @@ export default function AddROModal({ onClose, onSaved }) {
           {step < 3 ? (
             <button onClick={() => setStep(s=>s+1)} className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">Next →</button>
           ) : (
-            <button onClick={submit} disabled={loading} className="bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors disabled:opacity-50">{loading ? 'Creating...' : 'Create RO ✓'}</button>
+            <button onClick={submit} disabled={loading} className="bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors disabled:opacity-50">{loading ? 'Creating...' : <span className="inline-flex items-center gap-1">Create RO <CheckCircle size={13} /></span>}</button>
           )}
         </div>
       </div>

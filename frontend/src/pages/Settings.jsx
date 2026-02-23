@@ -202,7 +202,7 @@ export default function Settings() {
             <p className="text-xs text-slate-600 mt-1">REVV sends late clock-in alerts and other notifications here.</p>
           </div>
           <button onClick={saveProfile} type="button" className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium px-4 py-2 rounded-lg transition-colors">
-            {profileSaved ? '✓ Saved' : 'Save Profile'}
+            {profileSaved ? <span className="inline-flex items-center gap-1"><CheckCircle size={12} /> Saved</span> : 'Save Profile'}
           </button>
         </div>
 
@@ -323,7 +323,12 @@ export default function Settings() {
             )}
           </div>
 
-          {locMsg && <p className={`text-xs ${locMsg.startsWith('✓') ? 'text-emerald-400' : 'text-amber-400'}`}>{locMsg}</p>}
+          {locMsg && (
+            <p className={`text-xs flex items-center gap-1 ${locMsg.startsWith('✓') ? 'text-emerald-400' : 'text-amber-400'}`}>
+              {locMsg.startsWith('✓') && <CheckCircle size={12} />}
+              {locMsg.startsWith('✓') ? locMsg.slice(2) : locMsg}
+            </p>
+          )}
 
           {!form.lat && (
             <div className="bg-amber-900/20 border border-amber-700/40 rounded-lg p-3 text-xs text-amber-300 flex items-center gap-2">
@@ -359,7 +364,7 @@ export default function Settings() {
             <div className="bg-emerald-900/20 border border-emerald-700/40 rounded-xl p-4 space-y-4">
               <div className="flex items-start justify-between gap-3 flex-wrap">
                 <div>
-                  <div className="text-emerald-300 font-semibold text-sm">✅ SMS Notifications Active</div>
+                  <div className="text-emerald-300 font-semibold text-sm flex items-center gap-1.5"><CheckCircle size={14} /> SMS Notifications Active</div>
                   <p className="text-xs text-emerald-100/80 mt-1">Customers will receive automatic texts at every repair stage.</p>
                   <p className="text-xs text-emerald-200 mt-2">Sending from: <span className="font-semibold">{smsStatus.sms_phone || 'Twilio number configured'}</span></p>
                 </div>

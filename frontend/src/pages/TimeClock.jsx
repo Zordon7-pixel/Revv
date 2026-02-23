@@ -321,8 +321,8 @@ export default function TimeClock() {
                     </span>
                   )}
                   {e.adjusted_by && (
-                    <span className="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full">
-                      ✏️ Adjusted
+                    <span className="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                      <Edit2 size={10} /> Adjusted
                     </span>
                   )}
                 </div>

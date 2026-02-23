@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ChevronLeft, ChevronRight, Plus, Trash2, X, Save } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, Trash2, X, Save, CheckCircle } from 'lucide-react'
 import api from '../lib/api'
 import { isAdmin } from '../lib/auth'
 
@@ -281,7 +281,7 @@ export default function Schedule() {
                     <span className="text-indigo-400 font-semibold">{totalHours.toFixed(1)}h scheduled</span>
                     {hasShiftToday && (
                       authorizedToday[emp.id] ? (
-                        <span className="text-[10px] bg-emerald-900/40 text-emerald-400 px-2 py-1 rounded-full font-semibold">✓ Authorized for today</span>
+                        <span className="text-[10px] bg-emerald-900/40 text-emerald-400 px-2 py-1 rounded-full font-semibold inline-flex items-center gap-1"><CheckCircle size={10} /> Authorized for today</span>
                       ) : (
                         <button
                           onClick={() => setAuthModalEmployee(emp)}

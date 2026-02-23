@@ -77,8 +77,10 @@ export default function HelpDesk() {
               <div className="text-red-400 text-sm bg-red-950/30 border border-red-800 rounded-lg p-3">{error}</div>
             ) : (
               <>
-                <div className="mb-4 text-sm font-medium">
-                  {diagnostics?.ok ? 'All systems healthy 🟢' : 'Issues detected 🔴'}
+                <div className="mb-4 text-sm font-medium flex items-center gap-1.5">
+                  {diagnostics?.ok
+                    ? <><CheckCircle size={14} className="text-emerald-400" /> All systems healthy</>
+                    : <><XCircle size={14} className="text-red-400" /> Issues detected</>}
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-4">

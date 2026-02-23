@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ClipboardList, DollarSign, CheckCircle, TrendingUp } from 'lucide-react'
+import { ClipboardList, DollarSign, CheckCircle, TrendingUp, Hand } from 'lucide-react'
 import api from '../lib/api'
 import { isAdmin } from '../lib/auth'
 import { STATUS_COLORS, STATUS_LABELS } from './RepairOrders'
@@ -32,7 +32,7 @@ export default function Dashboard() {
 
   const admin = isAdmin()
   const hour = new Date().getHours()
-  const greeting = hour < 12 ? 'Good morning 👋' : hour < 18 ? 'Good afternoon 👋' : 'Good evening 👋'
+  const greetingText = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
 
   const displayActive = useCountUp(data?.active || 0)
   const displayCompleted = useCountUp(data?.completed || 0)
@@ -81,7 +81,7 @@ export default function Dashboard() {
   return (
     <div className="space-y-6">
       <div>
-        <p className="text-slate-400 text-sm font-medium mb-1">{greeting}</p>
+        <p className="text-slate-400 text-sm font-medium mb-1 flex items-center gap-1.5">{greetingText} <Hand size={14} /></p>
         <h1 className="text-xl font-bold text-white">Dashboard</h1>
       </div>
 
