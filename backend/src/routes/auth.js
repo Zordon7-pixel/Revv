@@ -12,7 +12,7 @@ router.post('/login', (req, res) => {
   if (!user || !bcrypt.compareSync(password, user.password_hash))
     return res.status(401).json({ error: 'Invalid email or password' });
 
-  const payload = { id: user.id, shop_id: user.shop_id, role: user.role };
+  const payload = { id: user.id, shop_id: user.shop_id, role: user.role, jti: uuidv4() };
   if (user.customer_id) payload.customer_id = user.customer_id;
 
   const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '7d' });
@@ -68,7 +68,7 @@ router.post('/register', (req, res) => {
   db.prepare(`INSERT INTO users (id, shop_id, name, email, password_hash, role, customer_id) VALUES (?, ?, ?, ?, ?, 'customer', ?)`)
     .run(id, shop.id, customer.name, emailNorm, bcrypt.hashSync(password, 10), customer.id);
 
-  const payload = { id, shop_id: shop.id, role: 'customer', customer_id: customer.id };
+  const payload = { id, shop_id: shop.id, role: 'customer', customer_id: customer.id, jti: uuidv4() };
   const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '7d' });
   res.status(201).json({
     token,
@@ -104,6 +104,23 @@ router.get('/me', auth, (req, res) => {
   const user = db.prepare('SELECT id, name, email, role, shop_id, customer_id FROM users WHERE id = ?').get(req.user.id);
   const shop = db.prepare('SELECT id, name, phone, address, city, state, zip FROM shops WHERE id = ?').get(user.shop_id);
   res.json({ user, shop });
+});
+
+// POST /api/auth/logout — revoke the current token by jti
+router.post('/logout', auth, (req, res) => {
+  const jti = req.user.jti;
+  if (jti) {
+    db.prepare('INSERT OR IGNORE INTO revoked_tokens (id, token_jti, user_id) VALUES (?, ?, ?)')
+      .run(uuidv4(), jti, req.user.id);
+  }
+  res.json({ ok: true });
+});
+
+// POST /api/auth/logout-all — revoke all active tokens for this user
+router.post('/logout-all', auth, (req, res) => {
+  const now = new Date().toISOString();
+  db.prepare('UPDATE users SET revoke_all_before = ? WHERE id = ?').run(now, req.user.id);
+  res.json({ ok: true });
 });
 
 module.exports = router;

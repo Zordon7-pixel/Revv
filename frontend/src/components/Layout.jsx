@@ -4,6 +4,7 @@ import { LayoutDashboard, ClipboardList, Users, BarChart3, Settings, UserCog, Lo
 import FeedbackButton from './FeedbackButton'
 import HelpDesk from './HelpDesk'
 import { isAdmin } from '../lib/auth'
+import api from '../lib/api'
 
 const allNav = [
   { to: '/',           icon: LayoutDashboard, label: 'Dashboard',      adminOnly: false },
@@ -20,7 +21,8 @@ export default function Layout() {
   const [open, setOpen] = useState(false)
   const navigate = useNavigate()
 
-  function logout() {
+  async function logout() {
+    try { await api.post('/auth/logout') } catch { /* best-effort */ }
     localStorage.removeItem('sc_token')
     navigate('/login')
   }

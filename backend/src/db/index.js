@@ -224,4 +224,20 @@ db.exec(`
   );
 `);
 
+db.exec(`
+  CREATE TABLE IF NOT EXISTS revoked_tokens (
+    id TEXT PRIMARY KEY,
+    token_jti TEXT UNIQUE NOT NULL,
+    user_id TEXT,
+    revoked_at TEXT DEFAULT (datetime('now'))
+  );
+`);
+
+const revocationMigrations = [
+  `ALTER TABLE users ADD COLUMN revoke_all_before TEXT`,
+];
+revocationMigrations.forEach(sql => {
+  try { db.exec(sql); } catch (_) { /* column already exists */ }
+});
+
 module.exports = db;

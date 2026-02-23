@@ -102,6 +102,8 @@ router.delete('/:id', auth, requireAdmin, (req, res) => {
   const user = db.prepare('SELECT role FROM users WHERE id = ? AND shop_id = ?').get(req.params.id, req.user.shop_id);
   if (!user) return res.status(404).json({ error: 'Not found' });
   if (user.role === 'owner') return res.status(403).json({ error: 'Cannot delete the shop owner' });
+  // Revoke all active tokens for this user before deleting
+  db.prepare('UPDATE users SET revoke_all_before = ? WHERE id = ?').run(new Date().toISOString(), req.params.id);
   db.prepare('DELETE FROM users WHERE id = ? AND shop_id = ?').run(req.params.id, req.user.shop_id);
   res.json({ ok: true });
 });

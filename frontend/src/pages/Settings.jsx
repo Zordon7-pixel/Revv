@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { MapPin, Wrench, DollarSign, Save, RefreshCw, CheckCircle, ShieldCheck, Truck, Trash2, MessageSquare, ChevronDown, X, AlertTriangle, Smartphone } from 'lucide-react'
+import { MapPin, Wrench, DollarSign, Save, RefreshCw, CheckCircle, ShieldCheck, Truck, Trash2, MessageSquare, ChevronDown, X, AlertTriangle, Smartphone, LogOut } from 'lucide-react'
 import api from '../lib/api'
 
 const TIER_COLORS = {
@@ -29,6 +29,8 @@ export default function Settings() {
   const [testSmsResult, setTestSmsResult] = useState({ type: '', message: '' })
   const [profile, setProfile] = useState({ name: '', phone: '' })
   const [profileSaved, setProfileSaved] = useState(false)
+  const [revokingAll, setRevokingAll] = useState(false)
+  const [revokeAllDone, setRevokeAllDone] = useState(false)
 
   useEffect(() => {
     api.get('/market/shop').then(r => {
@@ -120,6 +122,23 @@ export default function Settings() {
     await api.put('/users/me', profile)
     setProfileSaved(true)
     setTimeout(() => setProfileSaved(false), 3000)
+  }
+
+  async function logoutAllDevices() {
+    if (!window.confirm('This will immediately sign out all devices logged into your account. You will need to log in again on this device. Continue?')) return
+    setRevokingAll(true)
+    try {
+      await api.post('/auth/logout-all')
+      setRevokeAllDone(true)
+      setTimeout(() => {
+        localStorage.removeItem('sc_token')
+        window.location.href = '/login'
+      }, 1500)
+    } catch {
+      alert('Something went wrong. Please try again.')
+    } finally {
+      setRevokingAll(false)
+    }
   }
 
   async function sendTestSMS() {
@@ -493,6 +512,30 @@ export default function Settings() {
             <p>3. Supports UPS, FedEx, USPS, DHL, and 2,000+ other carriers</p>
             <p className="text-slate-600">Without a key: tracking numbers still show as clickable links to the carrier website.</p>
           </div>
+        </div>
+
+        {/* Security */}
+        <div className="bg-[#1a1d2e] rounded-2xl p-5 border border-[#2a2d3e] space-y-4">
+          <div className="flex items-center gap-2 text-white font-semibold text-sm mb-1">
+            <LogOut size={15} className="text-indigo-400" /> Security
+          </div>
+          <p className="text-xs text-slate-400 leading-relaxed">
+            Signed in on another device you don't recognize? Revoke all active sessions and force every device to log in again.
+          </p>
+          <button
+            type="button"
+            onClick={logoutAllDevices}
+            disabled={revokingAll || revokeAllDone}
+            className="flex items-center gap-2 bg-indigo-900/40 hover:bg-indigo-900/70 border border-indigo-700/40 text-indigo-300 font-semibold text-sm px-4 py-2.5 rounded-xl transition-colors disabled:opacity-60"
+          >
+            <LogOut size={14} />
+            {revokeAllDone ? 'Done — signing you out…' : revokingAll ? 'Revoking…' : 'Log Out All Devices'}
+          </button>
+          {revokeAllDone && (
+            <p className="text-xs text-emerald-400 flex items-center gap-1">
+              <CheckCircle size={12} /> All sessions revoked. Redirecting to login…
+            </p>
+          )}
         </div>
 
         {/* Save */}
