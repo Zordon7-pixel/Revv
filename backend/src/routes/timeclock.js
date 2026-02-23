@@ -2,7 +2,7 @@ const router = require('express').Router();
 const db = require('../db');
 const auth = require('../middleware/auth');
 const { requireAdmin } = require('../middleware/roles');
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
 const sms = require('../services/sms');
 const { randomUUID } = require('crypto');
 
