@@ -208,6 +208,7 @@ const migrations = [
   `ALTER TABLE parts_orders ADD COLUMN tracking_status TEXT`,
   `ALTER TABLE parts_orders ADD COLUMN tracking_detail TEXT`,
   `ALTER TABLE parts_orders ADD COLUMN tracking_updated_at TEXT`,
+  `ALTER TABLE shops ADD COLUMN monthly_revenue_target INTEGER DEFAULT 85000`,
 ];
 migrations.forEach(sql => {
   try { db.exec(sql); } catch (_) { /* column already exists */ }

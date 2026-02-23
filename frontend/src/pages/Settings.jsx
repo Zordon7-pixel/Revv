@@ -47,6 +47,7 @@ export default function Settings() {
         lng:              r.data.lng          ?? null,
         geofence_radius:  r.data.geofence_radius != null ? Math.round(r.data.geofence_radius * 3281) : 500,
         tracking_api_key: r.data.tracking_api_key || '',
+        monthly_revenue_target: r.data.monthly_revenue_target ?? 85000,
       })
       if (r.data.state) fetchMarket(r.data.state)
     })
@@ -99,13 +100,14 @@ export default function Settings() {
     try {
       await api.put('/market/shop', {
         ...form,
-        labor_rate:       parseFloat(form.labor_rate),
-        parts_markup:     parseFloat(form.parts_markup) / 100,
-        tax_rate:         parseFloat(form.tax_rate) / 100,
-        lat:              form.lat != null ? parseFloat(form.lat) : undefined,
-        lng:              form.lng != null ? parseFloat(form.lng) : undefined,
-        geofence_radius:  form.geofence_radius ? parseFloat(form.geofence_radius) / 3281 : 0.5,
-        tracking_api_key: form.tracking_api_key || null,
+        labor_rate:               parseFloat(form.labor_rate),
+        parts_markup:             parseFloat(form.parts_markup) / 100,
+        tax_rate:                 parseFloat(form.tax_rate) / 100,
+        lat:                      form.lat != null ? parseFloat(form.lat) : undefined,
+        lng:                      form.lng != null ? parseFloat(form.lng) : undefined,
+        geofence_radius:          form.geofence_radius ? parseFloat(form.geofence_radius) / 3281 : 0.5,
+        tracking_api_key:         form.tracking_api_key || null,
+        monthly_revenue_target:   parseInt(form.monthly_revenue_target, 10) || 85000,
       })
       setSaved(true)
       setTimeout(() => setSaved(false), 2500)
@@ -291,6 +293,17 @@ export default function Settings() {
                 <p className="text-[10px] text-amber-400 mt-1">State avg: {(mkt.taxRate*100).toFixed(2)}%</p>
               )}
             </div>
+          </div>
+
+          {/* Monthly Revenue Target */}
+          <div>
+            <label className={lbl}>Monthly Revenue Target ($)</label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">$</span>
+              <input className={`${inp} pl-6`} type="number" step="1000" min="0"
+                value={form.monthly_revenue_target || ''} onChange={e => setForm(f => ({...f, monthly_revenue_target: e.target.value}))} placeholder="85000" />
+            </div>
+            <p className="text-[10px] text-slate-500 mt-1">Used on the Reports page to track progress toward your monthly goal.</p>
           </div>
 
           {/* Rate explainer */}

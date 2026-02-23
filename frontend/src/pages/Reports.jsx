@@ -2,13 +2,16 @@ import { useEffect, useState } from 'react'
 import api from '../lib/api'
 import { STATUS_COLORS, STATUS_LABELS } from './RepairOrders'
 
-const TARGET = 85000
-
 export default function Reports() {
   const [data, setData] = useState(null)
-  useEffect(() => { api.get('/reports/summary').then(r => setData(r.data)) }, [])
-  if (!data) return <div className="flex items-center justify-center h-64 text-slate-500">Loading...</div>
+  const [shop, setShop] = useState(null)
+  useEffect(() => {
+    api.get('/reports/summary').then(r => setData(r.data))
+    api.get('/market/shop').then(r => setShop(r.data))
+  }, [])
+  if (!data || !shop) return <div className="flex items-center justify-center h-64 text-slate-500">Loading...</div>
 
+  const TARGET = shop.monthly_revenue_target || 85000
   const revPct = Math.min(Math.round((data.revenue / TARGET) * 100), 100)
   const margin = data.revenue > 0 ? Math.round((data.profit / data.revenue) * 100) : 0
 
