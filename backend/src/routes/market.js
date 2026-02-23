@@ -28,6 +28,8 @@ router.get('/shop', auth, (req, res) => {
 
 // PUT /api/market/shop  — update shop location & rates
 router.put('/shop', auth, (req, res) => {
+  const ALLOWED_MARKET_FIELDS = ['state','labor_rate','paint_rate','parts_markup','name','phone','twilio_account_sid','twilio_auth_token','twilio_phone_number','address','city','zip','tax_rate','lat','lng','geofence_radius','tracking_api_key'];
+  const updates = Object.fromEntries(Object.entries(req.body).filter(([k]) => ALLOWED_MARKET_FIELDS.includes(k)));
   const {
     name,
     phone,
@@ -45,7 +47,7 @@ router.put('/shop', auth, (req, res) => {
     twilio_account_sid,
     twilio_auth_token,
     twilio_phone_number,
-  } = req.body;
+  } = updates;
 
   // If state is provided, look up market tier
   let market_tier = null;

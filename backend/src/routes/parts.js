@@ -51,9 +51,12 @@ router.put('/:id', auth, (req, res) => {
     req.body.tracking_updated_at = null;
   }
 
-  const fields = ['part_name','part_number','vendor','quantity','unit_cost','status','expected_date','received_date','notes','tracking_number','carrier','tracking_status','tracking_detail','tracking_updated_at'];
-  const updates = {}; const vals = [];
-  fields.forEach(f => { if (req.body[f] !== undefined) { updates[f] = req.body[f]; } });
+  const ALLOWED_PARTS_FIELDS = ['status','carrier','tracking_number','expected_date','received_date','notes','name','part_number','cost','quantity','part_name','vendor','unit_cost','tracking_status','tracking_detail','tracking_updated_at'];
+  const updates = Object.fromEntries(Object.entries(req.body).filter(([k]) => ALLOWED_PARTS_FIELDS.includes(k)));
+  if (updates.name !== undefined && updates.part_name === undefined) updates.part_name = updates.name;
+  if (updates.cost !== undefined && updates.unit_cost === undefined) updates.unit_cost = updates.cost;
+  delete updates.name;
+  delete updates.cost;
 
   // Auto-set received_date when status flips to received
   if (req.body.status === 'received' && !part.received_date && !req.body.received_date) {

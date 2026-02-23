@@ -89,11 +89,14 @@ router.put('/:id', auth, requireAdmin, (req, res) => {
   const shift = db.prepare('SELECT * FROM schedules WHERE id = ? AND shop_id = ?').get(req.params.id, req.user.shop_id);
   if (!shift) return res.status(404).json({ error: 'Shift not found' });
 
-  const { start_time, end_time, notes } = req.body;
-  const updates = { updated_at: new Date().toISOString() };
-  if (start_time != null) updates.start_time = start_time;
-  if (end_time   != null) updates.end_time   = end_time;
-  if (notes      != null) updates.notes      = notes;
+  const ALLOWED_SCHEDULE_FIELDS = ['day_of_week','shift_start','shift_end','start_time','end_time','notes'];
+  const updates = Object.fromEntries(Object.entries(req.body).filter(([k]) => ALLOWED_SCHEDULE_FIELDS.includes(k)));
+  if (updates.shift_start !== undefined && updates.start_time === undefined) updates.start_time = updates.shift_start;
+  if (updates.shift_end !== undefined && updates.end_time === undefined) updates.end_time = updates.shift_end;
+  delete updates.shift_start;
+  delete updates.shift_end;
+  delete updates.day_of_week;
+  updates.updated_at = new Date().toISOString();
 
   const set = Object.keys(updates).map(k => `${k} = ?`).join(', ');
   db.prepare(`UPDATE schedules SET ${set} WHERE id = ?`).run(...Object.values(updates), req.params.id);

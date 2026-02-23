@@ -64,9 +64,8 @@ router.post('/', auth, (req, res) => {
 router.put('/:id', auth, (req, res) => {
   const ro = db.prepare('SELECT * FROM repair_orders WHERE id = ? AND shop_id = ?').get(req.params.id, req.user.shop_id);
   if (!ro) return res.status(404).json({ error: 'Not found' });
-  const fields = ['job_type','payment_type','claim_number','insurer','adjuster_name','adjuster_phone','adjuster_email','deductible','estimated_delivery','parts_cost','labor_cost','sublet_cost','tax','total','deductible_waived','referral_fee','goodwill_repair_cost','notes'];
-  const updates = {};
-  fields.forEach(f => { if (req.body[f] !== undefined) updates[f] = req.body[f]; });
+  const ALLOWED_RO_FIELDS = ['status','notes','assigned_to','estimate_amount','actual_amount','updated_at','insurance_company','adjuster_name','adjuster_phone','claim_number','deductible','auth_number','job_type','payment_type','insurer','adjuster_email','estimated_delivery','parts_cost','labor_cost','sublet_cost','tax','total','deductible_waived','referral_fee','goodwill_repair_cost'];
+  const updates = Object.fromEntries(Object.entries(req.body).filter(([k]) => ALLOWED_RO_FIELDS.includes(k)));
   if (Object.keys(updates).length > 0) {
     const profit = calculateProfit({ ...ro, ...updates });
     updates.true_profit = profit.trueProfit;

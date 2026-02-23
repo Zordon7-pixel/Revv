@@ -330,16 +330,22 @@ router.put('/:id', auth, requireAdmin, (req, res) => {
   const entry = db.prepare('SELECT * FROM time_entries WHERE id = ? AND shop_id = ?').get(req.params.id, req.user.shop_id);
   if (!entry) return res.status(404).json({ error: 'Entry not found' });
 
-  const { clock_in, clock_out, admin_note } = req.body;
+  const ALLOWED_TIMECLOCK_FIELDS = ['clock_in','clock_out','notes'];
+  const bodyUpdates = Object.fromEntries(Object.entries(req.body).filter(([k]) => ALLOWED_TIMECLOCK_FIELDS.includes(k)));
+  if (bodyUpdates.notes !== undefined && bodyUpdates.admin_note === undefined) {
+    bodyUpdates.admin_note = bodyUpdates.notes;
+  }
+  delete bodyUpdates.notes;
+
   const updates = { updated_at: new Date().toISOString(), adjusted_by: req.user.id };
 
-  if (clock_in  != null) updates.clock_in  = clock_in;
-  if (clock_out != null) updates.clock_out = clock_out;
-  if (admin_note != null) updates.admin_note = admin_note;
+  if (bodyUpdates.clock_in  != null) updates.clock_in  = bodyUpdates.clock_in;
+  if (bodyUpdates.clock_out != null) updates.clock_out = bodyUpdates.clock_out;
+  if (bodyUpdates.admin_note != null) updates.admin_note = bodyUpdates.admin_note;
 
   // Recalculate total_hours
-  const newIn  = clock_in  || entry.clock_in;
-  const newOut = clock_out || entry.clock_out;
+  const newIn  = bodyUpdates.clock_in  || entry.clock_in;
+  const newOut = bodyUpdates.clock_out || entry.clock_out;
   if (newIn && newOut) {
     updates.total_hours = +((new Date(newOut) - new Date(newIn)) / 3600000).toFixed(4);
   }
