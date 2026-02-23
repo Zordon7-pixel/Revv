@@ -23,6 +23,12 @@ function runSeed() {
     uuidv4(), shopId, "Alex Rivera", "employee@shop.com", hash, "employee"
   );
 
+  // Real owner account — Miles Automotive
+  const milesHash = bcrypt.hashSync('Miles1234', 10);
+  db.prepare(`INSERT INTO users (id, shop_id, name, email, password_hash, role) VALUES (?, ?, ?, ?, ?, ?)`).run(
+    uuidv4(), shopId, "Miles Automotive", "milesautomotivecorp@gmail.com", milesHash, "owner"
+  );
+
   const customers = [
     { name: "Marcus Johnson",   phone: "(555) 200-0101", email: "marcus@customer.com", insurance: "Progressive", policy: "PRG-882341" },
     { name: "Sofia Rodriguez",  phone: "(555) 200-0202", email: "sofia@customer.com",  insurance: "Geico",       policy: "GCO-441892" },
