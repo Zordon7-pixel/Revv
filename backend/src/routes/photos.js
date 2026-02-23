@@ -1,5 +1,5 @@
 const router = require('express').Router();
-const db = require('../db');
+const { dbGet, dbAll, dbRun } = require('../db');
 const auth = require('../middleware/auth');
 const multer = require('multer');
 const path = require('path');
@@ -21,43 +21,49 @@ const upload = multer({
   storage,
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    if (!file.mimetype.startsWith('image/')) {
-      return cb(new Error('Only image files are allowed'));
-    }
+    if (!file.mimetype.startsWith('image/')) return cb(new Error('Only image files are allowed'));
     cb(null, true);
   },
 });
 
-// POST /api/photos/:ro_id — upload photo
-router.post('/:ro_id', auth, upload.single('photo'), (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-  const { caption, photo_type } = req.body;
-  const id = uuidv4();
-  const photo_url = `/uploads/photos/${req.file.filename}`;
-  db.prepare(`
-    INSERT INTO ro_photos (id, ro_id, user_id, photo_url, caption, photo_type, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
-  `).run(id, req.params.ro_id, req.user.id, photo_url, caption || null, photo_type || 'damage');
-  res.status(201).json(db.prepare('SELECT * FROM ro_photos WHERE id = ?').get(id));
+router.post('/:ro_id', auth, upload.single('photo'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    const { caption, photo_type } = req.body;
+    const id = uuidv4();
+    const photo_url = `/uploads/photos/${req.file.filename}`;
+    await dbRun(
+      'INSERT INTO ro_photos (id, ro_id, user_id, photo_url, caption, photo_type) VALUES ($1, $2, $3, $4, $5, $6)',
+      [id, req.params.ro_id, req.user.id, photo_url, caption || null, photo_type || 'damage']
+    );
+    res.status(201).json(await dbGet('SELECT * FROM ro_photos WHERE id = $1', [id]));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// GET /api/photos/:ro_id — all photos for RO
-router.get('/:ro_id', auth, (req, res) => {
-  const photos = db.prepare('SELECT * FROM ro_photos WHERE ro_id = ? ORDER BY created_at ASC').all(req.params.ro_id);
-  res.json({ photos });
+router.get('/:ro_id', auth, async (req, res) => {
+  try {
+    const photos = await dbAll('SELECT * FROM ro_photos WHERE ro_id = $1 ORDER BY created_at ASC', [req.params.ro_id]);
+    res.json({ photos });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// DELETE /api/photos/:photo_id — delete photo + file
-router.delete('/:photo_id', auth, (req, res) => {
-  const photo = db.prepare('SELECT * FROM ro_photos WHERE id = ?').get(req.params.photo_id);
-  if (!photo) return res.status(404).json({ error: 'Not found' });
-  const filePath = path.join(__dirname, '../../', photo.photo_url);
-  try { fs.unlinkSync(filePath); } catch (_) {}
-  db.prepare('DELETE FROM ro_photos WHERE id = ?').run(req.params.photo_id);
-  res.json({ ok: true });
+router.delete('/:photo_id', auth, async (req, res) => {
+  try {
+    const photo = await dbGet('SELECT * FROM ro_photos WHERE id = $1', [req.params.photo_id]);
+    if (!photo) return res.status(404).json({ error: 'Not found' });
+    const filePath = path.join(__dirname, '../../', photo.photo_url);
+    try { fs.unlinkSync(filePath); } catch (_) {}
+    await dbRun('DELETE FROM ro_photos WHERE id = $1', [req.params.photo_id]);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// Multer error handler
 router.use((err, req, res, next) => {
   if (err.code === 'LIMIT_FILE_SIZE') return res.status(400).json({ error: 'File too large (max 5MB)' });
   res.status(400).json({ error: err.message });

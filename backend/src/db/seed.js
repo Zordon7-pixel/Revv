@@ -1,32 +1,34 @@
-const db = require('./index');
+const { dbGet, dbRun } = require('./index');
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 
-function runSeed() {
-  const existing = db.prepare('SELECT id FROM shops LIMIT 1').get();
+async function runSeed() {
+  const existing = await dbGet('SELECT id FROM shops LIMIT 1', []);
   if (existing) { console.log('DB already seeded — skipping.'); return; }
 
   const shopId = uuidv4();
-  db.prepare(`INSERT INTO shops (id, name, phone, address, city, state, zip, market_tier, labor_rate, parts_markup, tax_rate) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
-    shopId, "Miles Automotive", "(555) 400-0100", "123 Miles Ave", "New York", "NY", "10001", 1, 95, 0.40, 0.08875
+  await dbRun(
+    `INSERT INTO shops (id, name, phone, address, city, state, zip, market_tier, labor_rate, parts_markup, tax_rate) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+    [shopId, "Miles Automotive", "(555) 400-0100", "123 Miles Ave", "New York", "NY", "10001", 1, 95, 0.40, 0.08875]
   );
 
-  const hash = bcrypt.hashSync('demo1234', 10);
+  const hash = await bcrypt.hash('demo1234', 10);
 
   const userId = uuidv4();
-  db.prepare(`INSERT INTO users (id, shop_id, name, email, password_hash, role) VALUES (?, ?, ?, ?, ?, ?)`).run(
-    userId, shopId, "Shop Owner", "demo@shop.com", hash, "owner"
+  await dbRun(
+    `INSERT INTO users (id, shop_id, name, email, password_hash, role) VALUES ($1, $2, $3, $4, $5, $6)`,
+    [userId, shopId, "Shop Owner", "demo@shop.com", hash, "owner"]
   );
 
-  // Demo employee account
-  db.prepare(`INSERT INTO users (id, shop_id, name, email, password_hash, role) VALUES (?, ?, ?, ?, ?, ?)`).run(
-    uuidv4(), shopId, "Alex Rivera", "employee@shop.com", hash, "employee"
+  await dbRun(
+    `INSERT INTO users (id, shop_id, name, email, password_hash, role) VALUES ($1, $2, $3, $4, $5, $6)`,
+    [uuidv4(), shopId, "Alex Rivera", "employee@shop.com", hash, "employee"]
   );
 
-  // Real owner account — Miles Automotive
-  const milesHash = bcrypt.hashSync('Miles1234', 10);
-  db.prepare(`INSERT INTO users (id, shop_id, name, email, password_hash, role) VALUES (?, ?, ?, ?, ?, ?)`).run(
-    uuidv4(), shopId, "Miles Automotive", "milesautomotivecorp@gmail.com", milesHash, "owner"
+  const milesHash = await bcrypt.hash('Miles1234', 10);
+  await dbRun(
+    `INSERT INTO users (id, shop_id, name, email, password_hash, role) VALUES ($1, $2, $3, $4, $5, $6)`,
+    [uuidv4(), shopId, "Miles Automotive", "milesautomotivecorp@gmail.com", milesHash, "owner"]
   );
 
   const customers = [
@@ -60,18 +62,21 @@ function runSeed() {
   ];
 
   let marcusCustId = null;
-  ros.forEach((r, i) => {
+  for (let i = 0; i < ros.length; i++) {
+    const r = ros[i];
     const custId = uuidv4();
-    if (r.custIdx === 0) marcusCustId = custId; // Marcus Johnson — portal demo account
+    if (r.custIdx === 0) marcusCustId = custId;
     const c = customers[r.custIdx];
-    db.prepare(`INSERT INTO customers (id, shop_id, name, phone, email, insurance_company, policy_number) VALUES (?, ?, ?, ?, ?, ?, ?)`).run(
-      custId, shopId, c.name, c.phone, c.email, c.insurance, c.policy
+    await dbRun(
+      `INSERT INTO customers (id, shop_id, name, phone, email, insurance_company, policy_number) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [custId, shopId, c.name, c.phone, c.email, c.insurance, c.policy]
     );
 
     const vehId = uuidv4();
     const v = vehicles[r.vehIdx];
-    db.prepare(`INSERT INTO vehicles (id, shop_id, customer_id, year, make, model, vin, color, plate) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
-      vehId, shopId, custId, v.year, v.make, v.model, v.vin, v.color, v.plate
+    await dbRun(
+      `INSERT INTO vehicles (id, shop_id, customer_id, year, make, model, vin, color, plate) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [vehId, shopId, custId, v.year, v.make, v.model, v.vin, v.color, v.plate]
     );
 
     const roId  = uuidv4();
@@ -79,28 +84,29 @@ function runSeed() {
     const total = r.parts + r.labor;
     const trueProfit = (r.labor - (r.parts * 0.1)) - r.deductWaived - r.refFee;
 
-    db.prepare(`
+    await dbRun(`
       INSERT INTO repair_orders (id, shop_id, ro_number, vehicle_id, customer_id, job_type, status, payment_type,
         claim_number, insurer, deductible, intake_date, actual_delivery, parts_cost, labor_cost, total,
         deductible_waived, referral_fee, true_profit, notes)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+    `, [
       roId, shopId, roNum, vehId, custId, r.jobType, r.status, r.payType,
       r.claimSuffix ? `CLM-2026-${r.claimSuffix}` : null,
       r.insurer, r.deduct, r.date, r.delivered,
       r.parts, r.labor, total, r.deductWaived, r.refFee, trueProfit,
       `Sample repair order #${i + 1}`
-    );
+    ]);
 
-    db.prepare(`INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by) VALUES (?, ?, ?, ?, ?)`).run(
-      uuidv4(), roId, null, r.status, 'system'
+    await dbRun(
+      `INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by) VALUES ($1, $2, $3, $4, $5)`,
+      [uuidv4(), roId, null, r.status, 'system']
     );
-  });
+  }
 
-  // Customer portal demo account — Marcus Johnson can log in at /portal
   if (marcusCustId) {
-    db.prepare(`INSERT INTO users (id, shop_id, name, email, password_hash, role, customer_id) VALUES (?, ?, ?, ?, ?, ?, ?)`).run(
-      uuidv4(), shopId, "Marcus Johnson", "marcus@customer.com", hash, "customer", marcusCustId
+    await dbRun(
+      `INSERT INTO users (id, shop_id, name, email, password_hash, role, customer_id) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [uuidv4(), shopId, "Marcus Johnson", "marcus@customer.com", hash, "customer", marcusCustId]
     );
   }
 
@@ -114,8 +120,7 @@ function runSeed() {
 
 // Allow running directly: node src/db/seed.js
 if (require.main === module) {
-  runSeed();
-  process.exit(0);
+  runSeed().then(() => process.exit(0)).catch(err => { console.error(err); process.exit(1); });
 }
 
 module.exports = { runSeed };

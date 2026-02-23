@@ -11,9 +11,6 @@ if (!process.env.JWT_SECRET) {
   process.exit(1);
 }
 
-// Seed demo data on first run (safe to call every startup — skips if already seeded)
-try { require('./db/seed').runSeed(); } catch (e) { console.error('Seed error:', e.message); }
-
 const app = express();
 
 // CORS — restrict to known origin in production
@@ -25,7 +22,6 @@ const allowedOrigins = process.env.CORS_ORIGIN
 
 app.use(cors({
   origin: function(origin, callback) {
-    // Allow same-origin requests (no origin header) and allowed origins
     if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
     return callback(new Error('Not allowed by CORS'));
   },
@@ -78,7 +74,23 @@ app.get('*', (req, res) => {
 });
 
 const PORT = process.env.PORT || 4000;
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🔧 REVV running on http://localhost:${PORT}`);
-  console.log(`   LAN: http://192.168.1.52:${PORT}`);
-});
+
+const { initDb } = require('./db');
+initDb()
+  .then(async () => {
+    // Seed demo data on first run (safe to call every startup — skips if already seeded)
+    try {
+      await require('./db/seed').runSeed();
+    } catch (e) {
+      console.error('Seed error:', e.message);
+    }
+
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`🔧 REVV running on http://localhost:${PORT}`);
+      console.log(`   PostgreSQL: ${process.env.DATABASE_URL ? 'connected' : 'local'}`);
+    });
+  })
+  .catch(err => {
+    console.error('[DB] Init failed:', err.message);
+    process.exit(1);
+  });

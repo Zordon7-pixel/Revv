@@ -1,38 +1,31 @@
 const router = require('express').Router();
-const db = require('../db');
+const { dbGet, dbAll, dbRun } = require('../db');
 const { v4: uuidv4 } = require('uuid');
 
-// Create feedback table if not exists
-db.exec(`
-  CREATE TABLE IF NOT EXISTS feedback (
-    id TEXT PRIMARY KEY,
-    app TEXT DEFAULT 'shopcommand',
-    tester_name TEXT,
-    category TEXT,
-    priority TEXT DEFAULT 'medium',
-    message TEXT NOT NULL,
-    expected TEXT,
-    page TEXT,
-    status TEXT DEFAULT 'new',
-    routed_to TEXT,
-    created_at TEXT DEFAULT (datetime('now'))
-  );
-`);
+// Feedback table is created in db/index.js initDb()
 
-// Public endpoint — no auth required (testers aren't logged in)
-router.post('/', (req, res) => {
-  const { tester_name, category, priority, message, expected, page, routed_to } = req.body;
-  if (!message?.trim()) return res.status(400).json({ error: 'Message required' });
-  const id = uuidv4();
-  db.prepare(`INSERT INTO feedback (id, app, tester_name, category, priority, message, expected, page, routed_to) VALUES (?, 'shopcommand', ?, ?, ?, ?, ?, ?, ?)`)
-    .run(id, tester_name || 'Anonymous', category || 'general', priority || 'medium', message.trim(), expected || null, page || null, routed_to || null);
-  res.status(201).json({ ok: true, id });
+router.post('/', async (req, res) => {
+  try {
+    const { tester_name, category, priority, message, expected, page, routed_to } = req.body;
+    if (!message?.trim()) return res.status(400).json({ error: 'Message required' });
+    const id = uuidv4();
+    await dbRun(
+      `INSERT INTO feedback (id, app, tester_name, category, priority, message, expected, page, routed_to) VALUES ($1, 'shopcommand', $2, $3, $4, $5, $6, $7, $8)`,
+      [id, tester_name || 'Anonymous', category || 'general', priority || 'medium', message.trim(), expected || null, page || null, routed_to || null]
+    );
+    res.status(201).json({ ok: true, id });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// Protected — read all feedback (for Zordon to review)
-router.get('/', (req, res) => {
-  const feedback = db.prepare('SELECT * FROM feedback ORDER BY created_at DESC').all();
-  res.json({ feedback });
+router.get('/', async (req, res) => {
+  try {
+    const feedback = await dbAll('SELECT * FROM feedback ORDER BY created_at DESC', []);
+    res.json({ feedback });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;
