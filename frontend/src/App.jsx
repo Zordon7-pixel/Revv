@@ -14,6 +14,8 @@ import TimeClock from './pages/TimeClock'
 import Schedule from './pages/Schedule'
 import Register from './pages/Register'
 import ClaimPortal from './pages/ClaimPortal'
+import ResetPassword from './pages/ResetPassword'
+import Invoice from './pages/Invoice'
 
 function PrivateRoute({ children }) {
   return localStorage.getItem('sc_token') ? children : <Navigate to="/login" />
@@ -34,6 +36,8 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
+        <Route path="/invoice/:id" element={<Invoice />} />
         <Route path="/portal" element={<PrivateRoute><Portal /></PrivateRoute>} />
         <Route path="/claim/:token" element={<ClaimPortal />} />
         <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>

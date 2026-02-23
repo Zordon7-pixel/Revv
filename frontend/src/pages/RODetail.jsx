@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Pencil, Save, X, Package, Plus, CheckCircle, AlertCircle, Clock, Truck, RefreshCw, ExternalLink, Car, DollarSign, ClipboardList, Smartphone, AlertTriangle, Copy } from 'lucide-react'
+import { ArrowLeft, Pencil, Save, X, Package, Plus, CheckCircle, AlertCircle, Clock, Truck, RefreshCw, ExternalLink, Car, DollarSign, ClipboardList, Smartphone, AlertTriangle, Copy, Printer } from 'lucide-react'
 import api from '../lib/api'
 import { STATUS_COLORS, STATUS_LABELS } from './RepairOrders'
 import StatusBadge from '../components/StatusBadge'
@@ -179,6 +179,10 @@ export default function RODetail() {
               → {STATUS_LABELS[STAGES[currentIdx+1]]}
             </button>
           )}
+          <button onClick={() => window.open(`/invoice/${id}`, '_blank')}
+            className="flex items-center gap-1 bg-[#2a2d3e] hover:bg-[#3a3d4e] text-slate-300 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
+            <Printer size={12} /> Print Invoice
+          </button>
           {!editing
             ? <button onClick={() => setEditing(true)} className="flex items-center gap-1 bg-[#2a2d3e] hover:bg-[#3a3d4e] text-slate-300 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
                 <Pencil size={12} /> Edit

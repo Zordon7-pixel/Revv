@@ -10,6 +10,11 @@ export default function Login() {
   const [loading, setLoading] = useState(false)
   const navigate = useNavigate()
 
+  const [forgotMode, setForgotMode] = useState(false)
+  const [forgotEmail, setForgotEmail] = useState('')
+  const [forgotMsg, setForgotMsg] = useState('')
+  const [forgotLoading, setForgotLoading] = useState(false)
+
   async function submit(e) {
     e.preventDefault()
     setLoading(true); setError('')
@@ -24,6 +29,19 @@ export default function Login() {
     }
   }
 
+  async function submitForgot(e) {
+    e.preventDefault()
+    setForgotLoading(true); setForgotMsg('')
+    try {
+      await api.post('/auth/forgot-password', { email: forgotEmail })
+      setForgotMsg('If that email exists, a reset link has been sent. Check the server console.')
+    } catch {
+      setForgotMsg('Something went wrong. Please try again.')
+    } finally {
+      setForgotLoading(false)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-[#0f1117] flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
@@ -34,26 +52,56 @@ export default function Login() {
           <h1 className="text-3xl font-bold text-white tracking-wide">REVV</h1>
           <p className="text-xs font-semibold text-indigo-400 uppercase tracking-widest mt-2">Auto Body Shop Management</p>
         </div>
-        <form onSubmit={submit} className="bg-[#1a1d2e] rounded-2xl p-6 border border-[#2a2d3e] space-y-4">
-          <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1.5">Email</label>
-            <input type="email" value={email} onChange={e => setEmail(e.target.value)} required
-              className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition-colors"
-              placeholder="demo@shop.com" />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1.5">Password</label>
-            <input type="password" value={password} onChange={e => setPassword(e.target.value)} required
-              className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition-colors"
-              placeholder="••••••••" />
-          </div>
-          {error && <p className="text-red-400 text-xs">{error}</p>}
-          <button type="submit" disabled={loading}
-            className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-lg py-2.5 text-sm transition-colors disabled:opacity-50">
-            {loading ? 'Signing in...' : 'Sign In'}
-          </button>
-          <p className="text-center text-xs text-slate-600">Demo: demo@shop.com / demo1234</p>
-        </form>
+
+        {!forgotMode ? (
+          <form onSubmit={submit} className="bg-[#1a1d2e] rounded-2xl p-6 border border-[#2a2d3e] space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1.5">Email</label>
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)} required
+                className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition-colors"
+                placeholder="demo@shop.com" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1.5">Password</label>
+              <input type="password" value={password} onChange={e => setPassword(e.target.value)} required
+                className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition-colors"
+                placeholder="••••••••" />
+            </div>
+            {error && <p className="text-red-400 text-xs">{error}</p>}
+            <button type="submit" disabled={loading}
+              className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-lg py-2.5 text-sm transition-colors disabled:opacity-50">
+              {loading ? 'Signing in...' : 'Sign In'}
+            </button>
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-slate-600">Demo: demo@shop.com / demo1234</p>
+              <button type="button" onClick={() => { setForgotMode(true); setForgotMsg('') }}
+                className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
+                Forgot password?
+              </button>
+            </div>
+          </form>
+        ) : (
+          <form onSubmit={submitForgot} className="bg-[#1a1d2e] rounded-2xl p-6 border border-[#2a2d3e] space-y-4">
+            <h2 className="text-sm font-semibold text-white">Reset your password</h2>
+            <p className="text-xs text-slate-500">Enter your email address and we will log a reset link to the server console.</p>
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1.5">Email</label>
+              <input type="email" value={forgotEmail} onChange={e => setForgotEmail(e.target.value)} required
+                className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition-colors"
+                placeholder="your@email.com" />
+            </div>
+            {forgotMsg && <p className="text-xs text-indigo-400">{forgotMsg}</p>}
+            <button type="submit" disabled={forgotLoading}
+              className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-lg py-2.5 text-sm transition-colors disabled:opacity-50">
+              {forgotLoading ? 'Sending...' : 'Send Reset Link'}
+            </button>
+            <button type="button" onClick={() => setForgotMode(false)}
+              className="w-full text-xs text-slate-500 hover:text-slate-300 transition-colors py-1">
+              Back to sign in
+            </button>
+          </form>
+        )}
+
         <div className="mt-4 text-center">
           <Link to="/register"
             className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors font-medium inline-flex items-center gap-1">

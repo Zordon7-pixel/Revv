@@ -213,4 +213,14 @@ migrations.forEach(sql => {
   try { db.exec(sql); } catch (_) { /* column already exists */ }
 });
 
+db.exec(`
+  CREATE TABLE IF NOT EXISTS password_reset_tokens (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    token TEXT NOT NULL UNIQUE,
+    expires_at TEXT NOT NULL,
+    used INTEGER DEFAULT 0
+  );
+`);
+
 module.exports = db;

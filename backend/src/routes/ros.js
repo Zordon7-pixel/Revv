@@ -44,6 +44,14 @@ router.get('/:id', auth, (req, res) => {
   res.json(enrichRO(ro));
 });
 
+// GET invoice data for a single RO
+router.get('/:id/invoice', auth, (req, res) => {
+  const ro = db.prepare('SELECT * FROM repair_orders WHERE id = ? AND shop_id = ?').get(req.params.id, req.user.shop_id);
+  if (!ro) return res.status(404).json({ error: 'Not found' });
+  const shop = db.prepare('SELECT * FROM shops WHERE id = ?').get(ro.shop_id);
+  res.json({ ...enrichRO(ro), shop });
+});
+
 // POST create RO
 router.post('/', auth, (req, res) => {
   const { customer_id, vehicle_id, job_type, payment_type, claim_number, insurer, adjuster_name, adjuster_phone, deductible, notes, estimated_delivery } = req.body;
