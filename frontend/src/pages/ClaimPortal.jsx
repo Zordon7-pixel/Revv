@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
+import { CheckCircle2 } from 'lucide-react'
 import api from '../lib/api'
 
 export default function ClaimPortal() {
@@ -83,8 +84,8 @@ export default function ClaimPortal() {
       <div className="min-h-screen bg-[#0f1117] text-slate-200 p-6">
         <div className="max-w-3xl mx-auto mt-10 bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-6 text-center">
           <h1 className="text-xl font-bold text-white">REVV · Insurance Assessment Portal</h1>
-          <p className="text-emerald-400 mt-6 text-lg font-semibold">Assessment received. Thank you.</p>
-          <p className="text-slate-400 mt-2">✅ Assessment submitted successfully. The shop has been notified.</p>
+          <p className="text-emerald-400 mt-6 text-lg font-semibold flex items-center justify-center gap-2"><CheckCircle2 size={20} /> Assessment received. Thank you.</p>
+          <p className="text-slate-400 mt-2">Assessment submitted successfully. The shop has been notified.</p>
         </div>
       </div>
     )

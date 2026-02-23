@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { Wrench } from 'lucide-react'
+import { Wrench, Car } from 'lucide-react'
 import api from '../lib/api'
 
 export default function Login() {
@@ -56,8 +56,8 @@ export default function Login() {
         </form>
         <div className="mt-4 text-center">
           <Link to="/register"
-            className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors font-medium">
-            🚗 New here? Track your vehicle →
+            className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors font-medium inline-flex items-center gap-1">
+            <Car size={13} /> New here? Track your vehicle →
           </Link>
         </div>
       </div>

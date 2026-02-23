@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Users as UsersIcon, Plus, X, Shield, Wrench, Car, Trash2 } from 'lucide-react'
+import { Users as UsersIcon, Plus, X, Shield, Wrench, Car, Trash2, Info } from 'lucide-react'
 import api from '../lib/api'
 
 const ROLES = ['admin', 'employee', 'staff']  // customers self-register via /register
@@ -124,7 +124,7 @@ export default function Users() {
       <div className="space-y-3">
         <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Customer Logins</h3>
         <div className="bg-emerald-900/10 border border-emerald-700/30 rounded-xl p-4 flex items-start gap-3">
-          <Car size={16} className="text-emerald-400 flex-shrink-0 mt-0.5" />
+          <Info size={16} className="text-emerald-400 flex-shrink-0 mt-0.5" />
           <div className="text-xs text-slate-300 leading-relaxed space-y-1">
             <p><strong className="text-white">Customers register themselves.</strong> No passwords to set — no confusion.</p>
             <p className="text-slate-400">When a customer drops off their vehicle, just tell them:<br/>
@@ -161,8 +161,8 @@ export default function Users() {
                   {ROLES.map(r=><option key={r} value={r}>{ROLE_META[r]?.label || r}</option>)}
                 </select>
               </div>
-              <p className="text-[10px] text-slate-500 bg-[#0f1117] rounded-lg px-3 py-2 border border-[#2a2d3e]">
-                💡 Customers create their own accounts — just add them to the <strong className="text-slate-400">Customers</strong> list with their email and tell them to visit /register.
+              <p className="text-[10px] text-slate-500 bg-[#0f1117] rounded-lg px-3 py-2 border border-[#2a2d3e] flex items-center gap-2">
+                <Info size={12} className="flex-shrink-0 text-slate-400" /> Customers create their own accounts — just add them to the <strong className="text-slate-400">Customers</strong> list with their email and tell them to visit /register.
               </p>
               <div className="flex gap-3 pt-2">
                 <button type="button" onClick={close} className="flex-1 bg-[#0f1117] text-slate-400 rounded-lg py-2.5 text-sm border border-[#2a2d3e]">Cancel</button>

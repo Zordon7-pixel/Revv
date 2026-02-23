@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { CheckCircle, XCircle } from 'lucide-react'
 
 export default function HelpDesk() {
   const [open, setOpen] = useState(false)
@@ -84,7 +85,7 @@ export default function HelpDesk() {
                   {(diagnostics?.checks || []).map((check, idx) => (
                     <div key={`${check.name}-${idx}`} className="border border-[#2a2d3e] rounded-lg p-3 bg-[#151827]">
                       <div className="text-sm font-medium flex items-center gap-2">
-                        <span>{check.ok ? '✅' : '❌'}</span>
+                        {check.ok ? <CheckCircle size={14} className="text-emerald-400" /> : <XCircle size={14} className="text-red-400" />}
                         <span>{check.name}</span>
                       </div>
                       <div className="text-xs text-slate-400 mt-1">{check.detail}</div>

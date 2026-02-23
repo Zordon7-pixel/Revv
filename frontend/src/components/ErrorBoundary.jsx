@@ -1,4 +1,5 @@
 import React from 'react';
+import { AlertTriangle, Wrench } from 'lucide-react';
 
 export default class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -15,7 +16,7 @@ export default class ErrorBoundary extends React.Component {
     if (this.state.hasError) {
       return (
         <div style={{ minHeight: '100vh', background: '#0f1117', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 16, padding: 32, fontFamily: 'sans-serif' }}>
-          <div style={{ fontSize: 48 }}>⚠️</div>
+          <AlertTriangle size={48} style={{ color: '#fbbf24' }} />
           <h1 style={{ color: '#fff', fontSize: 22, fontWeight: 700, margin: 0 }}>Something went wrong</h1>
           <p style={{ color: '#94a3b8', fontSize: 14, margin: 0, textAlign: 'center', maxWidth: 400 }}>
             REVV ran into an unexpected error. Click below to attempt an automatic repair and reload.
@@ -25,9 +26,9 @@ export default class ErrorBoundary extends React.Component {
           </p>
           <button
             onClick={() => window.location.reload()}
-            style={{ background: '#6366f1', color: '#fff', border: 'none', borderRadius: 8, padding: '10px 24px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
+            style={{ background: '#6366f1', color: '#fff', border: 'none', borderRadius: 8, padding: '10px 24px', fontSize: 14, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}
           >
-            🔧 Repair &amp; Reload
+            <Wrench size={14} style={{ display: 'inline' }} /> Repair &amp; Reload
           </button>
         </div>
       );

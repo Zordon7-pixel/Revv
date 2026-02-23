@@ -1,15 +1,15 @@
 import { useState } from 'react'
-import { MessageSquarePlus, X, Send, Plus, CheckCircle, Trash2 } from 'lucide-react'
+import { MessageSquarePlus, X, Send, Plus, CheckCircle, Trash2, Bug, Palette, Lightbulb, HelpCircle, Search, Rocket } from 'lucide-react'
 import api from '../lib/api'
 import { useLocation } from 'react-router-dom'
 
 const CATEGORIES = [
-  { value: 'bug', label: '🐛 Bug / Broken', soldier: 'Codex 5.3', color: 'text-red-400' },
-  { value: 'ui', label: '🎨 Design / UI', soldier: 'Codex 5.3', color: 'text-purple-400' },
-  { value: 'feature', label: '💡 Feature Idea', soldier: 'Colonel Zordon', color: 'text-indigo-400' },
-  { value: 'question', label: '❓ Question', soldier: 'Colonel Zordon', color: 'text-blue-400' },
-  { value: 'missing', label: '🔍 Missing Info', soldier: 'Codex 5.3', color: 'text-orange-400' },
-  { value: 'idea', label: '🚀 Big Idea', soldier: 'Colonel Zordon', color: 'text-yellow-400' },
+  { value: 'bug', label: 'Bug / Broken', icon: Bug, soldier: 'Codex 5.3', color: 'text-red-400' },
+  { value: 'ui', label: 'Design / UI', icon: Palette, soldier: 'Codex 5.3', color: 'text-purple-400' },
+  { value: 'feature', label: 'Feature Idea', icon: Lightbulb, soldier: 'Colonel Zordon', color: 'text-indigo-400' },
+  { value: 'question', label: 'Question', icon: HelpCircle, soldier: 'Colonel Zordon', color: 'text-blue-400' },
+  { value: 'missing', label: 'Missing Info', icon: Search, soldier: 'Codex 5.3', color: 'text-orange-400' },
+  { value: 'idea', label: 'Big Idea', icon: Rocket, soldier: 'Colonel Zordon', color: 'text-yellow-400' },
 ]
 
 const PRIORITIES = [
@@ -93,12 +93,19 @@ export default function FeedbackButton() {
                   {submitted.length} item{submitted.length > 1 ? 's' : ''} routed to the right soldier at HQ.
                 </div>
                 <div className="space-y-2 mb-5">
-                  {submitted.map((it, i) => (
-                    <div key={i} className="flex items-center justify-between bg-[#0f1117] rounded-lg px-3 py-2 text-xs">
-                      <span className="text-slate-300">{cat(it.category)?.label}</span>
-                      <span className="text-indigo-400 font-medium">→ {cat(it.category)?.soldier}</span>
-                    </div>
-                  ))}
+                  {submitted.map((it, i) => {
+                    const catData = cat(it.category)
+                    const IconComp = catData?.icon
+                    return (
+                      <div key={i} className="flex items-center justify-between bg-[#0f1117] rounded-lg px-3 py-2 text-xs">
+                        <span className="text-slate-300 flex items-center gap-1.5">
+                          {IconComp && <IconComp size={13} />}
+                          {catData?.label}
+                        </span>
+                        <span className="text-indigo-400 font-medium">→ {catData?.soldier}</span>
+                      </div>
+                    )
+                  })}
                 </div>
                 <button onClick={reset} className="text-indigo-400 hover:text-indigo-300 text-sm underline">Submit more feedback</button>
               </div>
@@ -129,7 +136,10 @@ export default function FeedbackButton() {
                           <label className="block text-[10px] font-medium text-slate-500 mb-1">Type</label>
                           <select value={item.category} onChange={e => setItem(i, 'category', e.target.value)}
                             className="w-full bg-[#1a1d2e] border border-[#2a2d3e] rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500">
-                            {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                            {CATEGORIES.map(c => {
+                              const IconComp = c.icon
+                              return <option key={c.value} value={c.value}>{c.label}</option>
+                            })}
                           </select>
                         </div>
                         <div>

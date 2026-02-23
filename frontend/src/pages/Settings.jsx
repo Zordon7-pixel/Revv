@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { MapPin, Wrench, DollarSign, Save, RefreshCw, CheckCircle, ShieldCheck, Truck, Trash2, MessageSquare, ChevronDown, X } from 'lucide-react'
+import { MapPin, Wrench, DollarSign, Save, RefreshCw, CheckCircle, ShieldCheck, Truck, Trash2, MessageSquare, ChevronDown, X, AlertTriangle, Smartphone } from 'lucide-react'
 import api from '../lib/api'
 
 const TIER_COLORS = {
@@ -131,7 +131,7 @@ export default function Settings() {
     try {
       await api.post('/sms/test', {
         phone: testPhone,
-        message: `REVV test SMS from ${form.name || 'your shop'} — notifications are connected.`,
+        message: `REVV test SMS from ${form.name || 'your shop'} - notifications are connected.`,
       })
       setTestSmsResult({ type: 'success', message: 'Test SMS sent successfully.' })
     } catch (e) {
@@ -172,7 +172,7 @@ export default function Settings() {
           <MapPin size={20} className="mt-0.5 flex-shrink-0" />
           <div className="flex-1">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-bold text-sm">{mkt.stateName} — {mkt.tierLabel}</span>
+              <span className="font-bold text-sm">{mkt.stateName} - {mkt.tierLabel}</span>
               <span className="text-[10px] font-bold uppercase tracking-widest opacity-70">Tier {mkt.tier}</span>
             </div>
             <p className="text-xs opacity-80 mt-1">
@@ -231,7 +231,7 @@ export default function Settings() {
             <div>
               <label className={lbl}>State</label>
               <select className={inp} value={form.state || ''} onChange={handleStateChange}>
-                <option value="">— Select state —</option>
+                <option value="">- Select state -</option>
                 {states.map(s => (
                   <option key={s.code} value={s.code}>{s.name}</option>
                 ))}
@@ -295,9 +295,9 @@ export default function Settings() {
 
           {/* Rate explainer */}
           <div className="bg-[#0f1117] rounded-xl p-3 text-xs text-slate-500 space-y-1 mt-2">
-            <p>• <strong className="text-slate-400">Labor Rate</strong> — applied to all labor hours on repair orders</p>
-            <p>• <strong className="text-slate-400">Parts Markup</strong> — gross margin above your cost on all parts</p>
-            <p>• <strong className="text-slate-400">Tax Rate</strong> — sales tax applied to parts (labor is typically exempt)</p>
+            <p>• <strong className="text-slate-400">Labor Rate</strong> - applied to all labor hours on repair orders</p>
+            <p>• <strong className="text-slate-400">Parts Markup</strong> - gross margin above your cost on all parts</p>
+            <p>• <strong className="text-slate-400">Tax Rate</strong> - sales tax applied to parts (labor is typically exempt)</p>
           </div>
         </div>
 
@@ -326,8 +326,8 @@ export default function Settings() {
           {locMsg && <p className={`text-xs ${locMsg.startsWith('✓') ? 'text-emerald-400' : 'text-amber-400'}`}>{locMsg}</p>}
 
           {!form.lat && (
-            <div className="bg-amber-900/20 border border-amber-700/40 rounded-lg p-3 text-xs text-amber-300">
-              ⚠️ No shop location set — geofencing is disabled. Employees can clock in from anywhere.
+            <div className="bg-amber-900/20 border border-amber-700/40 rounded-lg p-3 text-xs text-amber-300 flex items-center gap-2">
+              <AlertTriangle size={13} className="flex-shrink-0" /> No shop location set - geofencing is disabled. Employees can clock in from anywhere.
             </div>
           )}
 
@@ -386,10 +386,10 @@ export default function Settings() {
                 </button>
                 {smsExamplesOpen && (
                   <div className="px-3 pb-3 text-xs text-slate-300 space-y-2">
-                    <p>• <span className="text-emerald-300 font-medium">Check-in:</span> “Your 2019 Honda Accord has been checked in at {form.name || '[Shop Name]'} and work has started.”</p>
-                    <p>• <span className="text-emerald-300 font-medium">Parts update:</span> “Quick update: we’re waiting on parts delivery. We’ll text you as soon as they arrive.”</p>
-                    <p>• <span className="text-emerald-300 font-medium">Ready:</span> “🎉 Your vehicle is ready for pickup!”</p>
-                    <p>• <span className="text-emerald-300 font-medium">Post-repair:</span> “Thanks for trusting {form.name || '[Shop Name]'}! Reply if you have any questions.”</p>
+                    <p>• <span className="text-emerald-300 font-medium">Check-in:</span> "Your 2019 Honda Accord has been checked in at {form.name || '[Shop Name]'} and work has started."</p>
+                    <p>• <span className="text-emerald-300 font-medium">Parts update:</span> "Quick update: we're waiting on parts delivery. We'll text you as soon as they arrive."</p>
+                    <p>• <span className="text-emerald-300 font-medium">Ready:</span> "Your vehicle is ready for pickup!"</p>
+                    <p>• <span className="text-emerald-300 font-medium">Post-repair:</span> "Thanks for trusting {form.name || '[Shop Name]'}! Reply if you have any questions."</p>
                   </div>
                 )}
               </div>
@@ -398,7 +398,7 @@ export default function Settings() {
             <div className="bg-[#0f1117] rounded-xl border border-[#2a2d3e] p-4 space-y-4">
               <div>
                 <div className="flex items-center gap-2 text-white font-semibold text-sm">
-                  <MessageSquare size={15} className="text-indigo-400" /> 📱 SMS Customer Notifications
+                  <Smartphone size={15} className="text-indigo-400" /> SMS Customer Notifications
                 </div>
                 <p className="text-xs text-slate-400 mt-1">Send automatic texts to customers at every repair stage.</p>
               </div>
@@ -449,8 +449,8 @@ export default function Settings() {
                 </div>
               </div>
 
-              <div className="bg-amber-900/20 border border-amber-700/40 rounded-lg p-3 text-xs text-amber-300">
-                ⚠️ These are set as server environment variables on Railway, not saved here. Once set, redeploy and this page will show SMS as Active.
+              <div className="bg-amber-900/20 border border-amber-700/40 rounded-lg p-3 text-xs text-amber-300 flex items-start gap-2">
+                <AlertTriangle size={12} className="flex-shrink-0 mt-0.5" /> These are set as server environment variables on Railway, not saved here. Once set, redeploy and this page will show SMS as Active.
               </div>
             </div>
           )}
@@ -462,8 +462,8 @@ export default function Settings() {
             <Truck size={15} className="text-indigo-400" /> Parts Tracking (Auto-Sync)
           </div>
           <p className="text-xs text-slate-400 leading-relaxed">
-            Add your free <strong className="text-white">17track API key</strong> to automatically sync UPS, FedEx, USPS, and DHL tracking numbers. 
-            When a part is delivered, REVV marks it received automatically — and your customer portal updates instantly.
+            Add your free <strong className="text-white">17track API key</strong> to automatically sync UPS, FedEx, USPS, and DHL tracking numbers.
+            When a part is delivered, REVV marks it received automatically - and your customer portal updates instantly.
           </p>
           <div>
             <label className={lbl}>17track API Key</label>
@@ -471,7 +471,7 @@ export default function Settings() {
           </div>
           <div className="bg-[#0f1117] rounded-xl p-3 text-xs text-slate-500 space-y-1">
             <p>1. Go to <strong className="text-indigo-400">17track.net</strong> → sign up for free → Developer → API Key</p>
-            <p>2. Free tier: 40 trackings/day — plenty for a shop</p>
+            <p>2. Free tier: 40 trackings/day - plenty for a shop</p>
             <p>3. Supports UPS, FedEx, USPS, DHL, and 2,000+ other carriers</p>
             <p className="text-slate-600">Without a key: tracking numbers still show as clickable links to the carrier website.</p>
           </div>
@@ -490,7 +490,7 @@ export default function Settings() {
           <Trash2 size={15} /> Danger Zone
         </div>
         <p className="text-xs text-slate-400 leading-relaxed">
-          Starting fresh? This clears all sample repair orders, customers, and vehicles — 
+          Starting fresh? This clears all sample repair orders, customers, and vehicles -
           so you can begin entering real jobs. <strong className="text-white">Your shop info, staff accounts, and rate settings are not affected.</strong>
         </p>
         <button onClick={clearDemoData} disabled={clearing}

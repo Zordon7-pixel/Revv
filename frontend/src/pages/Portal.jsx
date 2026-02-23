@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Phone, Car, Calendar, LogOut, Wrench, Truck } from 'lucide-react'
+import { Phone, Car, Calendar, LogOut, Wrench, Truck, AlertTriangle, Package, CheckCircle } from 'lucide-react'
 import api from '../lib/api'
 
 const CARRIER_LABELS = { ups:'UPS', fedex:'FedEx', usps:'USPS', dhl:'DHL' }
@@ -7,22 +7,22 @@ const CARRIER_LABELS = { ups:'UPS', fedex:'FedEx', usps:'USPS', dhl:'DHL' }
 function trackingMessage(p) {
   if (!p.tracking_status || p.tracking_status === 'pending') {
     return p.status === 'backordered'
-      ? { text: 'Backordered — we\'re working on it', cls: 'text-red-400', icon: '⚠️' }
+      ? { text: 'Backordered — we\'re working on it', cls: 'text-red-400', icon: AlertTriangle }
       : p.expected_date
-        ? { text: `On order — expected ${p.expected_date}`, cls: 'text-amber-400', icon: '📦' }
-        : { text: 'On order', cls: 'text-amber-400', icon: '📦' }
+        ? { text: `On order — expected ${p.expected_date}`, cls: 'text-amber-400', icon: Package }
+        : { text: 'On order', cls: 'text-amber-400', icon: Package }
   }
   switch (p.tracking_status) {
     case 'in_transit':
-      return { text: `${CARRIER_LABELS[p.carrier] || 'Package'} is on the way`, cls: 'text-blue-400', icon: '🚚' }
+      return { text: `${CARRIER_LABELS[p.carrier] || 'Package'} is on the way`, cls: 'text-blue-400', icon: Truck }
     case 'out_for_delivery':
-      return { text: 'Out for delivery today — arriving at the shop soon!', cls: 'text-amber-400 font-semibold', icon: '🚚' }
+      return { text: 'Out for delivery today — arriving at the shop soon!', cls: 'text-amber-400 font-semibold', icon: Truck }
     case 'delivered':
-      return { text: 'Delivered to the shop ✓', cls: 'text-emerald-400', icon: '✅' }
+      return { text: 'Delivered to the shop', cls: 'text-emerald-400', icon: CheckCircle }
     case 'exception':
-      return { text: 'Shipping update — we\'re monitoring it closely', cls: 'text-red-400', icon: '⚠️' }
+      return { text: 'Shipping update — we\'re monitoring it closely', cls: 'text-red-400', icon: AlertTriangle }
     default:
-      return { text: p.expected_date ? `Expected ${p.expected_date}` : 'On order', cls: 'text-amber-400', icon: '📦' }
+      return { text: p.expected_date ? `Expected ${p.expected_date}` : 'On order', cls: 'text-amber-400', icon: Package }
   }
 }
 
@@ -99,7 +99,9 @@ export default function Portal() {
               <div className="px-5 pt-5 pb-4 border-b border-[#2a2d3e]">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-3">
-                    <div className="text-3xl">{info.emoji || '🔧'}</div>
+                    <div className="flex-shrink-0">
+                      <Wrench size={32} className="text-slate-400" />
+                    </div>
                     <div>
                       <div className="font-bold text-white">{ro.year} {ro.make} {ro.model}</div>
                       <div className="text-xs text-slate-500 mt-0.5">{ro.color} · Plate: {ro.plate} · {ro.ro_number}</div>
@@ -132,14 +134,15 @@ export default function Portal() {
                 <div className="px-5 pb-4">
                   <div className="bg-amber-900/20 border border-amber-700/30 rounded-xl p-3">
                     <div className="text-xs font-semibold text-amber-400 mb-2.5 flex items-center gap-1.5">
-                      ⏳ Still waiting on parts
+                      <Clock size={14} /> Still waiting on parts
                     </div>
                     <div className="space-y-2.5">
                       {ro.pending_parts.map((p, i) => {
                         const msg = trackingMessage(p)
+                        const IconComp = msg.icon
                         return (
                           <div key={i} className="flex items-start gap-2">
-                            <span className="text-sm flex-shrink-0 mt-0.5">{msg.icon}</span>
+                            <IconComp size={14} className="flex-shrink-0 mt-1" />
                             <div className="flex-1 min-w-0">
                               <div className="text-xs text-white font-medium">{p.part_name}</div>
                               <div className={`text-[11px] mt-0.5 ${msg.cls}`}>{msg.text}</div>

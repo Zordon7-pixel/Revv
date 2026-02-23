@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Pencil, Save, X, Package, Plus, CheckCircle, AlertCircle, Clock, Truck, RefreshCw, ExternalLink } from 'lucide-react'
+import { ArrowLeft, Pencil, Save, X, Package, Plus, CheckCircle, AlertCircle, Clock, Truck, RefreshCw, ExternalLink, Car, DollarSign, ClipboardList, Smartphone, AlertTriangle, Copy } from 'lucide-react'
 import api from '../lib/api'
 import { STATUS_COLORS, STATUS_LABELS } from './RepairOrders'
 import StatusBadge from '../components/StatusBadge'
@@ -210,7 +210,7 @@ export default function RODetail() {
       <div className="grid md:grid-cols-2 gap-4">
         {/* Vehicle Info */}
         <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
-          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">🚗 Vehicle</h2>
+          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3 flex items-center gap-1.5"><Car size={12} /> Vehicle</h2>
           <div className="space-y-2">
             {[
               ['Year/Make/Model', `${ro.vehicle?.year} ${ro.vehicle?.make} ${ro.vehicle?.model}`],
@@ -238,7 +238,7 @@ export default function RODetail() {
         {/* Insurance */}
         <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
           <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">
-            {ro.payment_type === 'cash' ? '💵 Cash Job' : '🏢 Insurance Claim'}
+            {ro.payment_type === 'cash' ? 'Cash Job' : 'Insurance Claim'}
           </h2>
           {ro.payment_type === 'insurance' ? (
             <div className="space-y-2">
@@ -283,18 +283,18 @@ export default function RODetail() {
         {/* Insurance Adjustor Panel */}
         <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-5 space-y-4">
           <h3 className="font-semibold text-white text-sm flex items-center gap-2">
-            🔗 Insurance Adjustor
+            Insurance Adjustor
           </h3>
           {!claimLink ? (
             <div>
               <p className="text-xs text-slate-500 mb-3">Generate a secure link to share with the insurance adjustor. They can view the RO details and submit their assessment without creating an account.</p>
               <button onClick={generateClaimLink} disabled={generatingLink} className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium px-4 py-2 rounded-lg transition-colors disabled:opacity-50">
-                {generatingLink ? 'Generating...' : '🔗 Generate Adjustor Link'}
+                {generatingLink ? 'Generating...' : 'Generate Adjustor Link'}
               </button>
             </div>
           ) : claimLink.submitted_at ? (
             <div className="space-y-3">
-              <div className="flex items-center gap-2 text-green-400 text-xs font-medium">✅ Assessment Received</div>
+              <div className="flex items-center gap-2 text-green-400 text-xs font-medium"><CheckCircle size={14} /> Assessment Received</div>
               <div className="grid grid-cols-2 gap-3 text-xs">
                 <div><span className="text-slate-500">Adjustor</span><p className="text-white">{claimLink.adjustor_name} — {claimLink.adjustor_company}</p></div>
                 <div><span className="text-slate-500">Submitted</span><p className="text-white">{new Date(claimLink.submitted_at).toLocaleDateString()}</p></div>
@@ -308,8 +308,9 @@ export default function RODetail() {
             <div className="space-y-2">
               <p className="text-xs text-slate-500">Link sent — waiting for adjustor assessment.</p>
               <div className="flex gap-2">
-                <button onClick={copyClaimLink} className="bg-[#0f1117] border border-[#2a2d3e] text-white text-xs px-3 py-2 rounded-lg hover:border-indigo-500 transition-colors">
-                  {linkCopied ? '✓ Copied!' : '📋 Copy Link'}
+                <button onClick={copyClaimLink} className="bg-[#0f1117] border border-[#2a2d3e] text-white text-xs px-3 py-2 rounded-lg hover:border-indigo-500 transition-colors flex items-center gap-1.5">
+                  <Copy size={13} />
+                  {linkCopied ? 'Copied!' : 'Copy Link'}
                 </button>
                 <button onClick={generateClaimLink} className="text-slate-500 text-xs px-3 py-2 rounded-lg hover:text-white transition-colors">
                   Regenerate
@@ -321,7 +322,7 @@ export default function RODetail() {
 
         {/* Profit Breakdown */}
         <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
-          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">💰 Profit (NY Market)</h2>
+          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3 flex items-center gap-1.5"><DollarSign size={12} /> Profit (NY Market)</h2>
           {editing ? (
             <div className="space-y-2">
               {[
@@ -363,7 +364,7 @@ export default function RODetail() {
 
         {/* Timeline */}
         <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
-          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">📋 Timeline</h2>
+          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3 flex items-center gap-1.5"><ClipboardList size={12} /> Timeline</h2>
           <div className="space-y-2.5">
             {ro.log?.map((entry, i) => (
               <div key={i} className="flex items-start gap-2.5">
@@ -392,10 +393,10 @@ export default function RODetail() {
       <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide">📱 Customer Portal</h2>
+            <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1.5"><Smartphone size={12} /> Customer Portal</h2>
             <p className="text-xs text-slate-500 mt-0.5">
               {ro.customer?.has_portal_access
-                ? '✓ Customer has portal access'
+                ? <span className="flex items-center gap-1"><CheckCircle size={12} className="text-emerald-400" /> Customer has portal access</span>
                 : 'Customer cannot track their vehicle yet'}
             </p>
           </div>
@@ -409,13 +410,13 @@ export default function RODetail() {
         </div>
 
         {!ro.customer?.email && (
-          <p className="text-xs text-amber-400 mt-2">⚠️ No email on file — add it to the customer record first.</p>
+          <p className="text-xs text-amber-400 mt-2 flex items-center gap-1.5"><AlertTriangle size={12} /> No email on file — add it to the customer record first.</p>
         )}
 
         {portalCreds && (
           <div className="mt-4 bg-emerald-900/20 border border-emerald-700/40 rounded-xl p-4 space-y-3">
-            <p className="text-xs font-bold text-emerald-400">
-              {portalCreds.reset ? '🔄 Password reset' : '✅ Portal access created'}
+            <p className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+              {portalCreds.reset ? <><RefreshCw size={14} /> Password reset</> : <><CheckCircle size={14} /> Portal access created</>}
             </p>
             <div className="bg-[#0f1117] rounded-lg p-3 space-y-2 font-mono">
               <div className="flex justify-between items-center">
@@ -434,8 +435,8 @@ export default function RODetail() {
             <button onClick={() => {
               const msg = `Hi! You can track your vehicle repair here:\n${window.location.origin}/portal\n\nEmail: ${portalCreds.email}\nPassword: ${portalCreds.password}\n\nLog in to see your repair status, expected delivery, and parts updates.`
               navigator.clipboard.writeText(msg).then(() => alert('Copied! Paste it into a text message.'))
-            }} className="w-full text-xs bg-emerald-700 hover:bg-emerald-600 text-white font-semibold rounded-lg py-2 transition-colors">
-              📋 Copy Message to Send Customer
+            }} className="w-full text-xs bg-emerald-700 hover:bg-emerald-600 text-white font-semibold rounded-lg py-2 transition-colors flex items-center justify-center gap-1.5">
+              <Copy size={13} /> Copy Message to Send Customer
             </button>
           </div>
         )}
@@ -448,13 +449,13 @@ export default function RODetail() {
             <Package size={15} className="text-indigo-400" />
             <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide">Parts Tracker</h2>
             {parts.filter(p => p.status === 'backordered').length > 0 && (
-              <span className="text-[10px] bg-red-900/40 text-red-400 border border-red-700/40 px-2 py-0.5 rounded-full font-semibold">
-                ⚠️ {parts.filter(p=>p.status==='backordered').length} backordered
+              <span className="text-[10px] bg-red-900/40 text-red-400 border border-red-700/40 px-2 py-0.5 rounded-full font-semibold flex items-center gap-1">
+                <AlertTriangle size={11} /> {parts.filter(p=>p.status==='backordered').length} backordered
               </span>
             )}
             {parts.length > 0 && parts.every(p=>p.status==='received') && (
-              <span className="text-[10px] bg-emerald-900/40 text-emerald-400 border border-emerald-700/40 px-2 py-0.5 rounded-full font-semibold">
-                ✓ All parts in
+              <span className="text-[10px] bg-emerald-900/40 text-emerald-400 border border-emerald-700/40 px-2 py-0.5 rounded-full font-semibold flex items-center gap-1">
+                <CheckCircle size={11} /> All parts in
               </span>
             )}
           </div>
@@ -501,7 +502,7 @@ export default function RODetail() {
                 <input type="number" min="1" className={inp} value={partForm.quantity} onChange={e=>setPartForm(f=>({...f,quantity:e.target.value}))} />
               </div>
               <div className="col-span-2">
-                <label className="text-[10px] text-slate-500 block mb-1">📦 Tracking Number (optional — UPS / FedEx / USPS / DHL)</label>
+                <label className="text-[10px] text-slate-500 block mb-1">Tracking Number (optional — UPS / FedEx / USPS / DHL)</label>
                 <input className={inp} value={partForm.tracking_number} onChange={e=>setPartForm(f=>({...f,tracking_number:e.target.value}))} placeholder="1Z999AA10123456784 or 94001116990045349715" />
                 <p className="text-[9px] text-slate-600 mt-0.5">Carrier is auto-detected. Status updates automatically when you have a tracking API key in Settings.</p>
               </div>
