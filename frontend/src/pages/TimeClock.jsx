@@ -1,7 +1,7 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState } from 'react'
 import { Clock, CheckCircle, AlertCircle, Edit2, Trash2, Save, X, MapPin } from 'lucide-react'
 import api from '../lib/api'
-import { isAdmin } from '../lib/auth'
+import { getTokenPayload, isAdmin } from '../lib/auth'
 
 function fmt(iso) {
   if (!iso) return '—'
@@ -90,15 +90,55 @@ function AdminAdjustModal({ entry, onClose, onSaved }) {
   )
 }
 
+function EarlyOverrideModal({ onClose, onSubmit, error, submitting }) {
+  const [password, setPassword] = useState('')
+
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+      <div className="bg-[#1a1d2e] rounded-2xl border border-[#2a2d3e] w-full max-w-sm p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="font-bold text-white text-sm">Admin Password Required</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={16}/></button>
+        </div>
+        <label className="block text-xs text-slate-400">Admin Password</label>
+        <input
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+          placeholder="Enter admin password"
+        />
+        {error && <p className="text-xs text-red-400">{error}</p>}
+        <div className="flex justify-end gap-2">
+          <button onClick={onClose} className="text-slate-400 text-sm hover:text-white">Cancel</button>
+          <button
+            onClick={() => onSubmit(password)}
+            disabled={!password || submitting}
+            className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold px-4 py-2 rounded-lg disabled:opacity-50"
+          >
+            {submitting ? 'Submitting…' : 'Submit'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function TimeClock() {
-  const [status, setStatus]   = useState(null)   // { clocked_in, entry }
+  const [status, setStatus]   = useState(null)
   const [entries, setEntries] = useState([])
   const [todayShift, setTodayShift] = useState(null)
   const [locError, setLocError] = useState('')
   const [actionErr, setActionErr] = useState('')
   const [loading, setLoading] = useState(false)
   const [adjustEntry, setAdjustEntry] = useState(null)
+  const [earlyBlock, setEarlyBlock] = useState(null)
+  const [showOverrideModal, setShowOverrideModal] = useState(false)
+  const [overrideError, setOverrideError] = useState('')
+  const [overrideSubmitting, setOverrideSubmitting] = useState(false)
+
   const admin = isAdmin()
+  const currentUser = getTokenPayload()
 
   async function refresh() {
     const [s, e, sh] = await Promise.all([
@@ -117,21 +157,44 @@ export default function TimeClock() {
       if (!navigator.geolocation) { reject('Geolocation not supported by this browser.'); return }
       navigator.geolocation.getCurrentPosition(
         pos => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-        err => reject('Location access denied. Please allow location access and try again.'),
+        () => reject('Location access denied. Please allow location access and try again.'),
         { timeout: 10000, maximumAge: 0 }
       )
     })
   }
 
   async function clockIn() {
-    setLoading(true); setActionErr(''); setLocError('')
+    setLoading(true); setActionErr(''); setLocError(''); setEarlyBlock(null)
     try {
       const { lat, lng } = await getLocation().catch(e => { setLocError(e); setLoading(false); throw e })
       await api.post('/timeclock/in', { lat, lng })
       await refresh()
     } catch (e) {
-      if (e?.response?.data?.error) setActionErr(e.response.data.error)
+      if (e?.response?.status === 403 && e?.response?.data?.error === 'early') {
+        setEarlyBlock(e.response.data)
+      } else if (e?.response?.data?.error) {
+        setActionErr(e.response.data.error)
+      }
     } finally { setLoading(false) }
+  }
+
+  async function submitOverride(password) {
+    if (!currentUser?.id) return
+    setOverrideSubmitting(true)
+    setOverrideError('')
+    try {
+      await api.post('/timeclock/authorize-early', {
+        employee_id: currentUser.id,
+        admin_password: password,
+      })
+      setShowOverrideModal(false)
+      setEarlyBlock(null)
+      await clockIn()
+    } catch (e) {
+      setOverrideError(e?.response?.data?.message || 'Incorrect admin password')
+    } finally {
+      setOverrideSubmitting(false)
+    }
   }
 
   async function clockOut() {
@@ -160,7 +223,6 @@ export default function TimeClock() {
     <div className="space-y-6 max-w-2xl">
       <h1 className="text-xl font-bold text-white">Time Clock</h1>
 
-      {/* Today's Schedule Banner */}
       {todayShift ? (
         <div className="bg-indigo-900/20 border border-indigo-700/40 rounded-xl p-4 flex items-center gap-3">
           <Clock size={18} className="text-indigo-400 flex-shrink-0" />
@@ -175,7 +237,6 @@ export default function TimeClock() {
         </div>
       )}
 
-      {/* Clock In / Clock Out card */}
       <div className="bg-[#1a1d2e] rounded-2xl border border-[#2a2d3e] p-6 flex flex-col items-center gap-5">
         {clocked ? (
           <>
@@ -211,7 +272,18 @@ export default function TimeClock() {
           </>
         )}
 
-        {/* Location / action errors */}
+        {earlyBlock && (
+          <div className="bg-amber-900/20 border border-amber-700/40 rounded-xl p-3 w-full text-xs text-amber-200 space-y-2">
+            <div>Your shift doesn't start until {earlyBlock.shiftStart}. Early clock-in is not authorized.</div>
+            <button
+              onClick={() => { setOverrideError(''); setShowOverrideModal(true) }}
+              className="bg-amber-700/30 hover:bg-amber-700/50 border border-amber-700/50 text-amber-100 px-3 py-1.5 rounded-lg text-xs font-semibold"
+            >
+              Request Admin Override
+            </button>
+          </div>
+        )}
+
         {(locError || actionErr) && (
           <div className="bg-red-900/20 border border-red-700/40 rounded-xl p-3 flex items-start gap-2 text-xs text-red-300 w-full">
             <MapPin size={14} className="text-red-400 flex-shrink-0 mt-0.5"/>
@@ -221,7 +293,6 @@ export default function TimeClock() {
         <p className="text-[10px] text-slate-600 flex items-center gap-1"><MapPin size={10}/> Location is verified at clock-in and clock-out</p>
       </div>
 
-      {/* Time entry history */}
       <div className="bg-[#1a1d2e] rounded-2xl border border-[#2a2d3e] p-4">
         <h2 className="text-sm font-bold text-white mb-3">{admin ? 'All Time Entries' : 'My Time Entries'}</h2>
         {entries.length === 0 && <p className="text-xs text-slate-500 py-4 text-center">No entries yet.</p>}
@@ -277,6 +348,15 @@ export default function TimeClock() {
           entry={adjustEntry}
           onClose={() => setAdjustEntry(null)}
           onSaved={() => { setAdjustEntry(null); refresh() }}
+        />
+      )}
+
+      {showOverrideModal && (
+        <EarlyOverrideModal
+          onClose={() => setShowOverrideModal(false)}
+          onSubmit={submitOverride}
+          error={overrideError}
+          submitting={overrideSubmitting}
         />
       )}
     </div>
