@@ -31,6 +31,7 @@ db.exec(`
     email TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
     role TEXT DEFAULT 'staff',
+    phone TEXT,
     created_at TEXT DEFAULT (datetime('now'))
   );
 
@@ -137,6 +138,16 @@ db.exec(`
     updated_at TEXT DEFAULT (datetime('now'))
   );
 
+  CREATE TABLE IF NOT EXISTS early_clockin_authorizations (
+    id TEXT PRIMARY KEY,
+    shop_id TEXT NOT NULL,
+    employee_id TEXT NOT NULL,
+    date TEXT NOT NULL,
+    authorized_by TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now')),
+    used INTEGER DEFAULT 0
+  );
+
   CREATE TABLE IF NOT EXISTS time_entries (
     id               TEXT PRIMARY KEY,
     shop_id          TEXT REFERENCES shops(id),
@@ -172,6 +183,7 @@ const migrations = [
   `ALTER TABLE shops ADD COLUMN twilio_auth_token TEXT`,
   `ALTER TABLE shops ADD COLUMN twilio_phone_number TEXT`,
   `ALTER TABLE users ADD COLUMN customer_id TEXT REFERENCES customers(id)`,
+  `ALTER TABLE users ADD COLUMN phone TEXT`,
   `ALTER TABLE parts_orders ADD COLUMN tracking_number TEXT`,
   `ALTER TABLE parts_orders ADD COLUMN carrier TEXT`,
   `ALTER TABLE parts_orders ADD COLUMN tracking_status TEXT`,

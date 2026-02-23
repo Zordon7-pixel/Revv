@@ -2,7 +2,9 @@ const router = require('express').Router();
 const db = require('../db');
 const auth = require('../middleware/auth');
 const { requireAdmin } = require('../middleware/roles');
-const { v4: uuidv4 } = require('uuid');
+const bcrypt = require('bcrypt');
+const sms = require('../services/sms');
+const { randomUUID } = require('crypto');
 
 // Haversine distance in km between two lat/lng points
 function distanceKm(lat1, lon1, lat2, lon2) {
@@ -19,6 +21,58 @@ function enrich(entry) {
   if (!entry) return null;
   const user = db.prepare('SELECT id, name, email, role FROM users WHERE id = ?').get(entry.user_id);
   return { ...entry, user };
+}
+
+function formatTime12(hour24, minute) {
+  const d = new Date();
+  d.setHours(hour24, minute, 0, 0);
+  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+}
+
+function parseShiftTimeToDate(now, shiftStart) {
+  if (!shiftStart || !shiftStart.includes(':')) return null;
+  const [h, m] = shiftStart.split(':').map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+  const dt = new Date(now);
+  dt.setHours(h, m, 0, 0);
+  return dt;
+}
+
+function getTodaySchedule(shopId, userId, now = new Date()) {
+  const today = now.toISOString().slice(0, 10);
+
+  // Primary schema in this repo: date-based schedule
+  const byDate = db.prepare(
+    'SELECT * FROM schedules WHERE shop_id = ? AND user_id = ? AND shift_date = ? LIMIT 1'
+  ).get(shopId, userId, today);
+  if (byDate) {
+    return {
+      shiftStart: byDate.start_time,
+      shiftEnd: byDate.end_time,
+      source: 'shift_date',
+      row: byDate,
+    };
+  }
+
+  // Compatibility for deployments using day_of_week schema
+  try {
+    const dayOfWeek = now.getDay();
+    const byDow = db.prepare(
+      'SELECT * FROM schedules WHERE shop_id = ? AND user_id = ? AND day_of_week = ? LIMIT 1'
+    ).get(shopId, userId, dayOfWeek);
+    if (byDow) {
+      return {
+        shiftStart: byDow.shift_start,
+        shiftEnd: byDow.shift_end,
+        source: 'day_of_week',
+        row: byDow,
+      };
+    }
+  } catch (_) {
+    // ignore if column does not exist
+  }
+
+  return null;
 }
 
 // Validate that employee is within shop geofence
@@ -38,35 +92,26 @@ function checkGeofence(shopId, lat, lng) {
 
 // Find today's scheduled shift for a user and calculate late status
 function checkSchedule(shopId, userId, nowIso) {
-  const today = nowIso.slice(0, 10); // 'YYYY-MM-DD'
-  const shift = db.prepare(
-    'SELECT * FROM schedules WHERE shop_id = ? AND user_id = ? AND shift_date = ? LIMIT 1'
-  ).get(shopId, userId, today);
-  if (!shift) return { scheduled_start: null, is_late: 0, late_minutes: 0 };
+  const schedule = getTodaySchedule(shopId, userId, new Date(nowIso));
+  if (!schedule?.shiftStart) return { scheduled_start: null, is_late: 0, late_minutes: 0 };
 
-  const scheduledStart = `${shift.shift_date}T${shift.start_time}:00`;
-  const scheduledMs = new Date(scheduledStart).getTime();
-  const nowMs = new Date(nowIso).getTime();
+  const now = new Date(nowIso);
+  const scheduledStartDate = parseShiftTimeToDate(now, schedule.shiftStart);
+  if (!scheduledStartDate) return { scheduled_start: schedule.shiftStart, is_late: 0, late_minutes: 0 };
+
+  const scheduledMs = scheduledStartDate.getTime();
+  const nowMs = now.getTime();
   const GRACE_MS = 15 * 60 * 1000; // 15 minutes
 
   if (nowMs <= scheduledMs + GRACE_MS) {
-    return { scheduled_start: shift.start_time, is_late: 0, late_minutes: 0 };
-  } else {
-    const lateMin = Math.round((nowMs - scheduledMs) / 60000);
-    return { scheduled_start: shift.start_time, is_late: 1, late_minutes: lateMin };
+    return { scheduled_start: schedule.shiftStart, is_late: 0, late_minutes: 0 };
   }
+
+  const lateMin = Math.round((nowMs - scheduledMs) / 60000);
+  return { scheduled_start: schedule.shiftStart, is_late: 1, late_minutes: lateMin };
 }
 
-// GET /api/timeclock/status — am I currently clocked in?
-router.get('/status', auth, (req, res) => {
-  const open = db.prepare(
-    'SELECT * FROM time_entries WHERE shop_id = ? AND user_id = ? AND clock_out IS NULL ORDER BY clock_in DESC LIMIT 1'
-  ).get(req.user.shop_id, req.user.id);
-  res.json({ clocked_in: !!open, entry: open || null });
-});
-
-// POST /api/timeclock/in — clock in
-router.post('/in', auth, (req, res) => {
+function handleClockIn(req, res) {
   const { lat, lng } = req.body;
 
   // Check geofence
@@ -81,17 +126,149 @@ router.post('/in', auth, (req, res) => {
   ).get(req.user.shop_id, req.user.id);
   if (open) return res.status(409).json({ error: 'Already clocked in.' });
 
-  const nowIso = new Date().toISOString();
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const today = nowIso.slice(0, 10);
+
+  // Early clock-in prevention: block if >10 minutes early unless authorized
+  const schedule = getTodaySchedule(req.user.shop_id, req.user.id, now);
+  let earlyAuth = null;
+  if (schedule?.shiftStart) {
+    const shiftStartDate = parseShiftTimeToDate(now, schedule.shiftStart);
+    if (shiftStartDate) {
+      const earlyDiffMs = shiftStartDate.getTime() - now.getTime();
+      const TEN_MIN_MS = 10 * 60 * 1000;
+
+      if (earlyDiffMs > TEN_MIN_MS) {
+        earlyAuth = db.prepare(`
+          SELECT id FROM early_clockin_authorizations
+          WHERE shop_id = ? AND employee_id = ? AND date = ? AND used = 0
+          ORDER BY created_at DESC
+          LIMIT 1
+        `).get(req.user.shop_id, req.user.id, today);
+
+        if (!earlyAuth) {
+          const shiftStart = formatTime12(shiftStartDate.getHours(), shiftStartDate.getMinutes());
+          return res.status(403).json({
+            error: 'early',
+            message: `Your shift doesn't start until ${shiftStart}. Clock-in is not authorized yet.`,
+            shiftStart,
+          });
+        }
+      }
+    }
+  }
+
   const { scheduled_start, is_late, late_minutes } = checkSchedule(req.user.shop_id, req.user.id, nowIso);
 
-  const id = uuidv4();
+  const id = randomUUID();
   db.prepare(`
     INSERT INTO time_entries (id, shop_id, user_id, clock_in, clock_in_lat, clock_in_lng, scheduled_start, is_late, late_minutes)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(id, req.user.shop_id, req.user.id, nowIso, lat || null, lng || null, scheduled_start, is_late ? 1 : 0, late_minutes);
 
+  if (earlyAuth?.id) {
+    db.prepare('UPDATE early_clockin_authorizations SET used = 1 WHERE id = ?').run(earlyAuth.id);
+  }
+
   const entry = db.prepare('SELECT * FROM time_entries WHERE id = ?').get(id);
-  res.status(201).json({ entry: enrich(entry), is_late, late_minutes, scheduled_start });
+
+  // Late notification (non-blocking)
+  try {
+    if (schedule?.shiftStart) {
+      const shiftStartDate = parseShiftTimeToDate(now, schedule.shiftStart);
+      if (shiftStartDate) {
+        const lateByMin = Math.round((now.getTime() - shiftStartDate.getTime()) / 60000);
+        if (lateByMin > 15) {
+          const admin = db.prepare(
+            "SELECT id, name, phone FROM users WHERE shop_id = ? AND role = 'admin' ORDER BY created_at ASC LIMIT 1"
+          ).get(req.user.shop_id);
+
+          if (admin?.phone) {
+            const employee = db.prepare('SELECT name FROM users WHERE id = ?').get(req.user.id);
+            const clockInStr = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+            const shiftStartStr = formatTime12(shiftStartDate.getHours(), shiftStartDate.getMinutes());
+            const message = `⚠️ Late Clock-In Alert: ${employee?.name || 'Employee'} clocked in at ${clockInStr}, ${lateByMin} minutes late for their ${shiftStartStr} shift.`;
+            awaitPromiseSafe(sms.sendSMS(admin.phone, message));
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[timeclock] late clock-in sms failed:', err.message);
+  }
+
+  return res.status(201).json({ entry: enrich(entry), is_late, late_minutes, scheduled_start });
+}
+
+function awaitPromiseSafe(p) {
+  if (!p || typeof p.then !== 'function') return;
+  p.catch((err) => {
+    console.error('[timeclock] async sms send failed:', err?.message || err);
+  });
+}
+
+// GET /api/timeclock/status — am I currently clocked in?
+router.get('/status', auth, (req, res) => {
+  const open = db.prepare(
+    'SELECT * FROM time_entries WHERE shop_id = ? AND user_id = ? AND clock_out IS NULL ORDER BY clock_in DESC LIMIT 1'
+  ).get(req.user.shop_id, req.user.id);
+  res.json({ clocked_in: !!open, entry: open || null });
+});
+
+// POST /api/timeclock/in — clock in
+router.post('/in', auth, handleClockIn);
+
+// POST /api/timeclock/clock-in — alias clock in
+router.post('/clock-in', auth, handleClockIn);
+
+// POST /api/timeclock/authorize-early
+router.post('/authorize-early', auth, async (req, res) => {
+  const { employee_id, admin_password } = req.body || {};
+  if (!employee_id || !admin_password) {
+    return res.status(400).json({ error: 'employee_id and admin_password required' });
+  }
+
+  const admin = db.prepare(
+    "SELECT id, password_hash FROM users WHERE shop_id = ? AND role = 'admin' ORDER BY created_at ASC LIMIT 1"
+  ).get(req.user.shop_id);
+
+  if (!admin?.password_hash) {
+    return res.status(401).json({ error: 'invalid_password', message: 'Incorrect admin password' });
+  }
+
+  const valid = await bcrypt.compare(admin_password, admin.password_hash);
+  if (!valid) {
+    return res.status(401).json({ error: 'invalid_password', message: 'Incorrect admin password' });
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const existing = db.prepare(`
+    SELECT id FROM early_clockin_authorizations
+    WHERE shop_id = ? AND employee_id = ? AND date = ? AND used = 0
+    LIMIT 1
+  `).get(req.user.shop_id, employee_id, today);
+
+  if (!existing) {
+    db.prepare(`
+      INSERT INTO early_clockin_authorizations (id, shop_id, employee_id, date, authorized_by, used)
+      VALUES (?, ?, ?, ?, ?, 0)
+    `).run(randomUUID(), req.user.shop_id, employee_id, today, admin.id);
+  }
+
+  return res.json({ success: true });
+});
+
+// GET /api/timeclock/early-auth-status/:employeeId
+router.get('/early-auth-status/:employeeId', auth, (req, res) => {
+  const today = new Date().toISOString().slice(0, 10);
+  const row = db.prepare(`
+    SELECT id FROM early_clockin_authorizations
+    WHERE shop_id = ? AND employee_id = ? AND date = ? AND used = 0
+    LIMIT 1
+  `).get(req.user.shop_id, req.params.employeeId, today);
+
+  res.json({ authorized: !!row });
 });
 
 // POST /api/timeclock/out — clock out
