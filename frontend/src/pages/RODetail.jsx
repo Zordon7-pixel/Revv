@@ -63,6 +63,7 @@ export default function RODetail() {
   const [showPartsReqForm, setShowPartsReqForm] = useState(false)
   const [partsReqForm, setPartsReqForm] = useState({ part_name: '', part_number: '', quantity: 1, notes: '' })
   const [submittingPartsReq, setSubmittingPartsReq] = useState(false)
+  const [approvingEstimate, setApprovingEstimate] = useState(false)
 
   const userIsAdmin = isAdmin()
   const userIsEmployee = isEmployee()
@@ -212,6 +213,18 @@ export default function RODetail() {
     loadPartsRequests()
   }
 
+  async function approveEstimate() {
+    setApprovingEstimate(true)
+    try {
+      await api.post(`/ros/${id}/approve-estimate`)
+      load()
+    } catch (err) {
+      alert(err?.response?.data?.error || 'Could not approve estimate')
+    } finally {
+      setApprovingEstimate(false)
+    }
+  }
+
   if (!ro) return <div className="flex items-center justify-center h-64 text-slate-500">Loading your shop data...</div>
 
   const p = ro.profit || {}
@@ -234,6 +247,11 @@ export default function RODetail() {
         <div className="flex items-center gap-2 flex-wrap">
           <span className={`text-xs font-bold ${daysColor}`}>{daysIn}d in shop</span>
           <StatusBadge status={ro.status} />
+          {ro.status === 'estimate_sent' && !ro.estimate_approved_at && (
+            <button onClick={approveEstimate} disabled={approvingEstimate} className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+              <CheckCircle size={12} /> {approvingEstimate ? 'Approving...' : 'Approve Estimate'}
+            </button>
+          )}
           {currentIdx < STAGES.length - 1 && (
             <button onClick={advance} className="flex items-center gap-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
               → {STATUS_LABELS[STAGES[currentIdx+1]]}

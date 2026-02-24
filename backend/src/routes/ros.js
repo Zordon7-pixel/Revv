@@ -5,6 +5,7 @@ const { requireAdmin } = require('../middleware/roles');
 const { calculateProfit } = require('../services/profit');
 const { sendSMS, isConfigured } = require('../services/sms');
 const { getStatusMessage } = require('../services/notifications');
+const { sendMail } = require('../services/mailer');
 const { v4: uuidv4 } = require('uuid');
 
 const STATUSES = ['intake','estimate','approval','parts','repair','paint','qc','delivery','closed'];
@@ -140,6 +141,25 @@ router.put('/:id/status', auth, async (req, res) => {
       } catch (err) {
         console.error(`[SMS] Unexpected error for RO ${req.params.id}:`, err.message);
       }
+
+      // Email notifications on status change
+      try {
+        const emailContext = await dbGet(`
+          SELECT ro.status, c.email AS customer_email, ro.ro_number
+          FROM repair_orders ro
+          LEFT JOIN customers c ON c.id = ro.customer_id
+          WHERE ro.id = $1
+        `, [req.params.id]);
+        if (!emailContext) return;
+
+        if (emailContext.status === 'estimate_sent' && emailContext.customer_email) {
+          await sendMail(emailContext.customer_email, 'Your Estimate is Ready', '<p>Your vehicle repair estimate is ready for review. Log in to your portal to view it.</p>').catch(e => console.error('[Email] estimate_sent failed:', e.message));
+        } else if (emailContext.status === 'completed' && emailContext.customer_email) {
+          await sendMail(emailContext.customer_email, 'Your Vehicle is Ready for Pickup', '<p>Your vehicle repair is complete and ready for pickup. Please contact us to arrange pickup.</p>').catch(e => console.error('[Email] completed failed:', e.message));
+        }
+      } catch (err) {
+        console.error(`[Email] Status change notification failed for RO ${req.params.id}:`, err.message);
+      }
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -208,6 +228,54 @@ router.patch('/:id', auth, async (req, res) => {
         else console.log(`[SMS] Sent RO status update for ${req.params.id}`);
       } catch (err) {
         console.error(`[SMS] Unexpected error for RO ${req.params.id}:`, err.message);
+      }
+
+      // Email notifications on status change
+      try {
+        const emailContext = await dbGet(`
+          SELECT ro.status, c.email AS customer_email, ro.ro_number
+          FROM repair_orders ro
+          LEFT JOIN customers c ON c.id = ro.customer_id
+          WHERE ro.id = $1
+        `, [req.params.id]);
+        if (!emailContext) return;
+
+        if (emailContext.status === 'estimate_sent' && emailContext.customer_email) {
+          await sendMail(emailContext.customer_email, 'Your Estimate is Ready', '<p>Your vehicle repair estimate is ready for review. Log in to your portal to view it.</p>').catch(e => console.error('[Email] estimate_sent failed:', e.message));
+        } else if (emailContext.status === 'completed' && emailContext.customer_email) {
+          await sendMail(emailContext.customer_email, 'Your Vehicle is Ready for Pickup', '<p>Your vehicle repair is complete and ready for pickup. Please contact us to arrange pickup.</p>').catch(e => console.error('[Email] completed failed:', e.message));
+        }
+      } catch (err) {
+        console.error(`[Email] Status change notification failed for RO ${req.params.id}:`, err.message);
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/:id/approve-estimate', auth, async (req, res) => {
+  try {
+    const ro = await dbGet('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
+    if (!ro) return res.status(404).json({ error: 'Not found' });
+    const now = new Date().toISOString();
+    await dbRun('UPDATE repair_orders SET estimate_approved_at = $1, estimate_approved_by = $2, updated_at = $3 WHERE id = $4', [now, req.user.id, now, req.params.id]);
+    const updatedRO = await dbGet('SELECT * FROM repair_orders WHERE id = $1', [req.params.id]);
+    res.json(await enrichRO(updatedRO));
+
+    setImmediate(async () => {
+      try {
+        const shopUser = await dbGet('SELECT u.name, u.email FROM users u WHERE u.id = $1', [req.user.id]);
+        const shopUsers = await dbAll('SELECT u.id, u.email FROM users u WHERE u.shop_id = $1 AND u.role IN ($2, $3)', [req.user.shop_id, 'owner', 'admin']);
+        if (shopUsers && shopUsers.length > 0) {
+          const managerEmails = shopUsers.map(u => u.email).filter(e => e);
+          const estimateApprovedHtml = `<p>Estimate approved by ${shopUser?.name || 'Team Member'}.</p><p>RO: ${ro.ro_number}</p>`;
+          for (const email of managerEmails) {
+            await sendMail(email, `Estimate Approved - ${ro.ro_number}`, estimateApprovedHtml).catch(e => console.error(`[Email] Manager notification failed for ${email}:`, e.message));
+          }
+        }
+      } catch (err) {
+        console.error(`[Email] Estimate approval notification failed for RO ${req.params.id}:`, err.message);
       }
     });
   } catch (err) {

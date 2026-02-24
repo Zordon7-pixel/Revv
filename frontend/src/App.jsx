@@ -7,6 +7,7 @@ import RepairOrders from './pages/RepairOrders'
 import RODetail from './pages/RODetail'
 import Customers from './pages/Customers'
 import Reports from './pages/Reports'
+import Performance from './pages/Performance'
 import Settings from './pages/Settings'
 import Users from './pages/Users'
 import Portal from './pages/Portal'
@@ -48,6 +49,7 @@ export default function App() {
           <Route path="timeclock" element={<TimeClock />} />
           <Route path="schedule" element={<Schedule />} />
           <Route path="reports" element={<AdminRoute><Reports /></AdminRoute>} />
+          <Route path="performance" element={<AdminRoute><Performance /></AdminRoute>} />
           <Route path="team" element={<AdminRoute><Users /></AdminRoute>} />
           <Route path="settings" element={<AdminRoute><Settings /></AdminRoute>} />
         </Route>

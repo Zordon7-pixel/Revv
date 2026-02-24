@@ -62,6 +62,7 @@ app.use('/api/claim-links', require('./routes/claimLinks'));
 app.use('/api/claim-link', require('./routes/claimLinks'));
 app.use('/api/photos', require('./routes/photos'));
 app.use('/api/parts-requests', require('./routes/partsRequests'));
+app.use('/api/performance', require('./routes/performance'));
 
 // Serve uploaded files
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));

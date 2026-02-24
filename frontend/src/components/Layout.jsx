@@ -1,6 +1,6 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useState } from 'react'
-import { LayoutDashboard, ClipboardList, Users, BarChart3, Settings, UserCog, LogOut, Menu, X, Wrench, Clock, CalendarDays } from 'lucide-react'
+import { LayoutDashboard, ClipboardList, Users, BarChart3, BarChart2, Settings, UserCog, LogOut, Menu, X, Wrench, Clock, CalendarDays } from 'lucide-react'
 import FeedbackButton from './FeedbackButton'
 import HelpDesk from './HelpDesk'
 import { isAdmin } from '../lib/auth'
@@ -13,6 +13,7 @@ const allNav = [
   { to: '/timeclock',  icon: Clock,           label: 'Time Clock',     adminOnly: false },
   { to: '/schedule',   icon: CalendarDays,    label: 'Schedule',       adminOnly: false },
   { to: '/reports',    icon: BarChart3,       label: 'Reports',        adminOnly: true  },
+  { to: '/performance', icon: BarChart2,      label: 'Performance',     adminOnly: true  },
   { to: '/team',       icon: UserCog,         label: 'Team',           adminOnly: true  },
   { to: '/settings',   icon: Settings,        label: 'Settings',       adminOnly: true  },
 ]
