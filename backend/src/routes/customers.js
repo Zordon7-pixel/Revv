@@ -72,6 +72,7 @@ router.put('/:id', auth, async (req, res) => {
 
 router.delete('/:id', auth, async (req, res) => {
   try {
+    await dbRun('UPDATE users SET customer_id = NULL WHERE customer_id = $1', [req.params.id]);
     await dbRun('DELETE FROM customers WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
     res.json({ ok: true });
   } catch (err) {

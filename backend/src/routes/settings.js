@@ -36,6 +36,7 @@ async function resetRos(shopId) {
 }
 
 async function resetCustomers(shopId) {
+  await dbRun('UPDATE users SET customer_id = NULL WHERE shop_id = $1', [shopId]);
   const result = await dbRun('DELETE FROM customers WHERE shop_id = $1', [shopId]);
   return result.rowCount || 0;
 }
