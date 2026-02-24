@@ -30,6 +30,20 @@ export default function AddROModal({ onClose, onSaved }) {
   const lbl = 'block text-xs font-medium text-slate-400 mb-1'
 
   async function submit() {
+    // Validate before hitting the API
+    if (!form.new_customer && !form.customer_id) {
+      alert('Please select an existing customer or switch to New Customer.')
+      return
+    }
+    if (form.new_customer && !form.customer_name.trim()) {
+      alert('Customer name is required.')
+      return
+    }
+    if (!form.make.trim() || !form.model.trim() || !form.year) {
+      alert('Vehicle year, make, and model are required.')
+      return
+    }
+
     setLoading(true)
     try {
       let customer_id = form.customer_id
@@ -49,7 +63,10 @@ export default function AddROModal({ onClose, onSaved }) {
         deductible: +form.deductible || 0, estimated_delivery: form.estimated_delivery, notes: form.notes
       })
       onSaved()
-    } catch(e) { alert('Error creating RO') } finally { setLoading(false) }
+    } catch(e) {
+      const msg = e?.response?.data?.error || e?.message || 'Unknown error'
+      alert(`Error creating RO: ${msg}`)
+    } finally { setLoading(false) }
   }
 
   return (
