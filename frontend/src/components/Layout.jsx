@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import { LayoutDashboard, ClipboardList, Users, BarChart3, BarChart2, Settings, UserCog, LogOut, Menu, X, Wrench, Clock, CalendarDays, Bell } from 'lucide-react'
 import FeedbackButton from './FeedbackButton'
 import HelpDesk from './HelpDesk'
-import { isAdmin } from '../lib/auth'
+import { getRole, isAdmin } from '../lib/auth'
 import api from '../lib/api'
 
 const allNav = [
@@ -15,7 +15,7 @@ const allNav = [
   { to: '/reports',    icon: BarChart3,       label: 'Reports',        adminOnly: true  },
   { to: '/performance', icon: BarChart2,      label: 'Performance',     adminOnly: true  },
   { to: '/team',       icon: UserCog,         label: 'Team',           adminOnly: true  },
-  { to: '/settings',   icon: Settings,        label: 'Settings',       adminOnly: true  },
+  { to: '/settings',   icon: Settings,        label: 'Settings',       ownerOnly: true  },
 ]
 
 function NotificationsPanel({ onClose }) {
@@ -76,6 +76,7 @@ export default function Layout() {
   const notifRef = useRef(null)
   const navigate = useNavigate()
   const admin = isAdmin()
+  const role = getRole()
 
   useEffect(() => {
     if (!admin) return
@@ -100,7 +101,11 @@ export default function Layout() {
     navigate('/login')
   }
 
-  const nav = allNav.filter(n => !n.adminOnly || admin)
+  const nav = allNav.filter((n) => {
+    if (n.ownerOnly) return role === 'owner'
+    if (n.adminOnly) return admin
+    return true
+  })
 
   const SidebarContent = () => (
     <div className="flex flex-col h-full">

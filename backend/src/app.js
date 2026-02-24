@@ -64,6 +64,7 @@ app.use('/api/photos', require('./routes/photos'));
 app.use('/api/parts-requests', require('./routes/partsRequests'));
 app.use('/api/performance', require('./routes/performance'));
 app.use('/api/superadmin', require('./routes/superadmin'));
+app.use('/api/settings', require('./routes/settings'));
 
 // Serve uploaded files
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));

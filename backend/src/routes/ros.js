@@ -340,7 +340,15 @@ router.post('/:id/mark-paid', auth, async (req, res) => {
 
 router.delete('/:id', auth, async (req, res) => {
   try {
-    await dbRun('DELETE FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
+    const { id } = req.params;
+    const ro = await dbGet('SELECT id FROM repair_orders WHERE id = $1 AND shop_id = $2', [id, req.user.shop_id]);
+    if (!ro) return res.status(404).json({ error: 'Not found' });
+
+    await dbRun('DELETE FROM ro_photos WHERE ro_id = $1', [id]);
+    await dbRun('DELETE FROM parts_orders WHERE ro_id = $1', [id]);
+    await dbRun('DELETE FROM job_status_log WHERE ro_id = $1', [id]);
+    await dbRun('DELETE FROM parts_requests WHERE ro_id = $1', [id]);
+    await dbRun('DELETE FROM repair_orders WHERE id = $1 AND shop_id = $2', [id, req.user.shop_id]);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

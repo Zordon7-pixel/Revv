@@ -36,6 +36,15 @@ function AdminRoute({ children }) {
   return children
 }
 
+function OwnerRoute({ children }) {
+  if (!localStorage.getItem('sc_token')) return <Navigate to="/login" />
+  try {
+    const role = JSON.parse(atob(localStorage.getItem('sc_token').split('.')[1])).role
+    if (role !== 'owner') return <Navigate to="/" />
+  } catch {}
+  return children
+}
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -62,7 +71,7 @@ export default function App() {
           <Route path="performance" element={<AdminRoute><Performance /></AdminRoute>} />
           <Route path="team" element={<AdminRoute><Users /></AdminRoute>} />
           <Route path="users" element={<AdminRoute><Users /></AdminRoute>} />
-          <Route path="settings" element={<AdminRoute><Settings /></AdminRoute>} />
+          <Route path="settings" element={<OwnerRoute><Settings /></OwnerRoute>} />
         </Route>
       </Routes>
     </BrowserRouter>

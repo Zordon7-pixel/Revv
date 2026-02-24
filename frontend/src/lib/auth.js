@@ -17,6 +17,10 @@ export function isAdmin() {
   return role === 'owner' || role === 'admin'
 }
 
+export function isOwner() {
+  return getRole() === 'owner'
+}
+
 export function isEmployee() {
   const role = getRole()
   return ['owner', 'admin', 'employee', 'staff'].includes(role)
