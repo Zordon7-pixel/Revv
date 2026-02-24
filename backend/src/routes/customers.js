@@ -12,6 +12,21 @@ router.get('/', auth, async (req, res) => {
   }
 });
 
+router.get('/:id/full', auth, async (req, res) => {
+  try {
+    const customer = await dbGet('SELECT * FROM customers WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
+    if (!customer) return res.status(404).json({ error: 'Not found' });
+    const vehicles = await dbAll('SELECT * FROM vehicles WHERE customer_id = $1 ORDER BY created_at DESC', [customer.id]);
+    const ros = await dbAll(
+      'SELECT ro_number, id, status, job_type, created_at, updated_at, total, notes FROM repair_orders WHERE customer_id = $1 ORDER BY created_at DESC',
+      [customer.id]
+    );
+    res.json({ customer, vehicles, ros });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/:id', auth, async (req, res) => {
   try {
     const customer = await dbGet('SELECT * FROM customers WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);

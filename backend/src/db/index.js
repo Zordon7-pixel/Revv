@@ -262,6 +262,33 @@ async function initDb() {
   await pool.query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS payment_received INTEGER DEFAULT 0`);
   await pool.query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS payment_received_at TEXT`);
   await pool.query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS payment_method TEXT`);
+
+  // Wave 4: lunch breaks, notifications, schedule lunch field
+  await pool.query(`ALTER TABLE schedules ADD COLUMN IF NOT EXISTS lunch_break_minutes INTEGER DEFAULT 30`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS lunch_breaks (
+      id TEXT PRIMARY KEY,
+      shop_id TEXT NOT NULL,
+      employee_id TEXT NOT NULL,
+      time_entry_id TEXT,
+      lunch_start TIMESTAMP WITH TIME ZONE NOT NULL,
+      lunch_end TIMESTAMP WITH TIME ZONE,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS notifications (
+      id TEXT PRIMARY KEY,
+      shop_id TEXT NOT NULL,
+      type TEXT NOT NULL,
+      message TEXT NOT NULL,
+      employee_id TEXT,
+      read BOOLEAN DEFAULT FALSE,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    )
+  `);
 }
 
 async function dbGet(sql, params = []) {

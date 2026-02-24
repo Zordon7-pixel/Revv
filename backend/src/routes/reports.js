@@ -35,4 +35,85 @@ router.get('/summary', auth, requireAdmin, async (req, res) => {
   }
 });
 
+router.get('/:tab', auth, requireAdmin, async (req, res) => {
+  try {
+    const sid = req.user.shop_id;
+    const { tab } = req.params;
+
+    if (tab === 'revenue') {
+      const monthly = await dbAll(`
+        SELECT
+          TO_CHAR(DATE_TRUNC('month', created_at), 'YYYY-MM') as month,
+          TO_CHAR(DATE_TRUNC('month', created_at), 'Mon YY') as label,
+          COUNT(*)::int as count,
+          COALESCE(SUM(total), 0)::numeric(12,2) as revenue,
+          COALESCE(AVG(NULLIF(total,0)), 0)::numeric(12,2) as avg_ro
+        FROM repair_orders
+        WHERE shop_id = $1 AND created_at >= NOW() - INTERVAL '12 months'
+        GROUP BY DATE_TRUNC('month', created_at)
+        ORDER BY DATE_TRUNC('month', created_at) ASC
+      `, [sid]);
+
+      const totalRow = await dbGet('SELECT COALESCE(SUM(total),0)::numeric(12,2) as total FROM repair_orders WHERE shop_id = $1', [sid]);
+      const avgRow   = await dbGet('SELECT COALESCE(AVG(NULLIF(total,0)),0)::numeric(12,2) as avg FROM repair_orders WHERE shop_id = $1', [sid]);
+      const bestRow  = await dbAll(`
+        SELECT TO_CHAR(DATE_TRUNC('month', created_at), 'Mon YYYY') as month,
+               COALESCE(SUM(total),0)::numeric(12,2) as revenue
+        FROM repair_orders WHERE shop_id = $1
+        GROUP BY DATE_TRUNC('month', created_at)
+        ORDER BY revenue DESC LIMIT 3
+      `, [sid]);
+
+      return res.json({
+        monthly,
+        total: parseFloat(totalRow.total),
+        avg: parseFloat(avgRow.avg),
+        topMonths: bestRow
+      });
+    }
+
+    if (tab === 'ros') {
+      const byStatus = await dbAll(`
+        SELECT status, COUNT(*)::int as count
+        FROM repair_orders WHERE shop_id = $1
+        GROUP BY status ORDER BY count DESC
+      `, [sid]);
+
+      const avgRow = await dbGet(`
+        SELECT COALESCE(
+          AVG(EXTRACT(EPOCH FROM (updated_at - created_at)) / 86400), 0
+        )::numeric(10,1) as avg_days
+        FROM repair_orders
+        WHERE shop_id = $1 AND status = 'closed'
+      `, [sid]);
+
+      const thisMonth = await dbGet(`
+        SELECT COUNT(*)::int as count FROM repair_orders
+        WHERE shop_id = $1 AND DATE_TRUNC('month', created_at) = DATE_TRUNC('month', NOW())
+      `, [sid]);
+
+      const lastMonth = await dbGet(`
+        SELECT COUNT(*)::int as count FROM repair_orders
+        WHERE shop_id = $1 AND DATE_TRUNC('month', created_at) = DATE_TRUNC('month', NOW() - INTERVAL '1 month')
+      `, [sid]);
+
+      return res.json({
+        byStatus,
+        avgDays: parseFloat(avgRow.avg_days) || 0,
+        thisMonth: thisMonth.count,
+        lastMonth: lastMonth.count
+      });
+    }
+
+    if (tab === 'performance') {
+      const summary = await dbGet('SELECT COUNT(*)::int as n FROM repair_orders WHERE shop_id = $1', [sid]);
+      return res.json({ redirect: '/performance', count: summary.n });
+    }
+
+    return res.status(400).json({ error: 'Unknown tab' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

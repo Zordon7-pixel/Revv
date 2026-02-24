@@ -4,6 +4,7 @@ import api from '../lib/api'
 import { isAdmin } from '../lib/auth'
 
 const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']
+const MONTH_DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
 
 function getMonday(d = new Date()) {
   const day = d.getDay()
@@ -28,6 +29,7 @@ function AddShiftModal({ employees, prefill, onClose, onSaved }) {
     shift_date: prefill?.date || '',
     start_time: '08:00',
     end_time: '17:00',
+    lunch_break_minutes: 30,
     notes: ''
   })
   const [saving, setSaving] = useState(false)
@@ -67,6 +69,8 @@ function AddShiftModal({ employees, prefill, onClose, onSaved }) {
             <div><label className={lbl}>End Time</label>
               <input className={inp} type="time" value={form.end_time} onChange={e => setForm(f=>({...f,end_time:e.target.value}))} /></div>
           </div>
+          <div><label className={lbl}>Lunch (min)</label>
+            <input className={inp} type="number" min="0" max="120" value={form.lunch_break_minutes} onChange={e => setForm(f=>({...f,lunch_break_minutes:parseInt(e.target.value)||30}))} /></div>
           <div><label className={lbl}>Notes (optional)</label>
             <input className={inp} placeholder="Any instructions…" value={form.notes} onChange={e => setForm(f=>({...f,notes:e.target.value}))} /></div>
         </div>
@@ -132,7 +136,9 @@ function EarlyAuthModal({ employee, onClose, onSuccess }) {
 }
 
 export default function Schedule() {
+  const [viewMode, setViewMode] = useState('week') // 'week' or 'month'
   const [monday, setMonday] = useState(getMonday())
+  const [currentMonth, setCurrentMonth] = useState(new Date())
   const [shifts, setShifts] = useState([])
   const [employees, setEmployees] = useState([])
   const [showAdd, setShowAdd] = useState(false)
@@ -147,7 +153,69 @@ export default function Schedule() {
     return d
   })
 
+  // Month view helpers
+  function getMonthDays() {
+    const year = currentMonth.getFullYear()
+    const month = currentMonth.getMonth()
+    const firstDay = new Date(year, month, 1)
+    const lastDay = new Date(year, month + 1, 0)
+    const days = []
+    
+    // Start from Sunday of the week containing the first day
+    const startDate = new Date(firstDay)
+    startDate.setDate(startDate.getDate() - firstDay.getDay())
+    
+    // End on Saturday of the week containing the last day
+    const endDate = new Date(lastDay)
+    endDate.setDate(endDate.getDate() + (6 - lastDay.getDay()))
+    
+    let current = new Date(startDate)
+    while (current <= endDate) {
+      days.push(new Date(current))
+      current.setDate(current.getDate() + 1)
+    }
+    return days
+  }
+
+  function prevMonth() {
+    const d = new Date(currentMonth)
+    d.setMonth(d.getMonth() - 1)
+    setCurrentMonth(d)
+  }
+
+  function nextMonth() {
+    const d = new Date(currentMonth)
+    d.setMonth(d.getMonth() + 1)
+    setCurrentMonth(d)
+  }
+
+  function goToWeek(date) {
+    const d = new Date(date)
+    d.setDate(d.getDate() - ((d.getDay() + 6) % 7)) // Get Monday
+    setMonday(d)
+    setViewMode('week')
+  }
+
+  async function loadMonthShifts() {
+    const year = currentMonth.getFullYear()
+    const month = currentMonth.getMonth()
+    const from = new Date(year, month, 1).toISOString().slice(0, 10)
+    const to = new Date(year, month + 1, 0).toISOString().slice(0, 10)
+    const s = await api.get(`/schedule?from=${from}&to=${to}`)
+    setShifts(s.data.shifts || [])
+  }
+
+  useEffect(() => {
+    if (viewMode === 'month') {
+      loadMonthShifts()
+    }
+  }, [viewMode, currentMonth])
+
   async function load() {
+    if (viewMode === 'month') {
+      await loadMonthShifts()
+      return
+    }
     const [s, e] = await Promise.all([
       api.get(`/schedule?week=${isoDate(monday)}`),
       admin ? api.get('/schedule/employees') : Promise.resolve({ data: { employees: [] } })
@@ -155,7 +223,7 @@ export default function Schedule() {
     setShifts(s.data.shifts || [])
     setEmployees(e.data.employees || [])
   }
-  useEffect(() => { load() }, [monday])
+  useEffect(() => { load() }, [monday, viewMode])
 
   useEffect(() => {
     async function loadAuthStatus() {
@@ -178,9 +246,21 @@ export default function Schedule() {
     loadAuthStatus()
   }, [admin, employees, monday])
 
-  function prevWeek() { const d = new Date(monday); d.setDate(d.getDate()-7); setMonday(d) }
-  function nextWeek() { const d = new Date(monday); d.setDate(d.getDate()+7); setMonday(d) }
-  function thisWeek() { setMonday(getMonday()) }
+  function prevWeek() { 
+    const d = new Date(monday); 
+    d.setDate(d.getDate()-7); 
+    setMonday(d) 
+  }
+  function nextWeek() { 
+    const d = new Date(monday); 
+    d.setDate(d.getDate()+7); 
+    setMonday(d) 
+  }
+  function thisWeek() { 
+    setMonday(getMonday())
+    setCurrentMonth(new Date())
+    setViewMode('week')
+  }
 
   function shiftsFor(date) {
     const iso = isoDate(date)
@@ -206,9 +286,32 @@ export default function Schedule() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-xl font-bold text-white">Schedule</h1>
         <div className="flex items-center gap-2">
-          <button onClick={prevWeek} className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-[#2a2d3e] transition-colors"><ChevronLeft size={16}/></button>
+          {/* View Mode Toggle */}
+          <div className="flex bg-[#1a1d2e] border border-[#2a2d3e] rounded-lg p-0.5">
+            <button
+              onClick={() => setViewMode('week')}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                viewMode === 'week'
+                  ? 'bg-indigo-600 text-white'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Week
+            </button>
+            <button
+              onClick={() => setViewMode('month')}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                viewMode === 'month'
+                  ? 'bg-indigo-600 text-white'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Month
+            </button>
+          </div>
+          <button onClick={() => viewMode === 'month' ? prevMonth() : prevWeek()} className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-[#2a2d3e] transition-colors"><ChevronLeft size={16}/></button>
           <button onClick={thisWeek} className="px-3 py-1.5 rounded-lg text-xs text-slate-300 hover:bg-[#2a2d3e] border border-[#2a2d3e] transition-colors">This Week</button>
-          <button onClick={nextWeek} className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-[#2a2d3e] transition-colors"><ChevronRight size={16}/></button>
+          <button onClick={() => viewMode === 'month' ? nextMonth() : nextWeek()} className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-[#2a2d3e] transition-colors"><ChevronRight size={16}/></button>
           {admin && (
             <button onClick={() => openAdd()} className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-colors">
               <Plus size={14}/> Add Shift
@@ -218,11 +321,30 @@ export default function Schedule() {
       </div>
 
       <div className="text-xs text-slate-500">
-        Week of {fmtHeader(monday)} — {fmtHeader(weekDates[6])}
+        {viewMode === 'week' 
+          ? `Week of ${fmtHeader(monday)} — ${fmtHeader(weekDates[6])}`
+          : currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+        }
       </div>
 
-      {/* Weekly grid */}
-      <div className="grid grid-cols-7 gap-1.5">
+      {/* Month navigation - only show in month view */}
+      {viewMode === 'month' && (
+        <div className="flex items-center justify-center gap-4 mb-2">
+          <button onClick={prevMonth} className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-[#2a2d3e] transition-colors">
+            <ChevronLeft size={16}/>
+          </button>
+          <button onClick={() => setCurrentMonth(new Date())} className="px-3 py-1.5 rounded-lg text-xs text-slate-300 hover:bg-[#2a2d3e] border border-[#2a2d3e] transition-colors">
+            Today
+          </button>
+          <button onClick={nextMonth} className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-[#2a2d3e] transition-colors">
+            <ChevronRight size={16}/>
+          </button>
+        </div>
+      )}
+
+      {viewMode === 'week' ? (
+        /* Weekly grid */
+        <div className="grid grid-cols-7 gap-1.5">
         {weekDates.map((date, i) => {
           const dayShifts = shiftsFor(date)
           const isToday = isoDate(date) === today
@@ -257,6 +379,52 @@ export default function Schedule() {
           )
         })}
       </div>
+      ) : (
+        /* Monthly grid */
+        <div className="grid grid-cols-7 gap-1">
+          {/* Day headers */}
+          {MONTH_DAYS.map(day => (
+            <div key={day} className="text-[10px] font-bold text-slate-500 uppercase text-center py-2">
+              {day}
+            </div>
+          ))}
+          {/* Calendar days */}
+          {getMonthDays().map((date, i) => {
+            const dayShifts = shiftsFor(date)
+            const isToday = isoDate(date) === today
+            const isCurrentMonth = date.getMonth() === currentMonth.getMonth()
+            return (
+              <div 
+                key={i}
+                onClick={() => goToWeek(date)}
+                className={`bg-[#1a1d2e] rounded-lg border min-h-[80px] p-1.5 cursor-pointer hover:border-indigo-500/50 transition-colors ${
+                  isCurrentMonth 
+                    ? (isToday ? 'border-indigo-600/60' : 'border-[#2a2d3e]') 
+                    : 'border-transparent bg-[#0f1117]'
+                }`}
+              >
+                <div className={`text-[10px] font-medium mb-1 ${
+                  isCurrentMonth 
+                    ? (isToday ? 'text-indigo-400' : 'text-slate-400')
+                    : 'text-slate-700'
+                }`}>
+                  {date.getDate()}
+                </div>
+                <div className="space-y-0.5">
+                  {dayShifts.slice(0, 2).map(s => (
+                    <div key={s.id} className="bg-indigo-900/30 border border-indigo-700/40 rounded px-1.5 py-0.5">
+                      <div className="text-[8px] font-semibold text-indigo-300 truncate">{s.user?.name?.split(' ')[0]}</div>
+                    </div>
+                  ))}
+                  {dayShifts.length > 2 && (
+                    <div className="text-[8px] text-slate-500 text-center">+{dayShifts.length - 2} more</div>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
 
       {/* Employee summary (admin only) */}
       {admin && shifts.length > 0 && (

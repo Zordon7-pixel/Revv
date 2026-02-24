@@ -136,19 +136,22 @@ export default function TimeClock() {
   const [showOverrideModal, setShowOverrideModal] = useState(false)
   const [overrideError, setOverrideError] = useState('')
   const [overrideSubmitting, setOverrideSubmitting] = useState(false)
+  const [lunchStatus, setLunchStatus] = useState({ on_lunch: false, lunch: null })
 
   const admin = isAdmin()
   const currentUser = getTokenPayload()
 
   async function refresh() {
-    const [s, e, sh] = await Promise.all([
+    const [s, e, sh, l] = await Promise.all([
       api.get('/timeclock/status'),
       api.get('/timeclock/entries'),
       api.get('/schedule/today'),
+      api.get('/timeclock/lunch/status'),
     ])
     setStatus(s.data)
     setEntries(e.data.entries || [])
     setTodayShift(sh.data.shift)
+    setLunchStatus(l.data)
   }
   useEffect(() => { refresh() }, [])
 
@@ -214,6 +217,32 @@ export default function TimeClock() {
     await refresh()
   }
 
+  async function startLunch() {
+    setLoading(true)
+    setActionErr('')
+    try {
+      await api.post('/timeclock/lunch/start')
+      await refresh()
+    } catch (e) {
+      setActionErr(e?.response?.data?.error || 'Failed to start lunch')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function endLunch() {
+    setLoading(true)
+    setActionErr('')
+    try {
+      await api.post('/timeclock/lunch/end')
+      await refresh()
+    } catch (e) {
+      setActionErr(e?.response?.data?.error || 'Failed to end lunch')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   if (!status) return <div className="flex items-center justify-center h-64 text-slate-500">Loading…</div>
 
   const clocked = status.clocked_in
@@ -258,6 +287,23 @@ export default function TimeClock() {
               className="w-full max-w-xs bg-red-600 hover:bg-red-500 text-white font-bold rounded-xl py-4 text-sm transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
               <Clock size={18}/> {loading ? 'Getting location…' : 'Clock Out'}
             </button>
+
+            {/* Lunch buttons - show when clocked in */}
+            {clocked && (
+              <div className="w-full max-w-xs flex gap-2">
+                {lunchStatus.on_lunch ? (
+                  <button onClick={endLunch} disabled={loading}
+                    className="flex-1 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded-xl py-3 text-sm transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+                    <Clock size={16}/> {loading ? 'Ending...' : 'End Lunch'}
+                  </button>
+                ) : (
+                  <button onClick={startLunch} disabled={loading}
+                    className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl py-3 text-sm transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+                    <Clock size={16}/> {loading ? 'Starting...' : 'Start Lunch'}
+                  </button>
+                )}
+              </div>
+            )}
           </>
         ) : (
           <>

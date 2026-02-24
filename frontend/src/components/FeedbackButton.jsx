@@ -68,7 +68,7 @@ export default function FeedbackButton() {
   return (
     <>
       <button onClick={() => setOpen(true)}
-        className="fixed bottom-5 right-5 z-40 flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold px-4 py-2.5 rounded-full shadow-lg shadow-indigo-900/50 transition-all hover:scale-105">
+        className="fixed bottom-5 right-36 z-40 flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold px-4 py-2.5 rounded-full shadow-lg shadow-indigo-900/50 transition-all hover:scale-105">
         <MessageSquarePlus size={16} /> Feedback
       </button>
 

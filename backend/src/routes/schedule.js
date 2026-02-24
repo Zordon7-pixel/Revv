@@ -12,7 +12,7 @@ async function enrich(s) {
 
 router.get('/', auth, async (req, res) => {
   try {
-    const { week, user_id } = req.query;
+    const { week, user_id, from, to } = req.query;
     const isAdmin = ['owner', 'admin'].includes(req.user.role);
 
     let sql = 'SELECT * FROM schedules WHERE shop_id = $1';
@@ -27,17 +27,20 @@ router.get('/', auth, async (req, res) => {
       params.push(user_id);
     }
 
-    if (week) {
+    if (from && to) {
+      sql += ` AND shift_date >= $${paramIdx++} AND shift_date <= $${paramIdx++}`;
+      params.push(from, to);
+    } else if (week) {
       const d = new Date(week);
       const day = d.getDay();
       const monday = new Date(d);
       monday.setDate(d.getDate() - ((day + 6) % 7));
       const sunday = new Date(monday);
       sunday.setDate(monday.getDate() + 6);
-      const from = monday.toISOString().slice(0, 10);
-      const to   = sunday.toISOString().slice(0, 10);
+      const fromDate = monday.toISOString().slice(0, 10);
+      const toDate   = sunday.toISOString().slice(0, 10);
       sql += ` AND shift_date >= $${paramIdx++} AND shift_date <= $${paramIdx++}`;
-      params.push(from, to);
+      params.push(fromDate, toDate);
     }
 
     sql += ' ORDER BY shift_date ASC, start_time ASC';
@@ -75,7 +78,7 @@ router.get('/employees', auth, requireAdmin, async (req, res) => {
 
 router.post('/', auth, requireAdmin, async (req, res) => {
   try {
-    const { user_id, shift_date, start_time, end_time, notes } = req.body;
+    const { user_id, shift_date, start_time, end_time, notes, lunch_break_minutes } = req.body;
     if (!user_id || !shift_date || !start_time || !end_time)
       return res.status(400).json({ error: 'user_id, shift_date, start_time, end_time required' });
 
@@ -86,9 +89,10 @@ router.post('/', auth, requireAdmin, async (req, res) => {
     if (exists) return res.status(409).json({ error: 'This employee already has a shift on that day' });
 
     const id = uuidv4();
+    const lunchMins = lunch_break_minutes != null ? parseInt(lunch_break_minutes, 10) : 30;
     await dbRun(
-      'INSERT INTO schedules (id, shop_id, user_id, shift_date, start_time, end_time, notes) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-      [id, req.user.shop_id, user_id, shift_date, start_time, end_time, notes || null]
+      'INSERT INTO schedules (id, shop_id, user_id, shift_date, start_time, end_time, notes, lunch_break_minutes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+      [id, req.user.shop_id, user_id, shift_date, start_time, end_time, notes || null, lunchMins]
     );
     res.status(201).json({ shift: await enrich(await dbGet('SELECT * FROM schedules WHERE id = $1', [id])) });
   } catch (err) {
@@ -101,7 +105,7 @@ router.put('/:id', auth, requireAdmin, async (req, res) => {
     const shift = await dbGet('SELECT * FROM schedules WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
     if (!shift) return res.status(404).json({ error: 'Shift not found' });
 
-    const ALLOWED_SCHEDULE_FIELDS = ['day_of_week','shift_start','shift_end','start_time','end_time','notes'];
+    const ALLOWED_SCHEDULE_FIELDS = ['day_of_week','shift_start','shift_end','start_time','end_time','notes','lunch_break_minutes'];
     const updates = Object.fromEntries(Object.entries(req.body).filter(([k]) => ALLOWED_SCHEDULE_FIELDS.includes(k)));
     if (updates.shift_start !== undefined && updates.start_time === undefined) updates.start_time = updates.shift_start;
     if (updates.shift_end !== undefined && updates.end_time === undefined) updates.end_time = updates.shift_end;

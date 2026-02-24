@@ -131,8 +131,29 @@ CREATE TABLE IF NOT EXISTS schedules (
   start_time TEXT NOT NULL,
   end_time TEXT NOT NULL,
   notes TEXT,
+  lunch_break_minutes INTEGER DEFAULT 30,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS lunch_breaks (
+  id UUID PRIMARY KEY,
+  shop_id UUID REFERENCES shops(id) ON DELETE CASCADE,
+  employee_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  time_entry_id UUID REFERENCES time_entries(id) ON DELETE SET NULL,
+  lunch_start TIMESTAMPTZ,
+  lunch_end TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS notifications (
+  id UUID PRIMARY KEY,
+  shop_id UUID REFERENCES shops(id) ON DELETE CASCADE,
+  type TEXT,
+  message TEXT,
+  employee_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  read BOOLEAN DEFAULT FALSE
 );
 
 CREATE TABLE IF NOT EXISTS time_entries (

@@ -352,4 +352,133 @@ router.delete('/:id', auth, requireAdmin, async (req, res) => {
   }
 });
 
+// --- Lunch Breaks ---
+
+router.get('/lunch/status', auth, async (req, res) => {
+  try {
+    const open = await dbGet(
+      'SELECT * FROM time_entries WHERE shop_id = $1 AND user_id = $2 AND clock_out IS NULL ORDER BY clock_in DESC LIMIT 1',
+      [req.user.shop_id, req.user.id]
+    );
+    if (!open) return res.json({ on_lunch: false, lunch: null });
+
+    const activeLunch = await dbGet(
+      'SELECT * FROM lunch_breaks WHERE employee_id = $1 AND time_entry_id = $2 AND lunch_end IS NULL ORDER BY lunch_start DESC LIMIT 1',
+      [req.user.id, open.id]
+    );
+    res.json({ on_lunch: !!activeLunch, lunch: activeLunch || null, time_entry_id: open.id });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/lunch/start', auth, async (req, res) => {
+  try {
+    const open = await dbGet(
+      'SELECT * FROM time_entries WHERE shop_id = $1 AND user_id = $2 AND clock_out IS NULL ORDER BY clock_in DESC LIMIT 1',
+      [req.user.shop_id, req.user.id]
+    );
+    if (!open) return res.status(409).json({ error: 'Not clocked in.' });
+
+    const existing = await dbGet(
+      'SELECT id FROM lunch_breaks WHERE employee_id = $1 AND time_entry_id = $2 AND lunch_end IS NULL',
+      [req.user.id, open.id]
+    );
+    if (existing) return res.status(409).json({ error: 'Lunch already in progress.' });
+
+    const id = randomUUID();
+    const now = new Date().toISOString();
+    await dbRun(
+      'INSERT INTO lunch_breaks (id, shop_id, employee_id, time_entry_id, lunch_start) VALUES ($1, $2, $3, $4, $5)',
+      [id, req.user.shop_id, req.user.id, open.id, now]
+    );
+    res.status(201).json({ lunch: await dbGet('SELECT * FROM lunch_breaks WHERE id = $1', [id]) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/lunch/end', auth, async (req, res) => {
+  try {
+    const open = await dbGet(
+      'SELECT * FROM time_entries WHERE shop_id = $1 AND user_id = $2 AND clock_out IS NULL ORDER BY clock_in DESC LIMIT 1',
+      [req.user.shop_id, req.user.id]
+    );
+    if (!open) return res.status(409).json({ error: 'Not clocked in.' });
+
+    const activeLunch = await dbGet(
+      'SELECT * FROM lunch_breaks WHERE employee_id = $1 AND time_entry_id = $2 AND lunch_end IS NULL ORDER BY lunch_start DESC LIMIT 1',
+      [req.user.id, open.id]
+    );
+    if (!activeLunch) return res.status(409).json({ error: 'No active lunch to end.' });
+
+    const now = new Date();
+    const nowIso = now.toISOString();
+    await dbRun('UPDATE lunch_breaks SET lunch_end = $1 WHERE id = $2', [nowIso, activeLunch.id]);
+
+    // Check duration vs allowed from shift
+    const today = now.toISOString().slice(0, 10);
+    const shift = await dbGet(
+      'SELECT lunch_break_minutes FROM schedules WHERE shop_id = $1 AND user_id = $2 AND shift_date = $3 LIMIT 1',
+      [req.user.shop_id, req.user.id, today]
+    );
+
+    const actualMinutes = Math.round((now - new Date(activeLunch.lunch_start)) / 60000);
+    const allowedMinutes = shift?.lunch_break_minutes ?? 30;
+    const overBy = actualMinutes - allowedMinutes;
+
+    if (overBy > 5) {
+      const employee = await dbGet('SELECT name FROM users WHERE id = $1', [req.user.id]);
+      const notifId = randomUUID();
+      await dbRun(
+        'INSERT INTO notifications (id, shop_id, type, message, employee_id) VALUES ($1, $2, $3, $4, $5)',
+        [
+          notifId,
+          req.user.shop_id,
+          'lunch_overtime',
+          `${employee?.name || 'Employee'} took a ${actualMinutes}-min lunch (allowed: ${allowedMinutes} min, over by ${overBy} min).`,
+          req.user.id
+        ]
+      );
+    }
+
+    res.json({ lunch: await dbGet('SELECT * FROM lunch_breaks WHERE id = $1', [activeLunch.id]), actual_minutes: actualMinutes, allowed_minutes: allowedMinutes });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Notifications (admin) ---
+
+router.get('/notifications', auth, requireAdmin, async (req, res) => {
+  try {
+    const rows = await dbAll(
+      'SELECT n.*, u.name as employee_name FROM notifications n LEFT JOIN users u ON u.id = n.employee_id WHERE n.shop_id = $1 ORDER BY n.created_at DESC LIMIT 50',
+      [req.user.shop_id]
+    );
+    const unread = rows.filter(r => !r.read).length;
+    res.json({ notifications: rows, unread });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/notifications/:id/read', auth, requireAdmin, async (req, res) => {
+  try {
+    await dbRun('UPDATE notifications SET read = TRUE WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/notifications/read-all', auth, requireAdmin, async (req, res) => {
+  try {
+    await dbRun('UPDATE notifications SET read = TRUE WHERE shop_id = $1', [req.user.shop_id]);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
