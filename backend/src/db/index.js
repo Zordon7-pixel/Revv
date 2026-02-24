@@ -11,6 +11,7 @@ async function initDb() {
     CREATE TABLE IF NOT EXISTS shops (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
+      onboarded BOOLEAN DEFAULT FALSE,
       phone TEXT,
       address TEXT,
       city TEXT,
@@ -262,6 +263,7 @@ async function initDb() {
   await pool.query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS payment_received INTEGER DEFAULT 0`);
   await pool.query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS payment_received_at TEXT`);
   await pool.query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS payment_method TEXT`);
+  await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS onboarded BOOLEAN DEFAULT FALSE`);
 
   // Wave 4: lunch breaks, notifications, schedule lunch field
   await pool.query(`ALTER TABLE schedules ADD COLUMN IF NOT EXISTS lunch_break_minutes INTEGER DEFAULT 30`);

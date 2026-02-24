@@ -21,9 +21,11 @@ async function runMigrations() {
 
     if (!exists.rows[0]?.exists) {
       await query(schemaSql);
+      await query('ALTER TABLE shops ADD COLUMN IF NOT EXISTS onboarded BOOLEAN DEFAULT FALSE');
       console.log('PostgreSQL schema created.');
     } else {
       await query(schemaSql);
+      await query('ALTER TABLE shops ADD COLUMN IF NOT EXISTS onboarded BOOLEAN DEFAULT FALSE');
       console.log('PostgreSQL schema already exists; ensured idempotent statements.');
     }
   } finally {

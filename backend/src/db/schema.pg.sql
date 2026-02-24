@@ -1,6 +1,7 @@
 CREATE TABLE IF NOT EXISTS shops (
   id UUID PRIMARY KEY,
   name TEXT NOT NULL,
+  onboarded BOOLEAN DEFAULT FALSE,
   phone TEXT,
   address TEXT,
   city TEXT,

@@ -14,6 +14,8 @@ import Portal from './pages/Portal'
 import TimeClock from './pages/TimeClock'
 import Schedule from './pages/Schedule'
 import Register from './pages/Register'
+import ShopRegister from './pages/ShopRegister'
+import Onboarding from './pages/Onboarding'
 import ClaimPortal from './pages/ClaimPortal'
 import ResetPassword from './pages/ResetPassword'
 import Invoice from './pages/Invoice'
@@ -42,12 +44,15 @@ export default function App() {
         <Route path="/superadmin/login" element={<SuperAdminLogin />} />
         <Route path="/superadmin" element={<SuperAdminRoute><SuperAdminDashboard /></SuperAdminRoute>} />
         <Route path="/register" element={<Register />} />
+        <Route path="/shop-register" element={<ShopRegister />} />
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/invoice/:id" element={<Invoice />} />
         <Route path="/portal" element={<PrivateRoute><Portal /></PrivateRoute>} />
+        <Route path="/onboarding" element={<PrivateRoute><Onboarding /></PrivateRoute>} />
         <Route path="/claim/:token" element={<ClaimPortal />} />
         <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
           <Route index element={<Dashboard />} />
+          <Route path="dashboard" element={<Dashboard />} />
           <Route path="ros" element={<RepairOrders />} />
           <Route path="ros/:id" element={<RODetail />} />
           <Route path="customers" element={<Customers />} />
@@ -56,6 +61,7 @@ export default function App() {
           <Route path="reports" element={<AdminRoute><Reports /></AdminRoute>} />
           <Route path="performance" element={<AdminRoute><Performance /></AdminRoute>} />
           <Route path="team" element={<AdminRoute><Users /></AdminRoute>} />
+          <Route path="users" element={<AdminRoute><Users /></AdminRoute>} />
           <Route path="settings" element={<AdminRoute><Settings /></AdminRoute>} />
         </Route>
       </Routes>

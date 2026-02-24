@@ -21,7 +21,13 @@ export default function Login() {
     try {
       const { data } = await api.post('/auth/login', { email, password })
       localStorage.setItem('sc_token', data.token)
-      navigate(data.user.role === 'customer' ? '/portal' : '/')
+      if (data.user.role === 'customer') {
+        navigate('/portal')
+      } else if (data.user.role === 'owner' && !data.user.onboarded) {
+        navigate('/onboarding')
+      } else {
+        navigate('/')
+      }
     } catch {
       setError('Wrong email or password.')
     } finally {
@@ -78,6 +84,12 @@ export default function Login() {
                 className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
                 Forgot password?
               </button>
+            </div>
+            <div className="pt-1">
+              <Link to="/shop-register"
+                className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors font-medium">
+                Shop owner? Create your account →
+              </Link>
             </div>
           </form>
         ) : (

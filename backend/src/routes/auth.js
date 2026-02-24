@@ -9,7 +9,10 @@ const auth     = require('../middleware/auth');
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
-    const user = await dbGet('SELECT * FROM users WHERE email = $1', [email]);
+    const user = await dbGet(
+      'SELECT u.*, s.onboarded FROM users u LEFT JOIN shops s ON s.id = u.shop_id WHERE u.email = $1',
+      [email]
+    );
     if (!user || !bcrypt.compareSync(password, user.password_hash))
       return res.status(401).json({ error: 'Invalid email or password' });
 
@@ -19,11 +22,60 @@ router.post('/login', async (req, res) => {
     const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '7d' });
     res.json({
       token,
-      user: { id: user.id, name: user.name, email: user.email, role: user.role, shop_id: user.shop_id, customer_id: user.customer_id || null },
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        shop_id: user.shop_id,
+        customer_id: user.customer_id || null,
+        onboarded: Boolean(user.onboarded),
+      },
     });
   } catch (err) {
     console.error('Login error:', err.message);
     res.status(500).json({ error: 'Login failed' });
+  }
+});
+
+router.post('/shop-register', async (req, res) => {
+  try {
+    const { name, email, password, shop_name } = req.body;
+    if (!name?.trim() || !email?.trim() || !password || !shop_name?.trim()) {
+      return res.status(400).json({ error: 'Name, email, password, and shop name are required.' });
+    }
+    if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters.' });
+
+    const emailNorm = email.trim().toLowerCase();
+    const existing = await dbGet('SELECT id FROM users WHERE LOWER(email) = $1', [emailNorm]);
+    if (existing) return res.status(409).json({ error: 'Email is already in use.' });
+
+    const shopId = uuidv4();
+    const userId = uuidv4();
+
+    await dbRun('INSERT INTO shops (id, name) VALUES ($1, $2)', [shopId, shop_name.trim()]);
+    await dbRun(
+      'INSERT INTO users (id, shop_id, name, email, password_hash, role) VALUES ($1, $2, $3, $4, $5, $6)',
+      [userId, shopId, name.trim(), emailNorm, bcrypt.hashSync(password, 10), 'owner']
+    );
+
+    const payload = { id: userId, shop_id: shopId, role: 'owner', jti: uuidv4() };
+    const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '7d' });
+    res.status(201).json({
+      token,
+      user: {
+        id: userId,
+        name: name.trim(),
+        email: emailNorm,
+        role: 'owner',
+        shop_id: shopId,
+        customer_id: null,
+        onboarded: false,
+      },
+    });
+  } catch (err) {
+    console.error('Shop register error:', err.message);
+    res.status(500).json({ error: 'Registration failed' });
   }
 });
 
@@ -117,11 +169,38 @@ router.post('/reset-password', async (req, res) => {
 
 router.get('/me', auth, async (req, res) => {
   try {
-    const user = await dbGet('SELECT id, name, email, role, shop_id, customer_id FROM users WHERE id = $1', [req.user.id]);
-    const shop = await dbGet('SELECT id, name, phone, address, city, state, zip FROM shops WHERE id = $1', [user.shop_id]);
+    const user = await dbGet(
+      `SELECT u.id, u.name, u.email, u.role, u.shop_id, u.customer_id, s.onboarded
+       FROM users u
+       LEFT JOIN shops s ON s.id = u.shop_id
+       WHERE u.id = $1`,
+      [req.user.id]
+    );
+    const shop = await dbGet('SELECT id, name, phone, address, city, state, zip, onboarded FROM shops WHERE id = $1', [user.shop_id]);
     res.json({ user, shop });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/onboarding', auth, async (req, res) => {
+  try {
+    const { shop_name, phone, address, city, state, zip } = req.body;
+    if (!shop_name?.trim() || !phone?.trim() || !address?.trim() || !city?.trim() || !state?.trim() || !zip?.trim()) {
+      return res.status(400).json({ error: 'All onboarding fields are required.' });
+    }
+    if (!req.user.shop_id) return res.status(400).json({ error: 'No shop is linked to this user.' });
+
+    await dbRun(
+      `UPDATE shops
+       SET name = $1, phone = $2, address = $3, city = $4, state = $5, zip = $6, onboarded = true
+       WHERE id = $7`,
+      [shop_name.trim(), phone.trim(), address.trim(), city.trim(), state.trim(), zip.trim(), req.user.shop_id]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Onboarding update error:', err.message);
+    res.status(500).json({ error: 'Failed to update onboarding info' });
   }
 });
 
