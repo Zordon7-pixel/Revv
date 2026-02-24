@@ -3,6 +3,17 @@ const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 
 async function runSeed() {
+  const superadminEmail = 'admin@revv.app';
+  const existingSuperadmin = await dbGet('SELECT id FROM users WHERE email = $1', [superadminEmail]);
+  if (!existingSuperadmin) {
+    const superadminHash = await bcrypt.hash('admin1234', 10);
+    await dbRun(
+      'INSERT INTO users (id, shop_id, name, email, password_hash, role) VALUES ($1, $2, $3, $4, $5, $6)',
+      [uuidv4(), null, 'Super Admin', superadminEmail, superadminHash, 'superadmin']
+    );
+    console.log('✅ Superadmin seeded.');
+  }
+
   const existing = await dbGet('SELECT id FROM shops LIMIT 1', []);
   if (existing) { console.log('DB already seeded — skipping.'); return; }
 

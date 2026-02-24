@@ -17,6 +17,9 @@ import Register from './pages/Register'
 import ClaimPortal from './pages/ClaimPortal'
 import ResetPassword from './pages/ResetPassword'
 import Invoice from './pages/Invoice'
+import SuperAdminLogin from './pages/SuperAdminLogin'
+import SuperAdminDashboard from './pages/SuperAdminDashboard'
+import SuperAdminRoute from './components/SuperAdminRoute'
 
 function PrivateRoute({ children }) {
   return localStorage.getItem('sc_token') ? children : <Navigate to="/login" />
@@ -36,6 +39,8 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/superadmin/login" element={<SuperAdminLogin />} />
+        <Route path="/superadmin" element={<SuperAdminRoute><SuperAdminDashboard /></SuperAdminRoute>} />
         <Route path="/register" element={<Register />} />
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/invoice/:id" element={<Invoice />} />
