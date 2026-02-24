@@ -49,11 +49,15 @@ export default function LibraryAutocomplete({
     if (e.key === 'Escape')    { setOpen(false) }
   }
 
-  // Close on click outside
+  // Close on click/touch outside
   useEffect(() => {
     function out(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
     document.addEventListener('mousedown', out)
-    return () => document.removeEventListener('mousedown', out)
+    document.addEventListener('touchstart', out)
+    return () => {
+      document.removeEventListener('mousedown', out)
+      document.removeEventListener('touchstart', out)
+    }
   }, [])
 
   const base = 'w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition-colors'
@@ -79,7 +83,8 @@ export default function LibraryAutocomplete({
         <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl shadow-xl overflow-hidden max-h-72 overflow-y-auto">
           {results.map((item, i) => (
             <button key={i} type="button"
-              onMouseDown={() => handleSelect(item)}
+              onMouseDown={e => { e.preventDefault(); handleSelect(item) }}
+              onTouchEnd={e => { e.preventDefault(); handleSelect(item) }}
               className={`w-full text-left px-3 py-2.5 transition-colors border-b border-[#2a2d3e] last:border-0 ${i === active ? 'bg-indigo-600/30' : 'hover:bg-[#2a2d3e]'}`}>
               {renderItem(item)}
             </button>

@@ -168,7 +168,16 @@ export default function AddROModal({ onClose, onSaved }) {
             {[1,2,3].map(i => <div key={i} className={`w-2 h-2 rounded-full ${step>=i ? 'bg-indigo-500' : 'bg-[#2a2d3e]'}`} />)}
           </div>
           {step < 3 ? (
-            <button onClick={() => setStep(s=>s+1)} className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">Next →</button>
+            <button onClick={() => {
+              if (step === 1) {
+                if (!form.new_customer && !form.customer_id) { alert('Please select a customer or choose New.'); return }
+                if (form.new_customer && !form.customer_name.trim()) { alert('Customer name is required.'); return }
+              }
+              if (step === 2) {
+                if (!form.year || !form.make.trim() || !form.model.trim()) { alert('Year, make, and model are required.'); return }
+              }
+              setStep(s=>s+1)
+            }} className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">Next →</button>
           ) : (
             <button onClick={submit} disabled={loading} className="bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors disabled:opacity-50">{loading ? 'Creating...' : <span className="inline-flex items-center gap-1">Create RO <CheckCircle size={13} /></span>}</button>
           )}
