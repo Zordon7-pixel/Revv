@@ -198,6 +198,14 @@ router.patch('/:id', auth, async (req, res) => {
 
     if (!STATUSES.includes(status)) return res.status(400).json({ error: 'Invalid status' });
 
+    // Payment gate: prevent closing without payment
+    if (status === 'closed') {
+      const paymentCheck = await dbGet('SELECT payment_received FROM repair_orders WHERE id = $1', [req.params.id]);
+      if (!paymentCheck || !paymentCheck.payment_received) {
+        return res.status(400).json({ error: 'Payment must be received before closing this RO' });
+      }
+    }
+
     const fromStatus = ro.status;
     const now = new Date().toISOString();
     if (status === 'delivery') {
@@ -276,6 +284,53 @@ router.post('/:id/approve-estimate', auth, async (req, res) => {
         }
       } catch (err) {
         console.error(`[Email] Estimate approval notification failed for RO ${req.params.id}:`, err.message);
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/:id/mark-paid', auth, async (req, res) => {
+  try {
+    const { payment_method } = req.body || {};
+    const ro = await dbGet('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
+    if (!ro) return res.status(404).json({ error: 'Not found' });
+
+    const now = new Date().toISOString();
+    const method = payment_method || 'cash';
+
+    // Update payment received and auto-close RO
+    await dbRun(
+      'UPDATE repair_orders SET payment_received = 1, payment_received_at = $1, payment_method = $2, status = $3, updated_at = $4 WHERE id = $5',
+      [now, method, 'closed', now, req.params.id]
+    );
+
+    // Log the status change
+    await dbRun(
+      'INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by, note) VALUES ($1, $2, $3, $4, $5, $6)',
+      [uuidv4(), req.params.id, ro.status, 'closed', req.user.id, `Payment received (${method})`]
+    );
+
+    const updatedRO = await dbGet('SELECT * FROM repair_orders WHERE id = $1', [req.params.id]);
+    res.json(await enrichRO(updatedRO));
+
+    // Send customer email
+    setImmediate(async () => {
+      try {
+        const emailContext = await dbGet(
+          'SELECT c.email, ro.ro_number FROM repair_orders ro LEFT JOIN customers c ON c.id = ro.customer_id WHERE ro.id = $1',
+          [req.params.id]
+        );
+        if (emailContext?.email) {
+          await sendMail(
+            emailContext.email,
+            'Your Vehicle is Ready for Pickup',
+            '<p>Your vehicle repair is complete and payment has been received. Your vehicle is ready for pickup!</p>'
+          ).catch(e => console.error('[Email] Payment notification failed:', e.message));
+        }
+      } catch (err) {
+        console.error(`[Email] Payment notification failed for RO ${req.params.id}:`, err.message);
       }
     });
   } catch (err) {

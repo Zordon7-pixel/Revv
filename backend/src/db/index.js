@@ -259,6 +259,9 @@ async function initDb() {
   // Add missing columns to existing repair_orders table in production
   await pool.query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS estimate_approved_at TEXT`);
   await pool.query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS estimate_approved_by TEXT`);
+  await pool.query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS payment_received INTEGER DEFAULT 0`);
+  await pool.query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS payment_received_at TEXT`);
+  await pool.query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS payment_method TEXT`);
 }
 
 async function dbGet(sql, params = []) {

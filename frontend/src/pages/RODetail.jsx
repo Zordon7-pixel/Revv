@@ -64,6 +64,9 @@ export default function RODetail() {
   const [partsReqForm, setPartsReqForm] = useState({ part_name: '', part_number: '', quantity: 1, notes: '' })
   const [submittingPartsReq, setSubmittingPartsReq] = useState(false)
   const [approvingEstimate, setApprovingEstimate] = useState(false)
+  const [showMarkPaidModal, setShowMarkPaidModal] = useState(false)
+  const [paymentMethod, setPaymentMethod] = useState('cash')
+  const [markingPaid, setMarkingPaid] = useState(false)
 
   const userIsAdmin = isAdmin()
   const userIsEmployee = isEmployee()
@@ -225,6 +228,19 @@ export default function RODetail() {
     }
   }
 
+  async function markPaid() {
+    setMarkingPaid(true)
+    try {
+      await api.post(`/ros/${id}/mark-paid`, { payment_method: paymentMethod })
+      load()
+      setShowMarkPaidModal(false)
+    } catch (err) {
+      alert(err?.response?.data?.error || 'Could not mark as paid')
+    } finally {
+      setMarkingPaid(false)
+    }
+  }
+
   if (!ro) return <div className="flex items-center justify-center h-64 text-slate-500">Loading your shop data...</div>
 
   const p = ro.profit || {}
@@ -247,9 +263,19 @@ export default function RODetail() {
         <div className="flex items-center gap-2 flex-wrap">
           <span className={`text-xs font-bold ${daysColor}`}>{daysIn}d in shop</span>
           <StatusBadge status={ro.status} />
+          {ro.payment_received === 1 && (
+            <span className="flex items-center gap-1 text-emerald-400 text-xs font-medium bg-emerald-900/30 border border-emerald-700/40 px-3 py-1.5 rounded-lg">
+              <CheckCircle size={12} /> Paid {ro.payment_received_at && `· ${new Date(ro.payment_received_at).toLocaleDateString()}`}
+            </span>
+          )}
           {ro.status === 'estimate_sent' && !ro.estimate_approved_at && (
             <button onClick={approveEstimate} disabled={approvingEstimate} className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
               <CheckCircle size={12} /> {approvingEstimate ? 'Approving...' : 'Approve Estimate'}
+            </button>
+          )}
+          {ro.status !== 'closed' && !ro.payment_received && (
+            <button onClick={() => setShowMarkPaidModal(true)} className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
+              <DollarSign size={12} /> Mark as Paid
             </button>
           )}
           {currentIdx < STAGES.length - 1 && (
@@ -687,6 +713,49 @@ export default function RODetail() {
           </div>
         )}
       </div>
+
+      {/* Mark as Paid Modal */}
+      {showMarkPaidModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-6 max-w-sm w-full mx-4 space-y-4">
+            <div className="flex items-center gap-2">
+              <DollarSign size={20} className="text-emerald-400" />
+              <h2 className="text-lg font-bold text-white">Mark as Paid</h2>
+            </div>
+            <p className="text-sm text-slate-400">Select payment method and confirm. This will mark the RO as paid and close it.</p>
+            <div className="space-y-2">
+              <label className="text-xs text-slate-500 block">Payment Method</label>
+              <select
+                value={paymentMethod}
+                onChange={e => setPaymentMethod(e.target.value)}
+                className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500"
+              >
+                <option value="cash">Cash</option>
+                <option value="card">Card</option>
+                <option value="insurance">Insurance</option>
+                <option value="check">Check</option>
+              </select>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowMarkPaidModal(false)}
+                className="flex-1 bg-[#2a2d3e] text-slate-300 text-sm font-medium px-4 py-2 rounded-lg hover:bg-[#3a3d4e] transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={markPaid}
+                disabled={markingPaid}
+                className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-1"
+              >
+                {markingPaid ? 'Processing...' : <>
+                  <DollarSign size={14} /> Mark Paid
+                </>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Parts Tracking */}
       <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
