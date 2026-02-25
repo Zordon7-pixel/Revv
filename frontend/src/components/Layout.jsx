@@ -105,7 +105,7 @@ export default function Layout() {
 
   const nav = allNav.filter((n) => {
     if (n.nonAdminOnly) return !admin
-    if (n.ownerOnly) return role === 'owner'
+    if (n.ownerOnly) return role === 'owner' || role === 'admin'
     if (n.adminOnly) return admin
     return true
   })

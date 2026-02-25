@@ -47,7 +47,7 @@ function OwnerRoute({ children }) {
   if (!localStorage.getItem('sc_token')) return <Navigate to="/login" />
   try {
     const role = JSON.parse(atob(localStorage.getItem('sc_token').split('.')[1])).role
-    if (role !== 'owner') return <Navigate to="/" />
+    if (role !== 'owner' && role !== 'admin') return <Navigate to="/" />
   } catch {}
   return children
 }

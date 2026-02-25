@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ClipboardList, DollarSign, CheckCircle, TrendingUp, Hand, AlertCircle, CalendarDays, ChevronRight } from 'lucide-react'
 import api from '../lib/api'
-import { isAdmin, isOwner } from '../lib/auth'
+import { isAdmin } from '../lib/auth'
 import { STATUS_COLORS, STATUS_LABELS } from './RepairOrders'
 import StatusBadge from '../components/StatusBadge'
 import CarryoverModal from '../components/CarryoverModal'
@@ -48,7 +48,6 @@ export default function Dashboard() {
   }, [])
 
   const admin = isAdmin()
-  const owner = isOwner()
   const hour = new Date().getHours()
   const nowLabel = new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
   const greetingText = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
@@ -109,7 +108,7 @@ export default function Dashboard() {
           <CalendarDays size={15} className="text-indigo-300" />
           Current Period: <span className="text-white font-semibold">{nowLabel}</span>
         </div>
-        {owner && (
+        {admin && (
           <button
             onClick={() => navigate('/monthly-report')}
             className="inline-flex items-center gap-1 text-xs text-indigo-300 hover:text-indigo-200 transition-colors"
