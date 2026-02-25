@@ -366,6 +366,13 @@ async function initDb() {
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     )
   `);
+
+  // Ensure demo shop is always marked as onboarded (fixes existing deployments)
+  await pool.query(`
+    UPDATE shops
+    SET onboarded = TRUE
+    WHERE id IN (SELECT shop_id FROM users WHERE email = 'demo@shop.com')
+  `).catch(() => {});
 }
 
 async function dbGet(sql, params = []) {

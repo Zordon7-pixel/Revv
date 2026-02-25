@@ -19,7 +19,7 @@ async function runSeed() {
 
   const shopId = uuidv4();
   await dbRun(
-    `INSERT INTO shops (id, name, phone, address, city, state, zip, market_tier, labor_rate, parts_markup, tax_rate) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+    `INSERT INTO shops (id, name, onboarded, phone, address, city, state, zip, market_tier, labor_rate, parts_markup, tax_rate) VALUES ($1, $2, TRUE, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
     [shopId, "Miles Automotive", "(555) 400-0100", "123 Miles Ave", "New York", "NY", "10001", 1, 95, 0.40, 0.08875]
   );
 
