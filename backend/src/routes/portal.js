@@ -1,6 +1,7 @@
 const router = require('express').Router();
-const { dbGet, dbAll } = require('../db');
+const { dbGet, dbAll, dbRun } = require('../db');
 const auth   = require('../middleware/auth');
+const { v4: uuidv4 } = require('uuid');
 
 const STATUS_MESSAGES = {
   intake:   { label: 'Vehicle Received',        msg: "Your vehicle has been received at the shop and is being checked in.",         emoji: '📋' },
@@ -221,6 +222,14 @@ router.post('/track/:token/rating', async (req, res) => {
     if (!tokenRecord) {
       return res.status(404).json({ error: 'Tracking link not found' });
     }
+
+    const ro = await dbGet('SELECT status FROM repair_orders WHERE id = $1', [tokenRecord.ro_id]);
+    if (!ro) {
+      return res.status(404).json({ error: 'Repair order not found' });
+    }
+    if (ro.status !== 'closed') {
+      return res.status(400).json({ error: 'Ratings are available after the repair is closed' });
+    }
     
     // Check if already rated
     const existing = await dbGet(`
@@ -231,7 +240,7 @@ router.post('/track/:token/rating', async (req, res) => {
       return res.status(400).json({ error: 'You have already submitted a rating' });
     }
     
-    const id = require('uuid').v4();
+    const id = uuidv4();
     await dbRun(`
       INSERT INTO ro_ratings (id, ro_id, shop_id, rating)
       VALUES ($1, $2, $3, $4)
@@ -245,10 +254,8 @@ router.post('/track/:token/rating', async (req, res) => {
 });
 
 // Generate magic link for an RO (auth required)
-router.post('/magic-link/:roId', auth, async (req, res) => {
+async function createMagicLink(req, res, roId) {
   try {
-    const { roId } = req.params;
-    
     const ro = await dbGet(`
       SELECT ro.*, c.phone as customer_phone, c.name as customer_name,
              s.name as shop_name, s.twilio_phone_number
@@ -263,10 +270,10 @@ router.post('/magic-link/:roId', auth, async (req, res) => {
     }
     
     // Generate unique token
-    const token = require('uuid').v4().replace(/-/g, '');
+    const token = uuidv4().replace(/-/g, '');
     
     // Store token
-    const id = require('uuid').v4();
+    const id = uuidv4();
     await dbRun(`
       INSERT INTO portal_tokens (id, ro_id, shop_id, token)
       VALUES ($1, $2, $3, $4)
@@ -301,6 +308,10 @@ router.post('/magic-link/:roId', auth, async (req, res) => {
     console.error('[Portal Magic Link] Error:', err.message);
     res.status(500).json({ error: err.message });
   }
+}
+
+router.post('/magic-link/:ro_id', auth, async (req, res) => {
+  return createMagicLink(req, res, req.params.ro_id);
 });
 
 module.exports = router;

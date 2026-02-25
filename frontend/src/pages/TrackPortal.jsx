@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
-import { Phone, MessageSquare, Star, Copy, Check, X, ChevronRight, Loader2 } from 'lucide-react'
+import { Phone, MessageSquare, Star, Check, X, Loader2 } from 'lucide-react'
 import api from '../lib/api'
 
 const STAGES = ['intake', 'estimate', 'approval', 'parts', 'repair', 'paint', 'qc', 'delivery', 'closed']
@@ -114,6 +114,10 @@ export default function TrackPortal() {
   const { ro, vehicle, customer, shop, parts, photos, timeline, has_rated, user_rating } = data
   const currentIdx = STAGES.indexOf(ro.status)
   const isPulsing = ['repair', 'paint', 'qc'].includes(ro.status)
+  const timelineByStatus = (timeline || []).reduce((acc, entry) => {
+    if (entry?.to_status) acc[entry.to_status] = entry.created_at
+    return acc
+  }, {})
 
   return (
     <div className="min-h-screen bg-[#0f1117] text-white">
@@ -187,6 +191,33 @@ export default function TrackPortal() {
             {ro.estimated_delivery && ro.status !== 'closed' && ro.status !== 'delivery' && (
               <span className="text-xs text-slate-500">Est: {ro.estimated_delivery}</span>
             )}
+          </div>
+        </div>
+
+        {/* Status Timeline */}
+        <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
+          <h3 className="text-sm font-semibold text-white mb-3">Status Timeline</h3>
+          <div className="space-y-2">
+            {STAGES.map((stage, idx) => {
+              const done = idx <= currentIdx
+              const active = idx === currentIdx
+              return (
+                <div key={stage} className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`w-2.5 h-2.5 rounded-full ${active ? 'animate-pulse' : ''}`}
+                      style={{ backgroundColor: done ? STATUS_COLORS[stage] : '#334155' }}
+                    />
+                    <span className={`text-sm ${done ? 'text-white' : 'text-slate-500'}`}>
+                      {STATUS_LABELS[stage]}
+                    </span>
+                  </div>
+                  <span className="text-[11px] text-slate-500">
+                    {timelineByStatus[stage] ? new Date(timelineByStatus[stage]).toLocaleDateString() : '-'}
+                  </span>
+                </div>
+              )
+            })}
           </div>
         </div>
 
@@ -266,7 +297,7 @@ export default function TrackPortal() {
         </div>
 
         {/* Rating (only when closed) */}
-        {(ro.status === 'closed' || ro.status === 'delivery') && (
+        {ro.status === 'closed' && (
           <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
             <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
               <Star size={16} />
