@@ -67,6 +67,7 @@ app.use('/api/superadmin', require('./routes/superadmin'));
 app.use('/api/settings', require('./routes/settings'));
 app.use('/api/appointments', require('./routes/appointments'));
 app.use('/api/approval', require('./routes/approval'));
+app.use('/api/public', require('./routes/public'));
 
 // Serve uploaded files
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));

@@ -27,6 +27,8 @@ import BookAppointment from './pages/BookAppointment'
 import SuperAdminLogin from './pages/SuperAdminLogin'
 import SuperAdminDashboard from './pages/SuperAdminDashboard'
 import SuperAdminRoute from './components/SuperAdminRoute'
+import TrackPortal from './pages/TrackPortal'
+import ShopProfile from './pages/ShopProfile'
 
 function PrivateRoute({ children }) {
   return localStorage.getItem('sc_token') ? children : <Navigate to="/login" />
@@ -73,6 +75,8 @@ export default function App() {
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/invoice/:id" element={<Invoice />} />
         <Route path="/approve/:token" element={<ApprovalPortal />} />
+        <Route path="/track/:token" element={<TrackPortal />} />
+        <Route path="/shop/:shopId" element={<ShopProfile />} />
         <Route path="/book" element={<BookAppointment />} />
         <Route path="/portal" element={<PrivateRoute><Portal /></PrivateRoute>} />
         <Route path="/onboarding" element={<PrivateRoute><Onboarding /></PrivateRoute>} />

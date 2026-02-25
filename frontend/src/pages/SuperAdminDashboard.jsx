@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Star } from 'lucide-react'
 
 export default function SuperAdminDashboard() {
   const [stats, setStats] = useState(null)
@@ -25,13 +26,28 @@ export default function SuperAdminDashboard() {
       setLoading(true)
       setError('')
       try {
-        const [statsRes, shopsRes] = await Promise.all([
+        const [statsRes, shopsRes, ratingsRes] = await Promise.all([
           fetchJson('/api/superadmin/stats'),
-          fetchJson('/api/superadmin/shops')
+          fetchJson('/api/superadmin/shops'),
+          fetchJson('/api/superadmin/ratings')
         ])
         if (!active) return
         setStats(statsRes)
-        setShops(shopsRes.shops || [])
+        // Merge ratings into shops
+        const shopsWithRatings = (shopsRes.shops || []).map(shop => {
+          const rating = (ratingsRes.shops || []).find(r => r.id === shop.id)
+          return {
+            ...shop,
+            avg_rating: rating?.avg_rating || null,
+            review_count: rating?.review_count || 0
+          }
+        }).sort((a, b) => {
+          // Sort by rating descending
+          const aRating = a.avg_rating || 0
+          const bRating = b.avg_rating || 0
+          return bRating - aRating
+        })
+        setShops(shopsWithRatings)
       } catch {
         if (active) setError('Unable to load superadmin data.')
       } finally {
@@ -97,6 +113,7 @@ export default function SuperAdminDashboard() {
                 <tr>
                   <th className="text-left px-5 py-3 font-medium">Name</th>
                   <th className="text-left px-5 py-3 font-medium">City/State</th>
+                  <th className="text-left px-5 py-3 font-medium">Rating</th>
                   <th className="text-left px-5 py-3 font-medium">Users</th>
                   <th className="text-left px-5 py-3 font-medium">ROs</th>
                 </tr>
@@ -115,6 +132,17 @@ export default function SuperAdminDashboard() {
                       <div className="text-xs text-slate-500">{shop.phone || '—'}</div>
                     </td>
                     <td className="px-5 py-3 text-slate-300">{shop.city || '—'} / {shop.state || '—'}</td>
+                    <td className="px-5 py-3">
+                      {shop.avg_rating ? (
+                        <div className="flex items-center gap-1">
+                          <Star size={14} className="text-yellow-400 fill-yellow-400" />
+                          <span className="text-white font-medium">{shop.avg_rating}</span>
+                          <span className="text-slate-500 text-xs">({shop.review_count})</span>
+                        </div>
+                      ) : (
+                        <span className="text-slate-500">—</span>
+                      )}
+                    </td>
                     <td className="px-5 py-3 text-slate-300">{shop.user_count ?? 0}</td>
                     <td className="px-5 py-3 text-slate-300">{shop.ro_count ?? 0}</td>
                   </tr>

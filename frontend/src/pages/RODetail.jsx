@@ -62,6 +62,7 @@ export default function RODetail() {
   const [claimLink, setClaimLink] = useState(null)
   const [linkCopied, setLinkCopied] = useState(false)
   const [generatingLink, setGeneratingLink] = useState(false)
+  const [trackingLink, setTrackingLink] = useState('')
 
   const [shopUsers, setShopUsers] = useState([])
   const [techNotes, setTechNotes] = useState('')
@@ -164,6 +165,21 @@ export default function RODetail() {
     await navigator.clipboard.writeText(url)
     setLinkCopied(true)
     setTimeout(() => setLinkCopied(false), 3000)
+  }
+
+  async function generateTrackingLink() {
+    setGeneratingLink(true)
+    try {
+      const { data } = await api.post(`/portal/magic-link/${id}`)
+      setTrackingLink(data.trackingUrl)
+      await navigator.clipboard.writeText(data.trackingUrl)
+      setLinkCopied(true)
+      setTimeout(() => setLinkCopied(false), 3000)
+    } catch (e) {
+      alert(e?.response?.data?.error || 'Could not generate tracking link')
+    } finally {
+      setGeneratingLink(false)
+    }
   }
 
   async function advance() {
@@ -838,6 +854,52 @@ export default function RODetail() {
             }} className="w-full text-xs bg-emerald-700 hover:bg-emerald-600 text-white font-semibold rounded-lg py-2 transition-colors flex items-center justify-center gap-1.5">
               <Copy size={13} /> Copy Message to Send Customer
             </button>
+          </div>
+        )}
+
+        {/* Tracking Link Section */}
+        {ro.customer?.phone && (
+          <div className="mt-4 bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
+                  <Smartphone size={12} /> Send Tracking Link
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Send customer a link to track their vehicle
+                </p>
+              </div>
+              <button
+                onClick={generateTrackingLink}
+                disabled={generatingLink}
+                className="flex items-center gap-1.5 bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+              >
+                {generatingLink ? 'Sending...' : 'Send SMS'}
+              </button>
+            </div>
+
+            {trackingLink && (
+              <div className="mt-3 bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={trackingLink}
+                    className="flex-1 bg-transparent text-xs text-slate-300 font-mono truncate"
+                  />
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(trackingLink)
+                      setLinkCopied(true)
+                      setTimeout(() => setLinkCopied(false), 3000)
+                    }}
+                    className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
+                  >
+                    {linkCopied ? <><CheckCircle size={12} /> Copied!</> : <><Copy size={12} /> Copy</>}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

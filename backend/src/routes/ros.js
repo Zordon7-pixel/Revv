@@ -367,6 +367,46 @@ router.post('/', auth, async (req, res) => {
     `, [id, req.user.shop_id, roNumber, vehicle_id, customer_id, job_type || 'collision', payment_type || 'insurance', claim_number || null, insurer || null, adjuster_name || null, adjuster_phone || null, deductible || 0, today, estimated_delivery || null, notes || null]);
     await dbRun('INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by) VALUES ($1, $2, $3, $4, $5)', [uuidv4(), id, null, 'intake', req.user.id]);
     const ro = await dbGet('SELECT * FROM repair_orders WHERE id = $1', [id]);
+    
+    // Auto-generate tracking link and send SMS (non-blocking)
+    setImmediate(async () => {
+      try {
+        const { dbRun: run, dbGet: get } = require('../db');
+        const { sendSMS, isConfigured } = require('../services/sms');
+        
+        // Get customer and shop info
+        const roContext = await get(`
+          SELECT ro.*, c.phone as customer_phone, c.name as customer_name,
+                 s.name as shop_name, s.twilio_phone_number
+          FROM repair_orders ro
+          LEFT JOIN customers c ON c.id = ro.customer_id
+          LEFT JOIN shops s ON s.id = ro.shop_id
+          WHERE ro.id = $1
+        `, [id]);
+        
+        if (!roContext?.customer_phone) return;
+        
+        // Generate token
+        const token = uuidv4().replace(/-/g, '');
+        const tokenId = uuidv4();
+        await run(`
+          INSERT INTO portal_tokens (id, ro_id, shop_id, token)
+          VALUES ($1, $2, $3, $4)
+        `, [tokenId, id, req.user.shop_id, token]);
+        
+        // Send SMS
+        if (isConfigured()) {
+          const baseUrl = process.env.PUBLIC_URL || 'https://revv-production-ffa9.up.railway.app';
+          const trackingUrl = `${baseUrl}/track/${token}`;
+          const message = `Hi ${roContext.customer_name || 'there'}! Track your vehicle repair at ${roContext.shop_name}:\n${trackingUrl}`;
+          await sendSMS(roContext.customer_phone, message);
+          console.log(`[Auto-Track] Tracking link SMS sent for RO ${roNumber}`);
+        }
+      } catch (err) {
+        console.error('[Auto-Track] Failed to send tracking SMS:', err.message);
+      }
+    });
+    
     res.status(201).json(await enrichRO(ro));
   } catch (err) {
     res.status(500).json({ error: err.message });

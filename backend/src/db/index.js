@@ -343,6 +343,29 @@ async function initDb() {
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     )
   `);
+
+  // Customer experience: portal tokens for tracking
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS portal_tokens (
+      id TEXT PRIMARY KEY,
+      ro_id TEXT NOT NULL REFERENCES repair_orders(id),
+      shop_id TEXT NOT NULL REFERENCES shops(id),
+      token TEXT NOT NULL UNIQUE,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+      expires_at TEXT
+    )
+  `);
+
+  // Customer experience: ratings
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ro_ratings (
+      id TEXT PRIMARY KEY,
+      ro_id TEXT NOT NULL REFERENCES repair_orders(id),
+      shop_id TEXT NOT NULL REFERENCES shops(id),
+      rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    )
+  `);
 }
 
 async function dbGet(sql, params = []) {

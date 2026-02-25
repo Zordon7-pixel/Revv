@@ -58,4 +58,249 @@ router.get('/shop', auth, async (req, res) => {
   }
 });
 
+// Customer tracking portal - public endpoints
+
+router.get('/track/:token', async (req, res) => {
+  try {
+    const { token } = req.params;
+    
+    // Find the portal token
+    const tokenRecord = await dbGet(`
+      SELECT id, ro_id, shop_id, created_at, expires_at
+      FROM portal_tokens
+      WHERE token = $1
+    `, [token]);
+    
+    if (!tokenRecord) {
+      return res.status(404).json({ error: 'Tracking link not found' });
+    }
+    
+    // Check expiration
+    if (tokenRecord.expires_at && new Date(tokenRecord.expires_at) < new Date()) {
+      return res.status(410).json({ error: 'Tracking link has expired' });
+    }
+    
+    // Get RO with vehicle, customer, shop info
+    const ro = await dbGet(`
+      SELECT ro.*, 
+             v.year, v.make, v.model, v.color, v.plate, v.vin,
+             c.name as customer_name, c.phone as customer_phone, c.email as customer_email,
+             s.name as shop_name, s.phone as shop_phone, s.address as shop_address, s.city as shop_city, s.state as shop_state, s.zip as shop_zip
+      FROM repair_orders ro
+      LEFT JOIN vehicles v ON v.id = ro.vehicle_id
+      LEFT JOIN customers c ON c.id = ro.customer_id
+      LEFT JOIN shops s ON s.id = ro.shop_id
+      WHERE ro.id = $1
+    `, [tokenRecord.ro_id]);
+    
+    if (!ro) {
+      return res.status(404).json({ error: 'Repair order not found' });
+    }
+    
+    // Get parts
+    const parts = await dbAll(`
+      SELECT part_name, part_number, status, expected_date, received_date
+      FROM parts_orders
+      WHERE ro_id = $1
+      ORDER BY created_at ASC
+    `, [ro.id]);
+    
+    // Get photos
+    const photos = await dbAll(`
+      SELECT id, photo_url, caption, photo_type, created_at
+      FROM ro_photos
+      WHERE ro_id = $1
+      ORDER BY created_at DESC
+    `, [ro.id]);
+    
+    // Get status log for timeline
+    const timeline = await dbAll(`
+      SELECT to_status, note, created_at
+      FROM job_status_log
+      WHERE ro_id = $1
+      ORDER BY created_at ASC
+    `, [ro.id]);
+    
+    // Check if customer has already rated
+    const existingRating = await dbGet(`
+      SELECT rating FROM ro_ratings WHERE ro_id = $1
+    `, [ro.id]);
+    
+    res.json({
+      ro: {
+        id: ro.id,
+        ro_number: ro.ro_number,
+        status: ro.status,
+        job_type: ro.job_type,
+        intake_date: ro.intake_date,
+        estimated_delivery: ro.estimated_delivery,
+        actual_delivery: ro.actual_delivery,
+        notes: ro.notes,
+        parts_cost: ro.parts_cost,
+        labor_cost: ro.labor_cost,
+        total: ro.total,
+      },
+      vehicle: {
+        year: ro.year,
+        make: ro.make,
+        model: ro.model,
+        color: ro.color,
+        plate: ro.plate,
+        vin: ro.vin,
+      },
+      customer: {
+        name: ro.customer_name,
+        phone: ro.customer_phone,
+      },
+      shop: {
+        id: ro.shop_id,
+        name: ro.shop_name,
+        phone: ro.shop_phone,
+        address: ro.shop_address,
+        city: ro.shop_city,
+        state: ro.shop_state,
+        zip: ro.shop_zip,
+      },
+      parts,
+      photos,
+      timeline,
+      has_rated: !!existingRating,
+      user_rating: existingRating?.rating || null,
+    });
+  } catch (err) {
+    console.error('[Portal Track] Error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Submit a message to the shop (public)
+router.post('/track/:token/message', async (req, res) => {
+  try {
+    const { token } = req.params;
+    const { notes } = req.body;
+    
+    if (!notes?.trim()) {
+      return res.status(400).json({ error: 'Message is required' });
+    }
+    
+    const tokenRecord = await dbGet(`
+      SELECT ro_id, shop_id FROM portal_tokens WHERE token = $1
+    `, [token]);
+    
+    if (!tokenRecord) {
+      return res.status(404).json({ error: 'Tracking link not found' });
+    }
+    
+    const id = require('uuid').v4();
+    await dbRun(`
+      INSERT INTO ro_comms (id, ro_id, shop_id, user_id, type, notes)
+      VALUES ($1, $2, $3, $4, $5, $6)
+    `, [id, tokenRecord.ro_id, tokenRecord.shop_id, null, 'text', notes.trim()]);
+    
+    res.json({ ok: true, message: 'Message sent to shop' });
+  } catch (err) {
+    console.error('[Portal Message] Error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Submit a rating (public)
+router.post('/track/:token/rating', async (req, res) => {
+  try {
+    const { token } = req.params;
+    const { rating } = req.body;
+    
+    if (!rating || rating < 1 || rating > 5) {
+      return res.status(400).json({ error: 'Rating must be between 1 and 5' });
+    }
+    
+    const tokenRecord = await dbGet(`
+      SELECT ro_id, shop_id FROM portal_tokens WHERE token = $1
+    `, [token]);
+    
+    if (!tokenRecord) {
+      return res.status(404).json({ error: 'Tracking link not found' });
+    }
+    
+    // Check if already rated
+    const existing = await dbGet(`
+      SELECT id FROM ro_ratings WHERE ro_id = $1
+    `, [tokenRecord.ro_id]);
+    
+    if (existing) {
+      return res.status(400).json({ error: 'You have already submitted a rating' });
+    }
+    
+    const id = require('uuid').v4();
+    await dbRun(`
+      INSERT INTO ro_ratings (id, ro_id, shop_id, rating)
+      VALUES ($1, $2, $3, $4)
+    `, [id, tokenRecord.ro_id, tokenRecord.shop_id, rating]);
+    
+    res.json({ ok: true, message: 'Rating submitted', rating });
+  } catch (err) {
+    console.error('[Portal Rating] Error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Generate magic link for an RO (auth required)
+router.post('/magic-link/:roId', auth, async (req, res) => {
+  try {
+    const { roId } = req.params;
+    
+    const ro = await dbGet(`
+      SELECT ro.*, c.phone as customer_phone, c.name as customer_name,
+             s.name as shop_name, s.twilio_phone_number
+      FROM repair_orders ro
+      LEFT JOIN customers c ON c.id = ro.customer_id
+      LEFT JOIN shops s ON s.id = ro.shop_id
+      WHERE ro.id = $1 AND ro.shop_id = $2
+    `, [roId, req.user.shop_id]);
+    
+    if (!ro) {
+      return res.status(404).json({ error: 'Repair order not found' });
+    }
+    
+    // Generate unique token
+    const token = require('uuid').v4().replace(/-/g, '');
+    
+    // Store token
+    const id = require('uuid').v4();
+    await dbRun(`
+      INSERT INTO portal_tokens (id, ro_id, shop_id, token)
+      VALUES ($1, $2, $3, $4)
+    `, [id, roId, req.user.shop_id, token]);
+    
+    // Build tracking URL
+    const baseUrl = req.protocol + '://' + req.get('host');
+    const trackingUrl = `${baseUrl}/track/${token}`;
+    
+    // Send SMS to customer (non-blocking)
+    if (ro.customer_phone) {
+      setImmediate(async () => {
+        try {
+          const { sendSMS, isConfigured } = require('../services/sms');
+          if (isConfigured()) {
+            const message = `Hi ${ro.customer_name || 'there'}! Track your vehicle repair at ${ro.shop_name}:\n${trackingUrl}`;
+            await sendSMS(ro.customer_phone, message);
+            console.log(`[Portal] Tracking link SMS sent for RO ${ro.ro_number}`);
+          }
+        } catch (err) {
+          console.error('[Portal] SMS failed:', err.message);
+        }
+      });
+    }
+    
+    res.json({ 
+      token, 
+      trackingUrl,
+      message: 'Tracking link generated and SMS sent to customer'
+    });
+  } catch (err) {
+    console.error('[Portal Magic Link] Error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

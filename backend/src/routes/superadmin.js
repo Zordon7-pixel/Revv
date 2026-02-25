@@ -81,4 +81,35 @@ router.get('/stats', async (req, res) => {
   }
 });
 
+// Get shop ratings for superadmin dashboard
+router.get('/ratings', async (req, res) => {
+  try {
+    const shops = await dbAll(`
+      SELECT 
+        s.id,
+        s.name,
+        s.city,
+        s.state,
+        COALESCE(ro_counts.ro_count, 0) AS ro_count,
+        COALESCE(rating_stats.avg_rating, 0)::numeric(2,1) AS avg_rating,
+        COALESCE(rating_stats.review_count, 0) AS review_count
+      FROM shops s
+      LEFT JOIN (
+        SELECT shop_id, COUNT(*)::int AS ro_count
+        FROM repair_orders
+        GROUP BY shop_id
+      ) ro_counts ON ro_counts.shop_id = s.id
+      LEFT JOIN (
+        SELECT shop_id, AVG(rating)::numeric(2,1) AS avg_rating, COUNT(*)::int AS review_count
+        FROM ro_ratings
+        GROUP BY shop_id
+      ) rating_stats ON rating_stats.shop_id = s.id
+      ORDER BY avg_rating DESC NULLS LAST, review_count DESC
+    `);
+    res.json({ shops });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
