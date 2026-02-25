@@ -53,8 +53,8 @@ export default function ShopProfile() {
     )
   }
 
-  const { shop, rating, badges, reviews } = data
-  const hasRating = rating.avg && rating.avg > 0
+  const { shop, rating = {}, badges, reviews } = data
+  const hasRating = rating?.avg && rating.avg > 0
 
   return (
     <div className="min-h-screen bg-[#0f1117] text-white">
@@ -96,7 +96,7 @@ export default function ShopProfile() {
                 <span className="text-2xl text-slate-500">/5</span>
               </div>
               <p className="text-slate-400 text-sm mb-4">
-                {rating.count} review{rating.count !== 1 ? 's' : ''}
+                {rating?.count} review{rating?.count !== 1 ? 's' : ''}
               </p>
             </>
           ) : (
