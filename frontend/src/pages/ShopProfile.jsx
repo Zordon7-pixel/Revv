@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Phone, MapPin, Star, Award, Loader2, Calendar } from 'lucide-react'
+import { Phone, MapPin, Star, Award, Loader2, Calendar, Share2, CheckCircle } from 'lucide-react'
 import api from '../lib/api'
 
 export default function ShopProfile() {
@@ -9,11 +9,12 @@ export default function ShopProfile() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [data, setData] = useState(null)
+  const [copied, setCopied] = useState(false)
 
   useEffect(() => {
     async function load() {
       try {
-        const res = await api.get(`/api/public/shop/${shopId}`)
+        const res = await api.get(`/public/shop/${shopId}`)
         setData(res.data)
       } catch (err) {
         setError(err.response?.data?.error || 'Unable to load shop')
@@ -32,6 +33,17 @@ export default function ShopProfile() {
 
   const bookAppointment = () => {
     navigate('/book')
+  }
+
+  const shareProfile = async () => {
+    const shareUrl = `${window.location.origin}/shop/${shopId}`
+    try {
+      await navigator.clipboard.writeText(shareUrl)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2500)
+    } catch {
+      alert('Could not copy link. Please copy the URL from your browser.')
+    }
   }
 
   if (loading) {
@@ -82,6 +94,13 @@ export default function ShopProfile() {
             >
               <Calendar size={16} />
               Book Appointment
+            </button>
+            <button
+              onClick={shareProfile}
+              className="flex items-center gap-2 bg-indigo-900/30 border border-indigo-700/40 hover:bg-indigo-900/50 text-indigo-300 font-semibold px-4 py-2 rounded-lg transition-colors"
+            >
+              {copied ? <CheckCircle size={16} /> : <Share2 size={16} />}
+              {copied ? 'Copied' : 'Share'}
             </button>
           </div>
         </div>
