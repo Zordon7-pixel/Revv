@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Search, Phone, Shield, X, Mail, MapPin, Car, FileText, ChevronRight, User } from 'lucide-react'
+import { Search, Phone, Shield, X, Mail, MapPin, Car, FileText, ChevronRight, User, Pencil, Trash2 } from 'lucide-react'
 import api from '../lib/api'
+import { isAdmin } from '../lib/auth'
 
 const LETTERS = ['All', ...Array.from({ length: 26 }, (_, i) => String.fromCharCode(65 + i))]
 
@@ -15,7 +16,7 @@ const STATUS_COLORS = {
   qc: 'text-cyan-400', delivery: 'text-emerald-400', closed: 'text-slate-500'
 }
 
-function CustomerDrawer({ customerId, onClose }) {
+function CustomerDrawer({ customerId, onClose, adminUser, onEdit, onDelete }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
 
@@ -33,7 +34,27 @@ function CustomerDrawer({ customerId, onClose }) {
       <div className="w-full max-w-md bg-[#1a1d2e] border-l border-[#2a2d3e] flex flex-col h-full overflow-hidden shadow-2xl">
         <div className="flex items-center justify-between px-5 py-4 border-b border-[#2a2d3e] flex-shrink-0">
           <h2 className="font-bold text-white text-sm">Customer 360</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors"><X size={18}/></button>
+          <div className="flex items-center gap-1">
+            {adminUser && data?.customer && (
+              <>
+                <button
+                  onClick={() => onEdit(data.customer)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-300 hover:bg-[#0f1117] transition-colors"
+                  title="Edit customer"
+                >
+                  <Pencil size={16} />
+                </button>
+                <button
+                  onClick={() => onDelete(data.customer)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-red-300 hover:bg-[#0f1117] transition-colors"
+                  title="Delete customer"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </>
+            )}
+            <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors"><X size={18}/></button>
+          </div>
         </div>
 
         {loading ? (
@@ -136,16 +157,113 @@ function CustomerDrawer({ customerId, onClose }) {
   )
 }
 
+function EditCustomerModal({ customer, onClose, onSave }) {
+  const [form, setForm] = useState({
+    name: customer?.name || '',
+    phone: customer?.phone || '',
+    email: customer?.email || '',
+    address: customer?.address || '',
+    insurance_company: customer?.insurance_company || '',
+    policy_number: customer?.policy_number || ''
+  })
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    setForm({
+      name: customer?.name || '',
+      phone: customer?.phone || '',
+      email: customer?.email || '',
+      address: customer?.address || '',
+      insurance_company: customer?.insurance_company || '',
+      policy_number: customer?.policy_number || ''
+    })
+  }, [customer])
+
+  async function saveCustomer() {
+    if (!form.name.trim()) return alert('Name is required')
+    setLoading(true)
+    try {
+      await api.put(`/customers/${customer.id}`, form)
+      await onSave()
+      onClose()
+    } catch {
+      alert('Error updating customer')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+      <div className="bg-[#1a1d2e] rounded-2xl border border-[#2a2d3e] w-full max-w-md">
+        <div className="border-b border-[#2a2d3e] px-6 py-4 flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-white">Edit Customer</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors" disabled={loading}>
+            <X size={20} />
+          </button>
+        </div>
+        <div className="px-6 py-4 space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-slate-400 mb-1">Full Name</label>
+            <input type="text" value={form.name} onChange={e => setForm({...form, name: e.target.value})} placeholder="John Doe"
+              className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-400 mb-1">Phone</label>
+            <input type="text" value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} placeholder="(212) 555-0100"
+              className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-400 mb-1">Email</label>
+            <input type="email" value={form.email} onChange={e => setForm({...form, email: e.target.value})} placeholder="john@example.com"
+              className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-400 mb-1">Address</label>
+            <input type="text" value={form.address} onChange={e => setForm({...form, address: e.target.value})} placeholder="123 Main St"
+              className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-400 mb-1">Insurance Company</label>
+            <input type="text" value={form.insurance_company} onChange={e => setForm({...form, insurance_company: e.target.value})} placeholder="State Farm, GEICO..."
+              className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-400 mb-1">Policy Number</label>
+            <input type="text" value={form.policy_number} onChange={e => setForm({...form, policy_number: e.target.value})} placeholder="POL123456"
+              className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500" />
+          </div>
+        </div>
+        <div className="border-t border-[#2a2d3e] px-6 py-4 flex items-center gap-3 justify-end">
+          <button onClick={onClose} disabled={loading} className="px-4 py-2 text-sm text-slate-400 hover:text-white transition-colors disabled:opacity-50">
+            Cancel
+          </button>
+          <button onClick={saveCustomer} disabled={loading} className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
+            {loading ? 'Saving...' : 'Save Customer'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function Customers() {
   const [customers, setCustomers] = useState([])
   const [q, setQ] = useState('')
   const [activeLetter, setActiveLetter] = useState('All')
   const [showAdd, setShowAdd] = useState(false)
   const [selectedId, setSelectedId] = useState(null)
+  const [editingCustomer, setEditingCustomer] = useState(null)
   const [form, setForm] = useState({ name:'', phone:'', email:'', address:'', insurance_company:'', policy_number:'' })
   const [loading, setLoading] = useState(false)
+  const adminUser = isAdmin()
 
-  useEffect(() => { api.get('/customers').then(r => setCustomers(r.data.customers)) }, [])
+  async function refreshCustomers() {
+    const r = await api.get('/customers')
+    setCustomers(r.data.customers)
+  }
+
+  useEffect(() => { refreshCustomers() }, [])
 
   // Count per letter for badges
   const letterCounts = LETTERS.reduce((acc, letter) => {
@@ -172,11 +290,33 @@ export default function Customers() {
     setLoading(true)
     try {
       await api.post('/customers', form)
-      const r = await api.get('/customers')
-      setCustomers(r.data.customers)
+      await refreshCustomers()
       setShowAdd(false)
       setForm({ name:'', phone:'', email:'', address:'', insurance_company:'', policy_number:'' })
     } catch(e) { alert('Error saving customer') } finally { setLoading(false) }
+  }
+
+  async function deleteCustomer(customer) {
+    if (!customer?.id) return
+    const confirmed = window.confirm(`Delete customer "${customer.name}"? This action cannot be undone.`)
+    if (!confirmed) return
+    try {
+      await api.delete(`/customers/${customer.id}`)
+      if (selectedId === customer.id) setSelectedId(null)
+      await refreshCustomers()
+    } catch {
+      alert('Error deleting customer')
+    }
+  }
+
+  function editFromDrawer(customer) {
+    setSelectedId(null)
+    setEditingCustomer(customer)
+  }
+
+  async function deleteFromDrawer(customer) {
+    await deleteCustomer(customer)
+    setSelectedId(null)
   }
 
   return (
@@ -247,10 +387,34 @@ export default function Customers() {
           {filtered.map(c => (
             <div key={c.id}
               onClick={() => setSelectedId(c.id)}
-              className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 hover:border-indigo-500/40 transition-colors cursor-pointer group">
+              className="relative bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 hover:border-indigo-500/40 transition-colors cursor-pointer group">
+              {adminUser && (
+                <div className="absolute top-2.5 right-2.5 flex items-center gap-1 z-10">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setEditingCustomer(c)
+                    }}
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-300 hover:bg-[#0f1117] transition-colors"
+                    title="Edit customer"
+                  >
+                    <Pencil size={14} />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      deleteCustomer(c)
+                    }}
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-red-300 hover:bg-[#0f1117] transition-colors"
+                    title="Delete customer"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              )}
               <div className="flex items-start justify-between">
                 <div className="font-semibold text-white text-sm mb-2 group-hover:text-indigo-300 transition-colors">{c.name}</div>
-                <ChevronRight size={14} className="text-slate-600 group-hover:text-indigo-400 mt-0.5 flex-shrink-0 transition-colors" />
+                {!adminUser && <ChevronRight size={14} className="text-slate-600 group-hover:text-indigo-400 mt-0.5 flex-shrink-0 transition-colors" />}
               </div>
               {c.phone && <div className="flex items-center gap-2 text-xs text-slate-400 mb-1"><Phone size={11} /> {c.phone}</div>}
               {c.insurance_company && <div className="flex items-center gap-2 text-xs text-slate-400"><Shield size={11} /> {c.insurance_company} {c.policy_number ? `· ${c.policy_number}` : ''}</div>}
@@ -316,7 +480,22 @@ export default function Customers() {
 
       {/* Customer 360 Drawer */}
       {selectedId && (
-        <CustomerDrawer customerId={selectedId} onClose={() => setSelectedId(null)} />
+        <CustomerDrawer
+          customerId={selectedId}
+          onClose={() => setSelectedId(null)}
+          adminUser={adminUser}
+          onEdit={editFromDrawer}
+          onDelete={deleteFromDrawer}
+        />
+      )}
+
+      {/* Edit Customer Modal */}
+      {editingCustomer && (
+        <EditCustomerModal
+          customer={editingCustomer}
+          onClose={() => setEditingCustomer(null)}
+          onSave={refreshCustomers}
+        />
       )}
     </div>
   )
