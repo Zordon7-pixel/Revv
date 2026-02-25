@@ -105,6 +105,9 @@ async function initDb() {
       estimate_approved_at TEXT,
       estimate_approved_by TEXT,
       estimate_token TEXT,
+      billing_month VARCHAR(7) DEFAULT TO_CHAR(NOW(), 'YYYY-MM'),
+      revenue_period VARCHAR(8) DEFAULT 'current',
+      carried_over BOOLEAN DEFAULT FALSE,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     );
@@ -263,6 +266,13 @@ async function initDb() {
   await pool.query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS payment_received INTEGER DEFAULT 0`);
   await pool.query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS payment_received_at TEXT`);
   await pool.query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS payment_method TEXT`);
+  await pool.query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS billing_month VARCHAR(7)`);
+  await pool.query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS revenue_period VARCHAR(8) DEFAULT 'current'`);
+  await pool.query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS carried_over BOOLEAN DEFAULT FALSE`);
+  await pool.query(`ALTER TABLE repair_orders ALTER COLUMN billing_month SET DEFAULT TO_CHAR(NOW(), 'YYYY-MM')`);
+  await pool.query(`ALTER TABLE repair_orders ALTER COLUMN revenue_period SET DEFAULT 'current'`);
+  await pool.query(`ALTER TABLE repair_orders ALTER COLUMN carried_over SET DEFAULT FALSE`);
+  await pool.query(`UPDATE repair_orders SET billing_month = TO_CHAR(created_at, 'YYYY-MM') WHERE billing_month IS NULL`);
   await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS onboarded BOOLEAN DEFAULT FALSE`);
 
   // Wave 4: lunch breaks, notifications, schedule lunch field

@@ -43,6 +43,77 @@ router.get('/', auth, async (req, res) => {
   }
 });
 
+router.get('/carryover-pending', auth, requireAdmin, async (req, res) => {
+  try {
+    const ros = await dbAll(
+      `
+        SELECT
+          ro.id,
+          ro.ro_number,
+          c.name AS customer_name,
+          CONCAT_WS(' ', v.year::text, v.make, v.model) AS vehicle,
+          ro.total AS total_cost,
+          ro.billing_month,
+          ro.status,
+          ro.revenue_period,
+          ro.carried_over
+        FROM repair_orders ro
+        LEFT JOIN customers c ON c.id = ro.customer_id
+        LEFT JOIN vehicles v ON v.id = ro.vehicle_id
+        WHERE ro.shop_id = $1
+          AND ro.carried_over = TRUE
+        ORDER BY ro.created_at ASC
+      `,
+      [req.user.shop_id]
+    );
+    return res.json({ ros });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/:id/revenue-period', auth, requireAdmin, async (req, res) => {
+  try {
+    const { revenue_period } = req.body || {};
+    if (!['previous', 'current'].includes(revenue_period)) {
+      return res.status(400).json({ error: 'Invalid revenue_period' });
+    }
+
+    const ro = await dbGet('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
+    if (!ro) return res.status(404).json({ error: 'Not found' });
+
+    if (revenue_period === 'current') {
+      await dbRun(
+        `
+          UPDATE repair_orders
+          SET revenue_period = $1,
+              billing_month = TO_CHAR(NOW(), 'YYYY-MM'),
+              carried_over = FALSE,
+              updated_at = $2
+          WHERE id = $3 AND shop_id = $4
+        `,
+        [revenue_period, new Date().toISOString(), req.params.id, req.user.shop_id]
+      );
+    } else {
+      await dbRun(
+        `
+          UPDATE repair_orders
+          SET revenue_period = $1,
+              carried_over = FALSE,
+              updated_at = $2
+          WHERE id = $3 AND shop_id = $4
+        `,
+        [revenue_period, new Date().toISOString(), req.params.id, req.user.shop_id]
+      );
+    }
+
+    const updated = await dbGet('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
+    return res.json({ ok: true, ro: updated });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/:id', auth, async (req, res) => {
   try {
     const ro = await dbGet('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);

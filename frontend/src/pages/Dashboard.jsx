@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ClipboardList, DollarSign, CheckCircle, TrendingUp, Hand } from 'lucide-react'
+import { ClipboardList, DollarSign, CheckCircle, TrendingUp, Hand, AlertCircle, CalendarDays, ChevronRight } from 'lucide-react'
 import api from '../lib/api'
-import { isAdmin } from '../lib/auth'
+import { isAdmin, isOwner } from '../lib/auth'
 import { STATUS_COLORS, STATUS_LABELS } from './RepairOrders'
 import StatusBadge from '../components/StatusBadge'
+import CarryoverModal from '../components/CarryoverModal'
 
 function useCountUp(target, duration = 1000) {
   const [count, setCount] = React.useState(0)
@@ -26,12 +27,27 @@ function useCountUp(target, duration = 1000) {
 
 export default function Dashboard() {
   const [data, setData] = useState(null)
+  const [pendingCarryover, setPendingCarryover] = useState([])
+  const [showCarryoverModal, setShowCarryoverModal] = useState(false)
   const navigate = useNavigate()
 
-  useEffect(() => { api.get('/reports/summary').then(r => setData(r.data)) }, [])
+  async function loadDashboardData() {
+    const [summaryRes, carryoverRes] = await Promise.all([
+      api.get('/reports/summary'),
+      api.get('/ros/carryover-pending').catch(() => ({ data: { ros: [] } }))
+    ])
+    setData(summaryRes.data)
+    setPendingCarryover(carryoverRes.data?.ros || [])
+  }
+
+  useEffect(() => {
+    loadDashboardData().catch(err => console.error('Failed to load dashboard:', err))
+  }, [])
 
   const admin = isAdmin()
+  const owner = isOwner()
   const hour = new Date().getHours()
+  const nowLabel = new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
   const greetingText = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
 
   const displayActive = useCountUp(data?.active || 0)
@@ -85,6 +101,22 @@ export default function Dashboard() {
         <h1 className="text-xl font-bold text-white">Dashboard</h1>
       </div>
 
+      <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-3 flex items-center justify-between">
+        <div className="inline-flex items-center gap-2 text-sm text-slate-300">
+          <CalendarDays size={15} className="text-indigo-300" />
+          Current Period: <span className="text-white font-semibold">{nowLabel}</span>
+        </div>
+        {owner && (
+          <button
+            onClick={() => navigate('/monthly-report')}
+            className="inline-flex items-center gap-1 text-xs text-indigo-300 hover:text-indigo-200 transition-colors"
+          >
+            View Report
+            <ChevronRight size={14} />
+          </button>
+        )}
+      </div>
+
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {stats.map(s => (
           <div key={s.label} className={`${s.card} rounded-xl p-4 border border-[#2a2d3e] shadow-sm`}>
@@ -97,6 +129,21 @@ export default function Dashboard() {
           </div>
         ))}
       </div>
+
+      {pendingCarryover.length > 0 && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 flex items-center justify-between gap-3">
+          <div className="inline-flex items-center gap-2 text-sm text-amber-200">
+            <AlertCircle size={16} />
+            {pendingCarryover.length} job(s) carried over from last month. Assign revenue period.
+          </div>
+          <button
+            onClick={() => setShowCarryoverModal(true)}
+            className="bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 text-amber-100 text-xs font-medium px-3 py-1.5 rounded-md transition-colors"
+          >
+            Review Now
+          </button>
+        </div>
+      )}
 
       <div className="grid md:grid-cols-2 gap-4">
         <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
@@ -136,6 +183,17 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      {showCarryoverModal && (
+        <CarryoverModal
+          ros={pendingCarryover}
+          onClose={() => setShowCarryoverModal(false)}
+          onDone={async () => {
+            setShowCarryoverModal(false)
+            await loadDashboardData()
+          }}
+        />
+      )}
     </div>
   )
 }

@@ -7,6 +7,7 @@ import RepairOrders from './pages/RepairOrders'
 import RODetail from './pages/RODetail'
 import Customers from './pages/Customers'
 import Reports from './pages/Reports'
+import MonthlyReport from './pages/MonthlyReport'
 import Performance from './pages/Performance'
 import Settings from './pages/Settings'
 import Users from './pages/Users'
@@ -68,6 +69,7 @@ export default function App() {
           <Route path="timeclock" element={<TimeClock />} />
           <Route path="schedule" element={<Schedule />} />
           <Route path="reports" element={<AdminRoute><Reports /></AdminRoute>} />
+          <Route path="monthly-report" element={<OwnerRoute><MonthlyReport /></OwnerRoute>} />
           <Route path="performance" element={<AdminRoute><Performance /></AdminRoute>} />
           <Route path="team" element={<AdminRoute><Users /></AdminRoute>} />
           <Route path="users" element={<AdminRoute><Users /></AdminRoute>} />

@@ -78,7 +78,23 @@ app.get('*', (req, res) => {
 
 const PORT = process.env.PORT || 4000;
 
-const { initDb } = require('./db');
+const { initDb, dbAll } = require('./db');
+const { runMonthCarryover } = require('./jobs/monthCarryover');
+
+async function runCarryoverForActiveShops() {
+  try {
+    const shops = await dbAll('SELECT id FROM shops');
+    for (const shop of shops) {
+      const marked = await runMonthCarryover(shop.id);
+      if (marked > 0) {
+        console.log(`[Carryover] Shop ${shop.id}: marked ${marked} repair order(s)`);
+      }
+    }
+  } catch (err) {
+    console.error('[Carryover] Startup carryover task failed:', err.message);
+  }
+}
+
 initDb()
   .then(async () => {
     // Seed demo data on first run (safe to call every startup — skips if already seeded)
@@ -91,6 +107,7 @@ initDb()
     app.listen(PORT, '0.0.0.0', () => {
       console.log(`🔧 REVV running on http://localhost:${PORT}`);
       console.log(`   PostgreSQL: ${process.env.DATABASE_URL ? 'connected' : 'local'}`);
+      setImmediate(runCarryoverForActiveShops);
     });
   })
   .catch(err => {
