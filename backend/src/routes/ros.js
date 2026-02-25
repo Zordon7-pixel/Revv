@@ -632,8 +632,8 @@ router.post('/:id/mark-paid', auth, async (req, res) => {
 
     // Update payment received and auto-close RO
     await dbRun(
-      'UPDATE repair_orders SET payment_received = 1, payment_received_at = $1, payment_method = $2, status = $3, updated_at = $4 WHERE id = $5',
-      [now, method, 'closed', now, req.params.id]
+      'UPDATE repair_orders SET payment_received = 1, payment_received_at = $1, payment_method = $2, payment_status = $3, status = $4, updated_at = $5 WHERE id = $6',
+      [now, method, 'succeeded', 'closed', now, req.params.id]
     );
 
     // Log the status change

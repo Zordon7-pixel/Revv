@@ -4,6 +4,7 @@ import { Plus, ChevronRight, Search } from 'lucide-react'
 import api from '../lib/api'
 import AddROModal from '../components/AddROModal'
 import StatusBadge from '../components/StatusBadge'
+import PaymentStatusBadge, { normalizePaymentStatus } from '../components/PaymentStatusBadge'
 
 export const STATUS_COLORS = {
   intake: '#64748b', estimate: '#3b82f6', approval: '#eab308',
@@ -146,6 +147,7 @@ export default function RepairOrders() {
                   </div>
                   <div className="flex items-center gap-2">
                     <StatusBadge status={ro.status} />
+                    <PaymentStatusBadge status={normalizePaymentStatus(ro.payment_status, ro.payment_received)} paymentReceived={ro.payment_received} />
                     <span className="text-xs text-slate-500">{daysIn}d in shop</span>
                   </div>
                 </div>
@@ -183,6 +185,9 @@ export default function RepairOrders() {
                         </div>
                         <div className="mb-2">
                           <StatusBadge status={ro.status} />
+                        </div>
+                        <div className="mb-2">
+                          <PaymentStatusBadge status={normalizePaymentStatus(ro.payment_status, ro.payment_received)} paymentReceived={ro.payment_received} />
                         </div>
                         <div className="text-sm font-bold text-white leading-tight">{ro.year} {ro.make} {ro.model}</div>
                         <div className="text-xs text-slate-300 mt-0.5 truncate">{ro.customer_name}</div>

@@ -68,6 +68,7 @@ CREATE TABLE IF NOT EXISTS repair_orders (
   job_type TEXT DEFAULT 'collision',
   status TEXT DEFAULT 'intake',
   payment_type TEXT DEFAULT 'insurance',
+  payment_status TEXT DEFAULT 'unpaid',
   claim_number TEXT,
   insurer TEXT,
   adjuster_name TEXT,
@@ -99,6 +100,22 @@ CREATE TABLE IF NOT EXISTS job_status_log (
   changed_by TEXT,
   note TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS ro_payments (
+  id UUID PRIMARY KEY,
+  shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+  ro_id UUID NOT NULL REFERENCES repair_orders(id) ON DELETE CASCADE,
+  stripe_payment_intent_id TEXT UNIQUE,
+  amount_cents INTEGER NOT NULL,
+  currency TEXT DEFAULT 'usd',
+  status TEXT DEFAULT 'pending',
+  payment_method TEXT,
+  receipt_email TEXT,
+  paid_at TIMESTAMPTZ,
+  failure_message TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS parts_orders (
@@ -221,6 +238,9 @@ CREATE INDEX IF NOT EXISTS idx_repair_orders_vehicle_id ON repair_orders(vehicle
 CREATE INDEX IF NOT EXISTS idx_repair_orders_customer_id ON repair_orders(customer_id);
 CREATE INDEX IF NOT EXISTS idx_repair_orders_status ON repair_orders(status);
 CREATE INDEX IF NOT EXISTS idx_job_status_log_ro_id ON job_status_log(ro_id);
+CREATE INDEX IF NOT EXISTS idx_ro_payments_shop_id ON ro_payments(shop_id);
+CREATE INDEX IF NOT EXISTS idx_ro_payments_ro_id ON ro_payments(ro_id);
+CREATE INDEX IF NOT EXISTS idx_ro_payments_pi_id ON ro_payments(stripe_payment_intent_id);
 CREATE INDEX IF NOT EXISTS idx_parts_orders_shop_id ON parts_orders(shop_id);
 CREATE INDEX IF NOT EXISTS idx_parts_orders_ro_id ON parts_orders(ro_id);
 CREATE INDEX IF NOT EXISTS idx_parts_orders_status ON parts_orders(status);

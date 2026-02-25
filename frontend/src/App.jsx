@@ -21,6 +21,7 @@ import ClaimPortal from './pages/ClaimPortal'
 import ResetPassword from './pages/ResetPassword'
 import Invoice from './pages/Invoice'
 import PartsOnOrder from './pages/PartsOnOrder'
+import Payments from './pages/Payments'
 import TechView from './pages/TechView'
 import ApprovalPortal from './pages/ApprovalPortal'
 import BookAppointment from './pages/BookAppointment'
@@ -86,6 +87,7 @@ export default function App() {
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="ros" element={<RepairOrders />} />
           <Route path="parts" element={<OwnerRoute><PartsOnOrder /></OwnerRoute>} />
+          <Route path="payments" element={<Payments />} />
           <Route path="tech" element={<EmployeeOnlyRoute><TechView /></EmployeeOnlyRoute>} />
           <Route path="ros/:id" element={<RODetail />} />
           <Route path="customers" element={<Customers />} />

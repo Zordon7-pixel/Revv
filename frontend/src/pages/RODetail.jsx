@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Pencil, Save, X, Package, PackageCheck, PackageX, Plus, CheckCircle, AlertCircle, Clock, Truck, RefreshCw, ExternalLink, Car, DollarSign, ClipboardList, Smartphone, AlertTriangle, Copy, Printer, User, Phone, MessageSquare, Mail, Users } from 'lucide-react'
+import { ArrowLeft, Pencil, Save, X, Package, PackageCheck, PackageX, Plus, CheckCircle, AlertCircle, Clock, Truck, RefreshCw, ExternalLink, Car, DollarSign, ClipboardList, Smartphone, AlertTriangle, Copy, Printer, User, Phone, MessageSquare, Mail, Users, CreditCard } from 'lucide-react'
 import api from '../lib/api'
 import { STATUS_COLORS, STATUS_LABELS } from './RepairOrders'
 import StatusBadge from '../components/StatusBadge'
+import PaymentStatusBadge, { normalizePaymentStatus } from '../components/PaymentStatusBadge'
 import LibraryAutocomplete from '../components/LibraryAutocomplete'
 import ROPhotos from '../components/ROPhotos'
+import PaymentModal from '../components/PaymentModal'
 import { searchInsurers } from '../data/insurers'
 import { searchVendors } from '../data/vendors'
 import { isAdmin, isEmployee } from '../lib/auth'
@@ -75,6 +77,7 @@ export default function RODetail() {
   const [sendingForApproval, setSendingForApproval] = useState(false)
   const [approvalLink, setApprovalLink] = useState('')
   const [showMarkPaidModal, setShowMarkPaidModal] = useState(false)
+  const [showPaymentModal, setShowPaymentModal] = useState(false)
   const [paymentMethod, setPaymentMethod] = useState('cash')
   const [markingPaid, setMarkingPaid] = useState(false)
   const [comms, setComms] = useState([])
@@ -307,6 +310,8 @@ export default function RODetail() {
 
   const p = ro.profit || {}
   const currentIdx = STAGES.indexOf(ro.status)
+  const paymentStatus = normalizePaymentStatus(ro.payment_status, ro.payment_received)
+  const paymentAmount = Number(ro.total || ro.parts_cost || 0)
   const daysIn = ro.intake_date ? Math.floor((Date.now() - new Date(ro.intake_date)) / 86400000) : 0
   const daysColor = daysIn > 14 ? 'text-red-400' : daysIn > 7 ? 'text-yellow-400' : 'text-emerald-400'
   const inp = 'w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500'
@@ -325,6 +330,7 @@ export default function RODetail() {
         <div className="flex items-center gap-2 flex-wrap">
           <span className={`text-xs font-bold ${daysColor}`}>{daysIn}d in shop</span>
           <StatusBadge status={ro.status} />
+          <PaymentStatusBadge status={paymentStatus} paymentReceived={ro.payment_received} />
           {ro.payment_received === 1 && (
             <span className="flex items-center gap-1 text-emerald-400 text-xs font-medium bg-emerald-900/30 border border-emerald-700/40 px-3 py-1.5 rounded-lg">
               <CheckCircle size={12} /> Paid {ro.payment_received_at && `· ${new Date(ro.payment_received_at).toLocaleDateString()}`}
@@ -347,6 +353,14 @@ export default function RODetail() {
           {ro.status !== 'closed' && !ro.payment_received && (
             <button onClick={() => setShowMarkPaidModal(true)} className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
               <DollarSign size={12} /> Mark as Paid
+            </button>
+          )}
+          {paymentStatus !== 'succeeded' && paymentAmount > 0 && (
+            <button
+              onClick={() => setShowPaymentModal(true)}
+              className="flex items-center gap-1 bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
+            >
+              <CreditCard size={12} /> Collect Payment
             </button>
           )}
           {currentIdx < STAGES.length - 1 && (
@@ -903,6 +917,18 @@ export default function RODetail() {
           </div>
         )}
       </div>
+
+      {showPaymentModal && (
+        <PaymentModal
+          roId={id}
+          amount={paymentAmount}
+          onClose={() => setShowPaymentModal(false)}
+          onSuccess={() => {
+            load()
+            setShowPaymentModal(false)
+          }}
+        />
+      )}
 
       {/* Mark as Paid Modal */}
       {showMarkPaidModal && (

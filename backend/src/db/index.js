@@ -80,6 +80,7 @@ async function initDb() {
       job_type TEXT DEFAULT 'collision',
       status TEXT DEFAULT 'intake',
       payment_type TEXT DEFAULT 'insurance',
+      payment_status TEXT DEFAULT 'unpaid',
       claim_number TEXT,
       insurer TEXT,
       adjuster_name TEXT,
@@ -256,6 +257,22 @@ async function initDb() {
       routed_to TEXT,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     );
+
+    CREATE TABLE IF NOT EXISTS ro_payments (
+      id TEXT PRIMARY KEY,
+      shop_id TEXT NOT NULL REFERENCES shops(id),
+      ro_id TEXT NOT NULL REFERENCES repair_orders(id),
+      stripe_payment_intent_id TEXT UNIQUE,
+      amount_cents INTEGER NOT NULL,
+      currency TEXT DEFAULT 'usd',
+      status TEXT DEFAULT 'pending',
+      payment_method TEXT,
+      receipt_email TEXT,
+      paid_at TEXT,
+      failure_message TEXT,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    );
   `);
 
   console.log('[DB] Tables initialized');
@@ -266,6 +283,7 @@ async function initDb() {
   await pool.query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS payment_received INTEGER DEFAULT 0`);
   await pool.query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS payment_received_at TEXT`);
   await pool.query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS payment_method TEXT`);
+  await pool.query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS payment_status TEXT DEFAULT 'unpaid'`);
   await pool.query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS billing_month VARCHAR(7)`);
   await pool.query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS revenue_period VARCHAR(8) DEFAULT 'current'`);
   await pool.query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS carried_over BOOLEAN DEFAULT FALSE`);
@@ -273,6 +291,8 @@ async function initDb() {
   await pool.query(`ALTER TABLE repair_orders ALTER COLUMN revenue_period SET DEFAULT 'current'`);
   await pool.query(`ALTER TABLE repair_orders ALTER COLUMN carried_over SET DEFAULT FALSE`);
   await pool.query(`UPDATE repair_orders SET billing_month = TO_CHAR(created_at, 'YYYY-MM') WHERE billing_month IS NULL`);
+  await pool.query(`UPDATE repair_orders SET payment_status = 'succeeded' WHERE payment_status IS NULL AND payment_received = 1`);
+  await pool.query(`UPDATE repair_orders SET payment_status = 'unpaid' WHERE payment_status IS NULL`);
   await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS onboarded BOOLEAN DEFAULT FALSE`);
 
   // Wave 4: lunch breaks, notifications, schedule lunch field
