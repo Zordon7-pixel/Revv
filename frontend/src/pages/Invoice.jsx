@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { Printer } from 'lucide-react'
+import { Printer, Mail } from 'lucide-react'
 import api from '../lib/api'
 
 export default function Invoice() {
   const { id } = useParams()
   const [data, setData] = useState(null)
   const [error, setError] = useState('')
+  const [emailing, setEmailing] = useState(false)
+  const [notice, setNotice] = useState('')
 
   useEffect(() => {
     api.get(`/ros/${id}/invoice`)
@@ -35,31 +37,64 @@ export default function Invoice() {
   const fmt = (n) => `$${parseFloat(n || 0).toFixed(2)}`
   const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
 
+  async function emailInvoice() {
+    setEmailing(true)
+    setNotice('')
+    try {
+      const { data: res } = await api.post(`/ros/${id}/email-invoice`)
+      if (res?.skipped) {
+        setNotice('Email skipped: email service is not configured.')
+      } else {
+        setNotice('Invoice emailed to customer.')
+      }
+    } catch (e) {
+      setNotice(e?.response?.data?.error || 'Could not send invoice email.')
+    } finally {
+      setEmailing(false)
+    }
+  }
+
   return (
     <>
       <style>{`
         @media print {
           .no-print { display: none !important; }
           body { background: white !important; }
+          .print-sheet {
+            margin: 0 !important;
+            max-width: 100% !important;
+            box-shadow: none !important;
+            border-radius: 0 !important;
+            padding: 0 !important;
+          }
         }
         body { margin: 0; background: #f3f4f6; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #111; }
         * { box-sizing: border-box; }
       `}</style>
 
       {/* Print button — hidden on print */}
-      <div className="no-print" style={{ background: '#1a1d2e', padding: '0.75rem 1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+      <div className="no-print" style={{ background: '#1a1d2e', padding: '0.75rem 1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
         <button
           onClick={() => window.print()}
-          style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: '#4f46e5', color: '#fff', border: 'none', borderRadius: '8px', padding: '0.5rem 1.25rem', fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer' }}
+          style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: '#EAB308', color: '#0f1117', border: 'none', borderRadius: '8px', padding: '0.5rem 1.25rem', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer' }}
         >
           <Printer size={15} />
-          Print Invoice
+          Download PDF
+        </button>
+        <button
+          onClick={emailInvoice}
+          disabled={emailing}
+          style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: '#334155', color: '#fff', border: 'none', borderRadius: '8px', padding: '0.5rem 1.25rem', fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer', opacity: emailing ? 0.6 : 1 }}
+        >
+          <Mail size={15} />
+          {emailing ? 'Sending...' : 'Email to Customer'}
         </button>
         <span style={{ color: '#64748b', fontSize: '0.8rem' }}>{ro_number}</span>
+        {notice && <span style={{ color: '#cbd5e1', fontSize: '0.8rem' }}>{notice}</span>}
       </div>
 
       {/* Invoice sheet */}
-      <div style={{ maxWidth: '780px', margin: '1.5rem auto', background: '#fff', borderRadius: '8px', boxShadow: '0 1px 8px rgba(0,0,0,0.1)', padding: '2.5rem' }}>
+      <div className="print-sheet" style={{ maxWidth: '780px', margin: '1.5rem auto', background: '#fff', borderRadius: '8px', boxShadow: '0 1px 8px rgba(0,0,0,0.1)', padding: '2.5rem' }}>
 
         {/* Header — shop info */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '2rem', borderBottom: '2px solid #111', paddingBottom: '1.25rem' }}>

@@ -20,6 +20,10 @@ import Onboarding from './pages/Onboarding'
 import ClaimPortal from './pages/ClaimPortal'
 import ResetPassword from './pages/ResetPassword'
 import Invoice from './pages/Invoice'
+import PartsOnOrder from './pages/PartsOnOrder'
+import TechView from './pages/TechView'
+import ApprovalPortal from './pages/ApprovalPortal'
+import BookAppointment from './pages/BookAppointment'
 import SuperAdminLogin from './pages/SuperAdminLogin'
 import SuperAdminDashboard from './pages/SuperAdminDashboard'
 import SuperAdminRoute from './components/SuperAdminRoute'
@@ -46,6 +50,17 @@ function OwnerRoute({ children }) {
   return children
 }
 
+function EmployeeOnlyRoute({ children }) {
+  if (!localStorage.getItem('sc_token')) return <Navigate to="/login" />
+  try {
+    const role = JSON.parse(atob(localStorage.getItem('sc_token').split('.')[1])).role
+    if (!['employee', 'staff'].includes(role)) return <Navigate to="/" />
+  } catch {
+    return <Navigate to="/" />
+  }
+  return children
+}
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -57,6 +72,8 @@ export default function App() {
         <Route path="/shop-register" element={<ShopRegister />} />
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/invoice/:id" element={<Invoice />} />
+        <Route path="/approve/:token" element={<ApprovalPortal />} />
+        <Route path="/book" element={<BookAppointment />} />
         <Route path="/portal" element={<PrivateRoute><Portal /></PrivateRoute>} />
         <Route path="/onboarding" element={<PrivateRoute><Onboarding /></PrivateRoute>} />
         <Route path="/claim/:token" element={<ClaimPortal />} />
@@ -64,6 +81,8 @@ export default function App() {
           <Route index element={<Dashboard />} />
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="ros" element={<RepairOrders />} />
+          <Route path="parts" element={<OwnerRoute><PartsOnOrder /></OwnerRoute>} />
+          <Route path="tech" element={<EmployeeOnlyRoute><TechView /></EmployeeOnlyRoute>} />
           <Route path="ros/:id" element={<RODetail />} />
           <Route path="customers" element={<Customers />} />
           <Route path="timeclock" element={<TimeClock />} />

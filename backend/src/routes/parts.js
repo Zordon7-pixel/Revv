@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const { dbGet, dbAll, dbRun } = require('../db');
 const auth   = require('../middleware/auth');
+const { requireAdmin } = require('../middleware/roles');
 const { v4: uuidv4 } = require('uuid');
 
 const STATUSES = ['ordered', 'backordered', 'received', 'cancelled'];
@@ -11,6 +12,30 @@ router.get('/ro/:roId', auth, async (req, res) => {
     const ro = await dbGet('SELECT id FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.roId, req.user.shop_id]);
     if (!ro) return res.status(404).json({ error: 'RO not found' });
     const parts = await dbAll('SELECT * FROM parts_orders WHERE ro_id = $1 ORDER BY created_at ASC', [req.params.roId]);
+    res.json({ parts });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/all-pending', auth, requireAdmin, async (req, res) => {
+  try {
+    const parts = await dbAll(`
+      SELECT
+        p.*,
+        r.id as ro_id,
+        r.ro_number,
+        c.name as customer_name,
+        v.year,
+        v.make,
+        v.model
+      FROM parts_orders p
+      JOIN repair_orders r ON p.ro_id = r.id
+      JOIN customers c ON r.customer_id = c.id
+      LEFT JOIN vehicles v ON r.vehicle_id = v.id
+      WHERE p.shop_id = $1 AND p.status IN ('ordered', 'backordered')
+      ORDER BY p.expected_date ASC NULLS LAST, p.created_at ASC
+    `, [req.user.shop_id]);
     res.json({ parts });
   } catch (err) {
     res.status(500).json({ error: err.message });

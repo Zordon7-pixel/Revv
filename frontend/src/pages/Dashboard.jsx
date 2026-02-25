@@ -28,16 +28,19 @@ function useCountUp(target, duration = 1000) {
 export default function Dashboard() {
   const [data, setData] = useState(null)
   const [pendingCarryover, setPendingCarryover] = useState([])
+  const [pendingAppointments, setPendingAppointments] = useState(0)
   const [showCarryoverModal, setShowCarryoverModal] = useState(false)
   const navigate = useNavigate()
 
   async function loadDashboardData() {
-    const [summaryRes, carryoverRes] = await Promise.all([
+    const [summaryRes, carryoverRes, appointmentsRes] = await Promise.all([
       api.get('/reports/summary'),
-      api.get('/ros/carryover-pending').catch(() => ({ data: { ros: [] } }))
+      api.get('/ros/carryover-pending').catch(() => ({ data: { ros: [] } })),
+      api.get('/appointments').catch(() => ({ data: { requests: [] } }))
     ])
     setData(summaryRes.data)
     setPendingCarryover(carryoverRes.data?.ros || [])
+    setPendingAppointments(appointmentsRes.data?.requests?.length || 0)
   }
 
   useEffect(() => {
@@ -141,6 +144,21 @@ export default function Dashboard() {
             className="bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 text-amber-100 text-xs font-medium px-3 py-1.5 rounded-md transition-colors"
           >
             Review Now
+          </button>
+        </div>
+      )}
+
+      {admin && (
+        <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 flex items-center justify-between">
+          <div>
+            <h2 className="text-sm font-semibold text-white">Appointment Requests</h2>
+            <p className="text-slate-400 text-xs mt-1">{pendingAppointments} pending request{pendingAppointments === 1 ? '' : 's'}</p>
+          </div>
+          <button
+            onClick={() => navigate('/book')}
+            className="text-xs bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] font-semibold px-3 py-1.5 rounded-lg"
+          >
+            Open Booking Form
           </button>
         </div>
       )}

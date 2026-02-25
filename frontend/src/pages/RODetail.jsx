@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Pencil, Save, X, Package, PackageCheck, PackageX, Plus, CheckCircle, AlertCircle, Clock, Truck, RefreshCw, ExternalLink, Car, DollarSign, ClipboardList, Smartphone, AlertTriangle, Copy, Printer, User } from 'lucide-react'
+import { ArrowLeft, Pencil, Save, X, Package, PackageCheck, PackageX, Plus, CheckCircle, AlertCircle, Clock, Truck, RefreshCw, ExternalLink, Car, DollarSign, ClipboardList, Smartphone, AlertTriangle, Copy, Printer, User, Phone, MessageSquare, Mail, Users } from 'lucide-react'
 import api from '../lib/api'
 import { STATUS_COLORS, STATUS_LABELS } from './RepairOrders'
 import StatusBadge from '../components/StatusBadge'
@@ -34,6 +34,13 @@ const REQ_STATUS_META = {
   cancelled: { label: 'Cancelled', cls: 'text-slate-500 bg-slate-900/30 border-slate-700/40',   Icon: PackageX },
 }
 
+const COMM_TYPE_META = {
+  call: { label: 'Call', Icon: Phone },
+  text: { label: 'Text', Icon: MessageSquare },
+  email: { label: 'Email', Icon: Mail },
+  'in-person': { label: 'In Person', Icon: Users },
+}
+
 const STAGES = ['intake','estimate','approval','parts','repair','paint','qc','delivery','closed']
 
 export default function RODetail() {
@@ -64,15 +71,22 @@ export default function RODetail() {
   const [partsReqForm, setPartsReqForm] = useState({ part_name: '', part_number: '', quantity: 1, notes: '' })
   const [submittingPartsReq, setSubmittingPartsReq] = useState(false)
   const [approvingEstimate, setApprovingEstimate] = useState(false)
+  const [sendingForApproval, setSendingForApproval] = useState(false)
+  const [approvalLink, setApprovalLink] = useState('')
   const [showMarkPaidModal, setShowMarkPaidModal] = useState(false)
   const [paymentMethod, setPaymentMethod] = useState('cash')
   const [markingPaid, setMarkingPaid] = useState(false)
+  const [comms, setComms] = useState([])
+  const [showCommForm, setShowCommForm] = useState(false)
+  const [commForm, setCommForm] = useState({ type: 'call', notes: '' })
+  const [savingComm, setSavingComm] = useState(false)
 
   const userIsAdmin = isAdmin()
   const userIsEmployee = isEmployee()
 
   const load = () => api.get(`/ros/${id}`).then(r => { setRo(r.data); setForm(r.data); setParts(r.data.parts || []); setTechNotes(r.data.tech_notes || '') })
   const loadPartsRequests = () => api.get(`/parts-requests/${id}`).then(r => setPartsRequests(r.data.requests || [])).catch(() => {})
+  const loadComms = () => api.get(`/ros/${id}/comms`).then(r => setComms(r.data.comms || [])).catch(() => setComms([]))
 
   useEffect(() => { load() }, [id])
   useEffect(() => {
@@ -82,6 +96,7 @@ export default function RODetail() {
     api.get('/users').then(r => setShopUsers(r.data.users || [])).catch(() => {})
   }, [])
   useEffect(() => { loadPartsRequests() }, [id])
+  useEffect(() => { loadComms() }, [id])
 
   async function addPart(e) {
     e.preventDefault(); setSavingPart(true)
@@ -228,6 +243,37 @@ export default function RODetail() {
     }
   }
 
+  async function sendForApproval() {
+    setSendingForApproval(true)
+    try {
+      const { data } = await api.post(`/ros/${id}/approval-link`)
+      const url = data.link || `${window.location.origin}/approve/${data.token}`
+      setApprovalLink(url)
+      await navigator.clipboard.writeText(url)
+      alert('Approval link copied to clipboard.')
+    } catch (err) {
+      alert(err?.response?.data?.error || 'Could not generate approval link')
+    } finally {
+      setSendingForApproval(false)
+    }
+  }
+
+  async function submitComm(e) {
+    e.preventDefault()
+    if (!commForm.notes.trim()) return
+    setSavingComm(true)
+    try {
+      await api.post(`/ros/${id}/comms`, commForm)
+      setCommForm({ type: 'call', notes: '' })
+      setShowCommForm(false)
+      loadComms()
+    } catch (err) {
+      alert(err?.response?.data?.error || 'Could not log communication')
+    } finally {
+      setSavingComm(false)
+    }
+  }
+
   async function markPaid() {
     setMarkingPaid(true)
     try {
@@ -273,6 +319,15 @@ export default function RODetail() {
               <CheckCircle size={12} /> {approvingEstimate ? 'Approving...' : 'Approve Estimate'}
             </button>
           )}
+          {ro.status === 'estimate' && (
+            <button
+              onClick={sendForApproval}
+              disabled={sendingForApproval}
+              className="flex items-center gap-1 bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+            >
+              <Mail size={12} /> {sendingForApproval ? 'Generating Link...' : 'Send for Approval'}
+            </button>
+          )}
           {ro.status !== 'closed' && !ro.payment_received && (
             <button onClick={() => setShowMarkPaidModal(true)} className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
               <DollarSign size={12} /> Mark as Paid
@@ -302,6 +357,12 @@ export default function RODetail() {
           }
         </div>
       </div>
+
+      {approvalLink && (
+        <div className="bg-yellow-900/20 border border-yellow-700/40 rounded-xl p-3 text-xs text-yellow-200">
+          Approval link ready: <span className="font-mono break-all">{approvalLink}</span>
+        </div>
+      )}
 
       {/* Progress */}
       <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
@@ -545,6 +606,73 @@ export default function RODetail() {
           {savingNotes && <p className="text-[10px] text-slate-500 mt-1">Saving...</p>}
         </div>
       )}
+
+      <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
+            <MessageSquare size={12} /> Communication Log
+          </h2>
+          <button
+            onClick={() => setShowCommForm((s) => !s)}
+            className="text-xs bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] font-semibold px-3 py-1.5 rounded-lg transition-colors"
+          >
+            {showCommForm ? 'Cancel' : 'Log Contact'}
+          </button>
+        </div>
+
+        {showCommForm && (
+          <form onSubmit={submitComm} className="bg-[#0f1117] border border-[#2a2d3e] rounded-xl p-3 mb-3 space-y-2">
+            <select
+              value={commForm.type}
+              onChange={(e) => setCommForm((f) => ({ ...f, type: e.target.value }))}
+              className="w-full bg-[#1a1d2e] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#EAB308]"
+            >
+              <option value="call">Call</option>
+              <option value="text">Text</option>
+              <option value="email">Email</option>
+              <option value="in-person">In-Person</option>
+            </select>
+            <textarea
+              rows={3}
+              value={commForm.notes}
+              onChange={(e) => setCommForm((f) => ({ ...f, notes: e.target.value }))}
+              placeholder="Contact summary..."
+              className="w-full bg-[#1a1d2e] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#EAB308]"
+            />
+            <button
+              type="submit"
+              disabled={savingComm}
+              className="bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] text-xs font-semibold px-3 py-2 rounded-lg disabled:opacity-50"
+            >
+              {savingComm ? 'Saving...' : 'Submit'}
+            </button>
+          </form>
+        )}
+
+        {comms.length === 0 ? (
+          <p className="text-slate-500 text-sm">No communication entries yet.</p>
+        ) : (
+          <div className="space-y-2">
+            {comms.map((entry) => {
+              const meta = COMM_TYPE_META[entry.type] || COMM_TYPE_META.call
+              const Icon = meta.Icon
+              return (
+                <div key={entry.id} className="bg-[#0f1117] border border-[#2a2d3e] rounded-xl p-3">
+                  <div className="flex items-center gap-2 text-xs text-slate-400 mb-1">
+                    <Icon size={12} className="text-[#EAB308]" />
+                    <span className="text-white font-medium">{meta.label}</span>
+                    <span>·</span>
+                    <span>{new Date(entry.created_at).toLocaleString()}</span>
+                    <span>·</span>
+                    <span>{entry.logged_by || 'System'}</span>
+                  </div>
+                  <p className="text-sm text-slate-200 whitespace-pre-wrap">{entry.notes}</p>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
 
       {/* Parts Requests */}
       {userIsEmployee && (

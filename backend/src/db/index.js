@@ -301,6 +301,48 @@ async function initDb() {
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     )
   `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ro_comms (
+      id TEXT PRIMARY KEY,
+      ro_id TEXT NOT NULL REFERENCES repair_orders(id),
+      shop_id TEXT NOT NULL REFERENCES shops(id),
+      user_id TEXT REFERENCES users(id),
+      type TEXT NOT NULL,
+      notes TEXT NOT NULL,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS estimate_approval_links (
+      id TEXT PRIMARY KEY,
+      ro_id TEXT NOT NULL REFERENCES repair_orders(id),
+      shop_id TEXT NOT NULL REFERENCES shops(id),
+      token TEXT NOT NULL UNIQUE,
+      created_by TEXT REFERENCES users(id),
+      decline_reason TEXT,
+      responded_at TEXT,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS appointment_requests (
+      id TEXT PRIMARY KEY,
+      shop_id TEXT NOT NULL REFERENCES shops(id),
+      name TEXT NOT NULL,
+      phone TEXT NOT NULL,
+      email TEXT,
+      vehicle_info TEXT,
+      service TEXT NOT NULL,
+      preferred_date TEXT,
+      preferred_time TEXT,
+      notes TEXT,
+      status TEXT DEFAULT 'pending',
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    )
+  `);
 }
 
 async function dbGet(sql, params = []) {

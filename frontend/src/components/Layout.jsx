@@ -1,6 +1,6 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useState, useEffect, useRef } from 'react'
-import { LayoutDashboard, ClipboardList, Users, BarChart3, BarChart2, Settings, UserCog, LogOut, Menu, X, Wrench, Clock, CalendarDays, Bell } from 'lucide-react'
+import { LayoutDashboard, ClipboardList, Users, BarChart3, BarChart2, Settings, UserCog, LogOut, Menu, X, Wrench, Clock, CalendarDays, Bell, Package } from 'lucide-react'
 import FeedbackButton from './FeedbackButton'
 import HelpDesk from './HelpDesk'
 import { getRole, isAdmin } from '../lib/auth'
@@ -9,6 +9,8 @@ import api from '../lib/api'
 const allNav = [
   { to: '/',           icon: LayoutDashboard, label: 'Dashboard',      adminOnly: false },
   { to: '/ros',        icon: ClipboardList,   label: 'Repair Orders',  adminOnly: false },
+  { to: '/parts',      icon: Package,         label: 'Parts',          ownerOnly: true  },
+  { to: '/tech',       icon: Wrench,          label: 'My Jobs',        nonAdminOnly: true },
   { to: '/customers',  icon: Users,           label: 'Customers',      adminOnly: false },
   { to: '/timeclock',  icon: Clock,           label: 'Time Clock',     adminOnly: false },
   { to: '/schedule',   icon: CalendarDays,    label: 'Schedule',       adminOnly: false },
@@ -102,6 +104,7 @@ export default function Layout() {
   }
 
   const nav = allNav.filter((n) => {
+    if (n.nonAdminOnly) return !admin
     if (n.ownerOnly) return role === 'owner'
     if (n.adminOnly) return admin
     return true
