@@ -20,6 +20,7 @@ export default function Settings() {
   const [saveError, setSaveError] = useState('')
   const [locating, setLocating]   = useState(false)
   const [locMsg,   setLocMsg]     = useState('')
+  const [geocoding, setGeocoding] = useState(false)
   const [clearing, setClearing]   = useState(false)
   const [smsStatus, setSmsStatus] = useState({ configured: false, sms_phone: null })
   const [smsLoading, setSmsLoading] = useState(true)
@@ -95,6 +96,28 @@ export default function Settings() {
       () => { setLocMsg('Could not get location. Make sure location access is allowed.'); setLocating(false) },
       { timeout: 10000, maximumAge: 0 }
     )
+  }
+
+  async function geocodeFromAddress() {
+    const query = [form.address, form.city, form.state, form.zip].filter(Boolean).join(', ')
+    if (!query.trim()) { setLocMsg('Enter your shop address, city, and state first.'); return }
+    setGeocoding(true)
+    setLocMsg('')
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`,
+        { headers: { 'Accept-Language': 'en', 'User-Agent': 'REVV-ShopManagement/1.0' } }
+      )
+      const data = await res.json()
+      if (!data.length) { setLocMsg('Address not found. Try a more complete address (street, city, state).'); return }
+      const { lat, lon } = data[0]
+      setForm(f => ({ ...f, lat: parseFloat(lat), lng: parseFloat(lon) }))
+      setLocMsg('✓ Location set from address! Save settings to apply.')
+    } catch {
+      setLocMsg('Could not geocode address. Check your internet connection.')
+    } finally {
+      setGeocoding(false)
+    }
   }
 
   async function handleSave(e) {
@@ -362,13 +385,17 @@ export default function Settings() {
           </p>
 
           <div className="flex items-center gap-3 flex-wrap">
-            <button type="button" onClick={detectLocation} disabled={locating}
+            <button type="button" onClick={geocodeFromAddress} disabled={geocoding || locating}
+              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold px-4 py-2 rounded-lg transition-colors disabled:opacity-50">
+              <MapPin size={13}/> {geocoding ? 'Looking up…' : 'Set from Address'}
+            </button>
+            <button type="button" onClick={detectLocation} disabled={locating || geocoding}
               className="flex items-center gap-2 bg-indigo-900/40 hover:bg-indigo-900/70 border border-indigo-700/40 text-indigo-300 text-xs font-semibold px-4 py-2 rounded-lg transition-colors disabled:opacity-50">
-              <MapPin size={13}/> {locating ? 'Detecting…' : form.lat ? 'Update Shop Location' : 'Set Shop Location'}
+              <MapPin size={13}/> {locating ? 'Detecting GPS…' : 'Use GPS'}
             </button>
             {form.lat && form.lng && (
               <span className="text-[10px] text-slate-500 font-mono">
-                {parseFloat(form.lat).toFixed(4)}, {parseFloat(form.lng).toFixed(4)}
+                📍 {parseFloat(form.lat).toFixed(4)}, {parseFloat(form.lng).toFixed(4)}
               </span>
             )}
           </div>
