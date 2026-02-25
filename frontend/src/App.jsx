@@ -30,6 +30,7 @@ import SuperAdminDashboard from './pages/SuperAdminDashboard'
 import SuperAdminRoute from './components/SuperAdminRoute'
 import TrackPortal from './pages/TrackPortal'
 import ShopProfile from './pages/ShopProfile'
+import ADASCalibration from './pages/ADASCalibration'
 
 function PrivateRoute({ children }) {
   return localStorage.getItem('sc_token') ? children : <Navigate to="/login" />
@@ -99,6 +100,7 @@ export default function App() {
           <Route path="team" element={<AdminRoute><Users /></AdminRoute>} />
           <Route path="users" element={<AdminRoute><Users /></AdminRoute>} />
           <Route path="settings" element={<OwnerRoute><Settings /></OwnerRoute>} />
+          <Route path="adas" element={<AdminRoute><ADASCalibration /></AdminRoute>} />
         </Route>
       </Routes>
     </BrowserRouter>

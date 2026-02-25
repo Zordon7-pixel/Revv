@@ -74,6 +74,9 @@ app.use('/api/appointments', require('./routes/appointments'));
 app.use('/api/approval', require('./routes/approval'));
 app.use('/api/public', require('./routes/public'));
 app.use('/api/payments', require('./routes/payments'));
+app.use('/api/adas', require('./routes/adas'));
+app.use('/api/estimate-assistant', require('./routes/estimateAssistant'));
+app.use('/api/v1', require('./routes/apiV1'));
 
 // Serve uploaded files
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));

@@ -1,10 +1,17 @@
 import { useState, useEffect } from 'react'
-import { X, CheckCircle } from 'lucide-react'
+import { X, CheckCircle, Sparkles, Plus } from 'lucide-react'
 import api from '../lib/api'
 import LibraryAutocomplete from './LibraryAutocomplete'
 import { searchInsurers } from '../data/insurers'
 
 const JOB_TYPES = ['collision','paint','detailing','glass','towing','key_programming','wheel_recon','car_wrap']
+const DAMAGE_TYPES = [
+  { value: 'front_impact', label: 'Front Impact' },
+  { value: 'rear_impact', label: 'Rear Impact' },
+  { value: 'side_damage', label: 'Side Damage' },
+  { value: 'hail', label: 'Hail' },
+  { value: 'glass', label: 'Glass' },
+]
 
 export default function AddROModal({ onClose, onSaved }) {
   const [customers, setCustomers] = useState([])
@@ -20,14 +27,53 @@ export default function AddROModal({ onClose, onSaved }) {
     // Job
     job_type: 'collision', payment_type: 'insurance',
     claim_number: '', insurer: 'Progressive', adjuster_name: '', adjuster_phone: '', deductible: '',
-    estimated_delivery: '', notes: ''
+    estimated_delivery: '', notes: '', damage_type: 'front_impact'
   })
+  const [suggestions, setSuggestions] = useState([])
+  const [suggestionSummary, setSuggestionSummary] = useState(null)
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false)
+  const [addedCodes, setAddedCodes] = useState([])
 
   useEffect(() => { api.get('/customers').then(r => setCustomers(r.data.customers)) }, [])
+
+  useEffect(() => {
+    if (step !== 3 || !form.year || !form.make.trim() || !form.model.trim()) return
+    setLoadingSuggestions(true)
+    api.get('/estimate-assistant/suggestions', {
+      params: {
+        make: form.make,
+        model: form.model,
+        damageType: form.damage_type,
+      },
+    })
+      .then(({ data }) => {
+        setSuggestions(data.suggestions || [])
+        setSuggestionSummary(data.summary || null)
+      })
+      .catch(() => {
+        setSuggestions([])
+        setSuggestionSummary(null)
+      })
+      .finally(() => setLoadingSuggestions(false))
+  }, [step, form.year, form.make, form.model, form.damage_type])
+
+  useEffect(() => {
+    setAddedCodes([])
+  }, [form.damage_type, form.make, form.model, form.year])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
   const inp = 'w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500'
   const lbl = 'block text-xs font-medium text-slate-400 mb-1'
+
+  function addSuggestionLineItem(item) {
+    if (addedCodes.includes(item.code)) return
+    const nextLine = `• ${item.description} (${item.labor_hours} hr labor, ~$${Number(item.parts_estimate || 0).toLocaleString()} parts)`
+    setForm((prev) => ({
+      ...prev,
+      notes: prev.notes ? `${prev.notes}\n${nextLine}` : nextLine,
+    }))
+    setAddedCodes((prev) => [...prev, item.code])
+  }
 
   async function submit() {
     // Validate before hitting the API
@@ -121,6 +167,11 @@ export default function AddROModal({ onClose, onSaved }) {
                 <select className={inp} value={form.job_type} onChange={e => set('job_type', e.target.value)}>
                   {JOB_TYPES.map(j => <option key={j} value={j}>{j.replace('_',' ')}</option>)}
                 </select></div>
+              <div><label className={lbl}>Damage Type</label>
+                <select className={inp} value={form.damage_type} onChange={e => set('damage_type', e.target.value)}>
+                  {DAMAGE_TYPES.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
+                </select>
+              </div>
               <div className="flex gap-2">
                 {['insurance','cash'].map(t => (
                   <button key={t} onClick={() => set('payment_type', t)} className={`flex-1 py-2 rounded-lg text-xs font-medium transition-colors capitalize ${form.payment_type===t ? 'bg-indigo-600 text-white' : 'bg-[#0f1117] text-slate-400 border border-[#2a2d3e]'}`}>{t}</button>
@@ -155,6 +206,40 @@ export default function AddROModal({ onClose, onSaved }) {
                   <div><label className={lbl}>Deductible ($)</label><input className={inp} type="number" value={form.deductible} onChange={e => set('deductible', e.target.value)} placeholder="500" /></div>
                 </>
               )}
+              <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-xl p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs text-indigo-300 font-semibold inline-flex items-center gap-1"><Sparkles size={13} /> AI Estimate Suggestions</p>
+                  {suggestionSummary && (
+                    <p className="text-[10px] text-slate-500">
+                      {suggestionSummary.estimated_labor_hours.toFixed(1)} hr · ~${Number(suggestionSummary.estimated_parts_cost || 0).toLocaleString()} parts
+                    </p>
+                  )}
+                </div>
+                {loadingSuggestions ? (
+                  <p className="text-[11px] text-slate-500">Loading suggestions...</p>
+                ) : suggestions.length === 0 ? (
+                  <p className="text-[11px] text-slate-500">No suggestions available for this combination.</p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {suggestions.map((item) => (
+                      <button
+                        type="button"
+                        key={item.code}
+                        onClick={() => addSuggestionLineItem(item)}
+                        disabled={addedCodes.includes(item.code)}
+                        className="w-full text-left bg-[#1a1d2e] border border-[#2a2d3e] hover:border-indigo-500 rounded-lg px-2.5 py-2 text-xs text-slate-200 disabled:opacity-40"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span>{item.description}</span>
+                          <span className="inline-flex items-center gap-1 text-[10px] text-indigo-300">
+                            <Plus size={10} /> {addedCodes.includes(item.code) ? 'Added' : 'Add'}
+                          </span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
               <div><label className={lbl}>Est. Delivery Date</label><input className={inp} type="date" value={form.estimated_delivery} onChange={e => set('estimated_delivery', e.target.value)} /></div>
               <div><label className={lbl}>Notes</label><textarea className={inp} rows={3} value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="Additional details..." /></div>
             </>

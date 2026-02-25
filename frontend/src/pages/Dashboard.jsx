@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ClipboardList, DollarSign, CheckCircle, TrendingUp, Hand, AlertCircle, CalendarDays, ChevronRight } from 'lucide-react'
+import { ClipboardList, DollarSign, CheckCircle, TrendingUp, Hand, AlertCircle, CalendarDays, ChevronRight, Radar } from 'lucide-react'
 import api from '../lib/api'
 import { isAdmin } from '../lib/auth'
 import { STATUS_COLORS, STATUS_LABELS } from './RepairOrders'
@@ -30,6 +30,7 @@ export default function Dashboard() {
   const [goal, setGoal] = useState(null)
   const [pendingCarryover, setPendingCarryover] = useState([])
   const [pendingAppointments, setPendingAppointments] = useState(0)
+  const [adasQueue, setAdasQueue] = useState([])
   const [showCarryoverModal, setShowCarryoverModal] = useState(false)
   const navigate = useNavigate()
 
@@ -39,16 +40,18 @@ export default function Dashboard() {
   })()
 
   async function loadDashboardData() {
-    const [summaryRes, carryoverRes, appointmentsRes, goalsRes] = await Promise.all([
+    const [summaryRes, carryoverRes, appointmentsRes, goalsRes, adasRes] = await Promise.all([
       api.get('/reports/summary'),
       api.get('/ros/carryover-pending').catch(() => ({ data: { ros: [] } })),
       api.get('/appointments').catch(() => ({ data: { requests: [] } })),
       api.get(`/goals/${yearMonth}`).catch(() => ({ data: { goal: null } })),
+      api.get('/adas/queue').catch(() => ({ data: { queue: [] } })),
     ])
     setData(summaryRes.data)
     setPendingCarryover(carryoverRes.data?.ros || [])
     setPendingAppointments(appointmentsRes.data?.requests?.length || 0)
     setGoal(goalsRes.data?.goal || null)
+    setAdasQueue(adasRes.data?.queue || [])
   }
 
   useEffect(() => {
@@ -187,6 +190,25 @@ export default function Dashboard() {
             className="bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 text-amber-100 text-xs font-medium px-3 py-1.5 rounded-md transition-colors"
           >
             Review Now
+          </button>
+        </div>
+      )}
+
+      {admin && (
+        <div className="bg-cyan-500/10 border border-cyan-500/30 rounded-xl p-4 flex items-center justify-between">
+          <div>
+            <h2 className="text-sm font-semibold text-cyan-200 inline-flex items-center gap-1.5">
+              <Radar size={14} /> ADAS Calibration Queue
+            </h2>
+            <p className="text-slate-300 text-xs mt-1">
+              {adasQueue.length} vehicle{adasQueue.length === 1 ? '' : 's'} need post-repair calibration.
+            </p>
+          </div>
+          <button
+            onClick={() => navigate('/adas')}
+            className="text-xs bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-100 border border-cyan-500/30 font-semibold px-3 py-1.5 rounded-lg"
+          >
+            Open Tracker
           </button>
         </div>
       )}

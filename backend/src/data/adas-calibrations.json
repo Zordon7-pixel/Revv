@@ -1,0 +1,146 @@
+[
+  {
+    "make": "Toyota",
+    "model": "Camry",
+    "year_start": 2018,
+    "year_end": 2026,
+    "systems": [
+      "Lane Departure Alert",
+      "Dynamic Radar Cruise Control",
+      "Pre-Collision System",
+      "Blind Spot Monitor"
+    ]
+  },
+  {
+    "make": "Toyota",
+    "model": "RAV4",
+    "year_start": 2019,
+    "year_end": 2026,
+    "systems": [
+      "Lane Tracing Assist",
+      "Adaptive Cruise Control",
+      "Parking Assist",
+      "Rear Cross Traffic Alert"
+    ]
+  },
+  {
+    "make": "Honda",
+    "model": "Accord",
+    "year_start": 2018,
+    "year_end": 2026,
+    "systems": [
+      "Honda Sensing Lane Keep Assist",
+      "Adaptive Cruise Control",
+      "Collision Mitigation Braking",
+      "Blind Spot Information System"
+    ]
+  },
+  {
+    "make": "Honda",
+    "model": "CR-V",
+    "year_start": 2018,
+    "year_end": 2026,
+    "systems": [
+      "Road Departure Mitigation",
+      "Adaptive Cruise Control",
+      "Parking Sensors",
+      "Blind Spot Monitoring"
+    ]
+  },
+  {
+    "make": "BMW",
+    "model": "3 Series",
+    "year_start": 2019,
+    "year_end": 2026,
+    "systems": [
+      "Lane Departure Warning",
+      "Active Cruise Control",
+      "Park Distance Control",
+      "Blind Spot Detection"
+    ]
+  },
+  {
+    "make": "BMW",
+    "model": "X5",
+    "year_start": 2019,
+    "year_end": 2026,
+    "systems": [
+      "Lane Keeping Assistant",
+      "Adaptive Cruise with Stop & Go",
+      "Parking Assistant Plus",
+      "Active Blind Spot Detection"
+    ]
+  },
+  {
+    "make": "Ford",
+    "model": "F-150",
+    "year_start": 2018,
+    "year_end": 2026,
+    "systems": [
+      "Lane-Keeping System",
+      "Adaptive Cruise Control",
+      "Front/Rear Parking Sensors",
+      "BLIS Blind Spot Monitoring"
+    ]
+  },
+  {
+    "make": "Ford",
+    "model": "Explorer",
+    "year_start": 2018,
+    "year_end": 2026,
+    "systems": [
+      "Lane Centering Assist",
+      "Adaptive Cruise Control",
+      "Active Park Assist",
+      "Blind Spot Information System"
+    ]
+  },
+  {
+    "make": "Tesla",
+    "model": "Model 3",
+    "year_start": 2018,
+    "year_end": 2026,
+    "systems": [
+      "Autopilot Camera Suite",
+      "Traffic-Aware Cruise Control",
+      "Autopark",
+      "Blind Spot Camera Monitoring"
+    ]
+  },
+  {
+    "make": "Tesla",
+    "model": "Model Y",
+    "year_start": 2020,
+    "year_end": 2026,
+    "systems": [
+      "Autopilot Camera Suite",
+      "Traffic-Aware Cruise Control",
+      "Parking Assist",
+      "Blind Spot Monitoring"
+    ]
+  },
+  {
+    "make": "Chevrolet",
+    "model": "Silverado",
+    "year_start": 2019,
+    "year_end": 2026,
+    "systems": [
+      "Lane Keep Assist",
+      "Adaptive Cruise Control",
+      "Front/Rear Park Assist",
+      "Side Blind Zone Alert"
+    ]
+  },
+  {
+    "make": "Nissan",
+    "model": "Altima",
+    "year_start": 2019,
+    "year_end": 2026,
+    "systems": [
+      "Intelligent Lane Intervention",
+      "Intelligent Cruise Control",
+      "Rear Parking Sensors",
+      "Blind Spot Warning"
+    ]
+  }
+]

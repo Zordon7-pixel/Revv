@@ -1,0 +1,72 @@
+{
+  "sedan": {
+    "front_impact": [
+      { "code": "LI-101", "description": "Front bumper cover remove/replace", "labor_hours": 4.5, "parts_estimate": 680 },
+      { "code": "LI-102", "description": "Grille and lower valance assembly", "labor_hours": 1.8, "parts_estimate": 390 },
+      { "code": "LI-103", "description": "Radar sensor aiming/calibration", "labor_hours": 1.2, "parts_estimate": 0 }
+    ],
+    "rear_impact": [
+      { "code": "LI-111", "description": "Rear bumper cover remove/replace", "labor_hours": 4.0, "parts_estimate": 620 },
+      { "code": "LI-112", "description": "Decklid alignment and refinish prep", "labor_hours": 2.2, "parts_estimate": 0 },
+      { "code": "LI-113", "description": "Rear park sensor recalibration", "labor_hours": 0.9, "parts_estimate": 0 }
+    ],
+    "side_damage": [
+      { "code": "LI-121", "description": "Front door shell repair", "labor_hours": 5.5, "parts_estimate": 0 },
+      { "code": "LI-122", "description": "Rear door blend and refinish", "labor_hours": 4.2, "parts_estimate": 0 },
+      { "code": "LI-123", "description": "Blind spot monitor static calibration", "labor_hours": 1.0, "parts_estimate": 0 }
+    ],
+    "hail": [
+      { "code": "LI-131", "description": "PDR panel set repair", "labor_hours": 8.0, "parts_estimate": 0 },
+      { "code": "LI-132", "description": "Roof and hood trim remove/install", "labor_hours": 2.5, "parts_estimate": 120 }
+    ]
+  },
+  "suv": {
+    "front_impact": [
+      { "code": "LI-201", "description": "Front bumper and impact absorber", "labor_hours": 5.2, "parts_estimate": 920 },
+      { "code": "LI-202", "description": "Headlamp assembly replace", "labor_hours": 1.6, "parts_estimate": 780 },
+      { "code": "LI-203", "description": "Forward camera/radar calibration", "labor_hours": 1.5, "parts_estimate": 0 }
+    ],
+    "rear_impact": [
+      { "code": "LI-211", "description": "Liftgate repair and align", "labor_hours": 4.8, "parts_estimate": 0 },
+      { "code": "LI-212", "description": "Rear bumper and reinforcement", "labor_hours": 4.4, "parts_estimate": 870 },
+      { "code": "LI-213", "description": "Rear cross-traffic sensor calibration", "labor_hours": 1.1, "parts_estimate": 0 }
+    ],
+    "side_damage": [
+      { "code": "LI-221", "description": "Quarter panel repair", "labor_hours": 7.0, "parts_estimate": 0 },
+      { "code": "LI-222", "description": "Rocker panel and cladding replacement", "labor_hours": 5.0, "parts_estimate": 430 }
+    ],
+    "glass": [
+      { "code": "LI-231", "description": "Windshield replacement", "labor_hours": 2.1, "parts_estimate": 520 },
+      { "code": "LI-232", "description": "Camera relearn after windshield install", "labor_hours": 0.8, "parts_estimate": 0 }
+    ]
+  },
+  "truck": {
+    "front_impact": [
+      { "code": "LI-301", "description": "Front bumper/chrome assembly replacement", "labor_hours": 4.7, "parts_estimate": 1100 },
+      { "code": "LI-302", "description": "Fender and flare alignment", "labor_hours": 3.1, "parts_estimate": 0 }
+    ],
+    "rear_impact": [
+      { "code": "LI-311", "description": "Tailgate repair or replacement", "labor_hours": 3.9, "parts_estimate": 980 },
+      { "code": "LI-312", "description": "Rear bumper step pad and sensor setup", "labor_hours": 2.6, "parts_estimate": 640 }
+    ],
+    "side_damage": [
+      { "code": "LI-321", "description": "Bedside outer panel repair", "labor_hours": 7.4, "parts_estimate": 0 },
+      { "code": "LI-322", "description": "Cab corner repair and refinish", "labor_hours": 4.6, "parts_estimate": 0 }
+    ]
+  },
+  "ev": {
+    "front_impact": [
+      { "code": "LI-401", "description": "Front fascia and sensor bracket replacement", "labor_hours": 5.0, "parts_estimate": 950 },
+      { "code": "LI-402", "description": "ADAS camera multi-point calibration", "labor_hours": 1.7, "parts_estimate": 0 },
+      { "code": "LI-403", "description": "HV safety inspection and isolation test", "labor_hours": 1.2, "parts_estimate": 0 }
+    ],
+    "rear_impact": [
+      { "code": "LI-411", "description": "Rear body panel and sensor harness inspection", "labor_hours": 4.1, "parts_estimate": 0 },
+      { "code": "LI-412", "description": "Ultrasonic sensor calibration", "labor_hours": 1.0, "parts_estimate": 0 }
+    ],
+    "side_damage": [
+      { "code": "LI-421", "description": "Side camera replacement and calibration", "labor_hours": 2.8, "parts_estimate": 460 },
+      { "code": "LI-422", "description": "Battery enclosure visual inspection", "labor_hours": 1.5, "parts_estimate": 0 }
+    ]
+  }
+}
