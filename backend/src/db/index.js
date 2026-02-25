@@ -367,6 +367,18 @@ async function initDb() {
     )
   `);
 
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS monthly_goals (
+      id TEXT PRIMARY KEY,
+      shop_id TEXT NOT NULL REFERENCES shops(id),
+      year_month TEXT NOT NULL,
+      revenue_goal REAL,
+      ro_goal INTEGER,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+      UNIQUE(shop_id, year_month)
+    )
+  `);
+
   // Ensure demo shop is always marked as onboarded (fixes existing deployments)
   await pool.query(`
     UPDATE shops

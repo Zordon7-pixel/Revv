@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { MapPin, Wrench, DollarSign, Save, RefreshCw, CheckCircle, ShieldCheck, Truck, Trash2, MessageSquare, ChevronDown, X, AlertTriangle, Smartphone, LogOut } from 'lucide-react'
+import { MapPin, Wrench, DollarSign, Save, RefreshCw, CheckCircle, ShieldCheck, Truck, Trash2, MessageSquare, ChevronDown, X, AlertTriangle, Smartphone, LogOut, CalendarDays } from 'lucide-react'
 import api from '../lib/api'
 
 const TIER_COLORS = {
@@ -11,6 +11,7 @@ const TIER_COLORS = {
 const TIER_LABELS = { 1:'Major Metro', 2:'Large City', 3:'Mid-Size Market', 4:'Small Market' }
 
 export default function Settings() {
+  const currentYearMonth = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
   const [shop,   setShop]   = useState(null)
   const [states, setStates] = useState([])
   const [form,   setForm]   = useState({})
@@ -33,6 +34,12 @@ export default function Settings() {
   const [profileSaved, setProfileSaved] = useState(false)
   const [revokingAll, setRevokingAll] = useState(false)
   const [revokeAllDone, setRevokeAllDone] = useState(false)
+  const [goalMonth, setGoalMonth] = useState(currentYearMonth)
+  const [goalForm, setGoalForm] = useState({ revenue_goal: '', ro_goal: '' })
+  const [goalsLoading, setGoalsLoading] = useState(true)
+  const [goalSaving, setGoalSaving] = useState(false)
+  const [goalSaved, setGoalSaved] = useState(false)
+  const [goalError, setGoalError] = useState('')
 
   useEffect(() => {
     api.get('/market/shop').then(r => {
@@ -62,6 +69,43 @@ export default function Settings() {
       .finally(() => setSmsLoading(false))
     api.get('/users/me').then(r => setProfile({ name: r.data.name || '', phone: r.data.phone || '' }))
   }, [])
+
+  useEffect(() => {
+    loadGoal(goalMonth)
+  }, [goalMonth])
+
+  async function loadGoal(yearMonth) {
+    setGoalsLoading(true)
+    setGoalError('')
+    try {
+      const { data } = await api.get(`/goals/${yearMonth}`)
+      setGoalForm({
+        revenue_goal: data?.goal?.revenue_goal ?? 0,
+        ro_goal: data?.goal?.ro_goal ?? 0,
+      })
+    } catch (err) {
+      setGoalError(err?.response?.data?.error || 'Failed to load monthly goals.')
+    } finally {
+      setGoalsLoading(false)
+    }
+  }
+
+  async function saveGoals() {
+    setGoalSaving(true)
+    setGoalError('')
+    try {
+      await api.put(`/goals/${goalMonth}`, {
+        revenue_goal: Number(goalForm.revenue_goal || 0),
+        ro_goal: Number(goalForm.ro_goal || 0),
+      })
+      setGoalSaved(true)
+      setTimeout(() => setGoalSaved(false), 2500)
+    } catch (err) {
+      setGoalError(err?.response?.data?.error || 'Failed to save monthly goals.')
+    } finally {
+      setGoalSaving(false)
+    }
+  }
 
   function fetchMarket(stateCode) {
     if (!stateCode) { setMkt(null); return }
@@ -363,7 +407,66 @@ export default function Settings() {
               <input className={`${inp} pl-6`} type="number" step="1000" min="0"
                 value={form.monthly_revenue_target || ''} onChange={e => setForm(f => ({...f, monthly_revenue_target: e.target.value}))} placeholder="85000" />
             </div>
-            <p className="text-[10px] text-slate-500 mt-1">Used on the Reports page to track progress toward your monthly goal.</p>
+            <p className="text-[10px] text-slate-500 mt-1">Fallback default for new monthly goal entries.</p>
+          </div>
+
+          <div className="bg-[#0f1117] rounded-xl border border-[#2a2d3e] p-4 space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                <CalendarDays size={14} className="text-indigo-300" />
+                Monthly Goals
+              </h3>
+              <input
+                type="month"
+                value={goalMonth}
+                onChange={e => setGoalMonth(e.target.value)}
+                className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-lg px-3 py-1.5 text-xs text-white"
+              />
+            </div>
+
+            {goalsLoading ? (
+              <p className="text-xs text-slate-500">Loading monthly goals...</p>
+            ) : (
+              <div className="grid md:grid-cols-2 gap-3">
+                <div>
+                  <label className={lbl}>Revenue Goal ($)</label>
+                  <input
+                    className={inp}
+                    type="number"
+                    min="0"
+                    step="100"
+                    value={goalForm.revenue_goal}
+                    onChange={e => setGoalForm(f => ({ ...f, revenue_goal: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label className={lbl}>RO Goal (count)</label>
+                  <input
+                    className={inp}
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={goalForm.ro_goal}
+                    onChange={e => setGoalForm(f => ({ ...f, ro_goal: e.target.value }))}
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-[10px] text-slate-500">
+                New months auto-copy your latest saved goals.
+              </p>
+              <button
+                type="button"
+                onClick={saveGoals}
+                disabled={goalsLoading || goalSaving}
+                className="text-xs bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+              >
+                {goalSaved ? 'Saved!' : goalSaving ? 'Saving...' : 'Save Goals'}
+              </button>
+            </div>
+            {goalError && <p className="text-xs text-red-400">{goalError}</p>}
           </div>
 
           {/* Rate explainer */}

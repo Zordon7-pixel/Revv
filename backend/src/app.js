@@ -65,6 +65,7 @@ app.use('/api/parts-requests', require('./routes/partsRequests'));
 app.use('/api/performance', require('./routes/performance'));
 app.use('/api/superadmin', require('./routes/superadmin'));
 app.use('/api/settings', require('./routes/settings'));
+app.use('/api/goals', require('./routes/goals'));
 app.use('/api/appointments', require('./routes/appointments'));
 app.use('/api/approval', require('./routes/approval'));
 app.use('/api/public', require('./routes/public'));

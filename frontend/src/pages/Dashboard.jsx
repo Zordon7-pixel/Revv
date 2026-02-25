@@ -27,20 +27,28 @@ function useCountUp(target, duration = 1000) {
 
 export default function Dashboard() {
   const [data, setData] = useState(null)
+  const [goal, setGoal] = useState(null)
   const [pendingCarryover, setPendingCarryover] = useState([])
   const [pendingAppointments, setPendingAppointments] = useState(0)
   const [showCarryoverModal, setShowCarryoverModal] = useState(false)
   const navigate = useNavigate()
 
+  const yearMonth = (() => {
+    const now = new Date()
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  })()
+
   async function loadDashboardData() {
-    const [summaryRes, carryoverRes, appointmentsRes] = await Promise.all([
+    const [summaryRes, carryoverRes, appointmentsRes, goalsRes] = await Promise.all([
       api.get('/reports/summary'),
       api.get('/ros/carryover-pending').catch(() => ({ data: { ros: [] } })),
-      api.get('/appointments').catch(() => ({ data: { requests: [] } }))
+      api.get('/appointments').catch(() => ({ data: { requests: [] } })),
+      api.get(`/goals/${yearMonth}`).catch(() => ({ data: { goal: null } })),
     ])
     setData(summaryRes.data)
     setPendingCarryover(carryoverRes.data?.ros || [])
     setPendingAppointments(appointmentsRes.data?.requests?.length || 0)
+    setGoal(goalsRes.data?.goal || null)
   }
 
   useEffect(() => {
@@ -56,6 +64,10 @@ export default function Dashboard() {
   const displayCompleted = useCountUp(data?.completed || 0)
   const displayRevenue = useCountUp(data?.revenue || 0)
   const displayProfit = useCountUp(data?.profit || 0)
+  const revenueGoal = Number(goal?.revenue_goal || 0)
+  const roGoal = Number(goal?.ro_goal || 0)
+  const revenueProgress = revenueGoal > 0 ? Math.min((data?.revenue || 0) / revenueGoal, 1) * 100 : 0
+  const roProgress = roGoal > 0 ? Math.min((data?.total || 0) / roGoal, 1) * 100 : 0
 
   const stats = [
     {
@@ -118,6 +130,38 @@ export default function Dashboard() {
           </button>
         )}
       </div>
+
+      {goal && (
+        <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-white">Monthly Goals</h2>
+            <button
+              onClick={() => navigate('/settings')}
+              className="text-xs text-indigo-300 hover:text-indigo-200"
+            >
+              Edit Goals
+            </button>
+          </div>
+
+          <div>
+            <div className="text-xs text-slate-300 mb-1">
+              Revenue: ${(data?.revenue || 0).toLocaleString()} / ${revenueGoal.toLocaleString()} - {Math.round(revenueProgress)}%
+            </div>
+            <div className="h-2 bg-[#0f1117] rounded-full overflow-hidden">
+              <div className="h-full bg-emerald-500 transition-all" style={{ width: `${revenueProgress}%` }} />
+            </div>
+          </div>
+
+          <div>
+            <div className="text-xs text-slate-300 mb-1">
+              RO Count: {(data?.total || 0).toLocaleString()} / {roGoal.toLocaleString()} - {Math.round(roProgress)}%
+            </div>
+            <div className="h-2 bg-[#0f1117] rounded-full overflow-hidden">
+              <div className="h-full bg-indigo-500 transition-all" style={{ width: `${roProgress}%` }} />
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {stats.map(s => (
