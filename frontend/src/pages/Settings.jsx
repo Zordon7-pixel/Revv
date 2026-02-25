@@ -17,6 +17,7 @@ export default function Settings() {
   const [mkt,    setMkt]    = useState(null)   // suggested rates for selected state
   const [saving, setSaving]       = useState(false)
   const [saved,  setSaved]        = useState(false)
+  const [saveError, setSaveError] = useState('')
   const [locating, setLocating]   = useState(false)
   const [locMsg,   setLocMsg]     = useState('')
   const [clearing, setClearing]   = useState(false)
@@ -99,8 +100,9 @@ export default function Settings() {
   async function handleSave(e) {
     e.preventDefault()
     setSaving(true)
+    setSaveError('')
     try {
-      await api.put('/market/shop', {
+      const { data } = await api.put('/market/shop', {
         ...form,
         labor_rate:               parseFloat(form.labor_rate),
         parts_markup:             parseFloat(form.parts_markup) / 100,
@@ -111,8 +113,24 @@ export default function Settings() {
         tracking_api_key:         form.tracking_api_key || null,
         monthly_revenue_target:   parseInt(form.monthly_revenue_target, 10) || 85000,
       })
+      setShop(data)
+      setForm(f => ({
+        ...f,
+        name:         data.name         || f.name,
+        phone:        data.phone        || f.phone,
+        address:      data.address      || f.address,
+        city:         data.city         || f.city,
+        state:        data.state        || f.state,
+        zip:          data.zip          || f.zip,
+        labor_rate:   data.labor_rate   ?? f.labor_rate,
+        parts_markup: data.parts_markup != null ? (data.parts_markup * 100).toFixed(0) : f.parts_markup,
+        tax_rate:     data.tax_rate     != null ? (data.tax_rate * 100).toFixed(2)     : f.tax_rate,
+      }))
       setSaved(true)
       setTimeout(() => setSaved(false), 2500)
+      setSaveError('')
+    } catch (err) {
+      setSaveError(err?.response?.data?.error || 'Failed to save settings. Please try again.')
     } finally {
       setSaving(false)
     }
@@ -537,6 +555,12 @@ export default function Settings() {
             </p>
           )}
         </div>
+
+        {saveError && (
+          <p className='text-xs text-red-400 flex items-center gap-1'>
+            <AlertTriangle size={12} /> {saveError}
+          </p>
+        )}
 
         {/* Save */}
         <button type="submit" disabled={saving}

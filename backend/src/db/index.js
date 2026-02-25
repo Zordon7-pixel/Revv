@@ -373,6 +373,14 @@ async function initDb() {
     SET onboarded = TRUE
     WHERE id IN (SELECT shop_id FROM users WHERE email = 'demo@shop.com')
   `).catch(() => {});
+
+  // Fix demo shop stuck at DC (Railway migration)
+  await pool.query(`
+    UPDATE shops
+    SET city = 'New York', state = 'NY', zip = '10001', address = '123 Miles Ave', market_tier = 1
+    WHERE id IN (SELECT shop_id FROM users WHERE email = 'demo@shop.com')
+    AND state = 'DC'
+  `).catch(() => {});
 }
 
 async function dbGet(sql, params = []) {
