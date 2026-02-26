@@ -493,7 +493,7 @@ export default function RODetail() {
             onChange={async (panels) => {
               try { await api.patch(`/ros/${ro.id}`, { damaged_panels: JSON.stringify(panels) }) } catch {}
             }}
-            readOnly={!isAdmin()}
+            readOnly={!isAdmin() && !isEmployee()}
           />
         </div>
 
