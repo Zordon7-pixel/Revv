@@ -25,6 +25,7 @@ async function runMigrations() {
       await query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS payment_status TEXT DEFAULT 'unpaid'`);
       await query(`UPDATE repair_orders SET payment_status = 'succeeded' WHERE payment_status IS NULL AND payment_received = 1`);
       await query(`UPDATE repair_orders SET payment_status = 'unpaid' WHERE payment_status IS NULL`);
+      await query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS damaged_panels TEXT DEFAULT '[]'`);
       console.log('PostgreSQL schema created.');
     } else {
       await query(schemaSql);
@@ -32,6 +33,7 @@ async function runMigrations() {
       await query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS payment_status TEXT DEFAULT 'unpaid'`);
       await query(`UPDATE repair_orders SET payment_status = 'succeeded' WHERE payment_status IS NULL AND payment_received = 1`);
       await query(`UPDATE repair_orders SET payment_status = 'unpaid' WHERE payment_status IS NULL`);
+      await query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS damaged_panels TEXT DEFAULT '[]'`);
       console.log('PostgreSQL schema already exists; ensured idempotent statements.');
     }
   } finally {

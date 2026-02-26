@@ -12,6 +12,7 @@ import { searchInsurers } from '../data/insurers'
 import { searchVendors } from '../data/vendors'
 import { isAdmin, isEmployee } from '../lib/auth'
 import { useLanguage } from '../contexts/LanguageContext'
+import VehicleDiagram from '../components/VehicleDiagram'
 
 const PART_STATUS_META = {
   ordered:     { label: 'Ordered',     cls: 'text-blue-400   bg-blue-900/30   border-blue-700',   icon: Clock },
@@ -479,6 +480,20 @@ export default function RODetail() {
               )}
             </div>
           ) : <div className="text-xs text-slate-400">Customer pay — no claim.</div>}
+        </div>
+
+        {/* Damage Diagram */}
+        <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4 col-span-full">
+          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-4 flex items-center gap-1.5">
+            <Car size={12} /> Damage Diagram
+          </h2>
+          <VehicleDiagram
+            value={(() => { try { return JSON.parse(ro.damaged_panels || '[]') } catch { return [] } })()}
+            onChange={async (panels) => {
+              try { await api.patch(`/ros/${ro.id}`, { damaged_panels: JSON.stringify(panels) }) } catch {}
+            }}
+            readOnly={!isAdmin()}
+          />
         </div>
 
         {/* Insurance Adjustor Panel */}

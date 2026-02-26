@@ -388,15 +388,16 @@ router.post('/approval/:token/respond', async (req, res) => {
 
 router.post('/', auth, async (req, res) => {
   try {
-    const { customer_id, vehicle_id, job_type, payment_type, claim_number, insurer, adjuster_name, adjuster_phone, deductible, notes, estimated_delivery } = req.body;
+    const { customer_id, vehicle_id, job_type, payment_type, claim_number, insurer, adjuster_name, adjuster_phone, deductible, notes, estimated_delivery, damaged_panels } = req.body;
     const countRow = await dbGet('SELECT COUNT(*)::int as n FROM repair_orders WHERE shop_id = $1', [req.user.shop_id]);
     const roNumber = `RO-2026-${String(countRow.n + 1).padStart(4, '0')}`;
     const id = uuidv4();
     const today = new Date().toISOString().split('T')[0];
+    const panelsJson = Array.isArray(damaged_panels) ? JSON.stringify(damaged_panels) : (damaged_panels || '[]');
     await dbRun(`
-      INSERT INTO repair_orders (id, shop_id, ro_number, vehicle_id, customer_id, job_type, status, payment_type, claim_number, insurer, adjuster_name, adjuster_phone, deductible, intake_date, estimated_delivery, notes)
-      VALUES ($1, $2, $3, $4, $5, $6, 'intake', $7, $8, $9, $10, $11, $12, $13, $14, $15)
-    `, [id, req.user.shop_id, roNumber, vehicle_id, customer_id, job_type || 'collision', payment_type || 'insurance', claim_number || null, insurer || null, adjuster_name || null, adjuster_phone || null, deductible || 0, today, estimated_delivery || null, notes || null]);
+      INSERT INTO repair_orders (id, shop_id, ro_number, vehicle_id, customer_id, job_type, status, payment_type, claim_number, insurer, adjuster_name, adjuster_phone, deductible, intake_date, estimated_delivery, notes, damaged_panels)
+      VALUES ($1, $2, $3, $4, $5, $6, 'intake', $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+    `, [id, req.user.shop_id, roNumber, vehicle_id, customer_id, job_type || 'collision', payment_type || 'insurance', claim_number || null, insurer || null, adjuster_name || null, adjuster_phone || null, deductible || 0, today, estimated_delivery || null, notes || null, panelsJson]);
     await dbRun('INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by) VALUES ($1, $2, $3, $4, $5)', [uuidv4(), id, null, 'intake', req.user.id]);
     const ro = await dbGet('SELECT * FROM repair_orders WHERE id = $1', [id]);
     
@@ -449,7 +450,7 @@ router.put('/:id', auth, async (req, res) => {
   try {
     const ro = await dbGet('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
     if (!ro) return res.status(404).json({ error: 'Not found' });
-    const ALLOWED_RO_FIELDS = ['status','notes','tech_notes','assigned_to','estimate_amount','actual_amount','updated_at','insurance_company','adjuster_name','adjuster_phone','claim_number','deductible','auth_number','job_type','payment_type','insurer','adjuster_email','estimated_delivery','parts_cost','labor_cost','sublet_cost','tax','total','deductible_waived','referral_fee','goodwill_repair_cost'];
+    const ALLOWED_RO_FIELDS = ['status','notes','tech_notes','assigned_to','estimate_amount','actual_amount','updated_at','insurance_company','adjuster_name','adjuster_phone','claim_number','deductible','auth_number','job_type','payment_type','insurer','adjuster_email','estimated_delivery','parts_cost','labor_cost','sublet_cost','tax','total','deductible_waived','referral_fee','goodwill_repair_cost','damaged_panels'];
     const updates = Object.fromEntries(Object.entries(req.body).filter(([k]) => ALLOWED_RO_FIELDS.includes(k)));
     if (Object.keys(updates).length > 0) {
       const profit = calculateProfit({ ...ro, ...updates });

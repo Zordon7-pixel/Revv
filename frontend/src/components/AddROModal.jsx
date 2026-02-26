@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { X, CheckCircle, Sparkles, Plus } from 'lucide-react'
 import api from '../lib/api'
 import LibraryAutocomplete from './LibraryAutocomplete'
+import VehicleDiagram from './VehicleDiagram'
 import { searchInsurers } from '../data/insurers'
 import { useLanguage } from '../contexts/LanguageContext'
 
@@ -29,7 +30,7 @@ export default function AddROModal({ onClose, onSaved }) {
     // Job
     job_type: 'collision', payment_type: 'insurance',
     claim_number: '', insurer: 'Progressive', adjuster_name: '', adjuster_phone: '', deductible: '',
-    estimated_delivery: '', notes: '', damage_type: 'front_impact'
+    estimated_delivery: '', notes: '', damage_type: 'front_impact', damaged_panels: []
   })
   const [suggestions, setSuggestions] = useState([])
   const [suggestionSummary, setSuggestionSummary] = useState(null)
@@ -108,7 +109,8 @@ export default function AddROModal({ onClose, onSaved }) {
         payment_type: form.payment_type, claim_number: form.claim_number,
         insurer: form.payment_type === 'insurance' ? form.insurer : null,
         adjuster_name: form.adjuster_name, adjuster_phone: form.adjuster_phone,
-        deductible: +form.deductible || 0, estimated_delivery: form.estimated_delivery, notes: form.notes
+        deductible: +form.deductible || 0, estimated_delivery: form.estimated_delivery, notes: form.notes,
+        damaged_panels: form.damaged_panels
       })
       onSaved()
     } catch(e) {
@@ -173,6 +175,13 @@ export default function AddROModal({ onClose, onSaved }) {
                 <select className={inp} value={form.damage_type} onChange={e => set('damage_type', e.target.value)}>
                   {DAMAGE_TYPES.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
                 </select>
+              </div>
+              <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-xl p-4">
+                <p className="text-xs font-semibold text-indigo-400 mb-3">Mark Damaged Panels</p>
+                <VehicleDiagram
+                  value={form.damaged_panels}
+                  onChange={panels => set('damaged_panels', panels)}
+                />
               </div>
               <div className="flex gap-2">
                 {['insurance','cash'].map(t => (
