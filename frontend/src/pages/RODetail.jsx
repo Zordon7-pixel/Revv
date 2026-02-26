@@ -8,6 +8,7 @@ import PaymentStatusBadge, { normalizePaymentStatus } from '../components/Paymen
 import LibraryAutocomplete from '../components/LibraryAutocomplete'
 import ROPhotos from '../components/ROPhotos'
 import PaymentModal from '../components/PaymentModal'
+import TurnaroundEstimator from '../components/TurnaroundEstimator'
 import { searchInsurers } from '../data/insurers'
 import { searchVendors } from '../data/vendors'
 import { isAdmin, isEmployee } from '../lib/auth'
@@ -435,6 +436,14 @@ export default function RODetail() {
                 : <span className="text-white font-medium">{ro.estimated_delivery || '—'}</span>
               }
             </div>
+            {!ro.estimated_delivery && (
+              <TurnaroundEstimator
+                jobType={ro.job_type}
+                onAccept={isAdmin() ? (date) => {
+                  api.patch(`/ros/${ro.id}`, { estimated_delivery: date }).then(r => setRo(r.data))
+                } : undefined}
+              />
+            )}
           </div>
         </div>
 

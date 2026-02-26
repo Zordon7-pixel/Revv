@@ -206,6 +206,94 @@ router.get('/job-cost/summary', auth, requireAdmin, async (req, res) => {
   }
 });
 
+// GET /api/ros/turnaround-estimate?job_type=collision&shop_id=...
+router.get('/turnaround-estimate', auth, async (req, res) => {
+  try {
+    const { job_type } = req.query;
+    const shopId = req.user.shop_id;
+
+    // Pull historical completion times: intake → closed, same job_type, last 90 days
+    const history = await dbAll(`
+      SELECT
+        EXTRACT(EPOCH FROM (closed_log.created_at - intake_log.created_at)) / 86400 AS days
+      FROM repair_orders ro
+      JOIN job_status_log intake_log ON intake_log.ro_id = ro.id AND intake_log.to_status = 'intake'
+      JOIN job_status_log closed_log ON closed_log.ro_id = ro.id AND closed_log.to_status = 'closed'
+      WHERE ro.shop_id = $1
+        AND ro.status = 'closed'
+        AND ($2::text IS NULL OR ro.job_type = $2)
+        AND closed_log.created_at > NOW() - INTERVAL '90 days'
+      ORDER BY closed_log.created_at DESC
+      LIMIT 50
+    `, [shopId, job_type || null]);
+
+    // Active RO count (workload factor)
+    const activeRow = await dbGet(
+      `SELECT COUNT(*) as cnt FROM repair_orders WHERE shop_id = $1 AND status NOT IN ('closed', 'total_loss')`,
+      [shopId]
+    );
+    const activeCount = parseInt(activeRow?.cnt || 0);
+
+    let minDays;
+    let maxDays;
+
+    if (history.length >= 3) {
+      // Sort completion times ascending
+      const days = history.map(r => parseFloat(r.days)).sort((a, b) => a - b);
+      const p25 = days[Math.floor(days.length * 0.25)];
+      const p75 = days[Math.floor(days.length * 0.75)];
+      // Add workload buffer: +0.25 days per active RO over 5
+      const buffer = Math.max(0, (activeCount - 5) * 0.25);
+      minDays = Math.max(1, Math.round(p25 + buffer));
+      maxDays = Math.max(minDays + 1, Math.round(p75 + buffer));
+    } else {
+      // Fallback defaults by job_type
+      const defaults = {
+        collision: [5, 10],
+        mechanical: [1, 3],
+        pdr: [1, 2],
+        detailing: [1, 1],
+        glass: [1, 2],
+      };
+      [minDays, maxDays] = defaults[job_type] || [3, 7];
+    }
+
+    // Convert to calendar dates (skip weekends)
+    function addBusinessDays(date, days) {
+      let d = new Date(date);
+      let added = 0;
+      while (added < days) {
+        d.setDate(d.getDate() + 1);
+        const dow = d.getDay();
+        if (dow !== 0 && dow !== 6) added++;
+      }
+      return d;
+    }
+
+    const now = new Date();
+    const startDate = addBusinessDays(now, minDays);
+    const endDate = addBusinessDays(now, maxDays);
+
+    const fmt = (d) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const isoDate = (d) => d.toISOString().split('T')[0];
+
+    res.json({
+      minDays,
+      maxDays,
+      startDate: isoDate(startDate),
+      endDate: isoDate(endDate),
+      label: startDate.toDateString() === endDate.toDateString()
+        ? fmt(startDate)
+        : `${fmt(startDate)} – ${fmt(endDate)}`,
+      basedOnSamples: history.length,
+      activeROs: activeCount,
+    });
+  } catch (err) {
+    console.error('[Turnaround]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/:id', auth, async (req, res) => {
   try {
     const ro = await dbGet('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);

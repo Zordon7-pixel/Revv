@@ -3,6 +3,7 @@ import { X, CheckCircle, Sparkles, Plus } from 'lucide-react'
 import api from '../lib/api'
 import LibraryAutocomplete from './LibraryAutocomplete'
 import VehicleDiagram from './VehicleDiagram'
+import TurnaroundEstimator from './TurnaroundEstimator'
 import { searchInsurers } from '../data/insurers'
 import { useLanguage } from '../contexts/LanguageContext'
 
@@ -251,6 +252,10 @@ export default function AddROModal({ onClose, onSaved }) {
                   </div>
                 )}
               </div>
+              <TurnaroundEstimator
+                jobType={form.job_type}
+                onAccept={(date) => setForm(f => ({ ...f, estimated_delivery: date }))}
+              />
               <div><label className={lbl}>Est. Delivery Date</label><input className={inp} type="date" value={form.estimated_delivery} onChange={e => set('estimated_delivery', e.target.value)} /></div>
               <div><label className={lbl}>Notes</label><textarea className={inp} rows={3} value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="Additional details..." /></div>
             </>
