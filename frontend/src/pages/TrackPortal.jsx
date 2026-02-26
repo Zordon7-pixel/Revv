@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import { Phone, MessageSquare, Star, Check, X, Loader2 } from 'lucide-react'
 import api from '../lib/api'
+import { useLanguage } from '../contexts/LanguageContext'
 
 const STAGES = ['intake', 'estimate', 'approval', 'parts', 'repair', 'paint', 'qc', 'delivery', 'closed']
 const STATUS_LABELS = {
@@ -29,6 +30,7 @@ const STATUS_COLORS = {
 }
 
 export default function TrackPortal() {
+  const { t } = useLanguage()
   const { token } = useParams()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -126,7 +128,7 @@ export default function TrackPortal() {
         <div className="bg-emerald-900/30 border-b border-emerald-700/40 p-4">
           <div className="max-w-2xl mx-auto flex items-center justify-center gap-3">
             <Check className="w-6 h-6 text-emerald-400" />
-            <span className="text-emerald-300 font-semibold text-lg">Your vehicle is ready for pickup!</span>
+            <span className="text-emerald-300 font-semibold text-lg">{t('portal.inGoodHands')}</span>
           </div>
         </div>
       )}
@@ -144,7 +146,7 @@ export default function TrackPortal() {
               className="flex items-center gap-2 bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] font-semibold px-4 py-2 rounded-lg transition-colors"
             >
               <Phone size={16} />
-              Call Shop
+              {t('portal.contactShop')}
             </button>
           </div>
         </div>
@@ -155,7 +157,7 @@ export default function TrackPortal() {
             <h2 className="text-lg font-semibold text-white">
               {vehicle.year} {vehicle.make} {vehicle.model}
             </h2>
-            <span className="text-sm text-slate-400">RO: {ro.ro_number}</span>
+            <span className="text-sm text-slate-400">{t('ro.title')}: {ro.ro_number}</span>
           </div>
           {vehicle.color && (
             <p className="text-sm text-slate-500">Color: {vehicle.color}</p>
@@ -165,7 +167,7 @@ export default function TrackPortal() {
         {/* Progress Bar */}
         <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-white">Repair Progress</span>
+            <span className="text-sm font-medium text-white">{t('portal.trackTitle')}</span>
             <span className="text-xs text-slate-500">Step {currentIdx + 1} of {STAGES.length}</span>
           </div>
           <div className="flex gap-1 mb-2">
@@ -189,7 +191,7 @@ export default function TrackPortal() {
               )}
             </div>
             {ro.estimated_delivery && ro.status !== 'closed' && ro.status !== 'delivery' && (
-              <span className="text-xs text-slate-500">Est: {ro.estimated_delivery}</span>
+              <span className="text-xs text-slate-500">{t('portal.estimatedCompletion')}: {ro.estimated_delivery}</span>
             )}
           </div>
         </div>
@@ -247,7 +249,7 @@ export default function TrackPortal() {
         {/* Parts Status */}
         {parts && parts.length > 0 && (
           <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
-            <h3 className="text-sm font-semibold text-white mb-3">Parts</h3>
+            <h3 className="text-sm font-semibold text-white mb-3">{t('ro.parts')}</h3>
             <div className="space-y-2">
               {parts.map((part, i) => (
                 <div key={i} className="flex items-center justify-between text-sm">
@@ -285,7 +287,7 @@ export default function TrackPortal() {
                 disabled={sendingMessage || !message.trim()}
                 className="flex-1 bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] font-semibold text-sm px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
               >
-                {sendingMessage ? 'Sending...' : 'Send Message'}
+                {sendingMessage ? 'Sending...' : `${t('common.submit')} Message`}
               </button>
               {messageSent && (
                 <span className="text-emerald-400 text-sm flex items-center gap-1">

@@ -31,6 +31,7 @@ import SuperAdminRoute from './components/SuperAdminRoute'
 import TrackPortal from './pages/TrackPortal'
 import ShopProfile from './pages/ShopProfile'
 import ADASCalibration from './pages/ADASCalibration'
+import { LanguageProvider } from './contexts/LanguageContext'
 
 function PrivateRoute({ children }) {
   return localStorage.getItem('sc_token') ? children : <Navigate to="/login" />
@@ -67,42 +68,44 @@ function EmployeeOnlyRoute({ children }) {
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/login" element={<Login />} />
-        <Route path="/superadmin/login" element={<SuperAdminLogin />} />
-        <Route path="/superadmin" element={<SuperAdminRoute><SuperAdminDashboard /></SuperAdminRoute>} />
-        <Route path="/register" element={<Register />} />
-        <Route path="/shop-register" element={<ShopRegister />} />
-        <Route path="/reset-password" element={<ResetPassword />} />
-        <Route path="/invoice/:id" element={<Invoice />} />
-        <Route path="/approve/:token" element={<ApprovalPortal />} />
-        <Route path="/track/:token" element={<TrackPortal />} />
-        <Route path="/shop/:shopId" element={<ShopProfile />} />
-        <Route path="/book" element={<BookAppointment />} />
-        <Route path="/portal" element={<PrivateRoute><Portal /></PrivateRoute>} />
-        <Route path="/onboarding" element={<PrivateRoute><Onboarding /></PrivateRoute>} />
-        <Route path="/claim/:token" element={<ClaimPortal />} />
-        <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
-          <Route index element={<Dashboard />} />
-          <Route path="dashboard" element={<Dashboard />} />
-          <Route path="ros" element={<RepairOrders />} />
-          <Route path="parts" element={<OwnerRoute><PartsOnOrder /></OwnerRoute>} />
-          <Route path="payments" element={<Payments />} />
-          <Route path="tech" element={<EmployeeOnlyRoute><TechView /></EmployeeOnlyRoute>} />
-          <Route path="ros/:id" element={<RODetail />} />
-          <Route path="customers" element={<Customers />} />
-          <Route path="timeclock" element={<TimeClock />} />
-          <Route path="schedule" element={<Schedule />} />
-          <Route path="reports" element={<AdminRoute><Reports /></AdminRoute>} />
-          <Route path="monthly-report" element={<OwnerRoute><MonthlyReport /></OwnerRoute>} />
-          <Route path="performance" element={<AdminRoute><Performance /></AdminRoute>} />
-          <Route path="team" element={<AdminRoute><Users /></AdminRoute>} />
-          <Route path="users" element={<AdminRoute><Users /></AdminRoute>} />
-          <Route path="settings" element={<OwnerRoute><Settings /></OwnerRoute>} />
-          <Route path="adas" element={<AdminRoute><ADASCalibration /></AdminRoute>} />
-        </Route>
-      </Routes>
-    </BrowserRouter>
+    <LanguageProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route path="/superadmin/login" element={<SuperAdminLogin />} />
+          <Route path="/superadmin" element={<SuperAdminRoute><SuperAdminDashboard /></SuperAdminRoute>} />
+          <Route path="/register" element={<Register />} />
+          <Route path="/shop-register" element={<ShopRegister />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
+          <Route path="/invoice/:id" element={<Invoice />} />
+          <Route path="/approve/:token" element={<ApprovalPortal />} />
+          <Route path="/track/:token" element={<TrackPortal />} />
+          <Route path="/shop/:shopId" element={<ShopProfile />} />
+          <Route path="/book" element={<BookAppointment />} />
+          <Route path="/portal" element={<PrivateRoute><Portal /></PrivateRoute>} />
+          <Route path="/onboarding" element={<PrivateRoute><Onboarding /></PrivateRoute>} />
+          <Route path="/claim/:token" element={<ClaimPortal />} />
+          <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
+            <Route index element={<Dashboard />} />
+            <Route path="dashboard" element={<Dashboard />} />
+            <Route path="ros" element={<RepairOrders />} />
+            <Route path="parts" element={<OwnerRoute><PartsOnOrder /></OwnerRoute>} />
+            <Route path="payments" element={<Payments />} />
+            <Route path="tech" element={<EmployeeOnlyRoute><TechView /></EmployeeOnlyRoute>} />
+            <Route path="ros/:id" element={<RODetail />} />
+            <Route path="customers" element={<Customers />} />
+            <Route path="timeclock" element={<TimeClock />} />
+            <Route path="schedule" element={<Schedule />} />
+            <Route path="reports" element={<AdminRoute><Reports /></AdminRoute>} />
+            <Route path="monthly-report" element={<OwnerRoute><MonthlyReport /></OwnerRoute>} />
+            <Route path="performance" element={<AdminRoute><Performance /></AdminRoute>} />
+            <Route path="team" element={<AdminRoute><Users /></AdminRoute>} />
+            <Route path="users" element={<AdminRoute><Users /></AdminRoute>} />
+            <Route path="settings" element={<OwnerRoute><Settings /></OwnerRoute>} />
+            <Route path="adas" element={<AdminRoute><ADASCalibration /></AdminRoute>} />
+          </Route>
+        </Routes>
+      </BrowserRouter>
+    </LanguageProvider>
   )
 }

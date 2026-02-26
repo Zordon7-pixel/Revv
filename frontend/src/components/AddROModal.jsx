@@ -3,6 +3,7 @@ import { X, CheckCircle, Sparkles, Plus } from 'lucide-react'
 import api from '../lib/api'
 import LibraryAutocomplete from './LibraryAutocomplete'
 import { searchInsurers } from '../data/insurers'
+import { useLanguage } from '../contexts/LanguageContext'
 
 const JOB_TYPES = ['collision','paint','detailing','glass','towing','key_programming','wheel_recon','car_wrap']
 const DAMAGE_TYPES = [
@@ -14,6 +15,7 @@ const DAMAGE_TYPES = [
 ]
 
 export default function AddROModal({ onClose, onSaved }) {
+  const { t } = useLanguage()
   const [customers, setCustomers] = useState([])
   const [step, setStep] = useState(1)
   const [loading, setLoading] = useState(false)
@@ -78,15 +80,15 @@ export default function AddROModal({ onClose, onSaved }) {
   async function submit() {
     // Validate before hitting the API
     if (!form.new_customer && !form.customer_id) {
-      alert('Please select an existing customer or switch to New Customer.')
+      alert('Please select an existing customer or switch to new customer.')
       return
     }
     if (form.new_customer && !form.customer_name.trim()) {
-      alert('Customer name is required.')
+      alert(`${t('common.name')} is required.`)
       return
     }
     if (!form.make.trim() || !form.model.trim() || !form.year) {
-      alert('Vehicle year, make, and model are required.')
+      alert(`${t('common.vehicle')} ${t('common.year').toLowerCase()}, ${t('common.make').toLowerCase()}, and ${t('common.model').toLowerCase()} are required.`)
       return
     }
 
@@ -119,7 +121,7 @@ export default function AddROModal({ onClose, onSaved }) {
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
       <div className="bg-[#1a1d2e] rounded-2xl border border-[#2a2d3e] w-full max-w-lg max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-5 border-b border-[#2a2d3e]">
-          <h2 className="font-bold text-white">New Repair Order</h2>
+          <h2 className="font-bold text-white">{t('ro.addRO')}</h2>
           <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={18} /></button>
         </div>
         <div className="p-5 space-y-4">
@@ -147,13 +149,13 @@ export default function AddROModal({ onClose, onSaved }) {
           )}
           {step === 2 && (
             <>
-              <h3 className="text-xs font-bold text-indigo-400 uppercase tracking-wide">Step 2 — Vehicle</h3>
+              <h3 className="text-xs font-bold text-indigo-400 uppercase tracking-wide">Step 2 - {t('common.vehicle')}</h3>
               <div className="grid grid-cols-3 gap-2">
-                <div><label className={lbl}>Year *</label><input className={inp} value={form.year} onChange={e => set('year', e.target.value)} placeholder="2021" /></div>
-                <div><label className={lbl}>Make *</label><input className={inp} value={form.make} onChange={e => set('make', e.target.value)} placeholder="Toyota" /></div>
-                <div><label className={lbl}>Model *</label><input className={inp} value={form.model} onChange={e => set('model', e.target.value)} placeholder="Camry" /></div>
+                <div><label className={lbl}>{t('common.year')} *</label><input className={inp} value={form.year} onChange={e => set('year', e.target.value)} placeholder="2021" /></div>
+                <div><label className={lbl}>{t('common.make')} *</label><input className={inp} value={form.make} onChange={e => set('make', e.target.value)} placeholder="Toyota" /></div>
+                <div><label className={lbl}>{t('common.model')} *</label><input className={inp} value={form.model} onChange={e => set('model', e.target.value)} placeholder="Camry" /></div>
               </div>
-              <div><label className={lbl}>VIN</label><input className={inp} value={form.vin} onChange={e => set('vin', e.target.value)} placeholder="1HGCV1F30KA..." /></div>
+              <div><label className={lbl}>{t('common.vin')}</label><input className={inp} value={form.vin} onChange={e => set('vin', e.target.value)} placeholder="1HGCV1F30KA..." /></div>
               <div className="grid grid-cols-2 gap-2">
                 <div><label className={lbl}>Color</label><input className={inp} value={form.color} onChange={e => set('color', e.target.value)} placeholder="Silver" /></div>
                 <div><label className={lbl}>Plate</label><input className={inp} value={form.plate} onChange={e => set('plate', e.target.value)} placeholder="ABC1234" /></div>
@@ -247,7 +249,7 @@ export default function AddROModal({ onClose, onSaved }) {
         </div>
         <div className="flex items-center justify-between p-5 border-t border-[#2a2d3e]">
           <button onClick={() => step > 1 ? setStep(s=>s-1) : onClose()} className="text-slate-400 hover:text-white text-sm transition-colors">
-            {step > 1 ? '← Back' : 'Cancel'}
+            {step > 1 ? `← ${t('common.back')}` : t('common.cancel')}
           </button>
           <div className="flex items-center gap-2">
             {[1,2,3].map(i => <div key={i} className={`w-2 h-2 rounded-full ${step>=i ? 'bg-indigo-500' : 'bg-[#2a2d3e]'}`} />)}
@@ -256,15 +258,15 @@ export default function AddROModal({ onClose, onSaved }) {
             <button onClick={() => {
               if (step === 1) {
                 if (!form.new_customer && !form.customer_id) { alert('Please select a customer or choose New.'); return }
-                if (form.new_customer && !form.customer_name.trim()) { alert('Customer name is required.'); return }
+                if (form.new_customer && !form.customer_name.trim()) { alert(`${t('common.name')} is required.`); return }
               }
               if (step === 2) {
-                if (!form.year || !form.make.trim() || !form.model.trim()) { alert('Year, make, and model are required.'); return }
+                if (!form.year || !form.make.trim() || !form.model.trim()) { alert(`${t('common.year')}, ${t('common.make').toLowerCase()}, and ${t('common.model').toLowerCase()} are required.`); return }
               }
               setStep(s=>s+1)
             }} className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">Next →</button>
           ) : (
-            <button onClick={submit} disabled={loading} className="bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors disabled:opacity-50">{loading ? 'Creating...' : <span className="inline-flex items-center gap-1">Create RO <CheckCircle size={13} /></span>}</button>
+            <button onClick={submit} disabled={loading} className="bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors disabled:opacity-50">{loading ? 'Creating...' : <span className="inline-flex items-center gap-1">{t('ro.addRO')} <CheckCircle size={13} /></span>}</button>
           )}
         </div>
       </div>

@@ -5,21 +5,23 @@ import FeedbackButton from './FeedbackButton'
 import HelpDesk from './HelpDesk'
 import { getRole, isAdmin } from '../lib/auth'
 import api from '../lib/api'
+import { useLanguage } from '../contexts/LanguageContext'
+import LanguageToggle from './LanguageToggle'
 
 const allNav = [
-  { to: '/',           icon: LayoutDashboard, label: 'Dashboard',      adminOnly: false },
-  { to: '/ros',        icon: ClipboardList,   label: 'Repair Orders',  adminOnly: false },
-  { to: '/parts',      icon: Package,         label: 'Parts',          ownerOnly: true  },
-  { to: '/payments',   icon: CreditCard,      label: 'Payments',       adminOnly: false },
-  { to: '/adas',       icon: Radar,           label: 'ADAS',           adminOnly: true  },
-  { to: '/tech',       icon: Wrench,          label: 'My Jobs',        nonAdminOnly: true },
-  { to: '/customers',  icon: Users,           label: 'Customers',      adminOnly: false },
-  { to: '/timeclock',  icon: Clock,           label: 'Time Clock',     adminOnly: false },
-  { to: '/schedule',   icon: CalendarDays,    label: 'Schedule',       adminOnly: false },
-  { to: '/reports',    icon: BarChart3,       label: 'Reports',        adminOnly: true  },
-  { to: '/performance', icon: BarChart2,      label: 'Performance',     adminOnly: true  },
-  { to: '/team',       icon: UserCog,         label: 'Team',           adminOnly: true  },
-  { to: '/settings',   icon: Settings,        label: 'Settings',       ownerOnly: true  },
+  { to: '/',             icon: LayoutDashboard, labelKey: 'nav.dashboard',    adminOnly: false },
+  { to: '/ros',          icon: ClipboardList,   labelKey: 'nav.repairOrders', adminOnly: false },
+  { to: '/parts',        icon: Package,         labelKey: 'nav.parts',        ownerOnly: true  },
+  { to: '/payments',     icon: CreditCard,      labelKey: 'nav.payments',     adminOnly: false },
+  { to: '/adas',         icon: Radar,           labelKey: 'nav.adas',         adminOnly: true  },
+  { to: '/tech',         icon: Wrench,          labelKey: 'nav.techView',     nonAdminOnly: true },
+  { to: '/customers',    icon: Users,           labelKey: 'nav.customers',    adminOnly: false },
+  { to: '/timeclock',    icon: Clock,           labelKey: 'nav.timeclock',    adminOnly: false },
+  { to: '/schedule',     icon: CalendarDays,    labelKey: 'nav.schedule',     adminOnly: false },
+  { to: '/reports',      icon: BarChart3,       labelKey: 'nav.reports',      adminOnly: true  },
+  { to: '/performance',  icon: BarChart2,       labelKey: 'nav.performance',  adminOnly: true  },
+  { to: '/team',         icon: UserCog,         labelKey: 'nav.team',         adminOnly: true  },
+  { to: '/settings',     icon: Settings,        labelKey: 'nav.settings',     ownerOnly: true  },
 ]
 
 function NotificationsPanel({ onClose }) {
@@ -74,6 +76,7 @@ function NotificationsPanel({ onClose }) {
 }
 
 export default function Layout() {
+  const { t } = useLanguage()
   const [open, setOpen] = useState(false)
   const [showNotif, setShowNotif] = useState(false)
   const [notifCount, setNotifCount] = useState(0)
@@ -128,17 +131,20 @@ export default function Layout() {
         </div>
       </div>
       <nav className="flex-1 p-3 space-y-1">
-        {nav.map(({ to, icon: Icon, label }) => (
+        {nav.map(({ to, icon: Icon, labelKey }) => (
           <NavLink key={to} to={to} end={to === '/'}
             className={({ isActive }) =>
               `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all ${isActive ? 'bg-indigo-600 text-white font-medium' : 'text-slate-400 hover:bg-[#2a2d3e] hover:text-white'}`
             }
             onClick={() => setOpen(false)}>
-            <Icon size={16} /> {label}
+            <Icon size={16} /> {t(labelKey)}
           </NavLink>
         ))}
       </nav>
       <div className="p-3 border-t border-[#2a2d3e]">
+        <div className="mb-3">
+          <LanguageToggle />
+        </div>
         <button onClick={logout} className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-slate-400 hover:bg-red-900/30 hover:text-red-400 transition-all w-full">
           <LogOut size={16} /> Sign Out
         </button>
@@ -174,6 +180,7 @@ export default function Layout() {
             <Wrench size={16} className="text-indigo-400" />
             <span className="font-bold text-sm">REVV</span>
           </div>
+          <LanguageToggle />
           {admin && (
             <div className="relative" ref={notifRef}>
               <button onClick={() => setShowNotif(v => !v)}

@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { useLanguage } from '../contexts/LanguageContext'
 
 const SERVICES = [
   'Oil Change',
@@ -11,8 +12,9 @@ const SERVICES = [
 ]
 
 export default function BookAppointment() {
+  const { t } = useLanguage()
   const params = useMemo(() => new URLSearchParams(window.location.search), [])
-  const shopName = params.get('name') || 'Book an Appointment'
+  const shopName = params.get('name') || t('booking.title')
   const shopId = params.get('shop') || ''
 
   const [form, setForm] = useState({
@@ -63,7 +65,7 @@ export default function BookAppointment() {
       <div className="min-h-screen bg-[#0f1117] text-slate-200 px-4 py-10">
         <div className="max-w-lg mx-auto bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-6 text-center">
           <h1 className="text-2xl font-bold text-white">Request received!</h1>
-          <p className="text-slate-400 mt-2">We will call you to confirm.</p>
+          <p className="text-slate-400 mt-2">{t('booking.confirmed')}</p>
         </div>
       </div>
     )
@@ -90,19 +92,19 @@ export default function BookAppointment() {
               <input required value={form.phone} onChange={(e) => setField('phone', e.target.value)} className={inputCls} />
             </div>
             <div>
-              <label className="text-xs text-slate-400 block mb-1">Email</label>
+              <label className="text-xs text-slate-400 block mb-1">{t('common.email')}</label>
               <input type="email" value={form.email} onChange={(e) => setField('email', e.target.value)} className={inputCls} />
             </div>
             <div>
-              <label className="text-xs text-slate-400 block mb-1">Vehicle Year</label>
+              <label className="text-xs text-slate-400 block mb-1">{t('common.vehicle')} {t('common.year')}</label>
               <input value={form.vehicle_year} onChange={(e) => setField('vehicle_year', e.target.value)} className={inputCls} />
             </div>
             <div>
-              <label className="text-xs text-slate-400 block mb-1">Vehicle Make</label>
+              <label className="text-xs text-slate-400 block mb-1">{t('common.vehicle')} {t('common.make')}</label>
               <input value={form.vehicle_make} onChange={(e) => setField('vehicle_make', e.target.value)} className={inputCls} />
             </div>
             <div className="md:col-span-2">
-              <label className="text-xs text-slate-400 block mb-1">Vehicle Model</label>
+              <label className="text-xs text-slate-400 block mb-1">{t('common.vehicle')} {t('common.model')}</label>
               <input value={form.vehicle_model} onChange={(e) => setField('vehicle_model', e.target.value)} className={inputCls} />
             </div>
             <div>
@@ -112,15 +114,15 @@ export default function BookAppointment() {
               </select>
             </div>
             <div>
-              <label className="text-xs text-slate-400 block mb-1">Preferred Date</label>
+              <label className="text-xs text-slate-400 block mb-1">{t('booking.selectDate')}</label>
               <input type="date" value={form.preferred_date} onChange={(e) => setField('preferred_date', e.target.value)} className={inputCls} />
             </div>
             <div className="md:col-span-2">
-              <label className="text-xs text-slate-400 block mb-1">Preferred Time</label>
+              <label className="text-xs text-slate-400 block mb-1">{t('booking.selectTime')}</label>
               <input type="time" value={form.preferred_time} onChange={(e) => setField('preferred_time', e.target.value)} className={inputCls} />
             </div>
             <div className="md:col-span-2">
-              <label className="text-xs text-slate-400 block mb-1">Notes</label>
+              <label className="text-xs text-slate-400 block mb-1">{t('common.notes')}</label>
               <textarea rows={4} value={form.notes} onChange={(e) => setField('notes', e.target.value)} className={inputCls} />
             </div>
           </div>
@@ -130,7 +132,7 @@ export default function BookAppointment() {
             disabled={submitting}
             className="w-full bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] font-semibold rounded-lg py-2.5 transition-colors disabled:opacity-50"
           >
-            {submitting ? 'Submitting...' : 'Submit Request'}
+            {submitting ? 'Submitting...' : t('booking.submitBooking')}
           </button>
         </form>
       </div>

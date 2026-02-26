@@ -11,6 +11,7 @@ import PaymentModal from '../components/PaymentModal'
 import { searchInsurers } from '../data/insurers'
 import { searchVendors } from '../data/vendors'
 import { isAdmin, isEmployee } from '../lib/auth'
+import { useLanguage } from '../contexts/LanguageContext'
 
 const PART_STATUS_META = {
   ordered:     { label: 'Ordered',     cls: 'text-blue-400   bg-blue-900/30   border-blue-700',   icon: Clock },
@@ -46,6 +47,7 @@ const COMM_TYPE_META = {
 const STAGES = ['intake','estimate','approval','parts','repair','paint','qc','delivery','closed']
 
 export default function RODetail() {
+  const { t } = useLanguage()
   const { id } = useParams()
   const navigate = useNavigate()
   const [ro, setRo] = useState(null)
@@ -306,7 +308,7 @@ export default function RODetail() {
     }
   }
 
-  if (!ro) return <div className="flex items-center justify-center h-64 text-slate-500">Loading your shop data...</div>
+  if (!ro) return <div className="flex items-center justify-center h-64 text-slate-500">{t('common.loading')}</div>
 
   const p = ro.profit || {}
   const currentIdx = STAGES.indexOf(ro.status)
@@ -338,7 +340,7 @@ export default function RODetail() {
           )}
           {ro.status === 'estimate_sent' && !ro.estimate_approved_at && (
             <button onClick={approveEstimate} disabled={approvingEstimate} className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
-              <CheckCircle size={12} /> {approvingEstimate ? 'Approving...' : 'Approve Estimate'}
+              <CheckCircle size={12} /> {approvingEstimate ? 'Approving...' : `${t('portal.approveBtn')} ${t('ro.estimate')}`}
             </button>
           )}
           {ro.status === 'estimate' && (
@@ -352,7 +354,7 @@ export default function RODetail() {
           )}
           {ro.status !== 'closed' && !ro.payment_received && (
             <button onClick={() => setShowMarkPaidModal(true)} className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
-              <DollarSign size={12} /> Mark as Paid
+              <DollarSign size={12} /> {t('ro.paymentReceived')}
             </button>
           )}
           {paymentStatus !== 'succeeded' && paymentAmount > 0 && (
@@ -370,15 +372,15 @@ export default function RODetail() {
           )}
           <button onClick={() => window.open(`/invoice/${id}`, '_blank')}
             className="flex items-center gap-1 bg-[#2a2d3e] hover:bg-[#3a3d4e] text-slate-300 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
-            <Printer size={12} /> Print Invoice
+            <Printer size={12} /> {t('ro.invoice')}
           </button>
           {!editing
             ? <button onClick={() => setEditing(true)} className="flex items-center gap-1 bg-[#2a2d3e] hover:bg-[#3a3d4e] text-slate-300 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
-                <Pencil size={12} /> Edit
+                <Pencil size={12} /> {t('common.edit')}
               </button>
             : <div className="flex gap-1">
                 <button onClick={save} disabled={saving} className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
-                  <Save size={12} /> {saving ? 'Saving...' : 'Save'}
+                  <Save size={12} /> {saving ? 'Saving...' : t('common.save')}
                 </button>
                 <button onClick={() => { setEditing(false); setForm(ro) }} className="flex items-center gap-1 bg-[#2a2d3e] text-slate-400 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
                   <X size={12} />
@@ -409,12 +411,12 @@ export default function RODetail() {
       <div className="grid md:grid-cols-2 gap-4">
         {/* Vehicle Info */}
         <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
-          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3 flex items-center gap-1.5"><Car size={12} /> Vehicle</h2>
+          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3 flex items-center gap-1.5"><Car size={12} /> {t('common.vehicle')}</h2>
           <div className="space-y-2">
             {[
-              ['Year/Make/Model', `${ro.vehicle?.year} ${ro.vehicle?.make} ${ro.vehicle?.model}`],
+              [`${t('common.year')}/${t('common.make')}/${t('common.model')}`, `${ro.vehicle?.year} ${ro.vehicle?.make} ${ro.vehicle?.model}`],
               ['Color', ro.vehicle?.color],
-              ['VIN', ro.vehicle?.vin],
+              [t('common.vin'), ro.vehicle?.vin],
               ['Plate', ro.vehicle?.plate],
               ['Job Type', ro.job_type],
               ['Intake Date', ro.intake_date],
@@ -425,7 +427,7 @@ export default function RODetail() {
               </div>
             ))}
             <div className="flex justify-between text-xs">
-              <span className="text-slate-500">Est. Delivery</span>
+              <span className="text-slate-500">{t('portal.estimatedCompletion')}</span>
               {editing
                 ? <input type="date" value={form.estimated_delivery || ''} onChange={e => set('estimated_delivery', e.target.value)} className="bg-[#0f1117] border border-[#2a2d3e] rounded px-2 py-0.5 text-xs text-white focus:outline-none focus:border-indigo-500" />
                 : <span className="text-white font-medium">{ro.estimated_delivery || '—'}</span>
@@ -542,7 +544,7 @@ export default function RODetail() {
             <div className="space-y-2">
               {[
                 ['Parts Cost', `$${parseFloat(ro.parts_cost||0).toFixed(2)}`],
-                ['Labor', `$${parseFloat(ro.labor_cost||0).toFixed(2)}`],
+                [t('ro.labor'), `$${parseFloat(ro.labor_cost||0).toFixed(2)}`],
                 ['Sublet', `$${parseFloat(ro.sublet_cost||0).toFixed(2)}`],
                 ['Total Billed', `$${parseFloat(ro.total||0).toFixed(2)}`],
               ].map(([k,v]) => (
@@ -581,9 +583,9 @@ export default function RODetail() {
 
       {/* Notes */}
       <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
-        <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-2">Notes</h2>
+        <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-2">{t('common.notes')}</h2>
         {editing
-          ? <textarea className={inp} rows={3} value={form.notes || ''} onChange={e => set('notes', e.target.value)} placeholder="Job notes..." />
+          ? <textarea className={inp} rows={3} value={form.notes || ''} onChange={e => set('notes', e.target.value)} placeholder={`${t('common.notes')}...`} />
           : <p className="text-sm text-slate-300">{ro.notes || <span className="text-slate-600 italic">No notes</span>}</p>
         }
       </div>
@@ -595,7 +597,7 @@ export default function RODetail() {
       {userIsEmployee && (
         <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
           <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3 flex items-center gap-1.5">
-            <User size={12} /> Assigned Tech
+            <User size={12} /> {t('ro.technician')}
           </h2>
           <div className="flex items-center gap-3 flex-wrap">
             <span className="text-sm text-white font-medium">
@@ -623,7 +625,7 @@ export default function RODetail() {
       {userIsEmployee && (
         <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
           <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-2 flex items-center gap-1.5">
-            <ClipboardList size={12} /> Tech Notes
+            <ClipboardList size={12} /> {t('common.notes')}
           </h2>
           <textarea
             className={`${inp} w-full`}
@@ -957,7 +959,7 @@ export default function RODetail() {
                 onClick={() => setShowMarkPaidModal(false)}
                 className="flex-1 bg-[#2a2d3e] text-slate-300 text-sm font-medium px-4 py-2 rounded-lg hover:bg-[#3a3d4e] transition-colors"
               >
-                Cancel
+                {t('common.cancel')}
               </button>
               <button
                 onClick={markPaid}
@@ -978,7 +980,7 @@ export default function RODetail() {
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <Package size={15} className="text-indigo-400" />
-            <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide">Parts Tracker</h2>
+            <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide">{t('ro.parts')}</h2>
             {parts.filter(p => p.status === 'backordered').length > 0 && (
               <span className="text-[10px] bg-red-900/40 text-red-400 border border-red-700/40 px-2 py-0.5 rounded-full font-semibold flex items-center gap-1">
                 <AlertTriangle size={11} /> {parts.filter(p=>p.status==='backordered').length} backordered
@@ -992,7 +994,7 @@ export default function RODetail() {
           </div>
           <button onClick={() => setShowAddPart(s=>!s)}
             className="flex items-center gap-1.5 text-xs bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors">
-            <Plus size={12}/> Add Part
+            <Plus size={12}/> {t('common.add')} {t('ro.parts')}
           </button>
         </div>
 
