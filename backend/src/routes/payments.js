@@ -3,6 +3,7 @@ const Stripe = require('stripe');
 const { v4: uuidv4 } = require('uuid');
 const { dbGet, dbAll, dbRun } = require('../db');
 const auth = require('../middleware/auth');
+const { createNotification } = require('../services/notifications');
 
 const router = express.Router();
 
@@ -168,9 +169,24 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
                payment_received = 1,
                payment_received_at = $2,
                payment_method = $3,
-               updated_at = $4
+           updated_at = $4
            WHERE id = $5 AND shop_id = $6`,
           ['succeeded', paidAt, 'card', new Date().toISOString(), roId, shopId]
+        );
+
+        const ro = await dbGet('SELECT ro_number FROM repair_orders WHERE id = $1 AND shop_id = $2', [roId, shopId]);
+        const owners = await dbAll('SELECT id FROM users WHERE shop_id = $1 AND role = $2', [shopId, 'owner']);
+        await Promise.all(
+          owners.map((owner) =>
+            createNotification(
+              shopId,
+              owner.id,
+              'payment',
+              'Payment Received',
+              `Payment was received for RO #${ro?.ro_number || 'N/A'}.`,
+              roId
+            )
+          )
         );
       }
     }

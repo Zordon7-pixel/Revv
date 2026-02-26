@@ -431,13 +431,14 @@ router.post('/lunch/end', auth, async (req, res) => {
       const employee = await dbGet('SELECT name FROM users WHERE id = $1', [req.user.id]);
       const notifId = randomUUID();
       await dbRun(
-        'INSERT INTO notifications (id, shop_id, type, message, employee_id) VALUES ($1, $2, $3, $4, $5)',
+        'INSERT INTO notifications (id, shop_id, user_id, type, title, body) VALUES ($1, $2, $3, $4, $5, $6)',
         [
           notifId,
           req.user.shop_id,
+          req.user.id,
           'lunch_overtime',
-          `${employee?.name || 'Employee'} took a ${actualMinutes}-min lunch (allowed: ${allowedMinutes} min, over by ${overBy} min).`,
-          req.user.id
+          'Lunch Break Overtime',
+          `${employee?.name || 'Employee'} took a ${actualMinutes}-min lunch (allowed: ${allowedMinutes} min, over by ${overBy} min).`
         ]
       );
     }
@@ -453,7 +454,7 @@ router.post('/lunch/end', auth, async (req, res) => {
 router.get('/notifications', auth, requireAdmin, async (req, res) => {
   try {
     const rows = await dbAll(
-      'SELECT n.*, u.name as employee_name FROM notifications n LEFT JOIN users u ON u.id = n.employee_id WHERE n.shop_id = $1 ORDER BY n.created_at DESC LIMIT 50',
+      'SELECT n.*, u.name as employee_name FROM notifications n LEFT JOIN users u ON u.id = n.user_id WHERE n.shop_id = $1 ORDER BY n.created_at DESC LIMIT 50',
       [req.user.shop_id]
     );
     const unread = rows.filter(r => !r.read).length;

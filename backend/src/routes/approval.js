@@ -1,6 +1,15 @@
 const router = require('express').Router();
-const { dbGet, dbRun } = require('../db');
+const { dbGet, dbAll, dbRun } = require('../db');
 const { v4: uuidv4 } = require('uuid');
+const { createNotification } = require('../services/notifications');
+
+async function notifyOwnersAndAdmins(shopId, roId, title, body) {
+  const users = await dbAll(
+    'SELECT id FROM users WHERE shop_id = $1 AND role = ANY($2::text[])',
+    [shopId, ['owner', 'admin']]
+  );
+  await Promise.all(users.map((user) => createNotification(shopId, user.id, 'approval', title, body, roId)));
+}
 
 async function ensureTables() {
   await dbRun(`
@@ -85,6 +94,12 @@ router.post('/:token/respond', async (req, res) => {
         [uuidv4(), ro.id, fromStatus, 'approval', null, 'Estimate approved by customer via public approval link']
       );
       await dbRun('UPDATE estimate_approval_links SET responded_at = $1 WHERE token = $2', [now, req.params.token]);
+      await notifyOwnersAndAdmins(
+        ro.shop_id,
+        ro.id,
+        'Estimate Approved',
+        `Customer approved estimate for RO #${ro.ro_number || 'N/A'}.`
+      );
       return res.json({ ok: true, decision: 'approve' });
     }
 
@@ -95,6 +110,12 @@ router.post('/:token/respond', async (req, res) => {
       [uuidv4(), ro.id, ro.shop_id, null, 'email', `Estimate change request: ${reason.trim()}`]
     );
     await dbRun('UPDATE estimate_approval_links SET responded_at = $1, decline_reason = $2 WHERE token = $3', [now, reason.trim(), req.params.token]);
+    await notifyOwnersAndAdmins(
+      ro.shop_id,
+      ro.id,
+      'Estimate Declined',
+      `Customer declined estimate for RO #${ro.ro_number || 'N/A'}: ${reason.trim()}`
+    );
     return res.json({ ok: true, decision: 'decline' });
   } catch (err) {
     return res.status(500).json({ error: err.message });

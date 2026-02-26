@@ -28,6 +28,23 @@ async function runMigrations() {
       await query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS damaged_panels TEXT DEFAULT '[]'`);
       await query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS claim_status TEXT DEFAULT NULL`);
       await query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS pre_siu_status TEXT DEFAULT NULL`);
+      await query(`
+        CREATE TABLE IF NOT EXISTS notifications (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+          user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+          type TEXT NOT NULL,
+          title TEXT NOT NULL,
+          body TEXT,
+          ro_id UUID REFERENCES repair_orders(id) ON DELETE CASCADE,
+          read BOOLEAN DEFAULT FALSE,
+          created_at TIMESTAMPTZ DEFAULT NOW()
+        )
+      `);
+      await query(`
+        CREATE INDEX IF NOT EXISTS idx_notifications_shop_user
+        ON notifications(shop_id, user_id, read, created_at DESC)
+      `);
       console.log('PostgreSQL schema created.');
     } else {
       await query(schemaSql);
@@ -38,6 +55,23 @@ async function runMigrations() {
       await query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS damaged_panels TEXT DEFAULT '[]'`);
       await query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS claim_status TEXT DEFAULT NULL`);
       await query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS pre_siu_status TEXT DEFAULT NULL`);
+      await query(`
+        CREATE TABLE IF NOT EXISTS notifications (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+          user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+          type TEXT NOT NULL,
+          title TEXT NOT NULL,
+          body TEXT,
+          ro_id UUID REFERENCES repair_orders(id) ON DELETE CASCADE,
+          read BOOLEAN DEFAULT FALSE,
+          created_at TIMESTAMPTZ DEFAULT NOW()
+        )
+      `);
+      await query(`
+        CREATE INDEX IF NOT EXISTS idx_notifications_shop_user
+        ON notifications(shop_id, user_id, read, created_at DESC)
+      `);
       console.log('PostgreSQL schema already exists; ensured idempotent statements.');
     }
   } finally {

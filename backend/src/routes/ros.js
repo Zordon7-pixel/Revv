@@ -21,6 +21,12 @@ const STATUS_SMS_LABELS = {
   total_loss: 'has been determined to be a total loss by the insurance carrier',
   siu_hold: 'repair has been temporarily paused due to an insurance investigation (SIU)',
 };
+const NOTIFY_STATUSES = {
+  estimate: 'Estimate Ready',
+  approval: 'Awaiting Approval',
+  ready: 'Vehicle Ready for Pickup',
+  closed: 'RO Closed',
+};
 
 async function sendStatusSMS(ro, toStatus) {
   try {
@@ -39,6 +45,30 @@ async function sendStatusSMS(ro, toStatus) {
   } catch (err) {
     console.error('[StatusSMS] Failed:', err.message);
   }
+}
+
+async function createNotification(shopId, { type, title, body, roId, userId = null }) {
+  try {
+    await dbRun(
+      `INSERT INTO notifications (id, shop_id, user_id, type, title, body, ro_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [uuidv4(), shopId, userId, type, title, body || null, roId || null]
+    );
+  } catch (e) {
+    console.error('[Notification] Failed to create:', e.message);
+  }
+}
+
+function notifyStatusChange(shopId, roId, newStatus) {
+  if (!NOTIFY_STATUSES[newStatus]) return;
+  dbGet('SELECT ro_number, job_type FROM repair_orders WHERE id = $1', [roId]).then((r) => {
+    createNotification(shopId, {
+      type: 'status_change',
+      title: NOTIFY_STATUSES[newStatus],
+      body: `RO #${r?.ro_number} status changed to "${newStatus}"`,
+      roId,
+    });
+  }).catch(() => {});
 }
 
 async function ensureRoCommsTable() {
@@ -486,6 +516,7 @@ router.post('/approval/:token/respond', async (req, res) => {
         'INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by, note) VALUES ($1, $2, $3, $4, $5, $6)',
         [uuidv4(), ro.id, fromStatus, 'approval', null, 'Estimate approved by customer via public approval link']
       );
+      notifyStatusChange(ro.shop_id, ro.id, 'approval');
       await dbRun('UPDATE estimate_approval_links SET responded_at = $1 WHERE token = $2', [now, req.params.token]);
       return res.json({ ok: true, decision: 'approve' });
     }
@@ -517,6 +548,12 @@ router.post('/', auth, async (req, res) => {
       VALUES ($1, $2, $3, $4, $5, $6, 'intake', $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
     `, [id, req.user.shop_id, roNumber, vehicle_id, customer_id, job_type || 'collision', payment_type || 'insurance', claim_number || null, insurer || null, adjuster_name || null, adjuster_phone || null, deductible || 0, today, estimated_delivery || null, notes || null, panelsJson]);
     await dbRun('INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by) VALUES ($1, $2, $3, $4, $5)', [uuidv4(), id, null, 'intake', req.user.id]);
+    createNotification(req.user.shop_id, {
+      type: 'new_ro',
+      title: 'New Repair Order Created',
+      body: `RO #${roNumber} — ${job_type || 'collision'} job has been opened`,
+      roId: id,
+    });
     const ro = await dbGet('SELECT * FROM repair_orders WHERE id = $1', [id]);
     
     // Auto-generate tracking link and send SMS (non-blocking)
@@ -599,6 +636,7 @@ router.put('/:id/status', auth, async (req, res) => {
       await dbRun('UPDATE repair_orders SET status = $1, updated_at = $2 WHERE id = $3', [status, now, req.params.id]);
     }
     await dbRun('INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by, note) VALUES ($1, $2, $3, $4, $5, $6)', [uuidv4(), req.params.id, fromStatus, status, req.user.id, note || null]);
+    notifyStatusChange(req.user.shop_id, req.params.id, status);
     dbGet(
       `SELECT ro.*, v.year, v.make, v.model, c.phone as customer_phone
        FROM repair_orders ro
@@ -666,6 +704,7 @@ router.patch('/:id', auth, async (req, res) => {
           updates.status = 'total_loss';
           await dbRun('INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by, note) VALUES ($1, $2, $3, $4, $5, $6)',
             [uuidv4(), req.params.id, ro.status, 'total_loss', req.user.id, 'Claim marked as Total Loss']);
+          notifyStatusChange(req.user.shop_id, req.params.id, 'total_loss');
           dbGet(
             `SELECT ro.*, v.year, v.make, v.model, c.phone as customer_phone
              FROM repair_orders ro
@@ -679,6 +718,7 @@ router.patch('/:id', auth, async (req, res) => {
           updates.status = 'siu_hold';
           await dbRun('INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by, note) VALUES ($1, $2, $3, $4, $5, $6)',
             [uuidv4(), req.params.id, ro.status, 'siu_hold', req.user.id, 'Claim placed under SIU investigation']);
+          notifyStatusChange(req.user.shop_id, req.params.id, 'siu_hold');
           dbGet(
             `SELECT ro.*, v.year, v.make, v.model, c.phone as customer_phone
              FROM repair_orders ro
@@ -694,6 +734,7 @@ router.patch('/:id', auth, async (req, res) => {
           updates.pre_siu_status = null;
           await dbRun('INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by, note) VALUES ($1, $2, $3, $4, $5, $6)',
             [uuidv4(), req.params.id, ro.status, resumeStatus, req.user.id, 'Claim approved for work — workflow resumed']);
+          notifyStatusChange(req.user.shop_id, req.params.id, resumeStatus);
           dbGet(
             `SELECT ro.*, v.year, v.make, v.model, c.phone as customer_phone
              FROM repair_orders ro
@@ -742,6 +783,7 @@ router.patch('/:id', auth, async (req, res) => {
       await dbRun('UPDATE repair_orders SET status = $1, updated_at = $2 WHERE id = $3', [status, now, req.params.id]);
     }
     await dbRun('INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by, note) VALUES ($1, $2, $3, $4, $5, $6)', [uuidv4(), req.params.id, fromStatus, status, req.user.id, note || null]);
+    notifyStatusChange(req.user.shop_id, req.params.id, status);
     dbGet(
       `SELECT ro.*, v.year, v.make, v.model, c.phone as customer_phone
        FROM repair_orders ro
@@ -828,6 +870,7 @@ router.post('/:id/mark-paid', auth, async (req, res) => {
       'INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by, note) VALUES ($1, $2, $3, $4, $5, $6)',
       [uuidv4(), req.params.id, ro.status, 'closed', req.user.id, `Payment received (${method})`]
     );
+    notifyStatusChange(req.user.shop_id, req.params.id, 'closed');
 
     const updatedRO = await dbGet('SELECT * FROM repair_orders WHERE id = $1', [req.params.id]);
     res.json(await enrichRO(updatedRO));

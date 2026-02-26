@@ -4,6 +4,7 @@ const cors = require('cors');
 const path = require('path');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const notificationsRouter = require('./routes/notifications');
 
 // Refuse to start without JWT_SECRET
 if (!process.env.JWT_SECRET) {
@@ -77,6 +78,7 @@ app.use('/api/payments', require('./routes/payments'));
 app.use('/api/adas', require('./routes/adas'));
 app.use('/api/estimate-assistant', require('./routes/estimateAssistant'));
 app.use('/api/v1', require('./routes/apiV1'));
+app.use('/api/notifications', notificationsRouter);
 
 // Serve uploaded files
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));

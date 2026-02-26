@@ -167,9 +167,11 @@ CREATE TABLE IF NOT EXISTS lunch_breaks (
 CREATE TABLE IF NOT EXISTS notifications (
   id UUID PRIMARY KEY,
   shop_id UUID REFERENCES shops(id) ON DELETE CASCADE,
-  type TEXT,
-  message TEXT,
-  employee_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  type TEXT NOT NULL,
+  title TEXT NOT NULL,
+  body TEXT,
+  ro_id UUID REFERENCES repair_orders(id) ON DELETE CASCADE,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   read BOOLEAN DEFAULT FALSE
 );

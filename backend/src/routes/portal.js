@@ -2,6 +2,10 @@ const router = require('express').Router();
 const { dbGet, dbAll, dbRun } = require('../db');
 const auth   = require('../middleware/auth');
 const { v4: uuidv4 } = require('uuid');
+const path = require('path');
+const fs = require('fs');
+const multer = require('multer');
+const { createNotification } = require('../services/notifications');
 
 const STATUS_MESSAGES = {
   intake:   { label: 'Vehicle Received',        msg: "Your vehicle has been received at the shop and is being checked in.",         emoji: '📋' },
@@ -14,6 +18,34 @@ const STATUS_MESSAGES = {
   delivery: { label: 'Ready for Pickup! 🎉',    msg: "Your vehicle is ready! Please call us to arrange pickup.",                   emoji: '🚗' },
   closed:   { label: 'Repair Complete',          msg: "Your repair is complete and your vehicle has been picked up. Thank you!",    emoji: '⭐' },
 };
+
+const uploadDir = path.join(__dirname, '../../uploads/portal-photos');
+fs.mkdirSync(uploadDir, { recursive: true });
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, uploadDir),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname);
+    cb(null, `${uuidv4()}${ext}`);
+  },
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (!file.mimetype.startsWith('image/')) return cb(new Error('Only image files are allowed'));
+    cb(null, true);
+  },
+});
+
+async function notifyOwnersAndAdmins(shopId, type, title, body, roId) {
+  const users = await dbAll(
+    'SELECT id FROM users WHERE shop_id = $1 AND role = ANY($2::text[])',
+    [shopId, ['owner', 'admin']]
+  );
+  await Promise.all(users.map((user) => createNotification(shopId, user.id, type, title, body, roId)));
+}
 
 router.get('/my-ros', auth, async (req, res) => {
   try {
@@ -197,11 +229,49 @@ router.post('/track/:token/message', async (req, res) => {
       INSERT INTO ro_comms (id, ro_id, shop_id, user_id, type, notes)
       VALUES ($1, $2, $3, $4, $5, $6)
     `, [id, tokenRecord.ro_id, tokenRecord.shop_id, null, 'text', notes.trim()]);
+
+    const ro = await dbGet('SELECT ro_number FROM repair_orders WHERE id = $1', [tokenRecord.ro_id]);
+    await notifyOwnersAndAdmins(
+      tokenRecord.shop_id,
+      'customer_message',
+      'New Customer Message',
+      `Customer sent a new message on RO #${ro?.ro_number || 'N/A'}.`,
+      tokenRecord.ro_id
+    );
     
     res.json({ ok: true, message: 'Message sent to shop' });
   } catch (err) {
     console.error('[Portal Message] Error:', err.message);
     res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/track/:token/photo', upload.single('photo'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
+    const tokenRecord = await dbGet('SELECT ro_id, shop_id FROM portal_tokens WHERE token = $1', [req.params.token]);
+    if (!tokenRecord) return res.status(404).json({ error: 'Tracking link not found' });
+
+    const photoId = uuidv4();
+    const photoUrl = `/uploads/portal-photos/${req.file.filename}`;
+    await dbRun(
+      'INSERT INTO ro_photos (id, ro_id, user_id, photo_url, caption, photo_type) VALUES ($1, $2, $3, $4, $5, $6)',
+      [photoId, tokenRecord.ro_id, null, photoUrl, req.body?.caption || 'Customer upload', 'customer']
+    );
+
+    const ro = await dbGet('SELECT ro_number FROM repair_orders WHERE id = $1', [tokenRecord.ro_id]);
+    await notifyOwnersAndAdmins(
+      tokenRecord.shop_id,
+      'customer_message',
+      'New Customer Photo',
+      `Customer uploaded a photo for RO #${ro?.ro_number || 'N/A'}.`,
+      tokenRecord.ro_id
+    );
+
+    return res.status(201).json({ ok: true, photo_url: photoUrl });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
   }
 });
 

@@ -314,13 +314,24 @@ async function initDb() {
     CREATE TABLE IF NOT EXISTS notifications (
       id TEXT PRIMARY KEY,
       shop_id TEXT NOT NULL,
+      user_id TEXT,
       type TEXT NOT NULL,
-      message TEXT NOT NULL,
-      employee_id TEXT,
+      title TEXT NOT NULL,
+      body TEXT,
+      ro_id TEXT,
       read BOOLEAN DEFAULT FALSE,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     )
   `);
+
+  await pool.query(`ALTER TABLE notifications ADD COLUMN IF NOT EXISTS user_id TEXT`);
+  await pool.query(`ALTER TABLE notifications ADD COLUMN IF NOT EXISTS title TEXT`);
+  await pool.query(`ALTER TABLE notifications ADD COLUMN IF NOT EXISTS body TEXT`);
+  await pool.query(`ALTER TABLE notifications ADD COLUMN IF NOT EXISTS ro_id TEXT`);
+  await pool.query(`ALTER TABLE notifications ADD COLUMN IF NOT EXISTS read BOOLEAN DEFAULT FALSE`);
+  await pool.query(`UPDATE notifications SET body = message WHERE body IS NULL AND message IS NOT NULL`).catch(() => {});
+  await pool.query(`UPDATE notifications SET user_id = employee_id WHERE user_id IS NULL AND employee_id IS NOT NULL`).catch(() => {});
+  await pool.query(`UPDATE notifications SET title = type WHERE title IS NULL`).catch(() => {});
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS ro_comms (

@@ -3,6 +3,7 @@ const { dbGet, dbAll, dbRun } = require('../db');
 const auth = require('../middleware/auth');
 const { requireAdmin } = require('../middleware/roles');
 const { v4: uuidv4 } = require('uuid');
+const { createNotification } = require('../services/notifications');
 
 router.post('/', auth, async (req, res) => {
   try {
@@ -13,6 +14,22 @@ router.post('/', auth, async (req, res) => {
       `INSERT INTO parts_requests (id, ro_id, requested_by, part_name, part_number, quantity, status, notes) VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7)`,
       [id, ro_id, req.user.id, part_name, part_number || null, quantity || 1, notes || null]
     );
+    const ro = await dbGet('SELECT id, ro_number, shop_id FROM repair_orders WHERE id = $1', [ro_id]);
+    if (ro?.shop_id) {
+      const owners = await dbAll('SELECT id FROM users WHERE shop_id = $1 AND role = $2', [ro.shop_id, 'owner']);
+      await Promise.all(
+        owners.map((owner) =>
+          createNotification(
+            ro.shop_id,
+            owner.id,
+            'parts_request',
+            'New Parts Request',
+            `A parts request was submitted for RO #${ro.ro_number || 'N/A'} (${part_name}).`,
+            ro.id
+          )
+        )
+      );
+    }
     res.status(201).json(await dbGet('SELECT * FROM parts_requests WHERE id = $1', [id]));
   } catch (err) {
     res.status(500).json({ error: err.message });
