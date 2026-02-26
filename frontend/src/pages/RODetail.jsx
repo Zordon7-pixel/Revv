@@ -13,6 +13,7 @@ import { searchVendors } from '../data/vendors'
 import { isAdmin, isEmployee } from '../lib/auth'
 import { useLanguage } from '../contexts/LanguageContext'
 import VehicleDiagram from '../components/VehicleDiagram'
+import ClaimStatusCard from '../components/ClaimStatusCard'
 
 const PART_STATUS_META = {
   ordered:     { label: 'Ordered',     cls: 'text-blue-400   bg-blue-900/30   border-blue-700',   icon: Clock },
@@ -495,6 +496,11 @@ export default function RODetail() {
             readOnly={!isAdmin()}
           />
         </div>
+
+        {/* Claim Status — insurance jobs only */}
+        {ro.payment_type === 'insurance' && (
+          <ClaimStatusCard ro={ro} onUpdate={setRo} isAdmin={isAdmin()} />
+        )}
 
         {/* Insurance Adjustor Panel */}
         <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-5 space-y-4">

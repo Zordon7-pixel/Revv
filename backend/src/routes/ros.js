@@ -8,7 +8,7 @@ const { getStatusMessage } = require('../services/notifications');
 const { sendMail } = require('../services/mailer');
 const { v4: uuidv4 } = require('uuid');
 
-const STATUSES = ['intake','estimate','approval','parts','repair','paint','qc','delivery','closed'];
+const STATUSES = ['intake','estimate','approval','parts','repair','paint','qc','delivery','closed','total_loss','siu_hold'];
 const COMM_TYPES = ['call', 'text', 'email', 'in-person'];
 
 async function ensureRoCommsTable() {
@@ -450,7 +450,7 @@ router.put('/:id', auth, async (req, res) => {
   try {
     const ro = await dbGet('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
     if (!ro) return res.status(404).json({ error: 'Not found' });
-    const ALLOWED_RO_FIELDS = ['status','notes','tech_notes','assigned_to','estimate_amount','actual_amount','updated_at','insurance_company','adjuster_name','adjuster_phone','claim_number','deductible','auth_number','job_type','payment_type','insurer','adjuster_email','estimated_delivery','parts_cost','labor_cost','sublet_cost','tax','total','deductible_waived','referral_fee','goodwill_repair_cost','damaged_panels'];
+    const ALLOWED_RO_FIELDS = ['status','notes','tech_notes','assigned_to','estimate_amount','actual_amount','updated_at','insurance_company','adjuster_name','adjuster_phone','claim_number','deductible','auth_number','job_type','payment_type','insurer','adjuster_email','estimated_delivery','parts_cost','labor_cost','sublet_cost','tax','total','deductible_waived','referral_fee','goodwill_repair_cost','damaged_panels','claim_status'];
     const updates = Object.fromEntries(Object.entries(req.body).filter(([k]) => ALLOWED_RO_FIELDS.includes(k)));
     if (Object.keys(updates).length > 0) {
       const profit = calculateProfit({ ...ro, ...updates });
@@ -548,9 +548,32 @@ router.patch('/:id', auth, async (req, res) => {
     if (!ro) return res.status(404).json({ error: 'Not found' });
 
     if (!status) {
-      const ALLOWED_PATCH_FIELDS = ['tech_notes'];
+      const ALLOWED_PATCH_FIELDS = ['tech_notes','damaged_panels','claim_status','parts_cost','labor_cost','sublet_cost','tax','total','notes','estimated_delivery'];
       const updates = Object.fromEntries(Object.entries(otherFields).filter(([k]) => ALLOWED_PATCH_FIELDS.includes(k)));
       if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'No valid fields to update' });
+
+      // Claim status business logic
+      if (updates.claim_status) {
+        const now = new Date().toISOString();
+        if (updates.claim_status === 'total_loss') {
+          updates.status = 'total_loss';
+          await dbRun('INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by, note) VALUES ($1, $2, $3, $4, $5, $6)',
+            [uuidv4(), req.params.id, ro.status, 'total_loss', req.user.id, 'Claim marked as Total Loss']);
+        } else if (updates.claim_status === 'siu') {
+          updates.pre_siu_status = ro.status; // remember where we were
+          updates.status = 'siu_hold';
+          await dbRun('INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by, note) VALUES ($1, $2, $3, $4, $5, $6)',
+            [uuidv4(), req.params.id, ro.status, 'siu_hold', req.user.id, 'Claim placed under SIU investigation']);
+        } else if (updates.claim_status === 'approved') {
+          // Resume from where we were before SIU, or fall back to 'approval'
+          const resumeStatus = ro.pre_siu_status || (ro.status === 'siu_hold' || ro.status === 'total_loss' ? 'approval' : ro.status);
+          updates.status = resumeStatus;
+          updates.pre_siu_status = null;
+          await dbRun('INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by, note) VALUES ($1, $2, $3, $4, $5, $6)',
+            [uuidv4(), req.params.id, ro.status, resumeStatus, req.user.id, 'Claim approved for work — workflow resumed']);
+        }
+      }
+
       updates.updated_at = new Date().toISOString();
       const updateKeys = Object.keys(updates);
       const updateVals = Object.values(updates);
@@ -560,6 +583,17 @@ router.patch('/:id', auth, async (req, res) => {
     }
 
     if (!STATUSES.includes(status)) return res.status(400).json({ error: 'Invalid status' });
+
+    // SIU hold gate: block normal progression while under investigation
+    const normalStatuses = ['intake','estimate','approval','parts','repair','paint','qc','delivery','closed'];
+    if (ro.status === 'siu_hold' && normalStatuses.includes(status)) {
+      return res.status(400).json({ error: 'This RO is under SIU investigation. Clear the SIU hold before changing status.' });
+    }
+
+    // Total loss gate: block progression on total loss jobs
+    if (ro.status === 'total_loss' && normalStatuses.includes(status) && status !== 'closed') {
+      return res.status(400).json({ error: 'This vehicle is a total loss. Only closing is permitted.' });
+    }
 
     // Payment gate: prevent closing without payment
     if (status === 'closed') {

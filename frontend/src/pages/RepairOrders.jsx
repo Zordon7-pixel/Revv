@@ -9,12 +9,14 @@ import PaymentStatusBadge, { normalizePaymentStatus } from '../components/Paymen
 export const STATUS_COLORS = {
   intake: '#64748b', estimate: '#3b82f6', approval: '#eab308',
   parts: '#f97316', repair: '#22c55e', paint: '#a855f7',
-  qc: '#06b6d4', delivery: '#10b981', closed: '#374151'
+  qc: '#06b6d4', delivery: '#10b981', closed: '#374151',
+  total_loss: '#dc2626', siu_hold: '#7c3aed'
 }
 export const STATUS_LABELS = {
   intake: 'Intake', estimate: 'Estimate', approval: 'Approval',
   parts: 'Parts', repair: 'Repair', paint: 'Paint',
-  qc: 'QC Check', delivery: 'Delivery', closed: 'Closed'
+  qc: 'QC Check', delivery: 'Delivery', closed: 'Closed',
+  total_loss: 'Total Loss', siu_hold: 'SIU Hold'
 }
 const STAGES = ['intake', 'estimate', 'approval', 'parts', 'repair', 'paint', 'qc', 'delivery']
 
