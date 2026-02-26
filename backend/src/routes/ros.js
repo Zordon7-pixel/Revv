@@ -4,12 +4,42 @@ const auth = require('../middleware/auth');
 const { requireAdmin } = require('../middleware/roles');
 const { calculateProfit } = require('../services/profit');
 const { sendSMS, isConfigured } = require('../services/sms');
-const { getStatusMessage } = require('../services/notifications');
 const { sendMail } = require('../services/mailer');
 const { v4: uuidv4 } = require('uuid');
 
 const STATUSES = ['intake','estimate','approval','parts','repair','paint','qc','delivery','closed','total_loss','siu_hold'];
 const COMM_TYPES = ['call', 'text', 'email', 'in-person'];
+const STATUS_SMS_LABELS = {
+  intake: 'has been checked in and intake is complete',
+  estimate: 'estimate is ready for your review',
+  approval: 'is awaiting your approval to begin repairs',
+  'in-progress': 'is currently being repaired',
+  'parts-hold': 'is on hold while we wait for parts',
+  qc: 'has passed QC inspection',
+  ready: 'is ready for pickup!',
+  closed: 'repair has been completed and the RO is closed',
+  total_loss: 'has been determined to be a total loss by the insurance carrier',
+  siu_hold: 'repair has been temporarily paused due to an insurance investigation (SIU)',
+};
+
+async function sendStatusSMS(ro, toStatus) {
+  try {
+    const phone = ro?.customer_phone;
+    if (!phone) return;
+    if (!isConfigured()) return;
+    const label = STATUS_SMS_LABELS[toStatus];
+    if (!label) return;
+    const vehicle = [ro.year, ro.make, ro.model].filter(Boolean).join(' ') || 'your vehicle';
+    const roNum = ro.ro_number ? `RO #${ro.ro_number} - ` : '';
+    const trackLine = ro.tracking_token
+      ? `\nTrack status: ${process.env.FRONTEND_URL || 'https://revvshop.app'}/track/${ro.tracking_token}`
+      : '';
+    const msg = `${roNum}${vehicle} ${label}.${trackLine}`;
+    await sendSMS(phone, msg);
+  } catch (err) {
+    console.error('[StatusSMS] Failed:', err.message);
+  }
+}
 
 async function ensureRoCommsTable() {
   await dbRun(`
@@ -481,30 +511,19 @@ router.put('/:id/status', auth, async (req, res) => {
       await dbRun('UPDATE repair_orders SET status = $1, updated_at = $2 WHERE id = $3', [status, now, req.params.id]);
     }
     await dbRun('INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by, note) VALUES ($1, $2, $3, $4, $5, $6)', [uuidv4(), req.params.id, fromStatus, status, req.user.id, note || null]);
+    dbGet(
+      `SELECT ro.*, v.year, v.make, v.model, c.phone as customer_phone
+       FROM repair_orders ro
+       LEFT JOIN vehicles v ON ro.vehicle_id = v.id
+       LEFT JOIN customers c ON ro.customer_id = c.id
+       WHERE ro.id = $1`,
+      [req.params.id]
+    ).then(full => sendStatusSMS(full, status)).catch(() => {});
 
     const updatedRO = await dbGet('SELECT * FROM repair_orders WHERE id = $1', [req.params.id]);
     res.json(await enrichRO(updatedRO));
 
     setImmediate(async () => {
-      try {
-        const smsContext = await dbGet(`
-          SELECT ro.status, c.phone AS customer_phone, v.year, v.make, v.model, s.name AS shop_name
-          FROM repair_orders ro
-          LEFT JOIN customers c ON c.id = ro.customer_id
-          LEFT JOIN vehicles v ON v.id = ro.vehicle_id
-          LEFT JOIN shops s ON s.id = ro.shop_id
-          WHERE ro.id = $1 AND ro.shop_id = $2
-        `, [req.params.id, req.user.shop_id]);
-        if (!smsContext?.customer_phone || !isConfigured()) return;
-        const message = getStatusMessage(smsContext.status, smsContext.shop_name, smsContext.year, smsContext.make, smsContext.model);
-        if (!message) return;
-        const result = await sendSMS(smsContext.customer_phone, message);
-        if (!result.ok) console.error(`[SMS] Failed for RO ${req.params.id}`);
-        else console.log(`[SMS] Sent RO status update for ${req.params.id}`);
-      } catch (err) {
-        console.error(`[SMS] Unexpected error for RO ${req.params.id}:`, err.message);
-      }
-
       // Email notifications on status change
       try {
         const emailContext = await dbGet(`
@@ -559,11 +578,27 @@ router.patch('/:id', auth, async (req, res) => {
           updates.status = 'total_loss';
           await dbRun('INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by, note) VALUES ($1, $2, $3, $4, $5, $6)',
             [uuidv4(), req.params.id, ro.status, 'total_loss', req.user.id, 'Claim marked as Total Loss']);
+          dbGet(
+            `SELECT ro.*, v.year, v.make, v.model, c.phone as customer_phone
+             FROM repair_orders ro
+             LEFT JOIN vehicles v ON ro.vehicle_id = v.id
+             LEFT JOIN customers c ON ro.customer_id = c.id
+             WHERE ro.id = $1`,
+            [req.params.id]
+          ).then(full => sendStatusSMS(full, 'total_loss')).catch(() => {});
         } else if (updates.claim_status === 'siu') {
           updates.pre_siu_status = ro.status; // remember where we were
           updates.status = 'siu_hold';
           await dbRun('INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by, note) VALUES ($1, $2, $3, $4, $5, $6)',
             [uuidv4(), req.params.id, ro.status, 'siu_hold', req.user.id, 'Claim placed under SIU investigation']);
+          dbGet(
+            `SELECT ro.*, v.year, v.make, v.model, c.phone as customer_phone
+             FROM repair_orders ro
+             LEFT JOIN vehicles v ON ro.vehicle_id = v.id
+             LEFT JOIN customers c ON ro.customer_id = c.id
+             WHERE ro.id = $1`,
+            [req.params.id]
+          ).then(full => sendStatusSMS(full, 'siu_hold')).catch(() => {});
         } else if (updates.claim_status === 'approved') {
           // Resume from where we were before SIU, or fall back to 'approval'
           const resumeStatus = ro.pre_siu_status || (ro.status === 'siu_hold' || ro.status === 'total_loss' ? 'approval' : ro.status);
@@ -571,6 +606,14 @@ router.patch('/:id', auth, async (req, res) => {
           updates.pre_siu_status = null;
           await dbRun('INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by, note) VALUES ($1, $2, $3, $4, $5, $6)',
             [uuidv4(), req.params.id, ro.status, resumeStatus, req.user.id, 'Claim approved for work — workflow resumed']);
+          dbGet(
+            `SELECT ro.*, v.year, v.make, v.model, c.phone as customer_phone
+             FROM repair_orders ro
+             LEFT JOIN vehicles v ON ro.vehicle_id = v.id
+             LEFT JOIN customers c ON ro.customer_id = c.id
+             WHERE ro.id = $1`,
+            [req.params.id]
+          ).then(full => sendStatusSMS(full, 'approval')).catch(() => {});
         }
       }
 
@@ -611,30 +654,19 @@ router.patch('/:id', auth, async (req, res) => {
       await dbRun('UPDATE repair_orders SET status = $1, updated_at = $2 WHERE id = $3', [status, now, req.params.id]);
     }
     await dbRun('INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by, note) VALUES ($1, $2, $3, $4, $5, $6)', [uuidv4(), req.params.id, fromStatus, status, req.user.id, note || null]);
+    dbGet(
+      `SELECT ro.*, v.year, v.make, v.model, c.phone as customer_phone
+       FROM repair_orders ro
+       LEFT JOIN vehicles v ON ro.vehicle_id = v.id
+       LEFT JOIN customers c ON ro.customer_id = c.id
+       WHERE ro.id = $1`,
+      [req.params.id]
+    ).then(full => sendStatusSMS(full, status)).catch(() => {});
 
     const updatedRO = await dbGet('SELECT * FROM repair_orders WHERE id = $1', [req.params.id]);
     res.json(await enrichRO(updatedRO));
 
     setImmediate(async () => {
-      try {
-        const smsContext = await dbGet(`
-          SELECT ro.status, c.phone AS customer_phone, v.year, v.make, v.model, s.name AS shop_name
-          FROM repair_orders ro
-          LEFT JOIN customers c ON c.id = ro.customer_id
-          LEFT JOIN vehicles v ON v.id = ro.vehicle_id
-          LEFT JOIN shops s ON s.id = ro.shop_id
-          WHERE ro.id = $1 AND ro.shop_id = $2
-        `, [req.params.id, req.user.shop_id]);
-        if (!smsContext?.customer_phone || !isConfigured()) return;
-        const message = getStatusMessage(smsContext.status, smsContext.shop_name, smsContext.year, smsContext.make, smsContext.model);
-        if (!message) return;
-        const result = await sendSMS(smsContext.customer_phone, message);
-        if (!result.ok) console.error(`[SMS] Failed for RO ${req.params.id}`);
-        else console.log(`[SMS] Sent RO status update for ${req.params.id}`);
-      } catch (err) {
-        console.error(`[SMS] Unexpected error for RO ${req.params.id}:`, err.message);
-      }
-
       // Email notifications on status change
       try {
         const emailContext = await dbGet(`
