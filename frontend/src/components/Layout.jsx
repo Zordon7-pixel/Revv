@@ -1,6 +1,6 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useState, useEffect, useRef } from 'react'
-import { LayoutDashboard, ClipboardList, Users, BarChart3, BarChart2, Settings, UserCog, LogOut, Menu, X, Wrench, Clock, CalendarDays, Bell, Package, CreditCard, Radar } from 'lucide-react'
+import { LayoutDashboard, ClipboardList, Users, BarChart3, BarChart2, Settings, UserCog, LogOut, Menu, X, Wrench, Clock, CalendarDays, Bell, Package, CreditCard, Radar, TrendingUp } from 'lucide-react'
 import FeedbackButton from './FeedbackButton'
 import HelpDesk from './HelpDesk'
 import { getRole, isAdmin } from '../lib/auth'
@@ -20,6 +20,7 @@ const allNav = [
   { to: '/schedule',     icon: CalendarDays,    labelKey: 'nav.schedule',     adminOnly: false },
   { to: '/reports',      icon: BarChart3,       labelKey: 'nav.reports',      adminOnly: true  },
   { to: '/performance',  icon: BarChart2,       labelKey: 'nav.performance',  adminOnly: true  },
+  { to: '/job-costing', icon: TrendingUp,      labelKey: 'nav.jobCosting',   ownerOnly: true  },
   { to: '/team',         icon: UserCog,         labelKey: 'nav.team',         adminOnly: true  },
   { to: '/settings',     icon: Settings,        labelKey: 'nav.settings',     ownerOnly: true  },
 ]

@@ -32,6 +32,7 @@ import TrackPortal from './pages/TrackPortal'
 import ShopProfile from './pages/ShopProfile'
 import ADASCalibration from './pages/ADASCalibration'
 import { LanguageProvider } from './contexts/LanguageContext'
+import JobCosting from './pages/JobCosting'
 
 function PrivateRoute({ children }) {
   return localStorage.getItem('sc_token') ? children : <Navigate to="/login" />
@@ -103,6 +104,7 @@ export default function App() {
             <Route path="users" element={<AdminRoute><Users /></AdminRoute>} />
             <Route path="settings" element={<OwnerRoute><Settings /></OwnerRoute>} />
             <Route path="adas" element={<AdminRoute><ADASCalibration /></AdminRoute>} />
+            <Route path="job-costing" element={<OwnerRoute><JobCosting /></OwnerRoute>} />
           </Route>
         </Routes>
       </BrowserRouter>

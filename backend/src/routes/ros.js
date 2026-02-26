@@ -144,6 +144,38 @@ router.put('/:id/revenue-period', auth, requireAdmin, async (req, res) => {
   }
 });
 
+router.get('/job-cost/summary', auth, requireAdmin, async (req, res) => {
+  try {
+    const { from, to } = req.query;
+    let dateFilter = '';
+    const params = [req.user.shop_id];
+    if (from) { params.push(from); dateFilter += ` AND ro.created_at >= $${params.length}`; }
+    if (to)   { params.push(to + ' 23:59:59'); dateFilter += ` AND ro.created_at <= $${params.length}`; }
+
+    const rows = await dbAll(`
+      SELECT ro.id, ro.ro_number, ro.status, ro.total, ro.parts_cost, ro.labor_cost,
+             ro.sublet_cost, ro.true_profit, ro.created_at,
+             c.name AS customer_name, v.year, v.make, v.model
+      FROM repair_orders ro
+      LEFT JOIN customers c ON c.id = ro.customer_id
+      LEFT JOIN vehicles v ON v.id = ro.vehicle_id
+      WHERE ro.shop_id = $1${dateFilter}
+      ORDER BY ro.created_at DESC
+    `, params);
+
+    const totalJobs = rows.length;
+    const totalRevenue = rows.reduce((s, r) => s + parseFloat(r.total || 0), 0);
+    const totalCost = rows.reduce((s, r) => s + parseFloat(r.parts_cost || 0) + parseFloat(r.labor_cost || 0) + parseFloat(r.sublet_cost || 0), 0);
+    const grossProfit = rows.reduce((s, r) => s + parseFloat(r.true_profit || 0), 0);
+    const profitableCount = rows.filter(r => parseFloat(r.true_profit || 0) > 0).length;
+    const avgMargin = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0;
+
+    res.json({ totalJobs, totalRevenue, totalCost, grossProfit, avgMargin, profitableCount, rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/:id', auth, async (req, res) => {
   try {
     const ro = await dbGet('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);

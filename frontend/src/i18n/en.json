@@ -13,7 +13,8 @@
     "team": "Team",
     "users": "Users",
     "settings": "Settings",
-    "performance": "Performance"
+    "performance": "Performance",
+    "jobCosting": "Job Costing"
   },
   "common": {
     "save": "Save",
