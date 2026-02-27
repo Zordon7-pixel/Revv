@@ -89,6 +89,8 @@ export default function RODetail() {
   const [showCommForm, setShowCommForm] = useState(false)
   const [commForm, setCommForm] = useState({ type: 'call', notes: '' })
   const [savingComm, setSavingComm] = useState(false)
+  const [inspectionSummary, setInspectionSummary] = useState([])
+  const [creatingInspection, setCreatingInspection] = useState(false)
 
   const userIsAdmin = isAdmin()
   const userIsEmployee = isEmployee()
@@ -96,6 +98,7 @@ export default function RODetail() {
   const load = () => api.get(`/ros/${id}`).then(r => { setRo(r.data); setForm(r.data); setParts(r.data.parts || []); setTechNotes(r.data.tech_notes || '') })
   const loadPartsRequests = () => api.get(`/parts-requests/${id}`).then(r => setPartsRequests(r.data.requests || [])).catch(() => {})
   const loadComms = () => api.get(`/ros/${id}/comms`).then(r => setComms(r.data.comms || [])).catch(() => setComms([]))
+  const loadInspections = () => api.get(`/inspections/ro/${id}`).then(r => setInspectionSummary(r.data.inspections || [])).catch(() => setInspectionSummary([]))
 
   useEffect(() => { load() }, [id])
   useEffect(() => {
@@ -106,6 +109,7 @@ export default function RODetail() {
   }, [])
   useEffect(() => { loadPartsRequests() }, [id])
   useEffect(() => { loadComms() }, [id])
+  useEffect(() => { loadInspections() }, [id])
 
   async function addPart(e) {
     e.preventDefault(); setSavingPart(true)
@@ -311,12 +315,32 @@ export default function RODetail() {
     }
   }
 
+  async function startInspection() {
+    setCreatingInspection(true)
+    try {
+      const { data } = await api.post('/inspections', { ro_id: id })
+      navigate(`/ros/${id}/inspection/${data.inspection.id}`)
+    } catch (err) {
+      alert(err?.response?.data?.error || 'Could not start inspection')
+    } finally {
+      setCreatingInspection(false)
+    }
+  }
+
   if (!ro) return <div className="flex items-center justify-center h-64 text-slate-500">{t('common.loading')}</div>
 
   const p = ro.profit || {}
   const currentIdx = STAGES.indexOf(ro.status)
   const paymentStatus = normalizePaymentStatus(ro.payment_status, ro.payment_received)
   const paymentAmount = Number(ro.total || ro.parts_cost || 0)
+  const latestInspection = inspectionSummary[0] || null
+  const inspectionStatusMeta = latestInspection
+    ? latestInspection.status === 'viewed'
+      ? { label: 'Viewed', cls: 'bg-emerald-900/30 border-emerald-700/40 text-emerald-300' }
+      : latestInspection.status === 'sent'
+        ? { label: 'Sent', cls: 'bg-blue-900/30 border-blue-700/40 text-blue-300' }
+        : { label: 'Draft', cls: 'bg-yellow-900/30 border-yellow-700/40 text-yellow-300' }
+    : { label: 'No Inspection', cls: 'bg-slate-900/30 border-slate-700/40 text-slate-300' }
   const daysIn = ro.intake_date ? Math.floor((Date.now() - new Date(ro.intake_date)) / 86400000) : 0
   const daysColor = daysIn > 14 ? 'text-red-400' : daysIn > 7 ? 'text-yellow-400' : 'text-emerald-400'
   const inp = 'w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500'
@@ -398,6 +422,39 @@ export default function RODetail() {
           Approval link ready: <span className="font-mono break-all">{approvalLink}</span>
         </div>
       )}
+
+      <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide">Digital Inspection</h2>
+          <div className="mt-1 flex items-center gap-2">
+            <span className={`text-xs font-semibold px-2 py-1 rounded-full border ${inspectionStatusMeta.cls}`}>
+              {inspectionStatusMeta.label}
+            </span>
+            {latestInspection?.status && (
+              <span className="text-xs text-slate-500">
+                Last updated {new Date(latestInspection.updated_at).toLocaleString()}
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          {latestInspection && (
+            <button
+              onClick={() => navigate(`/ros/${id}/inspection/${latestInspection.id}`)}
+              className="text-xs bg-[#2a2d3e] hover:bg-[#3a3d4e] text-slate-200 font-medium px-3 py-1.5 rounded-lg transition-colors"
+            >
+              Open Latest
+            </button>
+          )}
+          <button
+            onClick={startInspection}
+            disabled={creatingInspection}
+            className="text-xs bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] font-semibold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60"
+          >
+            {creatingInspection ? 'Starting...' : 'Start Inspection'}
+          </button>
+        </div>
+      </div>
 
       {/* Progress */}
       <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
