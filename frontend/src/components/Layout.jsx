@@ -1,6 +1,6 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useState } from 'react'
-import { LayoutDashboard, ClipboardList, Users, BarChart3, BarChart2, Settings, UserCog, LogOut, Menu, Wrench, Clock, CalendarDays, Package, CreditCard, Radar, TrendingUp } from 'lucide-react'
+import { LayoutDashboard, ClipboardList, Users, BarChart3, BarChart2, Settings, UserCog, LogOut, Menu, Wrench, Clock, CalendarDays, Package, CreditCard, Radar, TrendingUp, X } from 'lucide-react'
 import FeedbackButton from './FeedbackButton'
 import HelpDesk from './HelpDesk'
 import NotificationBell from './NotificationBell'
@@ -28,7 +28,7 @@ const allNav = [
 
 export default function Layout() {
   const { t } = useLanguage()
-  const [open, setOpen] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
   const navigate = useNavigate()
   const admin = isAdmin()
   const staff = isEmployee()
@@ -70,7 +70,7 @@ export default function Layout() {
             className={({ isActive }) =>
               `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all ${isActive ? 'bg-indigo-600 text-white font-medium' : 'text-slate-400 hover:bg-[#2a2d3e] hover:text-white'}`
             }
-            onClick={() => setOpen(false)}>
+            onClick={() => setSidebarOpen(false)}>
             <Icon size={16} /> {t(labelKey)}
           </NavLink>
         ))}
@@ -94,20 +94,29 @@ export default function Layout() {
       </aside>
 
       {/* Mobile sidebar */}
-      {open && (
-        <div className="fixed inset-0 z-50 md:hidden">
-          <div className="absolute inset-0 bg-black/60" onClick={() => setOpen(false)} />
-          <aside className="absolute left-0 top-0 bottom-0 w-56 bg-[#1a1d2e] border-r border-[#2a2d3e]">
+      <div className={`fixed inset-0 z-50 md:hidden transition-opacity ${sidebarOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}>
+        <div className="absolute inset-0 bg-black/60" onClick={() => setSidebarOpen(false)} />
+        <aside className={`fixed inset-y-0 left-0 z-50 w-56 bg-[#1a1d2e] border-r border-[#2a2d3e] transform transition-transform duration-200 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+          <div className="flex justify-end p-3 border-b border-[#2a2d3e]">
+            <button
+              onClick={() => setSidebarOpen(false)}
+              className="text-slate-400 hover:text-white"
+              aria-label="Close sidebar"
+            >
+              <X size={18} />
+            </button>
+          </div>
+          <div className="h-[calc(100%-57px)]">
             <SidebarContent />
-          </aside>
-        </div>
-      )}
+          </div>
+        </aside>
+      </div>
 
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Mobile topbar */}
         <header className="md:hidden flex items-center gap-3 px-4 py-3 bg-[#1a1d2e] border-b border-[#2a2d3e]">
-          <button onClick={() => setOpen(true)} className="text-slate-400 hover:text-white">
+          <button onClick={() => setSidebarOpen(true)} className="text-slate-400 hover:text-white">
             <Menu size={20} />
           </button>
           <div className="flex items-center gap-2 flex-1">

@@ -121,8 +121,8 @@ export default function AddROModal({ onClose, onSaved }) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-      <div className="bg-[#1a1d2e] rounded-2xl border border-[#2a2d3e] w-full max-w-lg max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-0 sm:p-4">
+      <div className="bg-[#1a1d2e] border border-[#2a2d3e] sm:max-w-2xl sm:rounded-xl rounded-none w-full h-screen sm:h-auto sm:max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-5 border-b border-[#2a2d3e]">
           <h2 className="font-bold text-white">{t('ro.addRO')}</h2>
           <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={18} /></button>
@@ -153,13 +153,13 @@ export default function AddROModal({ onClose, onSaved }) {
           {step === 2 && (
             <>
               <h3 className="text-xs font-bold text-indigo-400 uppercase tracking-wide">Step 2 - {t('common.vehicle')}</h3>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 <div><label className={lbl}>{t('common.year')} *</label><input className={inp} value={form.year} onChange={e => set('year', e.target.value)} placeholder="2021" /></div>
                 <div><label className={lbl}>{t('common.make')} *</label><input className={inp} value={form.make} onChange={e => set('make', e.target.value)} placeholder="Toyota" /></div>
                 <div><label className={lbl}>{t('common.model')} *</label><input className={inp} value={form.model} onChange={e => set('model', e.target.value)} placeholder="Camry" /></div>
               </div>
               <div><label className={lbl}>{t('common.vin')}</label><input className={inp} value={form.vin} onChange={e => set('vin', e.target.value)} placeholder="1HGCV1F30KA..." /></div>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <div><label className={lbl}>Color</label><input className={inp} value={form.color} onChange={e => set('color', e.target.value)} placeholder="Silver" /></div>
                 <div><label className={lbl}>Plate</label><input className={inp} value={form.plate} onChange={e => set('plate', e.target.value)} placeholder="ABC1234" /></div>
               </div>
@@ -211,7 +211,7 @@ export default function AddROModal({ onClose, onSaved }) {
                     />
                   </div>
                   <div><label className={lbl}>Claim #</label><input className={inp} value={form.claim_number} onChange={e => set('claim_number', e.target.value)} placeholder="CLM-2026-XXXXX" /></div>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <div><label className={lbl}>Adjuster Name</label><input className={inp} value={form.adjuster_name} onChange={e => set('adjuster_name', e.target.value)} /></div>
                     <div><label className={lbl}>Adjuster Phone</label><input className={inp} value={form.adjuster_phone} onChange={e => set('adjuster_phone', e.target.value)} /></div>
                   </div>
@@ -266,7 +266,7 @@ export default function AddROModal({ onClose, onSaved }) {
             {step > 1 ? `← ${t('common.back')}` : t('common.cancel')}
           </button>
           <div className="flex items-center gap-2">
-            {[1,2,3].map(i => <div key={i} className={`w-2 h-2 rounded-full ${step>=i ? 'bg-indigo-500' : 'bg-[#2a2d3e]'}`} />)}
+            {[1,2,3].map(i => <div key={i} className={`w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full ${step>=i ? 'bg-indigo-500' : 'bg-[#2a2d3e]'}`} />)}
           </div>
           {step < 3 ? (
             <button onClick={() => {

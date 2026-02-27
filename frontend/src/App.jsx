@@ -1,6 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { useState, useEffect } from 'react'
 import Layout from './components/Layout'
+import PublicOnlyRoute from './components/PublicOnlyRoute'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import RepairOrders from './pages/RepairOrders'
@@ -33,33 +33,35 @@ import ShopProfile from './pages/ShopProfile'
 import ADASCalibration from './pages/ADASCalibration'
 import { LanguageProvider } from './contexts/LanguageContext'
 import JobCosting from './pages/JobCosting'
+import Landing from './pages/Landing'
+import { getToken } from './lib/auth'
 
 function PrivateRoute({ children }) {
-  return localStorage.getItem('sc_token') ? children : <Navigate to="/login" />
+  return getToken() ? children : <Navigate to="/login" />
 }
 
 function AdminRoute({ children }) {
-  if (!localStorage.getItem('sc_token')) return <Navigate to="/login" />
+  if (!getToken()) return <Navigate to="/login" />
   try {
-    const role = JSON.parse(atob(localStorage.getItem('sc_token').split('.')[1])).role
+    const role = JSON.parse(atob(getToken().split('.')[1])).role
     if (!['owner','admin'].includes(role)) return <Navigate to="/" />
   } catch {}
   return children
 }
 
 function OwnerRoute({ children }) {
-  if (!localStorage.getItem('sc_token')) return <Navigate to="/login" />
+  if (!getToken()) return <Navigate to="/login" />
   try {
-    const role = JSON.parse(atob(localStorage.getItem('sc_token').split('.')[1])).role
+    const role = JSON.parse(atob(getToken().split('.')[1])).role
     if (role !== 'owner' && role !== 'admin') return <Navigate to="/" />
   } catch {}
   return children
 }
 
 function EmployeeOnlyRoute({ children }) {
-  if (!localStorage.getItem('sc_token')) return <Navigate to="/login" />
+  if (!getToken()) return <Navigate to="/login" />
   try {
-    const role = JSON.parse(atob(localStorage.getItem('sc_token').split('.')[1])).role
+    const role = JSON.parse(atob(getToken().split('.')[1])).role
     if (!['employee', 'staff'].includes(role)) return <Navigate to="/" />
   } catch {
     return <Navigate to="/" />
@@ -72,6 +74,7 @@ export default function App() {
     <LanguageProvider>
       <BrowserRouter>
         <Routes>
+          <Route path="/" element={<PublicOnlyRoute><Landing /></PublicOnlyRoute>} />
           <Route path="/login" element={<Login />} />
           <Route path="/superadmin/login" element={<SuperAdminLogin />} />
           <Route path="/superadmin" element={<SuperAdminRoute><SuperAdminDashboard /></SuperAdminRoute>} />
@@ -86,8 +89,7 @@ export default function App() {
           <Route path="/portal" element={<PrivateRoute><Portal /></PrivateRoute>} />
           <Route path="/onboarding" element={<PrivateRoute><Onboarding /></PrivateRoute>} />
           <Route path="/claim/:token" element={<ClaimPortal />} />
-          <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
-            <Route index element={<Dashboard />} />
+          <Route element={<PrivateRoute><Layout /></PrivateRoute>}>
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="ros" element={<RepairOrders />} />
             <Route path="parts" element={<OwnerRoute><PartsOnOrder /></OwnerRoute>} />

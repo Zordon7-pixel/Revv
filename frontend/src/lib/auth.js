@@ -1,5 +1,9 @@
+export function getToken() {
+  return localStorage.getItem('sc_token')
+}
+
 export function getTokenPayload() {
-  const token = localStorage.getItem('sc_token')
+  const token = getToken()
   if (!token) return null
   try {
     return JSON.parse(atob(token.split('.')[1]))

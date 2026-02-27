@@ -166,7 +166,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {stats.map(s => (
           <div key={s.label} className={`${s.card} rounded-xl p-4 border border-[#2a2d3e] shadow-sm`}>
             <div className={`h-1.5 w-10 rounded-full ${s.accent} mb-3 opacity-90`} />
@@ -228,7 +228,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      <div className="grid md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
           <h2 className="font-semibold text-sm text-white mb-3">Jobs by Stage</h2>
           <div className="space-y-2">

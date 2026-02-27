@@ -332,7 +332,7 @@ export default function RODetail() {
           <h1 className="text-xl font-bold text-white">{ro.ro_number}</h1>
           <p className="text-slate-500 text-sm truncate">{ro.vehicle?.year} {ro.vehicle?.make} {ro.vehicle?.model} · {ro.customer?.name}</p>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
           <span className={`text-xs font-bold ${daysColor}`}>{daysIn}d in shop</span>
           <StatusBadge status={ro.status} />
           <PaymentStatusBadge status={paymentStatus} paymentReceived={ro.payment_received} />
@@ -342,7 +342,7 @@ export default function RODetail() {
             </span>
           )}
           {ro.status === 'estimate_sent' && !ro.estimate_approved_at && (
-            <button onClick={approveEstimate} disabled={approvingEstimate} className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+            <button onClick={approveEstimate} disabled={approvingEstimate} className="w-full sm:w-auto flex items-center justify-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
               <CheckCircle size={12} /> {approvingEstimate ? 'Approving...' : `${t('portal.approveBtn')} ${t('ro.estimate')}`}
             </button>
           )}
@@ -350,42 +350,42 @@ export default function RODetail() {
             <button
               onClick={sendForApproval}
               disabled={sendingForApproval}
-              className="flex items-center gap-1 bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+              className="w-full sm:w-auto flex items-center justify-center gap-1 bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
             >
               <Mail size={12} /> {sendingForApproval ? 'Generating Link...' : 'Send for Approval'}
             </button>
           )}
           {ro.status !== 'closed' && !ro.payment_received && (
-            <button onClick={() => setShowMarkPaidModal(true)} className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
+            <button onClick={() => setShowMarkPaidModal(true)} className="w-full sm:w-auto flex items-center justify-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
               <DollarSign size={12} /> {t('ro.paymentReceived')}
             </button>
           )}
           {paymentStatus !== 'succeeded' && paymentAmount > 0 && (
             <button
               onClick={() => setShowPaymentModal(true)}
-              className="flex items-center gap-1 bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
+              className="w-full sm:w-auto flex items-center justify-center gap-1 bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
             >
               <CreditCard size={12} /> Collect Payment
             </button>
           )}
           {currentIdx < STAGES.length - 1 && (
-            <button onClick={advance} className="flex items-center gap-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
+            <button onClick={advance} className="w-full sm:w-auto flex items-center justify-center gap-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
               → {STATUS_LABELS[STAGES[currentIdx+1]]}
             </button>
           )}
           <button onClick={() => window.open(`/invoice/${id}`, '_blank')}
-            className="flex items-center gap-1 bg-[#2a2d3e] hover:bg-[#3a3d4e] text-slate-300 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
+            className="w-full sm:w-auto flex items-center justify-center gap-1 bg-[#2a2d3e] hover:bg-[#3a3d4e] text-slate-300 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
             <Printer size={12} /> {t('ro.invoice')}
           </button>
           {!editing
-            ? <button onClick={() => setEditing(true)} className="flex items-center gap-1 bg-[#2a2d3e] hover:bg-[#3a3d4e] text-slate-300 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
+            ? <button onClick={() => setEditing(true)} className="w-full sm:w-auto flex items-center justify-center gap-1 bg-[#2a2d3e] hover:bg-[#3a3d4e] text-slate-300 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
                 <Pencil size={12} /> {t('common.edit')}
               </button>
-            : <div className="flex gap-1">
-                <button onClick={save} disabled={saving} className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
+            : <div className="flex gap-1 w-full sm:w-auto">
+                <button onClick={save} disabled={saving} className="flex-1 sm:flex-none w-full sm:w-auto flex items-center justify-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
                   <Save size={12} /> {saving ? 'Saving...' : t('common.save')}
                 </button>
-                <button onClick={() => { setEditing(false); setForm(ro) }} className="flex items-center gap-1 bg-[#2a2d3e] text-slate-400 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
+                <button onClick={() => { setEditing(false); setForm(ro) }} className="flex-1 sm:flex-none w-full sm:w-auto flex items-center justify-center gap-1 bg-[#2a2d3e] text-slate-400 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
                   <X size={12} />
                 </button>
               </div>
@@ -497,13 +497,17 @@ export default function RODetail() {
           <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-4 flex items-center gap-1.5">
             <Car size={12} /> Damage Diagram
           </h2>
-          <VehicleDiagram
-            value={(() => { try { return JSON.parse(ro.damaged_panels || '[]') } catch { return [] } })()}
-            onChange={async (panels) => {
-              try { await api.patch(`/ros/${ro.id}`, { damaged_panels: JSON.stringify(panels) }) } catch {}
-            }}
-            readOnly={!isAdmin() && !isEmployee()}
-          />
+          <div className="overflow-auto">
+            <div className="min-w-[580px] sm:min-w-0">
+              <VehicleDiagram
+                value={(() => { try { return JSON.parse(ro.damaged_panels || '[]') } catch { return [] } })()}
+                onChange={async (panels) => {
+                  try { await api.patch(`/ros/${ro.id}`, { damaged_panels: JSON.stringify(panels) }) } catch {}
+                }}
+                readOnly={!isAdmin() && !isEmployee()}
+              />
+            </div>
+          </div>
         </div>
 
         {/* Claim Status — insurance jobs only */}
@@ -526,7 +530,7 @@ export default function RODetail() {
           ) : claimLink.submitted_at ? (
             <div className="space-y-3">
               <div className="flex items-center gap-2 text-green-400 text-xs font-medium"><CheckCircle size={14} /> Assessment Received</div>
-              <div className="grid grid-cols-2 gap-3 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                 <div><span className="text-slate-500">Adjustor</span><p className="text-white">{claimLink.adjustor_name} — {claimLink.adjustor_company}</p></div>
                 <div><span className="text-slate-500">Submitted</span><p className="text-white">{new Date(claimLink.submitted_at).toLocaleDateString()}</p></div>
                 <div><span className="text-slate-500">Approved Labor</span><p className="text-white">${(claimLink.approved_labor||0).toLocaleString()}</p></div>
@@ -753,8 +757,8 @@ export default function RODetail() {
 
           {showPartsReqForm && (
             <form onSubmit={submitPartsRequest} className="bg-[#0f1117] rounded-xl p-4 border border-[#2a2d3e] mb-4 space-y-3">
-              <div className="grid grid-cols-2 gap-2">
-                <div className="col-span-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div className="sm:col-span-2">
                   <label className="text-[10px] text-slate-500 block mb-1">Part Name *</label>
                   <input
                     className={inp + ' w-full'}
@@ -783,7 +787,7 @@ export default function RODetail() {
                     onChange={e => setPartsReqForm(f => ({ ...f, quantity: +e.target.value }))}
                   />
                 </div>
-                <div className="col-span-2">
+                <div className="sm:col-span-2">
                   <label className="text-[10px] text-slate-500 block mb-1">Notes</label>
                   <input
                     className={inp + ' w-full'}
@@ -1031,8 +1035,8 @@ export default function RODetail() {
         {/* Add Part Form */}
         {showAddPart && (
           <form onSubmit={addPart} className="bg-[#0f1117] rounded-xl p-4 border border-[#2a2d3e] mb-4 space-y-3">
-            <div className="grid grid-cols-2 gap-2">
-              <div className="col-span-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div className="sm:col-span-2">
                 <label className="text-[10px] text-slate-500 block mb-1">Part Name *</label>
                 <input className={inp} required value={partForm.part_name} onChange={e=>setPartForm(f=>({...f,part_name:e.target.value}))} placeholder="Front bumper assembly" />
               </div>
@@ -1064,7 +1068,7 @@ export default function RODetail() {
                 <label className="text-[10px] text-slate-500 block mb-1">Qty</label>
                 <input type="number" min="1" className={inp} value={partForm.quantity} onChange={e=>setPartForm(f=>({...f,quantity:e.target.value}))} />
               </div>
-              <div className="col-span-2">
+              <div className="sm:col-span-2">
                 <label className="text-[10px] text-slate-500 block mb-1">Tracking Number (optional — UPS / FedEx / USPS / DHL)</label>
                 <input className={inp} value={partForm.tracking_number} onChange={e=>setPartForm(f=>({...f,tracking_number:e.target.value}))} placeholder="1Z999AA10123456784 or 94001116990045349715" />
                 <p className="text-[9px] text-slate-600 mt-0.5">Carrier is auto-detected. Status updates automatically when you have a tracking API key in Settings.</p>
