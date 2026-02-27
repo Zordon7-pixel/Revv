@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Plus, ChevronRight, Search } from 'lucide-react'
 import api from '../lib/api'
+import { isAdmin, isOwner } from '../lib/auth'
 import AddROModal from '../components/AddROModal'
 import StatusBadge from '../components/StatusBadge'
 import PaymentStatusBadge, { normalizePaymentStatus } from '../components/PaymentStatusBadge'
@@ -25,7 +26,11 @@ export default function RepairOrders() {
   const [showAdd, setShowAdd] = useState(false)
   const [techs, setTechs] = useState([])
   const [filters, setFilters] = useState({ search: '', status: 'all', tech: 'all' })
+  const [selected, setSelected] = useState(new Set())
+  const [bulkStatus, setBulkStatus] = useState('')
+  const [bulkLoading, setBulkLoading] = useState(false)
   const navigate = useNavigate()
+  const canBulk = isAdmin() || isOwner()
 
   const load = () => api.get('/ros').then((r) => setRos(r.data.ros || []))
 
@@ -66,6 +71,22 @@ export default function RepairOrders() {
 
   function clearFilters() {
     setFilters({ search: '', status: 'all', tech: 'all' })
+  }
+
+  function toggleSelect(id) {
+    setSelected((s) => {
+      const n = new Set(s)
+      n.has(id) ? n.delete(id) : n.add(id)
+      return n
+    })
+  }
+
+  function toggleAll() {
+    if (selected.size === ros.length) {
+      setSelected(new Set())
+    } else {
+      setSelected(new Set(ros.map((r) => r.id)))
+    }
   }
 
   return (
@@ -125,6 +146,58 @@ export default function RepairOrders() {
         </div>
       </div>
 
+      {selected.size > 0 && canBulk && (
+        <div className="flex items-center gap-3 mb-3 p-3 bg-indigo-900/20 border border-indigo-700/40 rounded-xl">
+          <input
+            type="checkbox"
+            checked={selected.size === ros.length && ros.length > 0}
+            onChange={toggleAll}
+            className="accent-indigo-500 cursor-pointer"
+          />
+          <span className="text-xs font-semibold text-indigo-300">{selected.size} selected</span>
+          <select
+            value={bulkStatus}
+            onChange={(e) => setBulkStatus(e.target.value)}
+            className="text-xs bg-[#0f1117] border border-[#2a2d3e] text-white rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500"
+          >
+            <option value="">Change status to...</option>
+            <option value="intake">Intake</option>
+            <option value="estimate">Estimate</option>
+            <option value="approval">Approval</option>
+            <option value="in-progress">In Progress</option>
+            <option value="parts-hold">Parts Hold</option>
+            <option value="qc">QC</option>
+            <option value="ready">Ready</option>
+            <option value="closed">Closed</option>
+          </select>
+          <button
+            disabled={!bulkStatus || bulkLoading}
+            onClick={async () => {
+              if (!bulkStatus) return
+              setBulkLoading(true)
+              try {
+                await api.patch('/ros/bulk', { ids: [...selected], status: bulkStatus })
+                setSelected(new Set())
+                setBulkStatus('')
+                load()
+              } catch (e) {
+                console.error('Bulk update failed', e)
+              }
+              setBulkLoading(false)
+            }}
+            className="text-xs bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white px-3 py-1.5 rounded-lg transition-colors"
+          >
+            {bulkLoading ? 'Updating...' : 'Apply'}
+          </button>
+          <button
+            onClick={() => setSelected(new Set())}
+            className="text-xs text-slate-400 hover:text-white ml-auto"
+          >
+            Clear
+          </button>
+        </div>
+      )}
+
       {filteredRos.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 gap-4 bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl">
           <img src="/empty-ros.png" alt="No repair orders" className="w-40 h-40 opacity-80 object-contain" />
@@ -141,6 +214,16 @@ export default function RepairOrders() {
                 onClick={() => navigate(`/ros/${ro.id}`)}
                 className="bg-[#1a1d2e] border border-[#2a2d3e] hover:border-[#EAB308]/50 rounded-xl p-3 cursor-pointer transition-colors"
               >
+                {canBulk && (
+                  <div className="mb-2" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={selected.has(ro.id)}
+                      onChange={() => toggleSelect(ro.id)}
+                      className="accent-indigo-500 cursor-pointer"
+                    />
+                  </div>
+                )}
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <p className="text-[#EAB308] text-xs font-bold">{ro.ro_number}</p>
@@ -179,6 +262,16 @@ export default function RepairOrders() {
                       <div key={ro.id} onClick={() => navigate(`/ros/${ro.id}`)}
                         className="bg-[#1a1d2e] border border-[#2a2d3e] hover:border-[#EAB308]/50 rounded-xl p-3 transition-all duration-150 hover:bg-[#1e2235] hover:scale-[1.01] cursor-pointer group"
                         style={{ borderLeft: `3px solid ${STATUS_COLORS[stage]}` }}>
+                        {canBulk && (
+                          <div className="mb-2" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              checked={selected.has(ro.id)}
+                              onChange={() => toggleSelect(ro.id)}
+                              className="accent-indigo-500 cursor-pointer"
+                            />
+                          </div>
+                        )}
                         <div className="flex items-start justify-between gap-2 mb-2">
                           <span className="text-xs font-bold text-[#EAB308]">{ro.ro_number}</span>
                           <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase ${ro.payment_type === 'cash' ? 'bg-emerald-900/40 text-emerald-400' : 'bg-blue-900/40 text-blue-400'}`}>
