@@ -7,7 +7,7 @@ async function runMigrations() {
     return;
   }
 
-  const { pool, query } = require('./postgres');
+  const { query } = require('./postgres');
   const schemaPath = path.join(__dirname, 'schema.pg.sql');
   const schemaSql = fs.readFileSync(schemaPath, 'utf8');
 
@@ -65,8 +65,8 @@ async function runMigrations() {
     }
 
     console.log('[migrate] All idempotent migrations complete.');
-  } finally {
-    await pool.end();
+  } catch (err) {
+    console.error('[migrate] Fatal migration error:', err.message);
   }
 }
 

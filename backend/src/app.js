@@ -111,6 +111,16 @@ async function runCarryoverForActiveShops() {
 
 initDb()
   .then(async () => {
+    // Run PostgreSQL migrations (idempotent — safe every startup)
+    if (process.env.DATABASE_URL) {
+      try {
+        const { runMigrations } = require('./db/migrate');
+        await runMigrations();
+      } catch (e) {
+        console.error('[migrate] Migration error:', e.message);
+      }
+    }
+
     // Seed demo data on first run (safe to call every startup — skips if already seeded)
     try {
       await require('./db/seed').runSeed();
