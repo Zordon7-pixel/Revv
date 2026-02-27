@@ -25,6 +25,7 @@ export default function Settings() {
   const [clearing, setClearing]   = useState(false)
   const [smsStatus, setSmsStatus] = useState({ configured: false, sms_phone: null })
   const [smsLoading, setSmsLoading] = useState(true)
+  const [smsNotificationsEnabled, setSmsNotificationsEnabled] = useState(true)
   const [smsExamplesOpen, setSmsExamplesOpen] = useState(false)
   const [showTestSmsModal, setShowTestSmsModal] = useState(false)
   const [testPhone, setTestPhone] = useState('')
@@ -67,6 +68,9 @@ export default function Settings() {
       .then(r => setSmsStatus({ configured: !!r.data.configured, sms_phone: r.data.sms_phone || r.data.phone || null }))
       .catch(() => setSmsStatus({ configured: false, sms_phone: null }))
       .finally(() => setSmsLoading(false))
+    api.get('/settings')
+      .then(r => setSmsNotificationsEnabled(r?.data?.sms_notifications_enabled !== false))
+      .catch(() => setSmsNotificationsEnabled(true))
     api.get('/users/me').then(r => setProfile({ name: r.data.name || '', phone: r.data.phone || '' }))
   }, [])
 
@@ -179,6 +183,9 @@ export default function Settings() {
         geofence_radius:          form.geofence_radius ? parseFloat(form.geofence_radius) / 3281 : 0.5,
         tracking_api_key:         form.tracking_api_key || null,
         monthly_revenue_target:   parseInt(form.monthly_revenue_target, 10) || 85000,
+      })
+      await api.patch('/settings', {
+        sms_notifications_enabled: !!smsNotificationsEnabled,
       })
       setShop(data)
       setForm(f => ({
@@ -535,6 +542,23 @@ export default function Settings() {
 
         {/* SMS Notifications */}
         <div className="bg-[#1a1d2e] rounded-2xl p-5 border border-[#2a2d3e] space-y-4">
+          <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-xl p-4 flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-white">SMS Status Notifications</p>
+              <p className="text-xs text-slate-400 mt-1">Automatically text customers when their repair status changes (requires Twilio)</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSmsNotificationsEnabled(v => !v)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${smsNotificationsEnabled ? 'bg-emerald-500' : 'bg-slate-600'}`}
+              aria-pressed={smsNotificationsEnabled}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${smsNotificationsEnabled ? 'translate-x-6' : 'translate-x-1'}`}
+              />
+            </button>
+          </div>
+
           {smsLoading ? (
             <div className="flex items-center gap-3 text-slate-400 text-sm">
               <div className="w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />

@@ -28,6 +28,7 @@ async function initDb() {
       twilio_account_sid TEXT,
       twilio_auth_token TEXT,
       twilio_phone_number TEXT,
+      sms_notifications_enabled BOOLEAN DEFAULT TRUE,
       monthly_revenue_target INTEGER DEFAULT 85000,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     );
@@ -408,6 +409,11 @@ async function initDb() {
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
       UNIQUE(shop_id, year_month)
     )
+  `);
+
+  await pool.query(`
+    ALTER TABLE shops
+    ADD COLUMN IF NOT EXISTS sms_notifications_enabled BOOLEAN DEFAULT TRUE
   `);
 
   // Ensure demo shop is always marked as onboarded (fixes existing deployments)

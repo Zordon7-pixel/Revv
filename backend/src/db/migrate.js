@@ -34,6 +34,7 @@ async function runMigrations() {
     // These ALWAYS run regardless of schema state. Each wrapped independently.
     const alters = [
       `ALTER TABLE shops ADD COLUMN IF NOT EXISTS onboarded BOOLEAN DEFAULT FALSE`,
+      `ALTER TABLE shops ADD COLUMN IF NOT EXISTS sms_notifications_enabled BOOLEAN DEFAULT TRUE`,
       `ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS payment_status TEXT DEFAULT 'unpaid'`,
       `UPDATE repair_orders SET payment_status = 'succeeded' WHERE payment_status IS NULL AND payment_received = 1`,
       `UPDATE repair_orders SET payment_status = 'unpaid' WHERE payment_status IS NULL`,

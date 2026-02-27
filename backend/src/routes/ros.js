@@ -11,35 +11,55 @@ const { v4: uuidv4 } = require('uuid');
 const STATUSES = ['intake','estimate','approval','parts','repair','paint','qc','delivery','closed','total_loss','siu_hold'];
 const COMM_TYPES = ['call', 'text', 'email', 'in-person'];
 const STATUS_SMS_LABELS = {
-  intake: 'has been checked in and intake is complete',
-  estimate: 'estimate is ready for your review',
-  approval: 'is awaiting your approval to begin repairs',
-  'in-progress': 'is currently being repaired',
-  'parts-hold': 'is on hold while we wait for parts',
-  qc: 'has passed QC inspection',
-  ready: 'is ready for pickup!',
-  closed: 'repair has been completed and the RO is closed',
-  total_loss: 'has been determined to be a total loss by the insurance carrier',
-  siu_hold: 'repair has been temporarily paused due to an insurance investigation (SIU)',
+  intake: 'Inspection',
+  estimate: 'Estimate Ready',
+  approval: 'Approved',
+  repair: 'In Progress',
+  'in-progress': 'In Progress',
+  qc: 'Quality Check',
+  ready: 'Ready for Pickup',
+  delivery: 'Ready for Pickup',
 };
+const SMS_STATUSES = new Set(Object.keys(STATUS_SMS_LABELS));
 
-async function sendStatusSMS(ro, toStatus) {
-  try {
-    const phone = ro?.customer_phone;
-    if (!phone) return;
-    if (!isConfigured()) return;
-    const label = STATUS_SMS_LABELS[toStatus];
-    if (!label) return;
-    const vehicle = [ro.year, ro.make, ro.model].filter(Boolean).join(' ') || 'your vehicle';
-    const roNum = ro.ro_number ? `RO #${ro.ro_number} - ` : '';
-    const trackLine = ro.tracking_token
-      ? `\nTrack status: ${process.env.FRONTEND_URL || 'https://revvshop.app'}/track/${ro.tracking_token}`
-      : '';
-    const msg = `${roNum}${vehicle} ${label}.${trackLine}`;
-    await sendSMS(phone, msg);
-  } catch (err) {
-    console.error('[StatusSMS] Failed:', err.message);
-  }
+function queueStatusSMS(roId, shopId, toStatus) {
+  setImmediate(async () => {
+    try {
+      if (!SMS_STATUSES.has(toStatus)) return;
+      if (!isConfigured()) return;
+
+      const ro = await dbGet(
+        `SELECT ro.id, ro.estimate_token, v.year, v.make, v.model, c.phone AS customer_phone, s.name AS shop_name,
+                COALESCE(s.sms_notifications_enabled, TRUE) AS sms_notifications_enabled
+         FROM repair_orders ro
+         LEFT JOIN vehicles v ON v.id = ro.vehicle_id
+         LEFT JOIN customers c ON c.id = ro.customer_id
+         LEFT JOIN shops s ON s.id = ro.shop_id
+         WHERE ro.id = $1 AND ro.shop_id = $2`,
+        [roId, shopId]
+      );
+      if (!ro?.customer_phone) return;
+      if (!ro.sms_notifications_enabled) return;
+
+      let trackingToken = ro.estimate_token;
+      if (!trackingToken) {
+        const tokenRow = await dbGet(
+          'SELECT token FROM portal_tokens WHERE ro_id = $1 ORDER BY created_at DESC LIMIT 1',
+          [roId]
+        );
+        trackingToken = tokenRow?.token || null;
+      }
+      if (!trackingToken) return;
+
+      const statusLabel = STATUS_SMS_LABELS[toStatus];
+      const vehicle = [ro.year, ro.make, ro.model].filter(Boolean).join(' ') || 'vehicle';
+      const shopName = ro.shop_name || 'your shop';
+      const message = `Your ${vehicle} at ${shopName} is now: ${statusLabel}. Track your repair: https://revvshop.app/track/${trackingToken}`;
+      await sendSMS(ro.customer_phone, message);
+    } catch (_) {
+      // Non-blocking fire-and-forget path; ignore SMS errors.
+    }
+  });
 }
 
 async function notifyUsersByRole(shopId, roles, type, title, body, roId) {
@@ -538,6 +558,7 @@ router.post('/approval/:token/respond', async (req, res) => {
         [uuidv4(), ro.id, fromStatus, 'approval', null, 'Estimate approved by customer via public approval link']
       );
       notifyStatusChange(ro.shop_id, ro, 'approval');
+      queueStatusSMS(ro.id, ro.shop_id, 'approval');
       await dbRun('UPDATE estimate_approval_links SET responded_at = $1 WHERE token = $2', [now, req.params.token]);
       return res.json({ ok: true, decision: 'approve' });
     }
@@ -660,14 +681,7 @@ router.put('/:id/status', auth, async (req, res) => {
     }
     await dbRun('INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by, note) VALUES ($1, $2, $3, $4, $5, $6)', [uuidv4(), req.params.id, fromStatus, status, req.user.id, note || null]);
     notifyStatusChange(req.user.shop_id, { ...ro, id: req.params.id }, status);
-    dbGet(
-      `SELECT ro.*, v.year, v.make, v.model, c.phone as customer_phone
-       FROM repair_orders ro
-       LEFT JOIN vehicles v ON ro.vehicle_id = v.id
-       LEFT JOIN customers c ON ro.customer_id = c.id
-       WHERE ro.id = $1`,
-      [req.params.id]
-    ).then(full => sendStatusSMS(full, status)).catch(() => {});
+    queueStatusSMS(req.params.id, req.user.shop_id, status);
 
     const updatedRO = await dbGet('SELECT * FROM repair_orders WHERE id = $1', [req.params.id]);
     res.json(await enrichRO(updatedRO));
@@ -728,28 +742,14 @@ router.patch('/:id', auth, async (req, res) => {
           await dbRun('INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by, note) VALUES ($1, $2, $3, $4, $5, $6)',
             [uuidv4(), req.params.id, ro.status, 'total_loss', req.user.id, 'Claim marked as Total Loss']);
           notifyStatusChange(req.user.shop_id, { ...ro, id: req.params.id }, 'total_loss');
-          dbGet(
-            `SELECT ro.*, v.year, v.make, v.model, c.phone as customer_phone
-             FROM repair_orders ro
-             LEFT JOIN vehicles v ON ro.vehicle_id = v.id
-             LEFT JOIN customers c ON ro.customer_id = c.id
-             WHERE ro.id = $1`,
-            [req.params.id]
-          ).then(full => sendStatusSMS(full, 'total_loss')).catch(() => {});
+          queueStatusSMS(req.params.id, req.user.shop_id, 'total_loss');
         } else if (updates.claim_status === 'siu') {
           updates.pre_siu_status = ro.status; // remember where we were
           updates.status = 'siu_hold';
           await dbRun('INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by, note) VALUES ($1, $2, $3, $4, $5, $6)',
             [uuidv4(), req.params.id, ro.status, 'siu_hold', req.user.id, 'Claim placed under SIU investigation']);
           notifyStatusChange(req.user.shop_id, { ...ro, id: req.params.id }, 'siu_hold');
-          dbGet(
-            `SELECT ro.*, v.year, v.make, v.model, c.phone as customer_phone
-             FROM repair_orders ro
-             LEFT JOIN vehicles v ON ro.vehicle_id = v.id
-             LEFT JOIN customers c ON ro.customer_id = c.id
-             WHERE ro.id = $1`,
-            [req.params.id]
-          ).then(full => sendStatusSMS(full, 'siu_hold')).catch(() => {});
+          queueStatusSMS(req.params.id, req.user.shop_id, 'siu_hold');
         } else if (updates.claim_status === 'approved') {
           // Resume from where we were before SIU, or fall back to 'approval'
           const resumeStatus = ro.pre_siu_status || (ro.status === 'siu_hold' || ro.status === 'total_loss' ? 'approval' : ro.status);
@@ -758,14 +758,7 @@ router.patch('/:id', auth, async (req, res) => {
           await dbRun('INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by, note) VALUES ($1, $2, $3, $4, $5, $6)',
             [uuidv4(), req.params.id, ro.status, resumeStatus, req.user.id, 'Claim approved for work — workflow resumed']);
           notifyStatusChange(req.user.shop_id, { ...ro, id: req.params.id }, resumeStatus);
-          dbGet(
-            `SELECT ro.*, v.year, v.make, v.model, c.phone as customer_phone
-             FROM repair_orders ro
-             LEFT JOIN vehicles v ON ro.vehicle_id = v.id
-             LEFT JOIN customers c ON ro.customer_id = c.id
-             WHERE ro.id = $1`,
-            [req.params.id]
-          ).then(full => sendStatusSMS(full, 'approval')).catch(() => {});
+          queueStatusSMS(req.params.id, req.user.shop_id, 'approval');
         }
       }
 
@@ -807,14 +800,7 @@ router.patch('/:id', auth, async (req, res) => {
     }
     await dbRun('INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by, note) VALUES ($1, $2, $3, $4, $5, $6)', [uuidv4(), req.params.id, fromStatus, status, req.user.id, note || null]);
     notifyStatusChange(req.user.shop_id, { ...ro, id: req.params.id }, status);
-    dbGet(
-      `SELECT ro.*, v.year, v.make, v.model, c.phone as customer_phone
-       FROM repair_orders ro
-       LEFT JOIN vehicles v ON ro.vehicle_id = v.id
-       LEFT JOIN customers c ON ro.customer_id = c.id
-       WHERE ro.id = $1`,
-      [req.params.id]
-    ).then(full => sendStatusSMS(full, status)).catch(() => {});
+    queueStatusSMS(req.params.id, req.user.shop_id, status);
 
     const updatedRO = await dbGet('SELECT * FROM repair_orders WHERE id = $1', [req.params.id]);
     res.json(await enrichRO(updatedRO));
