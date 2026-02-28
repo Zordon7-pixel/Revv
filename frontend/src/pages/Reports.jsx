@@ -6,7 +6,12 @@ const TABS = [
   { id: 'summary', label: 'Summary' },
   { id: 'revenue', label: 'Revenue' },
   { id: 'ros', label: 'ROs' },
+  { id: 'insurance', label: 'Insurance Jobs' },
 ]
+
+function fmtCents(cents) {
+  return `$${(Number(cents || 0) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
 
 export default function Reports() {
   const [activeTab, setActiveTab] = useState('summary')
@@ -142,6 +147,30 @@ export default function Reports() {
               })}
             </div>
           </div>
+
+          {summaryData.insuranceSummary && (
+            <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
+              <h2 className="text-sm font-semibold text-white mb-3">Insurance Jobs</h2>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3">
+                  <div className="text-lg font-bold text-sky-300">{summaryData.insuranceSummary.insuranceJobsThisMonth || 0}</div>
+                  <div className="text-[11px] text-slate-500">Claims this month</div>
+                </div>
+                <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3">
+                  <div className="text-sm font-bold text-emerald-300">{fmtCents(summaryData.insuranceSummary.approvedAmountCents)}</div>
+                  <div className="text-[11px] text-slate-500">Approved total</div>
+                </div>
+                <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3">
+                  <div className="text-sm font-bold text-indigo-300">{fmtCents(summaryData.insuranceSummary.billedAmountCents)}</div>
+                  <div className="text-[11px] text-slate-500">Billed total</div>
+                </div>
+                <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3">
+                  <div className="text-sm font-bold text-yellow-300">{summaryData.insuranceSummary.openSupplementsCount || 0}</div>
+                  <div className="text-[11px] text-slate-500">Open supplements</div>
+                </div>
+              </div>
+            </div>
+          )}
         </>
       )}
 
@@ -240,6 +269,47 @@ export default function Reports() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          </div>
+        </>
+      )}
+
+      {activeTab === 'insurance' && tabData && (
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4">
+              <div className="text-xs text-slate-500 mb-1">Insurance ROs (Month)</div>
+              <div className="text-2xl font-bold text-sky-300">{tabData.totalInsuranceJobs || 0}</div>
+            </div>
+            <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4">
+              <div className="text-xs text-slate-500 mb-1">Approved Amount</div>
+              <div className="text-xl font-bold text-emerald-300">{fmtCents(tabData.approvedAmountCents)}</div>
+            </div>
+            <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4">
+              <div className="text-xs text-slate-500 mb-1">Billed Amount</div>
+              <div className="text-xl font-bold text-indigo-300">{fmtCents(tabData.billedAmountCents)}</div>
+            </div>
+            <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4">
+              <div className="text-xs text-slate-500 mb-1">Open Supplements</div>
+              <div className="text-2xl font-bold text-yellow-300">{tabData.openSupplementsCount || 0}</div>
+            </div>
+          </div>
+
+          <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
+            <h2 className="text-sm font-semibold text-white mb-3">Insurance Summary</h2>
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between border-b border-[#2a2d3e] pb-2">
+                <span className="text-slate-400">Open supplement amount</span>
+                <span className="text-yellow-300 font-semibold">{fmtCents(tabData.openSupplementsAmountCents)}</span>
+              </div>
+              <div className="flex justify-between border-b border-[#2a2d3e] pb-2">
+                <span className="text-slate-400">DRP jobs</span>
+                <span className="text-emerald-300 font-semibold">{tabData.drpCount || 0}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Non-DRP jobs</span>
+                <span className="text-slate-300 font-semibold">{tabData.nonDrpCount || 0}</span>
+              </div>
             </div>
           </div>
         </>

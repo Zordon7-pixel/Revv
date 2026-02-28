@@ -33,6 +33,51 @@ router.get('/summary', auth, requireAdmin, async (req, res) => {
       WHERE ro.shop_id = $1 AND ro.billing_month = TO_CHAR(NOW(), 'YYYY-MM')
       ORDER BY ro.updated_at DESC LIMIT 10
     `, [sid]);
+
+    const insuranceJobsRow = await dbGet(
+      `SELECT COUNT(*)::int as n
+       FROM repair_orders
+       WHERE shop_id = $1
+         AND DATE_TRUNC('month', created_at) = DATE_TRUNC('month', NOW())
+         AND (
+           insurance_claim_number IS NOT NULL OR claim_number IS NOT NULL
+         )`,
+      [sid]
+    );
+    const insuranceApprovedVsBilled = await dbGet(
+      `SELECT
+         COALESCE(SUM(insurance_approved_amount), 0)::bigint AS approved_cents,
+         COALESCE(SUM(total * 100), 0)::bigint AS billed_cents
+       FROM repair_orders
+       WHERE shop_id = $1
+         AND DATE_TRUNC('month', created_at) = DATE_TRUNC('month', NOW())
+         AND (
+           insurance_claim_number IS NOT NULL OR claim_number IS NOT NULL
+         )`,
+      [sid]
+    );
+    const openSupplements = await dbGet(
+      `SELECT
+         COUNT(*)::int AS open_count,
+         COALESCE(SUM(supplement_amount), 0)::bigint AS open_amount_cents
+       FROM repair_orders
+       WHERE shop_id = $1
+         AND supplement_status IN ('requested', 'pending')`,
+      [sid]
+    );
+    const drpSplit = await dbGet(
+      `SELECT
+         COUNT(*) FILTER (WHERE COALESCE(is_drp, FALSE) = TRUE)::int AS drp_count,
+         COUNT(*) FILTER (WHERE COALESCE(is_drp, FALSE) = FALSE)::int AS non_drp_count
+       FROM repair_orders
+       WHERE shop_id = $1
+         AND DATE_TRUNC('month', created_at) = DATE_TRUNC('month', NOW())
+         AND (
+           insurance_claim_number IS NOT NULL OR claim_number IS NOT NULL
+         )`,
+      [sid]
+    );
+
     res.json({
       total: totalRow.n,
       active: activeRow.n,
@@ -42,6 +87,15 @@ router.get('/summary', auth, requireAdmin, async (req, res) => {
       byStatus,
       byType,
       recent,
+      insuranceSummary: {
+        insuranceJobsThisMonth: insuranceJobsRow?.n || 0,
+        approvedAmountCents: Number(insuranceApprovedVsBilled?.approved_cents || 0),
+        billedAmountCents: Number(insuranceApprovedVsBilled?.billed_cents || 0),
+        openSupplementsCount: openSupplements?.open_count || 0,
+        openSupplementsAmountCents: Number(openSupplements?.open_amount_cents || 0),
+        drpCount: drpSplit?.drp_count || 0,
+        nonDrpCount: drpSplit?.non_drp_count || 0,
+      },
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -248,6 +302,62 @@ router.get('/:tab', auth, requireAdmin, async (req, res) => {
     if (tab === 'performance') {
       const summary = await dbGet('SELECT COUNT(*)::int as n FROM repair_orders WHERE shop_id = $1', [sid]);
       return res.json({ redirect: '/performance', count: summary.n });
+    }
+
+    if (tab === 'insurance') {
+      const thisMonthJobs = await dbGet(
+        `SELECT COUNT(*)::int as count
+         FROM repair_orders
+         WHERE shop_id = $1
+           AND DATE_TRUNC('month', created_at) = DATE_TRUNC('month', NOW())
+           AND (
+             insurance_claim_number IS NOT NULL OR claim_number IS NOT NULL
+           )`,
+        [sid]
+      );
+      const approvedVsBilled = await dbGet(
+        `SELECT
+           COALESCE(SUM(insurance_approved_amount), 0)::bigint AS approved_cents,
+           COALESCE(SUM(total * 100), 0)::bigint AS billed_cents
+         FROM repair_orders
+         WHERE shop_id = $1
+           AND DATE_TRUNC('month', created_at) = DATE_TRUNC('month', NOW())
+           AND (
+             insurance_claim_number IS NOT NULL OR claim_number IS NOT NULL
+           )`,
+        [sid]
+      );
+      const openSupplements = await dbGet(
+        `SELECT
+           COUNT(*)::int AS open_count,
+           COALESCE(SUM(supplement_amount), 0)::bigint AS open_amount_cents
+         FROM repair_orders
+         WHERE shop_id = $1
+           AND supplement_status IN ('requested', 'pending')`,
+        [sid]
+      );
+      const drpSplit = await dbGet(
+        `SELECT
+           COUNT(*) FILTER (WHERE COALESCE(is_drp, FALSE) = TRUE)::int AS drp_count,
+           COUNT(*) FILTER (WHERE COALESCE(is_drp, FALSE) = FALSE)::int AS non_drp_count
+         FROM repair_orders
+         WHERE shop_id = $1
+           AND DATE_TRUNC('month', created_at) = DATE_TRUNC('month', NOW())
+           AND (
+             insurance_claim_number IS NOT NULL OR claim_number IS NOT NULL
+           )`,
+        [sid]
+      );
+
+      return res.json({
+        totalInsuranceJobs: thisMonthJobs?.count || 0,
+        approvedAmountCents: Number(approvedVsBilled?.approved_cents || 0),
+        billedAmountCents: Number(approvedVsBilled?.billed_cents || 0),
+        openSupplementsCount: openSupplements?.open_count || 0,
+        openSupplementsAmountCents: Number(openSupplements?.open_amount_cents || 0),
+        drpCount: drpSplit?.drp_count || 0,
+        nonDrpCount: drpSplit?.non_drp_count || 0,
+      });
     }
 
     return res.status(400).json({ error: 'Unknown tab' });

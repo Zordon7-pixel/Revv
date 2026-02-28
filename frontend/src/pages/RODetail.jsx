@@ -16,6 +16,7 @@ import { isAdmin, isEmployee } from '../lib/auth'
 import { useLanguage } from '../contexts/LanguageContext'
 import VehicleDiagram from '../components/VehicleDiagram'
 import ClaimStatusCard from '../components/ClaimStatusCard'
+import InsurancePanel from '../components/InsurancePanel'
 
 const PART_STATUS_META = {
   ordered:     { label: 'Ordered',     cls: 'text-blue-400   bg-blue-900/30   border-blue-700',   icon: Clock },
@@ -217,11 +218,6 @@ export default function RODetail() {
         deductible_waived: +form.deductible_waived || 0,
         referral_fee: +form.referral_fee || 0,
         goodwill_repair_cost: +form.goodwill_repair_cost || 0,
-        deductible: +form.deductible || 0,
-        claim_number: form.claim_number,
-        insurer: form.insurer,
-        adjuster_name: form.adjuster_name,
-        adjuster_phone: form.adjuster_phone,
         estimated_delivery: form.estimated_delivery,
         notes: form.notes,
       })
@@ -512,51 +508,6 @@ export default function RODetail() {
           </div>
         </div>
 
-        {/* Insurance */}
-        <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
-          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">
-            {ro.payment_type === 'cash' ? 'Cash Job' : 'Insurance Claim'}
-          </h2>
-          {ro.payment_type === 'insurance' ? (
-            <div className="space-y-2">
-              {editing ? (
-                <>
-                  <div>
-                    <label className="text-[10px] text-slate-500 block mb-1">Insurer</label>
-                    <LibraryAutocomplete
-                      value={form.insurer || ''}
-                      onChange={v => set('insurer', v)}
-                      onSelect={ins => {
-                        set('insurer', ins.name)
-                        if (!form.adjuster_phone && ins.claims_phone) set('adjuster_phone', ins.claims_phone)
-                      }}
-                      searchFn={searchInsurers}
-                      placeholder="State Farm, GEICO, Progressive..."
-                      renderItem={ins => (
-                        <div>
-                          <div className="text-xs text-white font-medium">{ins.name}</div>
-                          {ins.claims_phone && <div className="text-[10px] text-indigo-400">{ins.claims_phone}</div>}
-                        </div>
-                      )}
-                    />
-                  </div>
-                  <div><label className="text-[10px] text-slate-500">Claim #</label><input className={inp + ' mt-1'} value={form.claim_number || ''} onChange={e => set('claim_number', e.target.value)} /></div>
-                  <div><label className="text-[10px] text-slate-500">Adjuster Name</label><input className={inp + ' mt-1'} value={form.adjuster_name || ''} onChange={e => set('adjuster_name', e.target.value)} /></div>
-                  <div><label className="text-[10px] text-slate-500">Adjuster Phone</label><input className={inp + ' mt-1'} value={form.adjuster_phone || ''} onChange={e => set('adjuster_phone', e.target.value)} /></div>
-                  <div><label className="text-[10px] text-slate-500">Deductible ($)</label><input type="number" className={inp + ' mt-1'} value={form.deductible || ''} onChange={e => set('deductible', e.target.value)} /></div>
-                </>
-              ) : (
-                [['Insurer', ro.insurer], ['Claim #', ro.claim_number], ['Adjuster', ro.adjuster_name], ['Phone', ro.adjuster_phone], ['Deductible', ro.deductible ? `$${ro.deductible}` : '—']].map(([k,v]) => (
-                  <div key={k} className="flex justify-between text-xs">
-                    <span className="text-slate-500">{k}</span>
-                    <span className="text-white font-medium">{v || '—'}</span>
-                  </div>
-                ))
-              )}
-            </div>
-          ) : <div className="text-xs text-slate-400">Customer pay — no claim.</div>}
-        </div>
-
         {/* Damage Diagram */}
         <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4 col-span-full">
           <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-4 flex items-center gap-1.5">
@@ -578,6 +529,10 @@ export default function RODetail() {
         {/* Claim Status — insurance jobs only */}
         {ro.payment_type === 'insurance' && (
           <ClaimStatusCard ro={ro} onUpdate={setRo} isAdmin={isAdmin()} />
+        )}
+
+        {(ro.payment_type === 'insurance' || ro.claim_number || ro.insurance_claim_number) && (
+          <InsurancePanel roId={id} ro={ro} onUpdated={load} />
         )}
 
         {/* Insurance Adjustor Panel */}
