@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Search, Shield, TriangleAlert } from 'lucide-react'
+import { Plus, Search, Shield, AlertTriangle } from 'lucide-react'
 import api from '../lib/api'
 import { isAdmin, isOwner } from '../lib/auth'
 import AddROModal from '../components/AddROModal'
@@ -229,7 +229,7 @@ export default function RepairOrders() {
                       {hasInsuranceClaim(ro) && <Shield size={12} className="text-sky-400" />}
                       {hasOpenSupplement(ro) && (
                         <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-yellow-900/40 border border-yellow-700/40 text-yellow-300 text-[10px] font-semibold">
-                          <TriangleAlert size={10} /> Supp
+                          <AlertTriangle size={10} /> Supp
                         </span>
                       )}
                     </div>
@@ -264,7 +264,7 @@ export default function RepairOrders() {
                     <p className="text-slate-400 text-xs">{[ro.year, ro.make, ro.model].filter(Boolean).join(' ') || '—'}</p>
                     {hasOpenSupplement(ro) && (
                       <p className="text-yellow-300 text-[10px] mt-1 inline-flex items-center gap-1">
-                        <TriangleAlert size={10} /> Supplement {String(ro.supplement_status).toLowerCase()}
+                        <AlertTriangle size={10} /> Supplement {String(ro.supplement_status).toLowerCase()}
                       </p>
                     )}
                   </div>
