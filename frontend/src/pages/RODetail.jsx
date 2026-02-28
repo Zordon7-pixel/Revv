@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Pencil, Save, X, Package, PackageCheck, PackageX, Plus, CheckCircle, AlertCircle, Clock, Truck, RefreshCw, ExternalLink, Car, DollarSign, ClipboardList, Smartphone, AlertTriangle, Copy, Printer, User, Phone, MessageSquare, Mail, Users, CreditCard } from 'lucide-react'
+import { ArrowLeft, Pencil, Save, X, Package, PackageCheck, PackageX, Plus, CheckCircle, AlertCircle, Clock, Truck, RefreshCw, ExternalLink, Car, DollarSign, ClipboardList, Smartphone, AlertTriangle, Copy, Printer, User, Phone, MessageSquare, Mail, Users } from 'lucide-react'
 import api from '../lib/api'
 import { STATUS_COLORS, STATUS_LABELS } from './RepairOrders'
 import StatusBadge from '../components/StatusBadge'
 import PaymentStatusBadge, { normalizePaymentStatus } from '../components/PaymentStatusBadge'
+import PaymentPanel from '../components/PaymentPanel'
 import LibraryAutocomplete from '../components/LibraryAutocomplete'
 import ROPhotos from '../components/ROPhotos'
-import PaymentModal from '../components/PaymentModal'
 import TurnaroundEstimator from '../components/TurnaroundEstimator'
 import { searchInsurers } from '../data/insurers'
 import { searchVendors } from '../data/vendors'
@@ -82,7 +82,6 @@ export default function RODetail() {
   const [sendingForApproval, setSendingForApproval] = useState(false)
   const [approvalLink, setApprovalLink] = useState('')
   const [showMarkPaidModal, setShowMarkPaidModal] = useState(false)
-  const [showPaymentModal, setShowPaymentModal] = useState(false)
   const [paymentMethod, setPaymentMethod] = useState('cash')
   const [markingPaid, setMarkingPaid] = useState(false)
   const [comms, setComms] = useState([])
@@ -341,6 +340,7 @@ export default function RODetail() {
         ? { label: 'Sent', cls: 'bg-blue-900/30 border-blue-700/40 text-blue-300' }
         : { label: 'Draft', cls: 'bg-yellow-900/30 border-yellow-700/40 text-yellow-300' }
     : { label: 'No Inspection', cls: 'bg-slate-900/30 border-slate-700/40 text-slate-300' }
+  const showStripePanel = (ro.status === 'delivery' || ro.status === 'closed') && paymentStatus === 'unpaid'
   const daysIn = ro.intake_date ? Math.floor((Date.now() - new Date(ro.intake_date)) / 86400000) : 0
   const daysColor = daysIn > 14 ? 'text-red-400' : daysIn > 7 ? 'text-yellow-400' : 'text-emerald-400'
   const inp = 'w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500'
@@ -382,14 +382,6 @@ export default function RODetail() {
           {ro.status !== 'closed' && !ro.payment_received && (
             <button onClick={() => setShowMarkPaidModal(true)} className="w-full sm:w-auto flex items-center justify-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
               <DollarSign size={12} /> {t('ro.paymentReceived')}
-            </button>
-          )}
-          {paymentStatus !== 'succeeded' && paymentAmount > 0 && (
-            <button
-              onClick={() => setShowPaymentModal(true)}
-              className="w-full sm:w-auto flex items-center justify-center gap-1 bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
-            >
-              <CreditCard size={12} /> Collect Payment
             </button>
           )}
           {currentIdx < STAGES.length - 1 && (
@@ -467,6 +459,15 @@ export default function RODetail() {
           <span>Intake</span><span>Delivery</span>
         </div>
       </div>
+
+      {showStripePanel && (
+        <PaymentPanel
+          roId={id}
+          totalAmount={paymentAmount}
+          onSuccess={load}
+          onMarkManual={() => setShowMarkPaidModal(true)}
+        />
+      )}
 
       <div className="grid md:grid-cols-2 gap-4">
         {/* Vehicle Info */}
@@ -1010,18 +1011,6 @@ export default function RODetail() {
           </div>
         )}
       </div>
-
-      {showPaymentModal && (
-        <PaymentModal
-          roId={id}
-          amount={paymentAmount}
-          onClose={() => setShowPaymentModal(false)}
-          onSuccess={() => {
-            load()
-            setShowPaymentModal(false)
-          }}
-        />
-      )}
 
       {/* Mark as Paid Modal */}
       {showMarkPaidModal && (
