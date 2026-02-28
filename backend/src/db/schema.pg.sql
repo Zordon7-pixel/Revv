@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS shops (
   lng DOUBLE PRECISION,
   geofence_radius DOUBLE PRECISION DEFAULT 0.5,
   tracking_api_key TEXT,
+  sms_notifications_enabled BOOLEAN DEFAULT TRUE,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
