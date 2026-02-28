@@ -58,6 +58,7 @@ app.use('/api/market',   require('./routes/market'));
 app.use('/api/portal',   require('./routes/portal'));
 app.use('/api/users',    require('./routes/users'));
 app.use('/api/parts',    require('./routes/parts'));
+app.use('/api/catalog',  require('./routes/catalog'));
 app.use('/api/timeclock', require('./routes/timeclock'));
 app.use('/api/schedule',  require('./routes/schedule'));
 app.use('/api/tracking',  require('./routes/tracking'));

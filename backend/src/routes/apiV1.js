@@ -1,8 +1,10 @@
 const router = require('express').Router();
 const { dbAll, dbGet } = require('../db');
 const apiKeyAuth = require('../middleware/apiKeyAuth');
+const catalogRouter = require('./catalog');
 
 router.use(apiKeyAuth);
+router.use('/catalog', catalogRouter);
 
 function ok(res, data, meta = undefined) {
   const payload = { success: true, data };
