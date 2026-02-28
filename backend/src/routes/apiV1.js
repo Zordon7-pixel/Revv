@@ -179,4 +179,6 @@ router.get('/jobs/:id/status', async (req, res) => {
   }
 });
 
+router.use('/inspections', require('./inspections'));
+
 module.exports = router;

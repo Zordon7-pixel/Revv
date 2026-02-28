@@ -34,6 +34,8 @@ import ADASCalibration from './pages/ADASCalibration'
 import { LanguageProvider } from './contexts/LanguageContext'
 import JobCosting from './pages/JobCosting'
 import Landing from './pages/Landing'
+import InspectionEditor from './pages/InspectionEditor'
+import InspectionPublic from './pages/InspectionPublic'
 import { getToken } from './lib/auth'
 
 function PrivateRoute({ children }) {
@@ -89,6 +91,7 @@ export default function App() {
           <Route path="/portal" element={<PrivateRoute><Portal /></PrivateRoute>} />
           <Route path="/onboarding" element={<PrivateRoute><Onboarding /></PrivateRoute>} />
           <Route path="/claim/:token" element={<ClaimPortal />} />
+          <Route path="/inspection/:inspectionId" element={<InspectionPublic />} />
           <Route element={<PrivateRoute><Layout /></PrivateRoute>}>
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="ros" element={<RepairOrders />} />
@@ -96,6 +99,7 @@ export default function App() {
             <Route path="payments" element={<Payments />} />
             <Route path="tech" element={<EmployeeOnlyRoute><TechView /></EmployeeOnlyRoute>} />
             <Route path="ros/:id" element={<RODetail />} />
+            <Route path="ros/:id/inspection/:inspectionId" element={<InspectionEditor />} />
             <Route path="customers" element={<Customers />} />
             <Route path="timeclock" element={<TimeClock />} />
             <Route path="schedule" element={<Schedule />} />

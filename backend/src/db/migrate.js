@@ -55,6 +55,31 @@ async function runMigrations() {
       )`,
       `CREATE INDEX IF NOT EXISTS idx_notifications_shop_user
        ON notifications(shop_id, user_id, read, created_at DESC)`,
+      `CREATE TABLE IF NOT EXISTS inspections (
+        id UUID PRIMARY KEY,
+        ro_id UUID REFERENCES repair_orders(id) ON DELETE CASCADE,
+        shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+        created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+        status TEXT DEFAULT 'draft',
+        sent_at TIMESTAMPTZ,
+        viewed_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      )`,
+      `CREATE TABLE IF NOT EXISTS inspection_items (
+        id UUID PRIMARY KEY,
+        inspection_id UUID NOT NULL REFERENCES inspections(id) ON DELETE CASCADE,
+        category TEXT NOT NULL,
+        item_name TEXT NOT NULL,
+        condition TEXT,
+        note TEXT,
+        photo_url TEXT,
+        sort_order INT DEFAULT 0,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_inspections_ro_id ON inspections(ro_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_inspections_shop_id ON inspections(shop_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_inspection_items_inspection_id ON inspection_items(inspection_id)`,
     ];
 
     for (const sql of alters) {
