@@ -19,7 +19,8 @@ const allowedOrigins = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(',').map(s => s.trim())
   : ['http://localhost:4000', 'http://localhost:4001', 'http://localhost:4002',
      'http://localhost:5173', 'http://100.102.219.60:4000', 'http://100.102.219.60:4001', 'http://100.102.219.60:4002',
-     'https://revv-production-ffa9.up.railway.app'];
+     'https://revv-production-ffa9.up.railway.app',
+     'https://revvshop.app'];
 
 app.use(cors({
   origin: function(origin, callback) {
