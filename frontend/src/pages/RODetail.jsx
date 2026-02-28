@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Pencil, Save, X, Package, PackageCheck, PackageX, Plus, CheckCircle, AlertCircle, Clock, Truck, RefreshCw, ExternalLink, Car, DollarSign, ClipboardList, Smartphone, AlertTriangle, Copy, Printer, User, Phone, MessageSquare, Mail, Users } from 'lucide-react'
+import { ArrowLeft, Pencil, Save, X, Package, PackageCheck, PackageX, Plus, CheckCircle, AlertCircle, Clock, Truck, RefreshCw, ExternalLink, Car, DollarSign, ClipboardList, Smartphone, AlertTriangle, Copy, Printer, User, Phone, MessageSquare, Mail, Users, CreditCard, Search } from 'lucide-react'
 import api from '../lib/api'
 import { STATUS_COLORS, STATUS_LABELS } from './RepairOrders'
 import StatusBadge from '../components/StatusBadge'
@@ -9,6 +9,7 @@ import PaymentPanel from '../components/PaymentPanel'
 import LibraryAutocomplete from '../components/LibraryAutocomplete'
 import ROPhotos from '../components/ROPhotos'
 import TurnaroundEstimator from '../components/TurnaroundEstimator'
+import PartsSearch from '../components/PartsSearch'
 import { searchInsurers } from '../data/insurers'
 import { searchVendors } from '../data/vendors'
 import { isAdmin, isEmployee } from '../lib/auth'
@@ -60,6 +61,7 @@ export default function RODetail() {
 
   const [parts, setParts]     = useState([])
   const [showAddPart, setShowAddPart] = useState(false)
+  const [showCatalogSearch, setShowCatalogSearch] = useState(false)
   const [partForm, setPartForm] = useState({ part_name:'', part_number:'', vendor:'', quantity:1, unit_cost:'', expected_date:'', notes:'', tracking_number:'' })
   const [savingPart, setSavingPart] = useState(false)
   const [refreshingPart, setRefreshingPart] = useState(null)  // partId being refreshed
@@ -142,6 +144,10 @@ export default function RODetail() {
 
   async function deletePart(partId) {
     await api.delete(`/parts/${partId}`); load()
+  }
+
+  function handleCatalogPartAdded(part) {
+    setParts((prev) => [...prev, part])
   }
 
   async function generatePortalAccess() {
@@ -343,6 +349,7 @@ export default function RODetail() {
   const showStripePanel = (ro.status === 'delivery' || ro.status === 'closed') && paymentStatus === 'unpaid'
   const daysIn = ro.intake_date ? Math.floor((Date.now() - new Date(ro.intake_date)) / 86400000) : 0
   const daysColor = daysIn > 14 ? 'text-red-400' : daysIn > 7 ? 'text-yellow-400' : 'text-emerald-400'
+  const partsSubtotal = parts.reduce((sum, part) => sum + (Number(part.quantity || 0) * Number(part.unit_cost || 0)), 0)
   const inp = 'w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500'
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
@@ -1072,10 +1079,18 @@ export default function RODetail() {
               </span>
             )}
           </div>
-          <button onClick={() => setShowAddPart(s=>!s)}
-            className="flex items-center gap-1.5 text-xs bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors">
-            <Plus size={12}/> {t('common.add')} {t('ro.parts')}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowCatalogSearch(true)}
+              className="flex items-center gap-1.5 text-xs bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] font-semibold px-3 py-1.5 rounded-lg transition-colors"
+            >
+              <Search size={12} /> Search Catalog
+            </button>
+            <button onClick={() => setShowAddPart(s=>!s)}
+              className="flex items-center gap-1.5 text-xs bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors">
+              <Plus size={12}/> {t('common.add')} {t('ro.parts')}
+            </button>
+          </div>
         </div>
 
         {/* Add Part Form */}
@@ -1136,80 +1151,110 @@ export default function RODetail() {
             <p className="text-slate-600 text-xs">No parts ordered yet.</p>
           </div>
         ) : (
-          <div className="space-y-2">
-            {parts.map(p => {
-              const meta = PART_STATUS_META[p.status] || PART_STATUS_META.ordered
-              const Icon = meta.icon
-              return (
-                <div key={p.id} className="flex items-start gap-3 bg-[#0f1117] rounded-xl p-3 border border-[#2a2d3e]">
-                  <div className={`w-7 h-7 rounded-lg border flex items-center justify-center flex-shrink-0 ${meta.cls}`}>
-                    <Icon size={13}/>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm text-white font-medium">{p.part_name}</span>
-                      {p.part_number && <span className="text-[10px] text-slate-500">#{p.part_number}</span>}
-                      {p.quantity > 1 && <span className="text-[10px] text-slate-500">× {p.quantity}</span>}
-                    </div>
-                    <div className="flex items-center gap-3 mt-0.5 text-[10px] text-slate-500 flex-wrap">
-                      {p.vendor && <span>{p.vendor}</span>}
-                      {p.expected_date && p.status !== 'received' && <span className="text-amber-400">Expected: {p.expected_date}</span>}
-                      {p.received_date && <span className="text-emerald-400">Received: {p.received_date}</span>}
-                    </div>
+          <div className="overflow-x-auto border border-[#2a2d3e] rounded-xl">
+            <table className="w-full text-xs">
+              <thead className="bg-[#0f1117] text-slate-400 uppercase">
+                <tr>
+                  <th className="px-3 py-2 text-left font-semibold">Part #</th>
+                  <th className="px-3 py-2 text-left font-semibold">Description</th>
+                  <th className="px-3 py-2 text-left font-semibold">Brand</th>
+                  <th className="px-3 py-2 text-right font-semibold">Qty</th>
+                  <th className="px-3 py-2 text-right font-semibold">Unit Cost</th>
+                  <th className="px-3 py-2 text-right font-semibold">Total</th>
+                  <th className="px-3 py-2 text-left font-semibold">Status</th>
+                  <th className="px-3 py-2 text-right font-semibold">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {parts.map((p) => {
+                  const meta = PART_STATUS_META[p.status] || PART_STATUS_META.ordered
+                  const qty = Number(p.quantity || 0)
+                  const unit = Number(p.unit_cost || 0)
+                  const rowTotal = qty * unit
 
-                    {/* Tracking row */}
-                    {p.tracking_number && (
-                      <div className="mt-1.5 flex items-center gap-2 flex-wrap">
-                        <Truck size={11} className="text-slate-500 flex-shrink-0"/>
-                        <span className="text-[10px] font-mono text-slate-500">{CARRIER_LABELS[p.carrier] || 'Track'}: {p.tracking_number}</span>
-                        {p.tracking_status && TRACKING_META[p.tracking_status] && (
-                          <span className={`text-[10px] font-semibold flex items-center gap-1 ${TRACKING_META[p.tracking_status].cls}`}>
-                            <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{background: TRACKING_META[p.tracking_status].dot}} />
-                            {TRACKING_META[p.tracking_status].label}
-                          </span>
+                  return (
+                    <tr key={p.id} className="border-t border-[#2a2d3e] align-top">
+                      <td className="px-3 py-2 text-slate-300 font-mono">{p.part_number || '—'}</td>
+                      <td className="px-3 py-2 text-white">
+                        <div className="font-medium">{p.part_name || '—'}</div>
+                        {p.tracking_number && (
+                          <div className="mt-1 flex items-center gap-2 text-[10px] text-slate-500 flex-wrap">
+                            <Truck size={10} className="text-slate-500" />
+                            <span>{CARRIER_LABELS[p.carrier] || 'Track'}: {p.tracking_number}</span>
+                            {p.tracking_status && TRACKING_META[p.tracking_status] && (
+                              <span className={`font-semibold ${TRACKING_META[p.tracking_status].cls}`}>
+                                {TRACKING_META[p.tracking_status].label}
+                              </span>
+                            )}
+                            <a
+                              href={`/api/tracking/url?carrier=${p.carrier||''}&num=${encodeURIComponent(p.tracking_number)}`}
+                              target="_blank"
+                              rel="noopener"
+                              onClick={(e) => {
+                                e.preventDefault()
+                                api.get(`/tracking/url?carrier=${p.carrier||''}&num=${encodeURIComponent(p.tracking_number)}`).then(r => window.open(r.data.url, '_blank'))
+                              }}
+                              className="text-indigo-400 hover:text-indigo-300 inline-flex items-center gap-0.5"
+                            >
+                              <ExternalLink size={9} /> Track
+                            </a>
+                            <button
+                              onClick={() => refreshTracking(p.id)}
+                              disabled={refreshingPart === p.id}
+                              className="text-slate-500 hover:text-amber-400 inline-flex items-center gap-0.5 disabled:opacity-50"
+                            >
+                              <RefreshCw size={9} className={refreshingPart === p.id ? 'animate-spin' : ''} /> Refresh
+                            </button>
+                          </div>
                         )}
-                        {p.tracking_detail && p.tracking_status !== 'delivered' && (
-                          <span className="text-[10px] text-slate-500 italic">{p.tracking_detail}</span>
-                        )}
-                        {p.tracking_updated_at && (
-                          <span className="text-[9px] text-slate-600">· updated {new Date(p.tracking_updated_at).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})}</span>
-                        )}
-                        {/* Carrier link */}
-                        <a href={`/api/tracking/url?carrier=${p.carrier||''}&num=${encodeURIComponent(p.tracking_number)}`}
-                          target="_blank" rel="noopener" onClick={e => { e.preventDefault(); api.get(`/tracking/url?carrier=${p.carrier||''}&num=${encodeURIComponent(p.tracking_number)}`).then(r=>window.open(r.data.url,'_blank')) }}
-                          className="text-[10px] text-indigo-400 hover:text-indigo-300 flex items-center gap-0.5 transition-colors">
-                          <ExternalLink size={9}/> Track
-                        </a>
-                        {/* Refresh button */}
-                        <button onClick={() => refreshTracking(p.id)} disabled={refreshingPart === p.id}
-                          className="text-[10px] text-slate-500 hover:text-amber-400 flex items-center gap-0.5 transition-colors disabled:opacity-50">
-                          <RefreshCw size={9} className={refreshingPart === p.id ? 'animate-spin' : ''}/> Refresh
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    {/* Quick status toggle */}
-                    {p.status === 'ordered' && (
-                      <>
-                        <button onClick={()=>updatePartStatus(p.id,'backordered')} className="text-[10px] bg-red-900/30 text-red-400 border border-red-700/40 px-2 py-1 rounded-lg hover:bg-red-900/50 transition-colors">Backorder</button>
-                        <button onClick={()=>updatePartStatus(p.id,'received')} className="text-[10px] bg-emerald-900/30 text-emerald-400 border border-emerald-700/40 px-2 py-1 rounded-lg hover:bg-emerald-900/50 transition-colors">Received</button>
-                      </>
-                    )}
-                    {p.status === 'backordered' && (
-                      <button onClick={()=>updatePartStatus(p.id,'received')} className="text-[10px] bg-emerald-900/30 text-emerald-400 border border-emerald-700/40 px-2 py-1 rounded-lg hover:bg-emerald-900/50 transition-colors inline-flex items-center gap-1">Received <CheckCircle size={10} /></button>
-                    )}
-                    <span className={`text-[10px] px-2 py-1 rounded-full border font-semibold ${meta.cls}`}>{meta.label}</span>
-                    <button onClick={()=>deletePart(p.id)} className="text-slate-600 hover:text-red-400 transition-colors ml-1">
-                      <X size={13}/>
-                    </button>
-                  </div>
-                </div>
-              )
-            })}
+                      </td>
+                      <td className="px-3 py-2 text-slate-300">{p.vendor || '—'}</td>
+                      <td className="px-3 py-2 text-right text-white">{qty || 1}</td>
+                      <td className="px-3 py-2 text-right text-white">${unit.toFixed(2)}</td>
+                      <td className="px-3 py-2 text-right text-white">${rowTotal.toFixed(2)}</td>
+                      <td className="px-3 py-2">
+                        <span className={`text-[10px] px-2 py-1 rounded-full border font-semibold ${meta.cls}`}>{meta.label}</span>
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="flex items-center justify-end gap-1">
+                          {p.status === 'ordered' && (
+                            <>
+                              <button onClick={()=>updatePartStatus(p.id,'backordered')} className="text-[10px] bg-red-900/30 text-red-400 border border-red-700/40 px-2 py-1 rounded-lg hover:bg-red-900/50 transition-colors">Backorder</button>
+                              <button onClick={()=>updatePartStatus(p.id,'received')} className="text-[10px] bg-emerald-900/30 text-emerald-400 border border-emerald-700/40 px-2 py-1 rounded-lg hover:bg-emerald-900/50 transition-colors">Received</button>
+                            </>
+                          )}
+                          {p.status === 'backordered' && (
+                            <button onClick={()=>updatePartStatus(p.id,'received')} className="text-[10px] bg-emerald-900/30 text-emerald-400 border border-emerald-700/40 px-2 py-1 rounded-lg hover:bg-emerald-900/50 transition-colors inline-flex items-center gap-1">Received <CheckCircle size={10} /></button>
+                          )}
+                          <button onClick={()=>deletePart(p.id)} className="text-slate-600 hover:text-red-400 transition-colors ml-1">
+                            <X size={13}/>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+              <tfoot>
+                <tr className="border-t border-[#2a2d3e] bg-[#0f1117]">
+                  <td colSpan={5} className="px-3 py-2 text-right text-slate-300 font-semibold">Parts Subtotal</td>
+                  <td className="px-3 py-2 text-right text-emerald-400 font-semibold">${partsSubtotal.toFixed(2)}</td>
+                  <td colSpan={2} />
+                </tr>
+              </tfoot>
+            </table>
           </div>
         )}
       </div>
+
+      {showCatalogSearch && (
+        <PartsSearch
+          roId={id}
+          initialVehicle={ro.vehicle || {}}
+          onClose={() => setShowCatalogSearch(false)}
+          onPartAdded={handleCatalogPartAdded}
+        />
+      )}
     </div>
   )
 }
