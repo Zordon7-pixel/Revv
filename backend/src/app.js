@@ -29,11 +29,8 @@ app.use(cors({
   credentials: true
 }));
 
-const jsonParser = express.json({ limit: '1mb' });
-app.use((req, res, next) => {
-  if (req.originalUrl.startsWith('/api/payments/webhook')) return next();
-  return jsonParser(req, res, next);
-});
+app.use('/api/payments/webhook', express.raw({ type: 'application/json' }));
+app.use(express.json({ limit: '1mb' }));
 
 // Security headers
 app.use(helmet({ contentSecurityPolicy: false }));

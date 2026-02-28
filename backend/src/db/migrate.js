@@ -35,6 +35,9 @@ async function runMigrations() {
     const alters = [
       `ALTER TABLE shops ADD COLUMN IF NOT EXISTS onboarded BOOLEAN DEFAULT FALSE`,
       `ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS payment_status TEXT DEFAULT 'unpaid'`,
+      `ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS stripe_payment_intent_id TEXT`,
+      `ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ`,
+      `ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS paid_amount INTEGER`,
       `UPDATE repair_orders SET payment_status = 'succeeded' WHERE payment_status IS NULL AND payment_received = 1`,
       `UPDATE repair_orders SET payment_status = 'unpaid' WHERE payment_status IS NULL`,
       `ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS damaged_panels TEXT DEFAULT '[]'`,

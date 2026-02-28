@@ -1,29 +1,22 @@
 const express = require('express');
-const Stripe = require('stripe');
 const { v4: uuidv4 } = require('uuid');
 const { dbGet, dbAll, dbRun } = require('../db');
 const auth = require('../middleware/auth');
 const { createNotification } = require('../services/notifications');
+const { createPaymentIntent, constructWebhookEvent } = require('../services/stripe');
 
 const router = express.Router();
-
-function getStripeClient() {
-  if (!process.env.STRIPE_SECRET_KEY) {
-    throw new Error('STRIPE_SECRET_KEY is not configured');
-  }
-  return new Stripe(process.env.STRIPE_SECRET_KEY);
-}
-
-function normalizeAmountToCents(amount) {
-  const parsed = Number(amount);
-  if (!Number.isFinite(parsed) || parsed <= 0) return null;
-  return Math.round(parsed * 100);
-}
 
 function normalizedPaymentStatus(ro) {
   if (ro?.payment_status) return ro.payment_status;
   if (ro?.payment_received) return 'succeeded';
   return 'unpaid';
+}
+
+function normalizeAmountCents(amount) {
+  const parsed = Number(amount);
+  if (!Number.isInteger(parsed) || parsed <= 0) return null;
+  return parsed;
 }
 
 async function ensurePaymentsTable() {
@@ -46,39 +39,37 @@ async function ensurePaymentsTable() {
   `);
 }
 
-router.post('/create-intent', auth, async (req, res) => {
+async function handleCreateIntent(req, res) {
   try {
     await ensurePaymentsTable();
-    const { roId, amount } = req.body || {};
+
+    const { ro_id: roId, amount } = req.body || {};
     if (!roId || amount === undefined) {
-      return res.status(400).json({ error: 'roId and amount are required' });
+      return res.status(400).json({ error: 'ro_id and amount are required' });
     }
 
     const ro = await dbGet(
-      'SELECT id, shop_id, ro_number, customer_id, total, payment_status, payment_received FROM repair_orders WHERE id = $1 AND shop_id = $2',
+      'SELECT id, shop_id, ro_number, customer_id, payment_status, payment_received FROM repair_orders WHERE id = $1 AND shop_id = $2',
       [roId, req.user.shop_id]
     );
     if (!ro) return res.status(404).json({ error: 'Repair order not found' });
 
-    const amountCents = normalizeAmountToCents(amount);
-    if (!amountCents) return res.status(400).json({ error: 'Amount must be greater than 0' });
+    const amountCents = normalizeAmountCents(amount);
+    if (!amountCents) return res.status(400).json({ error: 'amount must be a positive integer in cents' });
+
+    const paymentIntent = await createPaymentIntent(amountCents, 'usd', {
+      roId: ro.id,
+      shopId: req.user.shop_id,
+      roNumber: ro.ro_number || '',
+    });
+
+    if (!paymentIntent) {
+      return res.status(503).json({ error: 'Stripe payments are not configured' });
+    }
 
     const customer = ro.customer_id
       ? await dbGet('SELECT email FROM customers WHERE id = $1', [ro.customer_id])
       : null;
-
-    const stripe = getStripeClient();
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount: amountCents,
-      currency: 'usd',
-      metadata: {
-        roId: ro.id,
-        shopId: req.user.shop_id,
-        roNumber: ro.ro_number || '',
-      },
-      receipt_email: customer?.email || undefined,
-      automatic_payment_methods: { enabled: true },
-    });
 
     await dbRun(
       `INSERT INTO ro_payments (id, shop_id, ro_id, stripe_payment_intent_id, amount_cents, currency, status, receipt_email)
@@ -95,43 +86,52 @@ router.post('/create-intent', auth, async (req, res) => {
         ro.id,
         paymentIntent.id,
         amountCents,
-        'usd',
+        paymentIntent.currency || 'usd',
         paymentIntent.status || 'pending',
         customer?.email || null,
       ]
     );
 
     await dbRun(
-      'UPDATE repair_orders SET payment_status = $1, updated_at = $2 WHERE id = $3 AND shop_id = $4',
-      ['pending', new Date().toISOString(), ro.id, req.user.shop_id]
+      'UPDATE repair_orders SET payment_status = $1, stripe_payment_intent_id = $2, updated_at = $3 WHERE id = $4 AND shop_id = $5',
+      ['pending', paymentIntent.id, new Date().toISOString(), ro.id, req.user.shop_id]
     );
 
-    return res.json({ clientSecret: paymentIntent.client_secret });
+    return res.json({ clientSecret: paymentIntent.client_secret, paymentIntentId: paymentIntent.id });
   } catch (err) {
     return res.status(500).json({ error: err.message || 'Failed to create payment intent' });
   }
+}
+
+router.post('/intent', auth, handleCreateIntent);
+
+// Backward-compat alias
+router.post('/create-intent', auth, async (req, res) => {
+  req.body = {
+    ro_id: req.body?.ro_id || req.body?.roId,
+    amount: req.body?.amount,
+  };
+  return handleCreateIntent(req, res);
 });
 
-router.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+router.post('/webhook', async (req, res) => {
   try {
-    const signature = req.headers['stripe-signature'];
-    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
-
-    if (!signature || !webhookSecret) {
-      return res.status(400).json({ error: 'Missing webhook signature or secret' });
-    }
-
-    const stripe = getStripeClient();
-    const event = stripe.webhooks.constructEvent(req.body, signature, webhookSecret);
-
     await ensurePaymentsTable();
+
+    const signature = req.headers['stripe-signature'];
+    if (!signature) return res.status(400).json({ error: 'Missing stripe-signature header' });
+
+    const event = constructWebhookEvent(req.body, signature);
+    if (!event) {
+      return res.status(200).json({ received: true, skipped: true });
+    }
 
     if (event.type === 'payment_intent.succeeded') {
       const intent = event.data.object;
       const roId = intent.metadata?.roId || null;
       const shopId = intent.metadata?.shopId || null;
       const paidAt = intent.created ? new Date(intent.created * 1000).toISOString() : new Date().toISOString();
-      const method = intent.payment_method_types?.[0] || 'card';
+      const amountPaid = intent.amount_received || intent.amount || 0;
 
       await dbRun(
         `UPDATE ro_payments
@@ -140,7 +140,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
              paid_at = $3,
              updated_at = NOW()
          WHERE stripe_payment_intent_id = $4`,
-        ['succeeded', method, paidAt, intent.id]
+        ['succeeded', 'card', paidAt, intent.id]
       );
 
       const existingPayment = await dbGet('SELECT id FROM ro_payments WHERE stripe_payment_intent_id = $1', [intent.id]);
@@ -148,17 +148,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
         await dbRun(
           `INSERT INTO ro_payments (id, shop_id, ro_id, stripe_payment_intent_id, amount_cents, currency, status, payment_method, paid_at)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-          [
-            uuidv4(),
-            shopId,
-            roId,
-            intent.id,
-            intent.amount_received || intent.amount || 0,
-            intent.currency || 'usd',
-            'succeeded',
-            method,
-            paidAt,
-          ]
+          [uuidv4(), shopId, roId, intent.id, amountPaid, intent.currency || 'usd', 'succeeded', 'card', paidAt]
         );
       }
 
@@ -166,12 +156,15 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
         await dbRun(
           `UPDATE repair_orders
            SET payment_status = $1,
+               stripe_payment_intent_id = $2,
                payment_received = 1,
-               payment_received_at = $2,
-               payment_method = $3,
-           updated_at = $4
-           WHERE id = $5 AND shop_id = $6`,
-          ['succeeded', paidAt, 'card', new Date().toISOString(), roId, shopId]
+               payment_received_at = $3,
+               payment_method = $4,
+               paid_at = $5,
+               paid_amount = $6,
+               updated_at = $7
+           WHERE id = $8 AND shop_id = $9`,
+          ['succeeded', intent.id, paidAt, 'card', paidAt, amountPaid, new Date().toISOString(), roId, shopId]
         );
 
         const ro = await dbGet('SELECT ro_number FROM repair_orders WHERE id = $1 AND shop_id = $2', [roId, shopId]);
@@ -191,10 +184,11 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
       }
     }
 
-    if (event.type === 'payment_intent.payment_failed' || event.type === 'payment_intent.canceled') {
+    if (event.type === 'payment_intent.payment_failed') {
       const intent = event.data.object;
-      const status = event.type === 'payment_intent.canceled' ? 'canceled' : 'failed';
-      const failureMessage = intent.last_payment_error?.message || null;
+      const failureMessage = intent.last_payment_error?.message || 'Payment failed';
+
+      console.error(`[Stripe] payment_intent.payment_failed ${intent.id}: ${failureMessage}`);
 
       await dbRun(
         `UPDATE ro_payments
@@ -202,15 +196,19 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
              failure_message = $2,
              updated_at = NOW()
          WHERE stripe_payment_intent_id = $3`,
-        [status, failureMessage, intent.id]
+        ['failed', failureMessage, intent.id]
       );
 
       const roId = intent.metadata?.roId;
       const shopId = intent.metadata?.shopId;
       if (roId && shopId) {
         await dbRun(
-          'UPDATE repair_orders SET payment_status = $1, updated_at = $2 WHERE id = $3 AND shop_id = $4',
-          [status, new Date().toISOString(), roId, shopId]
+          `UPDATE repair_orders
+           SET payment_status = $1,
+               stripe_payment_intent_id = $2,
+               updated_at = $3
+           WHERE id = $4 AND shop_id = $5`,
+          ['failed', intent.id, new Date().toISOString(), roId, shopId]
         );
       }
     }
@@ -261,7 +259,8 @@ router.get('/history/:shopId', auth, async (req, res) => {
 router.get('/ro/:roId', auth, async (req, res) => {
   try {
     const ro = await dbGet(
-      `SELECT id, shop_id, ro_number, payment_status, payment_received, payment_received_at, payment_method
+      `SELECT id, shop_id, ro_number, payment_status, payment_received, payment_received_at, payment_method,
+              stripe_payment_intent_id, paid_at, paid_amount
        FROM repair_orders
        WHERE id = $1 AND shop_id = $2`,
       [req.params.roId, req.user.shop_id]
@@ -284,6 +283,9 @@ router.get('/ro/:roId', auth, async (req, res) => {
       paymentReceived: !!ro.payment_received,
       paymentReceivedAt: ro.payment_received_at,
       paymentMethod: ro.payment_method,
+      paymentIntentId: ro.stripe_payment_intent_id,
+      paidAt: ro.paid_at,
+      paidAmount: ro.paid_amount,
       latestPayment,
     });
   } catch (err) {
