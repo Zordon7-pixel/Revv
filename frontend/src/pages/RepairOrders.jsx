@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Search } from 'lucide-react'
+import { Plus, Search, Shield, TriangleAlert } from 'lucide-react'
 import api from '../lib/api'
 import { isAdmin, isOwner } from '../lib/auth'
 import AddROModal from '../components/AddROModal'
@@ -52,6 +52,14 @@ export default function RepairOrders() {
       return customer.includes(q) || roNum.includes(q) || vehicle.includes(q)
     })
   }, [ros, filters])
+
+  function hasInsuranceClaim(ro) {
+    return !!(ro.insurance_claim_number || ro.claim_number)
+  }
+
+  function hasOpenSupplement(ro) {
+    return ['requested', 'pending'].includes(String(ro.supplement_status || '').toLowerCase())
+  }
 
   function clearFilters() {
     setFilters({ search: '', status: 'all', tech: 'all' })
@@ -215,7 +223,17 @@ export default function RepairOrders() {
                       />
                     </td>
                   )}
-                  <td className="px-3 py-2 text-xs font-bold text-[#EAB308]">{ro.ro_number || '—'}</td>
+                  <td className="px-3 py-2 text-xs font-bold text-[#EAB308]">
+                    <div className="inline-flex items-center gap-1.5">
+                      <span>{ro.ro_number || '—'}</span>
+                      {hasInsuranceClaim(ro) && <Shield size={12} className="text-sky-400" />}
+                      {hasOpenSupplement(ro) && (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-yellow-900/40 border border-yellow-700/40 text-yellow-300 text-[10px] font-semibold">
+                          <TriangleAlert size={10} /> Supp
+                        </span>
+                      )}
+                    </div>
+                  </td>
                   <td className="px-3 py-2 text-sm text-white">{ro.customer_name || '—'}</td>
                   <td className="px-3 py-2 text-sm text-slate-300">{[ro.year, ro.make, ro.model].filter(Boolean).join(' ') || '—'}</td>
                   <td className="px-3 py-2"><StatusBadge status={ro.status} /></td>
@@ -238,9 +256,17 @@ export default function RepairOrders() {
               <div key={ro.id} className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-3">
                 <div className="flex items-start justify-between gap-2">
                   <div>
-                    <p className="text-[#EAB308] text-xs font-bold">{ro.ro_number || '—'}</p>
+                    <p className="text-[#EAB308] text-xs font-bold flex items-center gap-1.5">
+                      <span>{ro.ro_number || '—'}</span>
+                      {hasInsuranceClaim(ro) && <Shield size={11} className="text-sky-400" />}
+                    </p>
                     <p className="text-white font-semibold text-sm">{ro.customer_name || '—'}</p>
                     <p className="text-slate-400 text-xs">{[ro.year, ro.make, ro.model].filter(Boolean).join(' ') || '—'}</p>
+                    {hasOpenSupplement(ro) && (
+                      <p className="text-yellow-300 text-[10px] mt-1 inline-flex items-center gap-1">
+                        <TriangleAlert size={10} /> Supplement {String(ro.supplement_status).toLowerCase()}
+                      </p>
+                    )}
                   </div>
                   <StatusBadge status={ro.status} />
                 </div>

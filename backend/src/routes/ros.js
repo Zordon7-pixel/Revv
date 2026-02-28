@@ -62,6 +62,20 @@ function notifyStatusChange(shopId, ro, toStatus) {
   notifyUsersByRole(shopId, ['owner'], 'status_change', 'RO Status Updated', body, ro.id).catch(() => {});
 }
 
+function normalizeSupplementStatus(value) {
+  const allowed = ['none', 'requested', 'pending', 'approved', 'denied'];
+  if (!value) return null;
+  const normalized = String(value).trim().toLowerCase();
+  return allowed.includes(normalized) ? normalized : null;
+}
+
+function toIntCents(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  return Math.round(n);
+}
+
 async function ensureRoCommsTable() {
   await dbRun(`
     CREATE TABLE IF NOT EXISTS ro_comms (
@@ -457,6 +471,197 @@ router.post('/:id/comms', auth, async (req, res) => {
   }
 });
 
+router.get('/:id/insurance', auth, async (req, res) => {
+  try {
+    const ro = await dbGet(
+      `SELECT
+        id, shop_id,
+        insurance_claim_number, insurance_company,
+        adjuster_name, adjuster_phone, adjuster_email,
+        policy_number, deductible, is_drp,
+        insurance_approved_amount, supplement_status,
+        supplement_amount, supplement_notes, total_insurer_owed,
+        claim_number, insurer
+      FROM repair_orders
+      WHERE id = $1 AND shop_id = $2`,
+      [req.params.id, req.user.shop_id]
+    );
+    if (!ro) return res.status(404).json({ error: 'Not found' });
+
+    return res.json({
+      insurance_claim_number: ro.insurance_claim_number || ro.claim_number || null,
+      insurance_company: ro.insurance_company || ro.insurer || null,
+      adjuster_name: ro.adjuster_name || null,
+      adjuster_phone: ro.adjuster_phone || null,
+      adjuster_email: ro.adjuster_email || null,
+      policy_number: ro.policy_number || null,
+      deductible: ro.deductible !== null && ro.deductible !== undefined ? Number(ro.deductible) : null,
+      is_drp: !!ro.is_drp,
+      insurance_approved_amount: ro.insurance_approved_amount !== null && ro.insurance_approved_amount !== undefined ? Number(ro.insurance_approved_amount) : null,
+      supplement_status: normalizeSupplementStatus(ro.supplement_status) || 'none',
+      supplement_amount: ro.supplement_amount !== null && ro.supplement_amount !== undefined ? Number(ro.supplement_amount) : null,
+      supplement_notes: ro.supplement_notes || null,
+      total_insurer_owed: ro.total_insurer_owed !== null && ro.total_insurer_owed !== undefined
+        ? Number(ro.total_insurer_owed)
+        : ((Number(ro.insurance_approved_amount) || 0) + (Number(ro.supplement_amount) || 0)),
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+router.patch('/:id/insurance', auth, async (req, res) => {
+  try {
+    const ro = await dbGet('SELECT id FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
+    if (!ro) return res.status(404).json({ error: 'Not found' });
+
+    const allowed = [
+      'insurance_claim_number',
+      'insurance_company',
+      'adjuster_name',
+      'adjuster_phone',
+      'adjuster_email',
+      'policy_number',
+      'deductible',
+      'is_drp',
+      'insurance_approved_amount',
+      'supplement_status',
+      'supplement_amount',
+      'supplement_notes',
+      'total_insurer_owed',
+    ];
+    const updates = {};
+    for (const field of allowed) {
+      if (Object.prototype.hasOwnProperty.call(req.body || {}, field)) updates[field] = req.body[field];
+    }
+    if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'No insurance fields provided' });
+
+    if (Object.prototype.hasOwnProperty.call(updates, 'supplement_status')) {
+      const normalized = normalizeSupplementStatus(updates.supplement_status);
+      if (!normalized) return res.status(400).json({ error: 'Invalid supplement_status' });
+      updates.supplement_status = normalized;
+    }
+    if (Object.prototype.hasOwnProperty.call(updates, 'is_drp')) {
+      updates.is_drp = !!updates.is_drp;
+    }
+    if (Object.prototype.hasOwnProperty.call(updates, 'insurance_approved_amount')) {
+      updates.insurance_approved_amount = toIntCents(updates.insurance_approved_amount);
+    }
+    if (Object.prototype.hasOwnProperty.call(updates, 'supplement_amount')) {
+      updates.supplement_amount = toIntCents(updates.supplement_amount);
+    }
+    if (Object.prototype.hasOwnProperty.call(updates, 'deductible')) {
+      updates.deductible = toIntCents(updates.deductible);
+    }
+
+    if (!Object.prototype.hasOwnProperty.call(updates, 'total_insurer_owed')) {
+      const existing = await dbGet(
+        'SELECT insurance_approved_amount, supplement_amount FROM repair_orders WHERE id = $1 AND shop_id = $2',
+        [req.params.id, req.user.shop_id]
+      );
+      const approved = Object.prototype.hasOwnProperty.call(updates, 'insurance_approved_amount')
+        ? (updates.insurance_approved_amount || 0)
+        : (Number(existing?.insurance_approved_amount) || 0);
+      const supplement = Object.prototype.hasOwnProperty.call(updates, 'supplement_amount')
+        ? (updates.supplement_amount || 0)
+        : (Number(existing?.supplement_amount) || 0);
+      updates.total_insurer_owed = approved + supplement;
+    } else {
+      updates.total_insurer_owed = toIntCents(updates.total_insurer_owed);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(updates, 'insurance_claim_number')) {
+      updates.claim_number = updates.insurance_claim_number || null;
+    }
+    if (Object.prototype.hasOwnProperty.call(updates, 'insurance_company')) {
+      updates.insurer = updates.insurance_company || null;
+    }
+
+    updates.updated_at = new Date().toISOString();
+    const keys = Object.keys(updates);
+    const vals = Object.values(updates);
+    const setClauses = keys.map((k, i) => `${k} = $${i + 1}`).join(', ');
+    await dbRun(`UPDATE repair_orders SET ${setClauses} WHERE id = $${keys.length + 1} AND shop_id = $${keys.length + 2}`, [...vals, req.params.id, req.user.shop_id]);
+
+    const refreshed = await dbGet(
+      `SELECT
+        insurance_claim_number, insurance_company,
+        adjuster_name, adjuster_phone, adjuster_email,
+        policy_number, deductible, is_drp,
+        insurance_approved_amount, supplement_status,
+        supplement_amount, supplement_notes, total_insurer_owed
+      FROM repair_orders
+      WHERE id = $1 AND shop_id = $2`,
+      [req.params.id, req.user.shop_id]
+    );
+    return res.json(refreshed);
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/:id/supplement', auth, async (req, res) => {
+  try {
+    const ro = await dbGet(
+      'SELECT id, shop_id, ro_number, insurance_approved_amount FROM repair_orders WHERE id = $1 AND shop_id = $2',
+      [req.params.id, req.user.shop_id]
+    );
+    if (!ro) return res.status(404).json({ error: 'Not found' });
+
+    const amount = toIntCents(req.body?.amount);
+    const notes = typeof req.body?.notes === 'string' ? req.body.notes.trim() : '';
+    if (amount === null || amount < 0) return res.status(400).json({ error: 'Valid supplement amount is required (in cents)' });
+
+    const approved = Number(ro.insurance_approved_amount) || 0;
+    const totalInsurerOwed = approved + amount;
+    const now = new Date().toISOString();
+
+    await dbRun(
+      `UPDATE repair_orders
+       SET supplement_status = $1,
+           supplement_amount = $2,
+           supplement_notes = $3,
+           total_insurer_owed = $4,
+           updated_at = $5
+       WHERE id = $6 AND shop_id = $7`,
+      ['requested', amount, notes || null, totalInsurerOwed, now, req.params.id, req.user.shop_id]
+    );
+
+    await ensureRoCommsTable();
+    await dbRun(
+      `INSERT INTO ro_comms (id, ro_id, shop_id, user_id, type, notes)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [
+        uuidv4(),
+        req.params.id,
+        req.user.shop_id,
+        req.user.id,
+        'in-person',
+        `Supplement requested: $${(amount / 100).toFixed(2)}${notes ? ` — ${notes}` : ''}`,
+      ]
+    );
+
+    await createNotification(
+      req.user.shop_id,
+      null,
+      'supplement_requested',
+      'Supplement Requested',
+      `RO #${ro.ro_number || 'N/A'} supplement requested for $${(amount / 100).toFixed(2)}`,
+      req.params.id
+    ).catch(() => {});
+
+    const updated = await dbGet(
+      `SELECT supplement_status, supplement_amount, supplement_notes, insurance_approved_amount, total_insurer_owed
+       FROM repair_orders
+       WHERE id = $1 AND shop_id = $2`,
+      [req.params.id, req.user.shop_id]
+    );
+    return res.json(updated);
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 router.post('/:id/approval-link', auth, async (req, res) => {
   try {
     await ensureApprovalLinksTable();
@@ -565,9 +770,32 @@ router.post('/', auth, async (req, res) => {
     const today = new Date().toISOString().split('T')[0];
     const panelsJson = Array.isArray(damaged_panels) ? JSON.stringify(damaged_panels) : (damaged_panels || '[]');
     await dbRun(`
-      INSERT INTO repair_orders (id, shop_id, ro_number, vehicle_id, customer_id, job_type, status, payment_type, claim_number, insurer, adjuster_name, adjuster_phone, deductible, intake_date, estimated_delivery, notes, damaged_panels)
-      VALUES ($1, $2, $3, $4, $5, $6, 'intake', $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-    `, [id, req.user.shop_id, roNumber, vehicle_id, customer_id, job_type || 'collision', payment_type || 'insurance', claim_number || null, insurer || null, adjuster_name || null, adjuster_phone || null, deductible || 0, today, estimated_delivery || null, notes || null, panelsJson]);
+      INSERT INTO repair_orders (
+        id, shop_id, ro_number, vehicle_id, customer_id, job_type, status, payment_type,
+        claim_number, insurer, insurance_claim_number, insurance_company,
+        adjuster_name, adjuster_phone, deductible, intake_date, estimated_delivery, notes, damaged_panels
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, 'intake', $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+    `, [
+      id,
+      req.user.shop_id,
+      roNumber,
+      vehicle_id,
+      customer_id,
+      job_type || 'collision',
+      payment_type || 'insurance',
+      claim_number || null,
+      insurer || null,
+      claim_number || null,
+      insurer || null,
+      adjuster_name || null,
+      adjuster_phone || null,
+      deductible || 0,
+      today,
+      estimated_delivery || null,
+      notes || null,
+      panelsJson
+    ]);
     await dbRun('INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by) VALUES ($1, $2, $3, $4, $5)', [uuidv4(), id, null, 'intake', req.user.id]);
     await createNotification(
       req.user.shop_id,
@@ -628,7 +856,7 @@ router.put('/:id', auth, async (req, res) => {
   try {
     const ro = await dbGet('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
     if (!ro) return res.status(404).json({ error: 'Not found' });
-    const ALLOWED_RO_FIELDS = ['status','notes','tech_notes','assigned_to','estimate_amount','actual_amount','updated_at','insurance_company','adjuster_name','adjuster_phone','claim_number','deductible','auth_number','job_type','payment_type','insurer','adjuster_email','estimated_delivery','parts_cost','labor_cost','sublet_cost','tax','total','deductible_waived','referral_fee','goodwill_repair_cost','damaged_panels','claim_status'];
+    const ALLOWED_RO_FIELDS = ['status','notes','tech_notes','assigned_to','estimate_amount','actual_amount','updated_at','insurance_company','adjuster_name','adjuster_phone','claim_number','insurance_claim_number','policy_number','is_drp','insurance_approved_amount','supplement_status','supplement_amount','supplement_notes','total_insurer_owed','deductible','auth_number','job_type','payment_type','insurer','adjuster_email','estimated_delivery','parts_cost','labor_cost','sublet_cost','tax','total','deductible_waived','referral_fee','goodwill_repair_cost','damaged_panels','claim_status'];
     const updates = Object.fromEntries(Object.entries(req.body).filter(([k]) => ALLOWED_RO_FIELDS.includes(k)));
     if (Object.keys(updates).length > 0) {
       const profit = calculateProfit({ ...ro, ...updates });

@@ -41,6 +41,15 @@ async function runMigrations() {
       `ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS claim_status TEXT DEFAULT NULL`,
       `ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS pre_siu_status TEXT DEFAULT NULL`,
       `ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS estimated_delivery DATE DEFAULT NULL`,
+      `ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS insurance_claim_number TEXT`,
+      `ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS insurance_company TEXT`,
+      `ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS policy_number TEXT`,
+      `ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS is_drp BOOLEAN DEFAULT FALSE`,
+      `ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS insurance_approved_amount INTEGER`,
+      `ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS supplement_status TEXT DEFAULT 'none'`,
+      `ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS supplement_amount INTEGER`,
+      `ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS supplement_notes TEXT`,
+      `ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS total_insurer_owed INTEGER`,
       `CREATE TABLE IF NOT EXISTS notifications (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
@@ -54,6 +63,12 @@ async function runMigrations() {
       )`,
       `CREATE INDEX IF NOT EXISTS idx_notifications_shop_user
        ON notifications(shop_id, user_id, read, created_at DESC)`,
+      `UPDATE repair_orders
+       SET insurance_claim_number = claim_number
+       WHERE insurance_claim_number IS NULL AND claim_number IS NOT NULL`,
+      `UPDATE repair_orders
+       SET insurance_company = insurer
+       WHERE insurance_company IS NULL AND insurer IS NOT NULL`,
     ];
 
     for (const sql of alters) {
