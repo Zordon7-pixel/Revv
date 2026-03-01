@@ -220,7 +220,7 @@ export default function Landing() {
             </article>
           </div>
           <p className="mt-6 text-sm text-slate-400">
-            Stripe payments coming soon. Email revvshopapp@gmail.com to get started today.
+            All plans include a 14-day free trial. No credit card required to start.
           </p>
         </div>
       </section>
