@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { X, CheckCircle, Sparkles, Plus } from 'lucide-react'
 import api from '../lib/api'
 import LibraryAutocomplete from './LibraryAutocomplete'
@@ -18,9 +19,12 @@ const DAMAGE_TYPES = [
 
 export default function AddROModal({ onClose, onSaved }) {
   const { t } = useLanguage()
+  const navigate = useNavigate()
   const [customers, setCustomers] = useState([])
   const [step, setStep] = useState(1)
   const [loading, setLoading] = useState(false)
+  const [duplicateWarning, setDuplicateWarning] = useState(null)
+  const [newRoCustomerId, setNewRoCustomerId] = useState('')
   const [form, setForm] = useState({
     // Customer (new or existing)
     customer_id: '', new_customer: false,
@@ -95,6 +99,7 @@ export default function AddROModal({ onClose, onSaved }) {
     }
 
     setLoading(true)
+    setDuplicateWarning(null)
     try {
       let customer_id = form.customer_id
       if (!customer_id || form.new_customer) {
@@ -105,7 +110,7 @@ export default function AddROModal({ onClose, onSaved }) {
         customer_id, year: +form.year, make: form.make, model: form.model,
         vin: form.vin, color: form.color, plate: form.plate
       })
-      await api.post('/ros', {
+      const { data: ro } = await api.post('/ros', {
         customer_id, vehicle_id: veh.id, job_type: form.job_type,
         payment_type: form.payment_type, claim_number: form.claim_number,
         insurer: form.payment_type === 'insurance' ? form.insurer : null,
@@ -113,6 +118,11 @@ export default function AddROModal({ onClose, onSaved }) {
         deductible: +form.deductible || 0, estimated_delivery: form.estimated_delivery, notes: form.notes,
         damaged_panels: form.damaged_panels
       })
+      if (ro?.duplicate_warning) {
+        setDuplicateWarning(ro.duplicate_warning)
+        setNewRoCustomerId(customer_id)
+        return
+      }
       onSaved()
     } catch(e) {
       const msg = e?.response?.data?.error || e?.message || 'Unknown error'
@@ -128,6 +138,32 @@ export default function AddROModal({ onClose, onSaved }) {
           <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={18} /></button>
         </div>
         <div className="p-5 space-y-4">
+          {duplicateWarning && (
+            <div className="bg-amber-500/10 border border-amber-400/40 rounded-lg p-3 space-y-2">
+              <p className="text-amber-300 text-sm">
+                {`⚠️ Possible duplicate detected — ${duplicateWarning.count} open RO(s) exist for this customer/vehicle. Continue anyway or view existing ROs.`}
+              </p>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    onSaved()
+                    navigate(`/ros?customer_id=${encodeURIComponent(newRoCustomerId)}`)
+                  }}
+                  className="w-full sm:w-auto bg-[#0f1117] border border-amber-300/40 hover:border-amber-300 text-amber-200 text-xs font-semibold px-3 py-2 rounded-lg"
+                >
+                  View Existing
+                </button>
+                <button
+                  type="button"
+                  onClick={onSaved}
+                  className="w-full sm:w-auto bg-amber-500 hover:bg-amber-400 text-[#0f1117] text-xs font-semibold px-3 py-2 rounded-lg"
+                >
+                  Keep New RO
+                </button>
+              </div>
+            </div>
+          )}
           {step === 1 && (
             <>
               <h3 className="text-xs font-bold text-indigo-400 uppercase tracking-wide">Step 1 — Customer</h3>

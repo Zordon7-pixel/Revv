@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { Plus, Search, Shield, AlertTriangle } from 'lucide-react'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { Plus, Search, Shield, AlertTriangle, Trash2 } from 'lucide-react'
 import api from '../lib/api'
 import { isAdmin, isOwner } from '../lib/auth'
 import AddROModal from '../components/AddROModal'
@@ -19,14 +19,17 @@ export const STATUS_LABELS = {
   total_loss: 'Total Loss', siu_hold: 'SIU Hold'
 }
 export default function RepairOrders() {
+  const location = useLocation()
+  const navigate = useNavigate()
+  const initialCustomerFilter = new URLSearchParams(location.search).get('customer_id') || 'all'
   const [ros, setRos] = useState([])
   const [showAdd, setShowAdd] = useState(false)
   const [techs, setTechs] = useState([])
-  const [filters, setFilters] = useState({ search: '', status: 'all', tech: 'all' })
+  const [filters, setFilters] = useState({ search: '', status: 'all', tech: 'all', customerId: initialCustomerFilter })
   const [selected, setSelected] = useState(new Set())
   const [bulkStatus, setBulkStatus] = useState('')
   const [bulkLoading, setBulkLoading] = useState(false)
-  const navigate = useNavigate()
+  const [errorToast, setErrorToast] = useState('')
   const canBulk = isAdmin() || isOwner()
 
   const load = () => api.get('/ros').then((r) => setRos(r.data.ros || []))
@@ -38,13 +41,33 @@ export default function RepairOrders() {
       .catch(() => setTechs([]))
   }, [])
 
+  useEffect(() => {
+    const customerId = new URLSearchParams(location.search).get('customer_id') || 'all'
+    setFilters((f) => ({ ...f, customerId }))
+  }, [location.search])
+
+  useEffect(() => {
+    if (!errorToast) return undefined
+    const t = setTimeout(() => setErrorToast(''), 3500)
+    return () => clearTimeout(t)
+  }, [errorToast])
+
   const techById = useMemo(() => Object.fromEntries(techs.map((t) => [t.id, t.name])), [techs])
+  const uniqueCustomers = useMemo(() => {
+    const m = new Map()
+    for (const ro of ros) {
+      if (!ro.customer_id || m.has(ro.customer_id)) continue
+      m.set(ro.customer_id, ro.customer_name || 'Unknown')
+    }
+    return [...m.entries()]
+  }, [ros])
 
   const filteredRos = useMemo(() => {
     const q = filters.search.trim().toLowerCase()
     return ros.filter((ro) => {
       if (filters.status !== 'all' && ro.status !== filters.status) return false
       if (filters.tech !== 'all' && ro.assigned_to !== filters.tech) return false
+      if (filters.customerId !== 'all' && ro.customer_id !== filters.customerId) return false
       if (!q) return true
       const customer = String(ro.customer_name || '').toLowerCase()
       const roNum = String(ro.ro_number || '').toLowerCase()
@@ -62,7 +85,8 @@ export default function RepairOrders() {
   }
 
   function clearFilters() {
-    setFilters({ search: '', status: 'all', tech: 'all' })
+    setFilters({ search: '', status: 'all', tech: 'all', customerId: 'all' })
+    navigate('/ros')
   }
 
   function toggleSelect(id) {
@@ -78,6 +102,26 @@ export default function RepairOrders() {
       setSelected(new Set())
     } else {
       setSelected(new Set(ros.map((r) => r.id)))
+    }
+  }
+
+  function canDeleteRO(ro) {
+    return ['intake', 'estimate'].includes(String(ro.status || '').toLowerCase())
+  }
+
+  async function deleteRO(ro) {
+    const roNumber = ro.ro_number || 'this RO'
+    if (!window.confirm(`Delete ${roNumber}? This cannot be undone.`)) return
+    try {
+      await api.delete(`/ros/${ro.id}`)
+      setRos((prev) => prev.filter((item) => item.id !== ro.id))
+      setSelected((prev) => {
+        const next = new Set(prev)
+        next.delete(ro.id)
+        return next
+      })
+    } catch (e) {
+      setErrorToast(e?.response?.data?.error || 'Could not delete RO')
     }
   }
 
@@ -118,6 +162,22 @@ export default function RepairOrders() {
             <option value="paint">Paint</option>
             <option value="qc">QC</option>
             <option value="delivery">Delivery</option>
+          </select>
+          <select
+            value={filters.customerId}
+            onChange={(e) => {
+              const customerId = e.target.value
+              setFilters((f) => ({ ...f, customerId }))
+              if (customerId === 'all') {
+                navigate('/ros')
+              } else {
+                navigate(`/ros?customer_id=${encodeURIComponent(customerId)}`)
+              }
+            }}
+            className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#EAB308]"
+          >
+            <option value="all">All Customers</option>
+            {uniqueCustomers.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
           </select>
           <div className="flex flex-col sm:flex-row gap-2">
             <select
@@ -239,12 +299,23 @@ export default function RepairOrders() {
                   <td className="px-3 py-2"><StatusBadge status={ro.status} /></td>
                   <td className="px-3 py-2 text-xs text-slate-400">{techById[ro.assigned_to] || 'Unassigned'}</td>
                   <td className="px-3 py-2 text-right">
-                    <button
-                      onClick={() => navigate(`/ros/${ro.id}`)}
-                      className="text-xs bg-indigo-600 hover:bg-indigo-500 text-white font-medium px-3 py-1.5 rounded-lg transition-colors"
-                    >
-                      View
-                    </button>
+                    <div className="inline-flex items-center gap-2">
+                      {canDeleteRO(ro) && (
+                        <button
+                          onClick={() => deleteRO(ro)}
+                          className="inline-flex items-center justify-center bg-red-900/30 border border-red-600/40 hover:border-red-500 text-red-300 p-1.5 rounded-lg transition-colors"
+                          title="Delete RO"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                      <button
+                        onClick={() => navigate(`/ros/${ro.id}`)}
+                        className="text-xs bg-indigo-600 hover:bg-indigo-500 text-white font-medium px-3 py-1.5 rounded-lg transition-colors"
+                      >
+                        View
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -271,12 +342,23 @@ export default function RepairOrders() {
                   <StatusBadge status={ro.status} />
                 </div>
                 <div className="mt-3">
-                  <button
-                    onClick={() => navigate(`/ros/${ro.id}`)}
-                    className="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold px-3 py-2 rounded-lg transition-colors"
-                  >
-                    View
-                  </button>
+                  <div className="flex gap-2">
+                    {canDeleteRO(ro) && (
+                      <button
+                        onClick={() => deleteRO(ro)}
+                        className="w-11 inline-flex items-center justify-center bg-red-900/30 border border-red-600/40 hover:border-red-500 text-red-300 text-xs font-semibold rounded-lg transition-colors"
+                        title="Delete RO"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                    <button
+                      onClick={() => navigate(`/ros/${ro.id}`)}
+                      className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold px-3 py-2 rounded-lg transition-colors"
+                    >
+                      View
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
@@ -285,6 +367,11 @@ export default function RepairOrders() {
       )}
 
       {showAdd && <AddROModal onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); load() }} />}
+      {errorToast && (
+        <div className="fixed bottom-4 right-4 z-50 bg-red-900/90 border border-red-600/60 text-red-100 text-sm px-4 py-2 rounded-lg shadow-lg">
+          {errorToast}
+        </div>
+      )}
     </div>
   )
 }

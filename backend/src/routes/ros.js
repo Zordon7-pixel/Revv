@@ -791,8 +791,41 @@ router.post('/', auth, roLimitGuard, async (req, res) => {
     }
     const customer = await dbGet('SELECT id FROM customers WHERE id = $1 AND shop_id = $2', [customer_id, req.user.shop_id]);
     if (!customer) return res.status(400).json({ error: 'Invalid customer_id for this shop' });
-    const vehicle = await dbGet('SELECT id FROM vehicles WHERE id = $1 AND shop_id = $2 AND customer_id = $3', [vehicle_id, req.user.shop_id, customer_id]);
+    const vehicle = await dbGet(
+      'SELECT id, year, make, model, vin FROM vehicles WHERE id = $1 AND shop_id = $2 AND customer_id = $3',
+      [vehicle_id, req.user.shop_id, customer_id]
+    );
     if (!vehicle) return res.status(400).json({ error: 'Invalid vehicle_id for this customer/shop' });
+
+    const duplicateConditions = ['ro.customer_id = $2'];
+    const duplicateParams = [req.user.shop_id, customer_id];
+    if (vehicle?.year && vehicle?.make && vehicle?.model) {
+      duplicateParams.push(vehicle.year, vehicle.make, vehicle.model);
+      let vehicleCondition = `
+        v.year = $3
+        AND LOWER(COALESCE(v.make, '')) = LOWER($4)
+        AND LOWER(COALESCE(v.model, '')) = LOWER($5)
+      `;
+      if (vehicle.vin) {
+        duplicateParams.push(vehicle.vin);
+        vehicleCondition += ` AND LOWER(COALESCE(v.vin, '')) = LOWER($6)`;
+      }
+      duplicateConditions.push(`(${vehicleCondition})`);
+    }
+    const duplicateRows = await dbAll(
+      `
+        SELECT ro.id, ro.ro_number, ro.status, ro.created_at
+        FROM repair_orders ro
+        LEFT JOIN vehicles v ON v.id = ro.vehicle_id
+        WHERE ro.shop_id = $1
+          AND ro.status NOT IN ('closed', 'completed')
+          AND ro.created_at >= NOW() - INTERVAL '30 days'
+          AND (${duplicateConditions.join(' OR ')})
+        ORDER BY ro.created_at DESC
+      `,
+      duplicateParams
+    );
+
     const countRow = await dbGet('SELECT COUNT(*)::int as n FROM repair_orders WHERE shop_id = $1', [req.user.shop_id]);
     const roNumber = `RO-2026-${String(countRow.n + 1).padStart(4, '0')}`;
     const id = uuidv4();
@@ -874,8 +907,23 @@ router.post('/', auth, roLimitGuard, async (req, res) => {
         console.error('[Auto-Track] Failed to send tracking SMS:', err.message);
       }
     });
-    
-    res.status(201).json(await enrichRO(ro));
+
+    const enriched = await enrichRO(ro);
+    if (duplicateRows.length > 0) {
+      return res.status(201).json({
+        ...enriched,
+        duplicate_warning: {
+          count: duplicateRows.length,
+          ros: duplicateRows.map((dup) => ({
+            id: dup.id,
+            ro_number: dup.ro_number,
+            status: dup.status,
+            created_at: dup.created_at,
+          })),
+        },
+      });
+    }
+    res.status(201).json(enriched);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1158,17 +1206,17 @@ router.post('/:id/mark-paid', auth, async (req, res) => {
 router.delete('/:id', auth, async (req, res) => {
   try {
     const { id } = req.params;
-    const ro = await dbGet('SELECT id FROM repair_orders WHERE id = $1 AND shop_id = $2', [id, req.user.shop_id]);
+    const ro = await dbGet(
+      'SELECT id, status FROM repair_orders WHERE id = $1 AND shop_id = $2',
+      [id, req.user.shop_id]
+    );
     if (!ro) return res.status(404).json({ error: 'Not found' });
+    if (!['intake', 'estimate'].includes(String(ro.status || '').toLowerCase())) {
+      return res.status(400).json({ error: 'Only intake or estimate ROs can be deleted' });
+    }
 
-    await dbRun('DELETE FROM ro_photos WHERE ro_id = $1', [id]);
-    await dbRun('DELETE FROM parts_orders WHERE ro_id = $1', [id]);
-    await dbRun('DELETE FROM job_status_log WHERE ro_id = $1', [id]);
-    await dbRun('DELETE FROM parts_requests WHERE ro_id = $1', [id]);
-    await dbRun('DELETE FROM ro_comms WHERE ro_id = $1', [id]);
-    await dbRun('DELETE FROM estimate_approval_links WHERE ro_id = $1', [id]);
     await dbRun('DELETE FROM repair_orders WHERE id = $1 AND shop_id = $2', [id, req.user.shop_id]);
-    res.json({ ok: true });
+    res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
