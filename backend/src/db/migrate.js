@@ -251,6 +251,12 @@ async function runMigrations() {
       )`,
     ];
 
+    // Fix job_status_log FK to use ON DELETE CASCADE
+    alters.push(
+      `ALTER TABLE job_status_log DROP CONSTRAINT IF EXISTS job_status_log_ro_id_fkey`,
+      `ALTER TABLE job_status_log ADD CONSTRAINT job_status_log_ro_id_fkey FOREIGN KEY (ro_id) REFERENCES repair_orders(id) ON DELETE CASCADE`
+    );
+
     for (const sql of alters) {
       try {
         await query(sql);

@@ -1212,6 +1212,11 @@ router.delete('/:id', auth, async (req, res) => {
     );
     if (!ro) return res.status(404).json({ error: 'Not found' });
 
+    // Delete child records that lack CASCADE to avoid FK violations
+    await dbRun('DELETE FROM job_status_log WHERE ro_id = $1', [id]);
+    await dbRun('DELETE FROM ro_payments WHERE ro_id = $1', [id]).catch(() => {});
+    await dbRun('DELETE FROM estimate_approval_links WHERE ro_id = $1', [id]).catch(() => {});
+    await dbRun('DELETE FROM ro_comms WHERE ro_id = $1', [id]).catch(() => {});
     await dbRun('DELETE FROM repair_orders WHERE id = $1 AND shop_id = $2', [id, req.user.shop_id]);
     res.json({ success: true });
   } catch (err) {
