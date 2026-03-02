@@ -1,8 +1,8 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useState } from 'react'
-import { LayoutDashboard, ClipboardList, Users, BarChart3, BarChart2, Settings, UserCog, LogOut, Menu, Wrench, Clock, CalendarDays, Package, CreditCard, Radar, TrendingUp, X } from 'lucide-react'
+import { LayoutDashboard, ClipboardList, Users, BarChart3, BarChart2, Settings, UserCog, LogOut, Menu, Wrench, Clock, CalendarDays, Package, CreditCard, Radar, TrendingUp, X, HelpCircle } from 'lucide-react'
 import FeedbackButton from './FeedbackButton'
-import HelpDesk from './HelpDesk'
+import HelpPanel from './HelpPanel'
 import NotificationBell from './NotificationBell'
 import { getRole, getTokenPayload, isAdmin, isEmployee } from '../lib/auth'
 import api from '../lib/api'
@@ -29,6 +29,7 @@ const allNav = [
 export default function Layout() {
   const { t } = useLanguage()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [helpOpen, setHelpOpen] = useState(false)
   const navigate = useNavigate()
   const admin = isAdmin()
   const staff = isEmployee()
@@ -124,6 +125,13 @@ export default function Layout() {
             <span className="font-bold text-sm">REVV</span>
           </div>
           <LanguageToggle />
+          <button
+            onClick={() => setHelpOpen(true)}
+            className="w-8 h-8 rounded-lg border border-[#2a2d3e] bg-[#0f1117] text-slate-300 hover:text-white hover:border-indigo-400 transition-colors flex items-center justify-center"
+            aria-label="Open quick start help"
+          >
+            <HelpCircle size={16} />
+          </button>
           {staff && <NotificationBell />}
           <div className="w-8 h-8 rounded-full bg-[#2a2d3e] text-slate-200 text-xs font-semibold flex items-center justify-center">
             {userInitial}
@@ -133,6 +141,13 @@ export default function Layout() {
         {/* Desktop navbar */}
         <header className="hidden md:flex items-center justify-end gap-3 px-6 py-3 bg-[#1a1d2e] border-b border-[#2a2d3e]">
           <LanguageToggle />
+          <button
+            onClick={() => setHelpOpen(true)}
+            className="w-9 h-9 rounded-lg border border-[#2a2d3e] bg-[#0f1117] text-slate-300 hover:text-white hover:border-indigo-400 transition-colors flex items-center justify-center"
+            aria-label="Open quick start help"
+          >
+            <HelpCircle size={17} />
+          </button>
           {staff && (
             <NotificationBell />
           )}
@@ -145,7 +160,7 @@ export default function Layout() {
           <Outlet />
           <FeedbackButton />
         </main>
-        <HelpDesk />
+        <HelpPanel isOpen={helpOpen} onClose={() => setHelpOpen(false)} />
       </div>
     </div>
   )
