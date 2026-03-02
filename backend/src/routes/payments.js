@@ -246,7 +246,7 @@ router.get('/history/:shopId', auth, async (req, res) => {
        LEFT JOIN repair_orders ro ON ro.id = p.ro_id
        LEFT JOIN customers c ON c.id = ro.customer_id
        WHERE p.shop_id = $1
-       ORDER BY COALESCE(p.paid_at, p.created_at) DESC`,
+       ORDER BY COALESCE(p.paid_at::timestamptz, p.created_at) DESC`,
       [shopId]
     );
 
