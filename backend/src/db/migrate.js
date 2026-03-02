@@ -65,11 +65,14 @@ async function runMigrations() {
         user_id UUID REFERENCES users(id) ON DELETE SET NULL,
         type TEXT NOT NULL,
         title TEXT NOT NULL,
-        body TEXT,
+        message TEXT NOT NULL,
         ro_id UUID REFERENCES repair_orders(id) ON DELETE CASCADE,
         read BOOLEAN DEFAULT FALSE,
         created_at TIMESTAMPTZ DEFAULT NOW()
       )`,
+      `ALTER TABLE notifications ADD COLUMN IF NOT EXISTS message TEXT`,
+      `UPDATE notifications SET message = title WHERE message IS NULL`,
+      `ALTER TABLE notifications ALTER COLUMN message SET NOT NULL`,
       `CREATE INDEX IF NOT EXISTS idx_notifications_shop_user
        ON notifications(shop_id, user_id, read, created_at DESC)`,
       `CREATE TABLE IF NOT EXISTS inspections (
