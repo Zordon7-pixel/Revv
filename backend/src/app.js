@@ -5,6 +5,7 @@ const path = require('path');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const notificationsRouter = require('./routes/notifications');
+const subscriptionsRouter = require('./routes/subscriptions');
 
 // Refuse to start without JWT_SECRET
 if (!process.env.JWT_SECRET) {
@@ -31,6 +32,7 @@ app.use(cors({
 }));
 
 app.use('/api/payments/webhook', express.raw({ type: 'application/json' }));
+app.use('/api/subscriptions/webhook', express.raw({ type: 'application/json' }), subscriptionsRouter);
 app.use(express.json({ limit: '1mb' }));
 
 // Security headers
@@ -79,6 +81,7 @@ app.use('/api/estimate-assistant', require('./routes/estimateAssistant'));
 app.use('/api/inspections', require('./routes/inspections'));
 app.use('/api/v1', require('./routes/apiV1'));
 app.use('/api/notifications', notificationsRouter);
+app.use('/api/subscriptions', subscriptionsRouter);
 
 // Serve uploaded files
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));

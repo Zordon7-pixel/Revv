@@ -6,6 +6,7 @@ const { calculateProfit } = require('../services/profit');
 const { sendSMS, isConfigured } = require('../services/sms');
 const { sendMail } = require('../services/mailer');
 const { createNotification } = require('../services/notifications');
+const roLimitGuard = require('../middleware/roLimitGuard');
 const { v4: uuidv4 } = require('uuid');
 
 const STATUSES = ['intake','estimate','approval','parts','repair','paint','qc','delivery','closed','total_loss','siu_hold'];
@@ -782,7 +783,7 @@ router.post('/approval/:token/respond', async (req, res) => {
   }
 });
 
-router.post('/', auth, async (req, res) => {
+router.post('/', auth, roLimitGuard, async (req, res) => {
   try {
     const { customer_id, vehicle_id, job_type, payment_type, claim_number, insurer, adjuster_name, adjuster_phone, deductible, notes, estimated_delivery, damaged_panels } = req.body;
     const countRow = await dbGet('SELECT COUNT(*)::int as n FROM repair_orders WHERE shop_id = $1', [req.user.shop_id]);

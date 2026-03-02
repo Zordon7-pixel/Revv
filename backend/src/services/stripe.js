@@ -38,6 +38,7 @@ function constructWebhookEvent(body, sig) {
 }
 
 module.exports = {
+  getStripeClient,
   createPaymentIntent,
   constructWebhookEvent,
 };

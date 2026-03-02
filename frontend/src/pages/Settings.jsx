@@ -41,6 +41,9 @@ export default function Settings() {
   const [goalSaving, setGoalSaving] = useState(false)
   const [goalSaved, setGoalSaved] = useState(false)
   const [goalError, setGoalError] = useState('')
+  const [billing, setBilling] = useState(null)
+  const [billingLoading, setBillingLoading] = useState(true)
+  const [billingAction, setBillingAction] = useState('')
 
   useEffect(() => {
     api.get('/market/shop').then(r => {
@@ -72,6 +75,10 @@ export default function Settings() {
       .then(r => setSmsNotificationsEnabled(r?.data?.sms_notifications_enabled !== false))
       .catch(() => setSmsNotificationsEnabled(true))
     api.get('/users/me').then(r => setProfile({ name: r.data.name || '', phone: r.data.phone || '' }))
+    api.get('/subscriptions/status')
+      .then(r => setBilling(r.data))
+      .catch(() => setBilling(null))
+      .finally(() => setBillingLoading(false))
   }, [])
 
   useEffect(() => {
@@ -266,6 +273,40 @@ export default function Settings() {
     } finally { setClearing(false) }
   }
 
+  async function startCheckout(plan) {
+    setBillingAction('checkout')
+    try {
+      const { data } = await api.post('/subscriptions/checkout', { plan })
+      if (data?.url) window.location.href = data.url
+    } catch (e) {
+      alert(e?.response?.data?.error || 'Unable to start checkout.')
+    } finally {
+      setBillingAction('')
+    }
+  }
+
+  async function openBillingPortal() {
+    setBillingAction('portal')
+    try {
+      const { data } = await api.post('/subscriptions/portal')
+      if (data?.url) window.location.href = data.url
+    } catch (e) {
+      alert(e?.response?.data?.error || 'Unable to open billing portal.')
+    } finally {
+      setBillingAction('')
+    }
+  }
+
+  const currentPlan = (billing?.plan || 'free').toLowerCase()
+  const trialEndsAt = billing?.trial_ends_at ? new Date(billing.trial_ends_at) : null
+  const trialActive = currentPlan === 'free' && trialEndsAt && trialEndsAt > new Date()
+  const planLabel = currentPlan === 'agency' ? 'Agency' : currentPlan === 'pro' ? 'Pro' : 'Free'
+  const planBadgeClass = currentPlan === 'agency'
+    ? 'bg-emerald-900/30 border-emerald-700 text-emerald-300'
+    : currentPlan === 'pro'
+      ? 'bg-blue-900/30 border-blue-700 text-blue-300'
+      : 'bg-slate-800 border-slate-700 text-slate-300'
+
   const inp = 'w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition-colors'
   const lbl = 'block text-xs font-medium text-slate-400 mb-1.5'
 
@@ -277,6 +318,57 @@ export default function Settings() {
       {/* Header */}
       <div>
         <h1 className="text-xl font-bold text-white">Shop Settings</h1>
+      </div>
+
+      <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-5 space-y-3">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <h2 className="font-semibold text-white text-sm">Billing</h2>
+          {billingLoading ? (
+            <span className="text-xs text-slate-500">Loading plan...</span>
+          ) : (
+            <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${planBadgeClass}`}>{planLabel}</span>
+          )}
+        </div>
+
+        {trialActive && (
+          <div className="text-xs text-amber-300 bg-amber-900/20 border border-amber-700/50 rounded-lg px-3 py-2">
+            Free trial active until {trialEndsAt.toLocaleDateString()}.
+          </div>
+        )}
+
+        <div className="flex items-center gap-2 flex-wrap">
+          {currentPlan === 'free' && (
+            <>
+              <button
+                type="button"
+                onClick={() => startCheckout('pro')}
+                disabled={billingAction === 'checkout'}
+                className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white text-xs font-medium px-4 py-2 rounded-lg transition-colors"
+              >
+                {billingAction === 'checkout' ? 'Redirecting...' : 'Upgrade to Pro ($79/mo)'}
+              </button>
+              <button
+                type="button"
+                onClick={() => startCheckout('agency')}
+                disabled={billingAction === 'checkout'}
+                className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white text-xs font-medium px-4 py-2 rounded-lg transition-colors"
+              >
+                {billingAction === 'checkout' ? 'Redirecting...' : 'Upgrade to Agency ($199/mo)'}
+              </button>
+            </>
+          )}
+
+          {(currentPlan === 'pro' || currentPlan === 'agency') && (
+            <button
+              type="button"
+              onClick={openBillingPortal}
+              disabled={billingAction === 'portal'}
+              className="bg-slate-700 hover:bg-slate-600 disabled:opacity-60 text-white text-xs font-medium px-4 py-2 rounded-lg transition-colors"
+            >
+              {billingAction === 'portal' ? 'Opening...' : 'Manage Billing'}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Market Tier Banner */}
