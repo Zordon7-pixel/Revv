@@ -786,6 +786,13 @@ router.post('/approval/:token/respond', async (req, res) => {
 router.post('/', auth, roLimitGuard, async (req, res) => {
   try {
     const { customer_id, vehicle_id, job_type, payment_type, claim_number, insurer, adjuster_name, adjuster_phone, deductible, notes, estimated_delivery, damaged_panels } = req.body;
+    if (!customer_id || !vehicle_id) {
+      return res.status(400).json({ error: 'customer_id and vehicle_id are required' });
+    }
+    const customer = await dbGet('SELECT id FROM customers WHERE id = $1 AND shop_id = $2', [customer_id, req.user.shop_id]);
+    if (!customer) return res.status(400).json({ error: 'Invalid customer_id for this shop' });
+    const vehicle = await dbGet('SELECT id FROM vehicles WHERE id = $1 AND shop_id = $2 AND customer_id = $3', [vehicle_id, req.user.shop_id, customer_id]);
+    if (!vehicle) return res.status(400).json({ error: 'Invalid vehicle_id for this customer/shop' });
     const countRow = await dbGet('SELECT COUNT(*)::int as n FROM repair_orders WHERE shop_id = $1', [req.user.shop_id]);
     const roNumber = `RO-2026-${String(countRow.n + 1).padStart(4, '0')}`;
     const id = uuidv4();
@@ -945,6 +952,10 @@ router.patch('/:id/assign', auth, requireAdmin, async (req, res) => {
     const { user_id } = req.body;
     const ro = await dbGet('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
     if (!ro) return res.status(404).json({ error: 'Not found' });
+    if (user_id) {
+      const assigned = await dbGet('SELECT id FROM users WHERE id = $1 AND shop_id = $2', [user_id, req.user.shop_id]);
+      if (!assigned) return res.status(400).json({ error: 'Invalid user_id for this shop' });
+    }
     await dbRun('UPDATE repair_orders SET assigned_to = $1, updated_at = $2 WHERE id = $3', [user_id || null, new Date().toISOString(), req.params.id]);
     res.json(await enrichRO(await dbGet('SELECT * FROM repair_orders WHERE id = $1', [req.params.id])));
   } catch (err) {

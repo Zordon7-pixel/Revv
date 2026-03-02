@@ -9,12 +9,13 @@ router.post('/', auth, async (req, res) => {
   try {
     const { ro_id, part_name, part_number, quantity, notes } = req.body;
     if (!ro_id || !part_name) return res.status(400).json({ error: 'ro_id and part_name required' });
+    const ro = await dbGet('SELECT id, ro_number, shop_id FROM repair_orders WHERE id = $1 AND shop_id = $2', [ro_id, req.user.shop_id]);
+    if (!ro) return res.status(404).json({ error: 'Repair order not found' });
     const id = uuidv4();
     await dbRun(
       `INSERT INTO parts_requests (id, ro_id, requested_by, part_name, part_number, quantity, status, notes) VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7)`,
       [id, ro_id, req.user.id, part_name, part_number || null, quantity || 1, notes || null]
     );
-    const ro = await dbGet('SELECT id, ro_number, shop_id FROM repair_orders WHERE id = $1', [ro_id]);
     if (ro?.shop_id) {
       const owners = await dbAll('SELECT id FROM users WHERE shop_id = $1 AND role = $2', [ro.shop_id, 'owner']);
       await Promise.all(

@@ -215,6 +215,14 @@ router.post('/authorize-early', auth, async (req, res) => {
       return res.status(401).json({ error: 'invalid_password', message: 'Incorrect admin password' });
     }
 
+    const employee = await dbGet(
+      "SELECT id FROM users WHERE id = $1 AND shop_id = $2 AND role IN ('owner','admin','employee','staff')",
+      [employee_id, req.user.shop_id]
+    );
+    if (!employee) {
+      return res.status(404).json({ error: 'Employee not found for this shop' });
+    }
+
     const today = new Date().toISOString().slice(0, 10);
     const existing = await dbGet(`
       SELECT id FROM early_clockin_authorizations
@@ -429,16 +437,18 @@ router.post('/lunch/end', auth, async (req, res) => {
 
     if (overBy > 5) {
       const employee = await dbGet('SELECT name FROM users WHERE id = $1', [req.user.id]);
+      const overtimeMessage = `${employee?.name || 'Employee'} took a ${actualMinutes}-min lunch (allowed: ${allowedMinutes} min, over by ${overBy} min).`;
       const notifId = randomUUID();
       await dbRun(
-        'INSERT INTO notifications (id, shop_id, user_id, type, title, body) VALUES ($1, $2, $3, $4, $5, $6)',
+        'INSERT INTO notifications (id, shop_id, user_id, type, title, body, message) VALUES ($1, $2, $3, $4, $5, $6, $7)',
         [
           notifId,
           req.user.shop_id,
           req.user.id,
           'lunch_overtime',
           'Lunch Break Overtime',
-          `${employee?.name || 'Employee'} took a ${actualMinutes}-min lunch (allowed: ${allowedMinutes} min, over by ${overBy} min).`
+          overtimeMessage,
+          overtimeMessage,
         ]
       );
     }

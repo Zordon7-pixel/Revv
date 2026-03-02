@@ -16,8 +16,24 @@ router.get('/me', auth, async (req, res) => {
 
 router.put('/me', auth, async (req, res) => {
   try {
-    const { name, phone } = req.body;
-    await dbRun('UPDATE users SET name = $1, phone = $2 WHERE id = $3', [name || null, phone || null, req.user.id]);
+    const { name, phone } = req.body || {};
+    const fields = [];
+    const vals = [];
+
+    if (name !== undefined) {
+      if (!String(name).trim()) return res.status(400).json({ error: 'name cannot be empty' });
+      fields.push('name');
+      vals.push(String(name).trim());
+    }
+    if (phone !== undefined) {
+      fields.push('phone');
+      vals.push(phone || null);
+    }
+
+    if (!fields.length) return res.status(400).json({ error: 'No valid fields to update' });
+    vals.push(req.user.id);
+    const setClauses = fields.map((f, i) => `${f} = $${i + 1}`).join(', ');
+    await dbRun(`UPDATE users SET ${setClauses} WHERE id = $${fields.length + 1}`, vals);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -49,6 +65,10 @@ router.post('/', auth, requireAdmin, async (req, res) => {
 
     const existing = await dbGet('SELECT id FROM users WHERE email = $1', [email]);
     if (existing) return res.status(409).json({ error: 'Email already in use' });
+    if (customer_id) {
+      const customer = await dbGet('SELECT id FROM customers WHERE id = $1 AND shop_id = $2', [customer_id, req.user.shop_id]);
+      if (!customer) return res.status(400).json({ error: 'Invalid customer_id for this shop' });
+    }
 
     const id = uuidv4();
     await dbRun(

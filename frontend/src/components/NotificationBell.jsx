@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { Bell, CheckCircle2, ClipboardList, CreditCard, MessageSquare, Package, Wrench } from 'lucide-react'
 import api from '../lib/api'
 
@@ -17,12 +17,20 @@ function relativeTime(input) {
   const date = new Date(input)
   const seconds = Math.floor((Date.now() - date.getTime()) / 1000)
   if (seconds < 60) return 'just now'
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`
-  return `${Math.floor(seconds / 86400)}d ago`
+  if (seconds < 3600) {
+    const mins = Math.floor(seconds / 60)
+    return `${mins} ${mins === 1 ? 'min' : 'mins'} ago`
+  }
+  if (seconds < 86400) {
+    const hours = Math.floor(seconds / 3600)
+    return `${hours} ${hours === 1 ? 'hour' : 'hours'} ago`
+  }
+  const days = Math.floor(seconds / 86400)
+  return `${days} ${days === 1 ? 'day' : 'days'} ago`
 }
 
 export default function NotificationBell() {
+  const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [notifications, setNotifications] = useState([])
@@ -44,7 +52,7 @@ export default function NotificationBell() {
 
   useEffect(() => {
     loadNotifications()
-    const id = window.setInterval(() => loadNotifications(true), 30000)
+    const id = window.setInterval(() => loadNotifications(true), 60000)
     return () => window.clearInterval(id)
   }, [])
 
@@ -72,6 +80,14 @@ export default function NotificationBell() {
       await api.patch('/notifications/read-all')
       setNotifications([])
     } catch {}
+  }
+
+  const onNotificationClick = async (item) => {
+    await markRead(item.id)
+    setOpen(false)
+    if (item.ro_id) {
+      navigate(`/ros/${item.ro_id}`)
+    }
   }
 
   return (
@@ -106,36 +122,28 @@ export default function NotificationBell() {
               items.map((item) => {
                 const meta = TYPE_META[item.type] || { icon: Bell, color: 'text-slate-400' }
                 const Icon = meta.icon
+                const message = item.body || item.title
                 return (
-                  <div key={item.id} className="px-4 py-3 border-b border-[#2a2d3e] hover:bg-[#2a2d3e]/40 transition-colors">
+                  <button
+                    key={item.id}
+                    onClick={() => onNotificationClick(item)}
+                    className="w-full text-left px-4 py-3 border-b border-[#2a2d3e] hover:bg-[#2a2d3e]/40 transition-colors"
+                  >
                     <div className="flex gap-3">
                       <Icon size={16} className={`mt-0.5 ${meta.color}`} />
                       <div className="flex-1 min-w-0">
-                        <div className="text-sm text-white font-medium">{item.title}</div>
-                        {item.body && <div className="text-xs text-slate-300 mt-0.5">{item.body}</div>}
+                        <div className="text-xs text-slate-500">{item.ro_number ? `RO #${item.ro_number}` : 'General update'}</div>
+                        <div className="text-sm text-white font-medium mt-0.5">{message}</div>
+                        {item.body && item.title !== item.body && (
+                          <div className="text-xs text-slate-400 mt-0.5">{item.title}</div>
+                        )}
                         <div className="flex items-center justify-between mt-2">
                           <div className="text-[11px] text-slate-500">{relativeTime(item.created_at)}</div>
-                          <div className="flex items-center gap-3">
-                            {item.ro_id && (
-                              <Link
-                                to={`/ros/${item.ro_id}`}
-                                className="text-[11px] text-indigo-300 hover:text-indigo-200"
-                                onClick={() => markRead(item.id)}
-                              >
-                                View RO
-                              </Link>
-                            )}
-                            <button
-                              onClick={() => markRead(item.id)}
-                              className="text-[11px] text-slate-400 hover:text-white"
-                            >
-                              Dismiss
-                            </button>
-                          </div>
+                          <div className="text-[11px] text-indigo-300">{item.ro_id ? 'Open RO' : 'Mark read'}</div>
                         </div>
                       </div>
                     </div>
-                  </div>
+                  </button>
                 )
               })
             )}

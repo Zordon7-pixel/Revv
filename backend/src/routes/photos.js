@@ -29,6 +29,8 @@ const upload = multer({
 router.post('/:ro_id', auth, upload.single('photo'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    const ro = await dbGet('SELECT id FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.ro_id, req.user.shop_id]);
+    if (!ro) return res.status(404).json({ error: 'Repair order not found' });
     const { caption, photo_type } = req.body;
     const id = uuidv4();
     const photo_url = `/uploads/photos/${req.file.filename}`;

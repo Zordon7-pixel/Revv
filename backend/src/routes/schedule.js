@@ -87,6 +87,8 @@ router.post('/', auth, requireAdmin, async (req, res) => {
       [req.user.shop_id, user_id, shift_date]
     );
     if (exists) return res.status(409).json({ error: 'This employee already has a shift on that day' });
+    const employee = await dbGet('SELECT id FROM users WHERE id = $1 AND shop_id = $2', [user_id, req.user.shop_id]);
+    if (!employee) return res.status(400).json({ error: 'Invalid user_id for this shop' });
 
     const id = uuidv4();
     const lunchMins = lunch_break_minutes != null ? parseInt(lunch_break_minutes, 10) : 30;
