@@ -1211,9 +1211,6 @@ router.delete('/:id', auth, async (req, res) => {
       [id, req.user.shop_id]
     );
     if (!ro) return res.status(404).json({ error: 'Not found' });
-    if (!['intake', 'estimate'].includes(String(ro.status || '').toLowerCase())) {
-      return res.status(400).json({ error: 'Only intake or estimate ROs can be deleted' });
-    }
 
     await dbRun('DELETE FROM repair_orders WHERE id = $1 AND shop_id = $2', [id, req.user.shop_id]);
     res.json({ success: true });

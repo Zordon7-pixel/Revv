@@ -106,7 +106,7 @@ export default function RepairOrders() {
   }
 
   function canDeleteRO(ro) {
-    return ['intake', 'estimate'].includes(String(ro.status || '').toLowerCase())
+    return true
   }
 
   async function deleteRO(ro) {
