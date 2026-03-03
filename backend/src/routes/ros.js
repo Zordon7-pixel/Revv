@@ -63,6 +63,53 @@ function queueStatusSMS(roId, shopId, toStatus) {
   });
 }
 
+async function queueClosedReviewEmail(roId) {
+  try {
+    const reviewContext = await dbGet(
+      `SELECT ro.id, ro.shop_id, ro.status, ro.updated_at, c.email AS customer_email, s.name AS shop_name
+       FROM repair_orders ro
+       LEFT JOIN customers c ON c.id = ro.customer_id
+       LEFT JOIN shops s ON s.id = ro.shop_id
+       WHERE ro.id = $1`,
+      [roId]
+    );
+    if (!reviewContext || reviewContext.status !== 'closed' || !reviewContext.customer_email) return;
+
+    const closedAtMs = reviewContext.updated_at ? new Date(reviewContext.updated_at).getTime() : Date.now();
+    const tokenPayload = {
+      ro_id: roId,
+      shop_id: reviewContext.shop_id,
+      exp: closedAtMs + (72 * 60 * 60 * 1000),
+    };
+    const token = Buffer.from(JSON.stringify(tokenPayload))
+      .toString('base64')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/g, '');
+    const appUrl = process.env.APP_URL || 'https://revvshop.app';
+    const reviewLink = `${appUrl}/review/${token}`;
+    const shopName = reviewContext.shop_name || 'our shop';
+
+    const html = `
+      <p>Thank you for choosing ${shopName}.</p>
+      <p>We would love your feedback on your recent repair experience.</p>
+      <p style="margin: 24px 0;">
+        <a href="${reviewLink}" style="font-size: 22px; font-weight: 700; color: #ffffff; background: #4f46e5; padding: 12px 18px; border-radius: 10px; text-decoration: none;">
+          Leave a Star Rating
+        </a>
+      </p>
+      <p>This link expires in 72 hours.</p>
+    `;
+    await sendMail(
+      reviewContext.customer_email,
+      `How was your experience at ${shopName}?`,
+      html
+    ).catch((e) => console.error('[Email] review request failed:', e.message));
+  } catch (err) {
+    console.error(`[Email] Review request failed for RO ${roId}:`, err.message);
+  }
+}
+
 async function notifyUsersByRole(shopId, roles, type, title, body, roId) {
   try {
     const users = await dbAll(
@@ -985,6 +1032,8 @@ router.put('/:id/status', auth, async (req, res) => {
           await sendMail(emailContext.customer_email, 'Your Estimate is Ready', '<p>Your vehicle repair estimate is ready for review. Log in to your portal to view it.</p>').catch(e => console.error('[Email] estimate_sent failed:', e.message));
         } else if (emailContext.status === 'completed' && emailContext.customer_email) {
           await sendMail(emailContext.customer_email, 'Your Vehicle is Ready for Pickup', '<p>Your vehicle repair is complete and ready for pickup. Please contact us to arrange pickup.</p>').catch(e => console.error('[Email] completed failed:', e.message));
+        } else if (emailContext.status === 'closed' && emailContext.customer_email) {
+          await queueClosedReviewEmail(req.params.id);
         }
       } catch (err) {
         console.error(`[Email] Status change notification failed for RO ${req.params.id}:`, err.message);
@@ -1108,6 +1157,8 @@ router.patch('/:id', auth, async (req, res) => {
           await sendMail(emailContext.customer_email, 'Your Estimate is Ready', '<p>Your vehicle repair estimate is ready for review. Log in to your portal to view it.</p>').catch(e => console.error('[Email] estimate_sent failed:', e.message));
         } else if (emailContext.status === 'completed' && emailContext.customer_email) {
           await sendMail(emailContext.customer_email, 'Your Vehicle is Ready for Pickup', '<p>Your vehicle repair is complete and ready for pickup. Please contact us to arrange pickup.</p>').catch(e => console.error('[Email] completed failed:', e.message));
+        } else if (emailContext.status === 'closed' && emailContext.customer_email) {
+          await queueClosedReviewEmail(req.params.id);
         }
       } catch (err) {
         console.error(`[Email] Status change notification failed for RO ${req.params.id}:`, err.message);

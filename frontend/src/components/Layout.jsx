@@ -1,6 +1,6 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useState } from 'react'
-import { LayoutDashboard, ClipboardList, Users, BarChart3, BarChart2, Settings, UserCog, LogOut, Menu, Wrench, Clock, CalendarDays, Package, CreditCard, Radar, TrendingUp, X, HelpCircle } from 'lucide-react'
+import { LayoutDashboard, ClipboardList, Users, BarChart3, BarChart2, Settings, UserCog, LogOut, Menu, Wrench, Clock, CalendarDays, Package, CreditCard, Radar, TrendingUp, X, HelpCircle, Star } from 'lucide-react'
 import FeedbackButton from './FeedbackButton'
 import HelpPanel from './HelpPanel'
 import NotificationBell from './NotificationBell'
@@ -20,6 +20,7 @@ const allNav = [
   { to: '/timeclock',    icon: Clock,           labelKey: 'nav.timeclock',    adminOnly: false },
   { to: '/schedule',     icon: CalendarDays,    labelKey: 'nav.schedule',     adminOnly: false },
   { to: '/reports',      icon: BarChart3,       labelKey: 'nav.reports',      adminOnly: true  },
+  { to: '/reviews',      icon: Star,            labelKey: 'nav.reviews',      adminOnly: false },
   { to: '/performance',  icon: BarChart2,       labelKey: 'nav.performance',  adminOnly: true  },
   { to: '/job-costing', icon: TrendingUp,      labelKey: 'nav.jobCosting',   ownerOnly: true  },
   { to: '/team',         icon: UserCog,         labelKey: 'nav.team',         adminOnly: true  },

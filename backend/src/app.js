@@ -79,6 +79,7 @@ app.use('/api/payments', require('./routes/payments'));
 app.use('/api/adas', require('./routes/adas'));
 app.use('/api/estimate-assistant', require('./routes/estimateAssistant'));
 app.use('/api/inspections', require('./routes/inspections'));
+app.use('/api/reviews', require('./routes/reviews'));
 app.use('/api/v1', require('./routes/apiV1'));
 app.use('/api/notifications', notificationsRouter);
 app.use('/api/subscriptions', subscriptionsRouter);

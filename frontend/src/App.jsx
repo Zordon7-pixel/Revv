@@ -36,6 +36,10 @@ import JobCosting from './pages/JobCosting'
 import Landing from './pages/Landing'
 import InspectionEditor from './pages/InspectionEditor'
 import InspectionPublic from './pages/InspectionPublic'
+import Terms from './pages/Terms'
+import Privacy from './pages/Privacy'
+import ReviewSubmit from './pages/ReviewSubmit'
+import Reviews from './pages/Reviews'
 import { getToken } from './lib/auth'
 
 function PrivateRoute({ children }) {
@@ -88,6 +92,9 @@ export default function App() {
           <Route path="/track/:token" element={<TrackPortal />} />
           <Route path="/shop/:shopId" element={<ShopProfile />} />
           <Route path="/book" element={<BookAppointment />} />
+          <Route path="/terms" element={<Terms />} />
+          <Route path="/privacy" element={<Privacy />} />
+          <Route path="/review/:token" element={<ReviewSubmit />} />
           <Route path="/portal" element={<PrivateRoute><Portal /></PrivateRoute>} />
           <Route path="/onboarding" element={<PrivateRoute><Onboarding /></PrivateRoute>} />
           <Route path="/claim/:token" element={<ClaimPortal />} />
@@ -104,6 +111,7 @@ export default function App() {
             <Route path="timeclock" element={<TimeClock />} />
             <Route path="schedule" element={<Schedule />} />
             <Route path="reports" element={<AdminRoute><Reports /></AdminRoute>} />
+            <Route path="reviews" element={<Reviews />} />
             <Route path="monthly-report" element={<OwnerRoute><MonthlyReport /></OwnerRoute>} />
             <Route path="performance" element={<AdminRoute><Performance /></AdminRoute>} />
             <Route path="team" element={<AdminRoute><Users /></AdminRoute>} />

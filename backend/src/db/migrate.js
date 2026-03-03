@@ -233,6 +233,18 @@ async function runMigrations() {
         created_at TIMESTAMPTZ DEFAULT NOW(),
         expires_at TIMESTAMPTZ
       )`,
+      `CREATE TABLE IF NOT EXISTS shop_reviews (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+        ro_id UUID REFERENCES repair_orders(id) ON DELETE SET NULL,
+        rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+        comment TEXT,
+        customer_name TEXT,
+        submitted_at TIMESTAMPTZ DEFAULT NOW()
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_shop_reviews_unique_ro
+       ON shop_reviews(ro_id)
+       WHERE ro_id IS NOT NULL`,
       `CREATE TABLE IF NOT EXISTS ro_ratings (
         id UUID PRIMARY KEY,
         ro_id UUID NOT NULL REFERENCES repair_orders(id) ON DELETE CASCADE,

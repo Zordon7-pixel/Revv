@@ -229,6 +229,12 @@ export default function Landing() {
         <div className="mx-auto flex max-w-6xl flex-col gap-3 text-sm text-slate-400 md:flex-row md:items-center md:justify-between">
           <p>REVV © 2026 Zordon Technologies LLC</p>
           <div className="flex items-center gap-4">
+            <Link to="/terms" className="transition hover:text-white">
+              Terms
+            </Link>
+            <Link to="/privacy" className="transition hover:text-white">
+              Privacy
+            </Link>
             <Link to="/login" className="transition hover:text-white">
               Sign In
             </Link>
