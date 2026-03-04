@@ -261,6 +261,20 @@ async function runMigrations() {
         created_at TIMESTAMPTZ DEFAULT NOW(),
         UNIQUE(shop_id, year_month)
       )`,
+      // Supplement tracker — individual supplement line items per RO
+      `CREATE TABLE IF NOT EXISTS ro_supplements (
+        id UUID PRIMARY KEY,
+        ro_id UUID NOT NULL REFERENCES repair_orders(id) ON DELETE CASCADE,
+        shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+        description TEXT NOT NULL,
+        amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'Pending',
+        submitted_date DATE NOT NULL DEFAULT CURRENT_DATE,
+        notes TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_ro_supplements_ro_id ON ro_supplements(ro_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_ro_supplements_shop_id ON ro_supplements(shop_id)`,
     ];
 
     // Fix job_status_log FK to use ON DELETE CASCADE

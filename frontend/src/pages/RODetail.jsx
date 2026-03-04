@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Pencil, Save, X, Package, PackageCheck, PackageX, Plus, CheckCircle, AlertCircle, Clock, Truck, RefreshCw, ExternalLink, Car, DollarSign, ClipboardList, Smartphone, AlertTriangle, Copy, Printer, User, Phone, MessageSquare, Mail, Users, CreditCard, Search } from 'lucide-react'
+import { ArrowLeft, Pencil, Save, X, Package, PackageCheck, PackageX, Plus, CheckCircle, AlertCircle, Clock, Truck, RefreshCw, ExternalLink, Car, DollarSign, ClipboardList, Smartphone, AlertTriangle, Copy, Printer, User, Phone, MessageSquare, Mail, Users, CreditCard, Search, FileText } from 'lucide-react'
 import api from '../lib/api'
 import { STATUS_COLORS, STATUS_LABELS } from './RepairOrders'
 import StatusBadge from '../components/StatusBadge'
@@ -49,6 +49,12 @@ const COMM_TYPE_META = {
   'in-person': { label: 'In Person', Icon: Users },
 }
 
+const SUPP_STATUS_META = {
+  Pending:  { cls: 'text-amber-400 bg-amber-900/30 border-amber-700/40' },
+  Approved: { cls: 'text-emerald-400 bg-emerald-900/30 border-emerald-700/40' },
+  Denied:   { cls: 'text-red-400 bg-red-900/30 border-red-700/40' },
+}
+
 const STAGES = ['intake','estimate','approval','parts','repair','paint','qc','delivery','closed']
 
 export default function RODetail() {
@@ -94,6 +100,13 @@ export default function RODetail() {
   const [inspectionSummary, setInspectionSummary] = useState([])
   const [creatingInspection, setCreatingInspection] = useState(false)
 
+  const [supplements, setSupplements] = useState([])
+  const [totalApproved, setTotalApproved] = useState(0)
+  const [showSuppForm, setShowSuppForm] = useState(false)
+  const [suppForm, setSuppForm] = useState({ description: '', amount: '', status: 'Pending', submitted_date: '', notes: '' })
+  const [savingSupp, setSavingSupp] = useState(false)
+  const [updatingSupp, setUpdatingSupp] = useState(null)
+
   const userIsAdmin = isAdmin()
   const userIsEmployee = isEmployee()
 
@@ -101,6 +114,7 @@ export default function RODetail() {
   const loadPartsRequests = () => api.get(`/parts-requests/${id}`).then(r => setPartsRequests(r.data.requests || [])).catch(() => {})
   const loadComms = () => api.get(`/ros/${id}/comms`).then(r => setComms(r.data.comms || [])).catch(() => setComms([]))
   const loadInspections = () => api.get(`/inspections/ro/${id}`).then(r => setInspectionSummary(r.data.inspections || [])).catch(() => setInspectionSummary([]))
+  const loadSupplements = () => api.get(`/ros/${id}/supplements`).then(r => { setSupplements(r.data.supplements || []); setTotalApproved(r.data.totalApproved || 0) }).catch(() => {})
 
   useEffect(() => { load() }, [id])
   useEffect(() => {
@@ -112,6 +126,7 @@ export default function RODetail() {
   useEffect(() => { loadPartsRequests() }, [id])
   useEffect(() => { loadComms() }, [id])
   useEffect(() => { loadInspections() }, [id])
+  useEffect(() => { loadSupplements() }, [id])
 
   async function addPart(e) {
     e.preventDefault(); setSavingPart(true)
@@ -313,6 +328,40 @@ export default function RODetail() {
       alert(err?.response?.data?.error || 'Could not mark as paid')
     } finally {
       setMarkingPaid(false)
+    }
+  }
+
+  async function submitSupplement(e) {
+    e.preventDefault()
+    if (!suppForm.description.trim()) return
+    setSavingSupp(true)
+    try {
+      await api.post(`/ros/${id}/supplements`, {
+        description: suppForm.description,
+        amount: parseFloat(suppForm.amount) || 0,
+        status: suppForm.status,
+        submitted_date: suppForm.submitted_date || undefined,
+        notes: suppForm.notes || undefined,
+      })
+      setSuppForm({ description: '', amount: '', status: 'Pending', submitted_date: '', notes: '' })
+      setShowSuppForm(false)
+      loadSupplements()
+    } catch (err) {
+      alert(err?.response?.data?.error || 'Could not add supplement')
+    } finally {
+      setSavingSupp(false)
+    }
+  }
+
+  async function updateSuppStatus(suppId, status) {
+    setUpdatingSupp(suppId)
+    try {
+      await api.patch(`/ros/${id}/supplements/${suppId}`, { status })
+      loadSupplements()
+    } catch (err) {
+      alert(err?.response?.data?.error || 'Could not update supplement')
+    } finally {
+      setUpdatingSupp(null)
     }
   }
 
@@ -633,6 +682,167 @@ export default function RODetail() {
             ))}
           </div>
         </div>
+      </div>
+
+      {/* Supplements Tracker */}
+      <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <FileText size={14} className="text-[#EAB308]" />
+            <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide">Supplements</h2>
+            {supplements.length > 0 && (
+              <span className="text-[10px] bg-[#0f1117] border border-[#2a2d3e] text-slate-400 px-2 py-0.5 rounded-full font-semibold">
+                {supplements.length}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            {totalApproved > 0 && (
+              <div className="text-right">
+                <div className="text-[10px] text-slate-500">Approved Total</div>
+                <div className="text-sm font-bold text-emerald-400">${totalApproved.toFixed(2)}</div>
+              </div>
+            )}
+            {userIsAdmin && (
+              <button
+                onClick={() => setShowSuppForm(s => !s)}
+                className="flex items-center gap-1.5 text-xs bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] font-semibold px-3 py-1.5 rounded-lg transition-colors"
+              >
+                <Plus size={12} /> Add Supplement
+              </button>
+            )}
+          </div>
+        </div>
+
+        {showSuppForm && (
+          <form onSubmit={submitSupplement} className="bg-[#0f1117] rounded-xl p-4 border border-[#2a2d3e] mb-4 space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div className="sm:col-span-2">
+                <label className="text-[10px] text-slate-500 block mb-1">Description *</label>
+                <input
+                  className={inp}
+                  required
+                  value={suppForm.description}
+                  onChange={e => setSuppForm(f => ({ ...f, description: e.target.value }))}
+                  placeholder="e.g. Hidden damage — inner fender, blend hood"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-slate-500 block mb-1">Amount ($) *</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  className={inp}
+                  required
+                  value={suppForm.amount}
+                  onChange={e => setSuppForm(f => ({ ...f, amount: e.target.value }))}
+                  placeholder="0.00"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-slate-500 block mb-1">Status</label>
+                <select
+                  value={suppForm.status}
+                  onChange={e => setSuppForm(f => ({ ...f, status: e.target.value }))}
+                  className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#EAB308]"
+                >
+                  <option value="Pending">Pending</option>
+                  <option value="Approved">Approved</option>
+                  <option value="Denied">Denied</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] text-slate-500 block mb-1">Date Submitted</label>
+                <input
+                  type="date"
+                  className={inp}
+                  value={suppForm.submitted_date}
+                  onChange={e => setSuppForm(f => ({ ...f, submitted_date: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-slate-500 block mb-1">Notes</label>
+                <input
+                  className={inp}
+                  value={suppForm.notes}
+                  onChange={e => setSuppForm(f => ({ ...f, notes: e.target.value }))}
+                  placeholder="Adjuster contacted, waiting on approval..."
+                />
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setShowSuppForm(false)} className="flex-1 bg-[#1a1d2e] text-slate-400 rounded-lg py-2 text-xs border border-[#2a2d3e]">Cancel</button>
+              <button type="submit" disabled={savingSupp} className="flex-1 bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] font-semibold rounded-lg py-2 text-xs disabled:opacity-50">
+                {savingSupp ? 'Adding...' : 'Add Supplement'}
+              </button>
+            </div>
+          </form>
+        )}
+
+        {supplements.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-10 border border-dashed border-[#2a2d3e] rounded-xl gap-2">
+            <FileText size={24} className="text-slate-600" />
+            <p className="text-slate-500 text-sm">No supplements tracked yet.</p>
+            <p className="text-slate-600 text-xs">Add a supplement to track insurance requests and approvals.</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {supplements.map(supp => {
+              const meta = SUPP_STATUS_META[supp.status] || SUPP_STATUS_META.Pending
+              return (
+                <div key={supp.id} className="bg-[#0f1117] border border-[#2a2d3e] rounded-xl p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap mb-1">
+                        <span className="text-sm text-white font-medium">{supp.description}</span>
+                        <span className="text-sm font-bold text-[#EAB308]">${parseFloat(supp.amount || 0).toFixed(2)}</span>
+                      </div>
+                      <div className="flex items-center gap-3 text-[10px] text-slate-500 flex-wrap">
+                        <span>Submitted {supp.submitted_date ? new Date(supp.submitted_date).toLocaleDateString() : '—'}</span>
+                        {supp.notes && <span className="text-slate-400 italic">{supp.notes}</span>}
+                      </div>
+                    </div>
+                    <div className="flex-shrink-0">
+                      {userIsAdmin ? (
+                        <select
+                          value={supp.status}
+                          disabled={updatingSupp === supp.id}
+                          onChange={e => updateSuppStatus(supp.id, e.target.value)}
+                          className={`text-[10px] px-2 py-1 rounded-lg border font-semibold bg-transparent focus:outline-none cursor-pointer disabled:opacity-50 ${meta.cls}`}
+                        >
+                          <option value="Pending">Pending</option>
+                          <option value="Approved">Approved</option>
+                          <option value="Denied">Denied</option>
+                        </select>
+                      ) : (
+                        <span className={`text-[10px] px-2 py-1 rounded-full border font-semibold ${meta.cls}`}>
+                          {supp.status}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+
+            {/* Summary footer */}
+            <div className="border-t border-[#2a2d3e] pt-3 mt-2 grid grid-cols-3 gap-3">
+              {['Pending', 'Approved', 'Denied'].map(status => {
+                const meta = SUPP_STATUS_META[status]
+                const items = supplements.filter(s => s.status === status)
+                const total = items.reduce((sum, s) => sum + parseFloat(s.amount || 0), 0)
+                return (
+                  <div key={status} className={`rounded-lg border px-3 py-2 text-center ${meta.cls} bg-opacity-20`}>
+                    <div className="text-[10px] font-semibold opacity-80">{status}</div>
+                    <div className="text-sm font-bold mt-0.5">${total.toFixed(2)}</div>
+                    <div className="text-[10px] opacity-60">{items.length} item{items.length !== 1 ? 's' : ''}</div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Notes */}
