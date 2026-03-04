@@ -1,5 +1,6 @@
 const express = require('express');
 const auth = require('../middleware/auth');
+const { requireOwner } = require('../middleware/roles');
 const { getStripeClient } = require('../services/stripe');
 const { dbGet, dbRun } = require('../db');
 
@@ -56,7 +57,7 @@ async function ensureStripeCustomer(shopId) {
   return { stripe, customerId: customer.id };
 }
 
-router.get('/status', auth, async (req, res) => {
+router.get('/status', auth, requireOwner, async (req, res) => {
   try {
     const shop = await dbGet(
       `SELECT plan, trial_ends_at, plan_expires_at, stripe_subscription_id
@@ -78,7 +79,7 @@ router.get('/status', auth, async (req, res) => {
   }
 });
 
-router.post('/checkout', auth, async (req, res) => {
+router.post('/checkout', auth, requireOwner, async (req, res) => {
   try {
     const plan = req.body?.plan;
     if (!['pro', 'agency'].includes(plan)) {
@@ -123,7 +124,7 @@ router.post('/checkout', auth, async (req, res) => {
   }
 });
 
-router.post('/portal', auth, async (req, res) => {
+router.post('/portal', auth, requireOwner, async (req, res) => {
   try {
     const stripe = getStripeClient();
     if (!stripe) return res.status(503).json({ error: 'Stripe is not configured' });

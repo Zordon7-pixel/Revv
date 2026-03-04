@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Search, Phone, Shield, X, Mail, MapPin, Car, FileText, ChevronRight, User, Pencil, Trash2 } from 'lucide-react'
 import api from '../lib/api'
-import { isAdmin } from '../lib/auth'
+import { isAdmin, isAssistant } from '../lib/auth'
 
 const LETTERS = ['All', ...Array.from({ length: 26 }, (_, i) => String.fromCharCode(65 + i))]
 
@@ -257,6 +257,7 @@ export default function Customers() {
   const [form, setForm] = useState({ name:'', phone:'', email:'', address:'', insurance_company:'', policy_number:'' })
   const [loading, setLoading] = useState(false)
   const adminUser = isAdmin()
+  const assistantUser = isAssistant()
 
   async function refreshCustomers() {
     const r = await api.get('/customers')
@@ -326,9 +327,11 @@ export default function Customers() {
           <h1 className="text-xl font-bold text-white">Customers</h1>
           <p className="text-slate-500 text-sm">{customers.length} on file</p>
         </div>
-        <button onClick={() => setShowAdd(true)} className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium px-3 py-2 rounded-lg transition-colors">
-          + Add Customer
-        </button>
+        {!assistantUser && (
+          <button onClick={() => setShowAdd(true)} className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium px-3 py-2 rounded-lg transition-colors">
+            + Add Customer
+          </button>
+        )}
       </div>
 
       {/* Search */}
@@ -425,7 +428,7 @@ export default function Customers() {
       )}
 
       {/* Add Customer Modal */}
-      {showAdd && (
+      {showAdd && !assistantUser && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
           <div className="bg-[#1a1d2e] rounded-2xl border border-[#2a2d3e] w-full max-w-md">
             <div className="border-b border-[#2a2d3e] px-6 py-4 flex items-center justify-between">

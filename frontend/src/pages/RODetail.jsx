@@ -12,7 +12,7 @@ import TurnaroundEstimator from '../components/TurnaroundEstimator'
 import PartsSearch from '../components/PartsSearch'
 import { searchInsurers } from '../data/insurers'
 import { searchVendors } from '../data/vendors'
-import { isAdmin, isEmployee } from '../lib/auth'
+import { isAdmin, isAssistant, isEmployee } from '../lib/auth'
 import { useLanguage } from '../contexts/LanguageContext'
 import VehicleDiagram from '../components/VehicleDiagram'
 import ClaimStatusCard from '../components/ClaimStatusCard'
@@ -106,15 +106,44 @@ export default function RODetail() {
   const [suppForm, setSuppForm] = useState({ description: '', amount: '', status: 'Pending', submitted_date: '', notes: '' })
   const [savingSupp, setSavingSupp] = useState(false)
   const [updatingSupp, setUpdatingSupp] = useState(null)
+  const [activeTab, setActiveTab] = useState('overview')
+  const [storageForm, setStorageForm] = useState({
+    storage_hold: false,
+    storage_rate_per_day: '',
+    storage_start_date: '',
+    storage_company: '',
+    storage_contact: '',
+    storage_notes: '',
+  })
+  const [storageCharges, setStorageCharges] = useState([])
+  const [storageSaving, setStorageSaving] = useState(false)
+  const [showStorageBillModal, setShowStorageBillModal] = useState(false)
+  const [billingStorage, setBillingStorage] = useState({ days: 0, rate_per_day: 0, billed_to: '', notes: '' })
+  const [billingStorageSaving, setBillingStorageSaving] = useState(false)
 
   const userIsAdmin = isAdmin()
   const userIsEmployee = isEmployee()
+  const userIsAssistant = isAssistant()
 
-  const load = () => api.get(`/ros/${id}`).then(r => { setRo(r.data); setForm(r.data); setParts(r.data.parts || []); setTechNotes(r.data.tech_notes || '') })
+  const load = () => api.get(`/ros/${id}`).then(r => {
+    setRo(r.data)
+    setForm(r.data)
+    setParts(r.data.parts || [])
+    setTechNotes(r.data.tech_notes || '')
+    setStorageForm({
+      storage_hold: !!r.data.storage_hold,
+      storage_rate_per_day: r.data.storage_rate_per_day ?? '',
+      storage_start_date: r.data.storage_start_date || '',
+      storage_company: r.data.storage_company || '',
+      storage_contact: r.data.storage_contact || '',
+      storage_notes: r.data.storage_notes || '',
+    })
+  })
   const loadPartsRequests = () => api.get(`/parts-requests/${id}`).then(r => setPartsRequests(r.data.requests || [])).catch(() => {})
   const loadComms = () => api.get(`/ros/${id}/comms`).then(r => setComms(r.data.comms || [])).catch(() => setComms([]))
   const loadInspections = () => api.get(`/inspections/ro/${id}`).then(r => setInspectionSummary(r.data.inspections || [])).catch(() => setInspectionSummary([]))
   const loadSupplements = () => api.get(`/ros/${id}/supplements`).then(r => { setSupplements(r.data.supplements || []); setTotalApproved(r.data.totalApproved || 0) }).catch(() => {})
+  const loadStorageCharges = () => api.get(`/storage/${id}/charges`).then(r => setStorageCharges(r.data.charges || [])).catch(() => setStorageCharges([]))
 
   useEffect(() => { load() }, [id])
   useEffect(() => {
@@ -127,6 +156,7 @@ export default function RODetail() {
   useEffect(() => { loadComms() }, [id])
   useEffect(() => { loadInspections() }, [id])
   useEffect(() => { loadSupplements() }, [id])
+  useEffect(() => { loadStorageCharges() }, [id])
 
   async function addPart(e) {
     e.preventDefault(); setSavingPart(true)
@@ -377,6 +407,55 @@ export default function RODetail() {
     }
   }
 
+  async function saveStorageFields(nextValues) {
+    setStorageSaving(true)
+    try {
+      await api.patch(`/storage/${id}`, nextValues)
+      await load()
+    } catch (err) {
+      alert(err?.response?.data?.error || 'Could not update storage settings')
+    } finally {
+      setStorageSaving(false)
+    }
+  }
+
+  async function toggleStorageHold(enabled) {
+    const payload = { storage_hold: enabled }
+    if (enabled && !storageForm.storage_start_date) {
+      payload.storage_start_date = new Date().toISOString().slice(0, 10)
+    }
+    await saveStorageFields(payload)
+    setStorageForm((prev) => ({ ...prev, storage_hold: enabled, ...payload }))
+  }
+
+  async function billStorage(e) {
+    e.preventDefault()
+    setBillingStorageSaving(true)
+    try {
+      await api.post(`/storage/${id}/charges`, {
+        days: Number(billingStorage.days),
+        rate_per_day: Number(billingStorage.rate_per_day),
+        billed_to: billingStorage.billed_to,
+        notes: billingStorage.notes,
+      })
+      setShowStorageBillModal(false)
+      await loadStorageCharges()
+    } catch (err) {
+      alert(err?.response?.data?.error || 'Could not create storage charge')
+    } finally {
+      setBillingStorageSaving(false)
+    }
+  }
+
+  async function markStorageChargePaid(chargeId) {
+    try {
+      await api.patch(`/storage/${id}/charges/${chargeId}`)
+      await loadStorageCharges()
+    } catch (err) {
+      alert(err?.response?.data?.error || 'Could not mark charge as paid')
+    }
+  }
+
   if (!ro) return <div className="flex items-center justify-center h-64 text-slate-500">{t('common.loading')}</div>
 
   const p = ro.profit || {}
@@ -395,6 +474,14 @@ export default function RODetail() {
   const daysIn = ro.intake_date ? Math.floor((Date.now() - new Date(ro.intake_date)) / 86400000) : 0
   const daysColor = daysIn > 14 ? 'text-red-400' : daysIn > 7 ? 'text-yellow-400' : 'text-emerald-400'
   const partsSubtotal = parts.reduce((sum, part) => sum + (Number(part.quantity || 0) * Number(part.unit_cost || 0)), 0)
+  const storageDays = storageForm.storage_start_date
+    ? Math.max(0, Math.floor((Date.now() - new Date(storageForm.storage_start_date).getTime()) / 86400000))
+    : 0
+  const storageAccrued = storageDays * Number(storageForm.storage_rate_per_day || 0)
+  const storageBilledTotal = storageCharges.reduce((sum, charge) => sum + Number(charge.total_amount || 0), 0)
+  const storageUnpaidTotal = storageCharges
+    .filter((charge) => !charge.paid)
+    .reduce((sum, charge) => sum + Number(charge.total_amount || 0), 0)
   const inp = 'w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500'
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
@@ -417,12 +504,12 @@ export default function RODetail() {
               <CheckCircle size={12} /> Paid {ro.payment_received_at && `· ${new Date(ro.payment_received_at).toLocaleDateString()}`}
             </span>
           )}
-          {ro.status === 'estimate_sent' && !ro.estimate_approved_at && (
+          {ro.status === 'estimate_sent' && !ro.estimate_approved_at && !userIsAssistant && (
             <button onClick={approveEstimate} disabled={approvingEstimate} className="w-full sm:w-auto flex items-center justify-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
               <CheckCircle size={12} /> {approvingEstimate ? 'Approving...' : `${t('portal.approveBtn')} ${t('ro.estimate')}`}
             </button>
           )}
-          {ro.status === 'estimate' && (
+          {ro.status === 'estimate' && !userIsAssistant && (
             <button
               onClick={sendForApproval}
               disabled={sendingForApproval}
@@ -431,12 +518,12 @@ export default function RODetail() {
               <Mail size={12} /> {sendingForApproval ? 'Generating Link...' : 'Send for Approval'}
             </button>
           )}
-          {ro.status !== 'closed' && !ro.payment_received && (
+          {ro.status !== 'closed' && !ro.payment_received && !userIsAssistant && (
             <button onClick={() => setShowMarkPaidModal(true)} className="w-full sm:w-auto flex items-center justify-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
               <DollarSign size={12} /> {t('ro.paymentReceived')}
             </button>
           )}
-          {currentIdx < STAGES.length - 1 && (
+          {currentIdx < STAGES.length - 1 && !userIsAssistant && (
             <button onClick={advance} className="w-full sm:w-auto flex items-center justify-center gap-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
               → {STATUS_LABELS[STAGES[currentIdx+1]]}
             </button>
@@ -445,7 +532,7 @@ export default function RODetail() {
             className="w-full sm:w-auto flex items-center justify-center gap-1 bg-[#2a2d3e] hover:bg-[#3a3d4e] text-slate-300 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
             <Printer size={12} /> {t('ro.invoice')}
           </button>
-          {!editing
+          {!userIsAssistant && (!editing
             ? <button onClick={() => setEditing(true)} className="w-full sm:w-auto flex items-center justify-center gap-1 bg-[#2a2d3e] hover:bg-[#3a3d4e] text-slate-300 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
                 <Pencil size={12} /> {t('common.edit')}
               </button>
@@ -457,10 +544,178 @@ export default function RODetail() {
                   <X size={12} />
                 </button>
               </div>
-          }
+          )}
         </div>
       </div>
 
+      <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-1 flex items-center gap-1 w-fit">
+        <button
+          onClick={() => setActiveTab('overview')}
+          className={`text-xs px-3 py-1.5 rounded-lg font-medium ${activeTab === 'overview' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-[#2a2d3e]'}`}
+        >
+          Overview
+        </button>
+        <button
+          onClick={() => setActiveTab('storage')}
+          className={`text-xs px-3 py-1.5 rounded-lg font-medium ${activeTab === 'storage' ? 'bg-amber-400 text-[#0f1117]' : 'text-slate-300 hover:bg-[#2a2d3e]'}`}
+        >
+          Storage Hold
+        </button>
+      </div>
+
+      {activeTab === 'storage' && (
+        <div className="space-y-4">
+          <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-semibold text-white">Storage Hold</h2>
+                <p className="text-xs text-slate-500">Track rental vehicle storage and billing.</p>
+              </div>
+              <label className="flex items-center gap-2 text-xs text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={!!storageForm.storage_hold}
+                  disabled={userIsAssistant || storageSaving}
+                  onChange={(e) => toggleStorageHold(e.target.checked)}
+                  className="accent-amber-400"
+                />
+                This vehicle is in storage hold
+              </label>
+            </div>
+
+            {storageForm.storage_hold && (
+              <>
+                <div className="grid sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[11px] text-slate-500 block mb-1">Rental Company</label>
+                    <input className={inp} value={storageForm.storage_company} onChange={(e) => setStorageForm((f) => ({ ...f, storage_company: e.target.value }))} disabled={userIsAssistant} />
+                  </div>
+                  <div>
+                    <label className="text-[11px] text-slate-500 block mb-1">Contact</label>
+                    <input className={inp} value={storageForm.storage_contact} onChange={(e) => setStorageForm((f) => ({ ...f, storage_contact: e.target.value }))} disabled={userIsAssistant} />
+                  </div>
+                  <div>
+                    <label className="text-[11px] text-slate-500 block mb-1">Daily Rate</label>
+                    <input type="number" min="0" step="0.01" className={inp} value={storageForm.storage_rate_per_day} onChange={(e) => setStorageForm((f) => ({ ...f, storage_rate_per_day: e.target.value }))} disabled={userIsAssistant} />
+                  </div>
+                  <div>
+                    <label className="text-[11px] text-slate-500 block mb-1">Storage Start Date</label>
+                    <input type="date" className={inp} value={storageForm.storage_start_date || ''} onChange={(e) => setStorageForm((f) => ({ ...f, storage_start_date: e.target.value }))} disabled={userIsAssistant} />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="text-[11px] text-slate-500 block mb-1">Notes</label>
+                    <textarea rows={3} className={inp} value={storageForm.storage_notes} onChange={(e) => setStorageForm((f) => ({ ...f, storage_notes: e.target.value }))} disabled={userIsAssistant} />
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  {!userIsAssistant && (
+                    <button
+                      onClick={() => saveStorageFields({
+                        storage_rate_per_day: storageForm.storage_rate_per_day,
+                        storage_start_date: storageForm.storage_start_date,
+                        storage_company: storageForm.storage_company,
+                        storage_contact: storageForm.storage_contact,
+                        storage_notes: storageForm.storage_notes,
+                      })}
+                      disabled={storageSaving}
+                      className="text-xs bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg disabled:opacity-60"
+                    >
+                      {storageSaving ? 'Saving...' : 'Save Storage Details'}
+                    </button>
+                  )}
+                  {!userIsAssistant && (
+                    <button
+                      onClick={() => {
+                        setBillingStorage({
+                          days: storageDays || 1,
+                          rate_per_day: Number(storageForm.storage_rate_per_day || 0),
+                          billed_to: storageForm.storage_company || ro.customer?.name || '',
+                          notes: '',
+                        })
+                        setShowStorageBillModal(true)
+                      }}
+                      className="text-xs bg-amber-400 hover:bg-amber-300 text-[#0f1117] font-semibold px-3 py-1.5 rounded-lg"
+                    >
+                      Bill Storage
+                    </button>
+                  )}
+                </div>
+
+                <div className="grid sm:grid-cols-3 gap-3">
+                  <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3">
+                    <div className="text-xs text-slate-500">Days Stored</div>
+                    <div className="text-xl text-white font-bold mt-1">{storageDays}</div>
+                  </div>
+                  <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3">
+                    <div className="text-xs text-slate-500">Total Accrued</div>
+                    <div className="text-xl text-emerald-300 font-bold mt-1">${storageAccrued.toFixed(2)}</div>
+                  </div>
+                  <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3">
+                    <div className="text-xs text-slate-500">Unpaid Charges</div>
+                    <div className="text-xl text-amber-300 font-bold mt-1">${storageUnpaidTotal.toFixed(2)}</div>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-white">Storage Charges History</h3>
+              <span className="text-xs text-slate-400">Total billed: ${storageBilledTotal.toFixed(2)}</span>
+            </div>
+            {storageCharges.length === 0 ? (
+              <p className="text-sm text-slate-500">No storage charges yet.</p>
+            ) : (
+              <div className="overflow-x-auto border border-[#2a2d3e] rounded-lg">
+                <table className="w-full text-xs">
+                  <thead className="bg-[#0f1117] text-slate-400">
+                    <tr>
+                      <th className="px-3 py-2 text-left">Billed Date</th>
+                      <th className="px-3 py-2 text-left">Days</th>
+                      <th className="px-3 py-2 text-left">Rate</th>
+                      <th className="px-3 py-2 text-left">Amount</th>
+                      <th className="px-3 py-2 text-left">Billed To</th>
+                      <th className="px-3 py-2 text-left">Status</th>
+                      <th className="px-3 py-2 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {storageCharges.map((charge) => (
+                      <tr key={charge.id} className="border-t border-[#2a2d3e]">
+                        <td className="px-3 py-2 text-slate-300">{charge.billed_date || '—'}</td>
+                        <td className="px-3 py-2 text-slate-300">{charge.days}</td>
+                        <td className="px-3 py-2 text-slate-300">${Number(charge.rate_per_day || 0).toFixed(2)}</td>
+                        <td className="px-3 py-2 text-white">${Number(charge.total_amount || 0).toFixed(2)}</td>
+                        <td className="px-3 py-2 text-slate-300">{charge.billed_to || '—'}</td>
+                        <td className="px-3 py-2">
+                          <span className={`px-2 py-1 rounded-full border ${charge.paid ? 'text-emerald-300 border-emerald-700/40 bg-emerald-900/20' : 'text-amber-300 border-amber-700/40 bg-amber-900/20'}`}>
+                            {charge.paid ? 'Paid' : 'Unpaid'}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          {!charge.paid && !userIsAssistant && (
+                            <button
+                              onClick={() => markStorageChargePaid(charge.id)}
+                              className="text-xs bg-emerald-700 hover:bg-emerald-600 text-white px-2 py-1 rounded"
+                            >
+                              Mark Paid
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'overview' && (
+        <>
       {approvalLink && (
         <div className="bg-yellow-900/20 border border-yellow-700/40 rounded-xl p-3 text-xs text-yellow-200">
           Approval link ready: <span className="font-mono break-all">{approvalLink}</span>
@@ -1411,6 +1666,43 @@ export default function RODetail() {
           </div>
         )}
       </div>
+      </>
+      )}
+
+      {showStorageBillModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <form onSubmit={billStorage} className="w-full max-w-md bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-5 space-y-3">
+            <h3 className="text-white font-semibold text-sm">Bill Storage</h3>
+            <div>
+              <label className="text-[11px] text-slate-500 block mb-1">Days</label>
+              <input type="number" min="1" required className={inp} value={billingStorage.days} onChange={(e) => setBillingStorage((f) => ({ ...f, days: e.target.value }))} />
+            </div>
+            <div>
+              <label className="text-[11px] text-slate-500 block mb-1">Rate Per Day</label>
+              <input type="number" min="0" step="0.01" required className={inp} value={billingStorage.rate_per_day} onChange={(e) => setBillingStorage((f) => ({ ...f, rate_per_day: e.target.value }))} />
+            </div>
+            <div>
+              <label className="text-[11px] text-slate-500 block mb-1">Billed To</label>
+              <input className={inp} value={billingStorage.billed_to} onChange={(e) => setBillingStorage((f) => ({ ...f, billed_to: e.target.value }))} />
+            </div>
+            <div>
+              <label className="text-[11px] text-slate-500 block mb-1">Notes</label>
+              <textarea rows={2} className={inp} value={billingStorage.notes} onChange={(e) => setBillingStorage((f) => ({ ...f, notes: e.target.value }))} />
+            </div>
+            <div className="text-sm text-amber-300 font-semibold">
+              Total: ${(Number(billingStorage.days || 0) * Number(billingStorage.rate_per_day || 0)).toFixed(2)}
+            </div>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setShowStorageBillModal(false)} className="flex-1 bg-[#0f1117] border border-[#2a2d3e] text-slate-300 py-2 rounded-lg text-sm">
+                Cancel
+              </button>
+              <button type="submit" disabled={billingStorageSaving} className="flex-1 bg-amber-400 hover:bg-amber-300 text-[#0f1117] py-2 rounded-lg text-sm font-semibold disabled:opacity-50">
+                {billingStorageSaving ? 'Saving...' : 'Create Charge'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {showCatalogSearch && (
         <PartsSearch

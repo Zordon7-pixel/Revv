@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const { dbGet, dbAll, dbRun } = require('../db');
 const auth = require('../middleware/auth');
+const { requireTechnician } = require('../middleware/roles');
 const { v4: uuidv4 } = require('uuid');
 
 router.get('/', auth, async (req, res) => {
@@ -39,7 +40,7 @@ router.get('/:id', auth, async (req, res) => {
   }
 });
 
-router.post('/', auth, async (req, res) => {
+router.post('/', auth, requireTechnician, async (req, res) => {
   try {
     const { name, phone, email, address, insurance_company, policy_number } = req.body;
     if (!name || !name.trim()) return res.status(400).json({ error: 'Customer name is required.' });
@@ -57,7 +58,7 @@ router.post('/', auth, async (req, res) => {
   }
 });
 
-router.put('/:id', auth, async (req, res) => {
+router.put('/:id', auth, requireTechnician, async (req, res) => {
   try {
     const { name, phone, email, address, insurance_company, policy_number } = req.body;
     await dbRun(
@@ -70,7 +71,7 @@ router.put('/:id', auth, async (req, res) => {
   }
 });
 
-router.delete('/:id', auth, async (req, res) => {
+router.delete('/:id', auth, requireTechnician, async (req, res) => {
   try {
     await dbRun('UPDATE users SET customer_id = NULL WHERE customer_id = $1', [req.params.id]);
     await dbRun('DELETE FROM customers WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);

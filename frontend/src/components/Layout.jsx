@@ -4,7 +4,7 @@ import { LayoutDashboard, ClipboardList, Users, BarChart3, BarChart2, Settings, 
 import FeedbackButton from './FeedbackButton'
 import HelpPanel from './HelpPanel'
 import NotificationBell from './NotificationBell'
-import { getRole, getTokenPayload, isAdmin, isEmployee } from '../lib/auth'
+import { getRole, getTokenPayload, isAdmin, isEmployee, isAssistant } from '../lib/auth'
 import api from '../lib/api'
 import { useLanguage } from '../contexts/LanguageContext'
 import LanguageToggle from './LanguageToggle'
@@ -14,6 +14,7 @@ const allNav = [
   { to: '/ros',          icon: ClipboardList,   labelKey: 'nav.repairOrders', adminOnly: false },
   { to: '/parts',        icon: Package,         labelKey: 'nav.parts',        ownerOnly: true  },
   { to: '/payments',     icon: CreditCard,      labelKey: 'nav.payments',     adminOnly: false },
+  { to: '/storage',      icon: Package,         labelKey: 'nav.storage',      adminOnly: false },
   { to: '/adas',         icon: Radar,           labelKey: 'nav.adas',         adminOnly: true  },
   { to: '/tech',         icon: Wrench,          labelKey: 'nav.techView',     nonAdminOnly: true },
   { to: '/customers',    icon: Users,           labelKey: 'nav.customers',    adminOnly: false },
@@ -34,6 +35,7 @@ export default function Layout() {
   const navigate = useNavigate()
   const admin = isAdmin()
   const staff = isEmployee()
+  const assistant = isAssistant()
   const role = getRole()
   const user = getTokenPayload()
   const userInitial = (user?.name || user?.email || 'U').charAt(0).toUpperCase()
@@ -45,6 +47,7 @@ export default function Layout() {
   }
 
   const nav = allNav.filter((n) => {
+    if (assistant) return ['/', '/ros', '/customers'].includes(n.to)
     if (n.nonAdminOnly) return !admin
     if (n.ownerOnly) return role === 'owner' || role === 'admin'
     if (n.adminOnly) return admin

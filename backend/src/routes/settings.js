@@ -1,14 +1,9 @@
 const router = require('express').Router();
 const { dbGet, dbRun } = require('../db');
 const auth = require('../middleware/auth');
+const { requireOwner, requireTechnician } = require('../middleware/roles');
 
 const SECTIONS = new Set(['ros', 'customers', 'vehicles', 'timeclock', 'all']);
-
-function requireOwner(req, res, next) {
-  if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
-  if (req.user.role !== 'owner') return res.status(403).json({ error: 'Owner access required' });
-  return next();
-}
 
 async function resetRos(shopId) {
   await dbRun(
@@ -52,7 +47,7 @@ async function resetTimeclock(shopId) {
   return entries.rowCount || 0;
 }
 
-router.get('/', auth, async (req, res) => {
+router.get('/', auth, requireTechnician, async (req, res) => {
   try {
     const settings = await dbGet(
       'SELECT COALESCE(sms_notifications_enabled, TRUE) AS sms_notifications_enabled FROM shops WHERE id = $1',
@@ -65,7 +60,7 @@ router.get('/', auth, async (req, res) => {
   }
 });
 
-router.patch('/', auth, async (req, res) => {
+router.patch('/', auth, requireTechnician, async (req, res) => {
   try {
     if (!['owner', 'admin'].includes(req.user.role)) {
       return res.status(403).json({ error: 'Admin access required' });

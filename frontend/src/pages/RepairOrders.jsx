@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { Plus, Search, Shield, AlertTriangle, Trash2 } from 'lucide-react'
 import api from '../lib/api'
-import { isAdmin, isOwner } from '../lib/auth'
+import { isAdmin, isAssistant, isOwner } from '../lib/auth'
 import AddROModal from '../components/AddROModal'
 import StatusBadge from '../components/StatusBadge'
 
@@ -30,6 +30,7 @@ export default function RepairOrders() {
   const [bulkStatus, setBulkStatus] = useState('')
   const [bulkLoading, setBulkLoading] = useState(false)
   const [errorToast, setErrorToast] = useState('')
+  const assistant = isAssistant()
   const canBulk = isAdmin() || isOwner()
 
   const load = () => api.get('/ros').then((r) => setRos(r.data.ros || []))
@@ -106,7 +107,7 @@ export default function RepairOrders() {
   }
 
   function canDeleteRO(ro) {
-    return true
+    return !assistant
   }
 
   async function deleteRO(ro) {
@@ -132,9 +133,11 @@ export default function RepairOrders() {
           <h1 className="text-xl font-bold text-white">Repair Orders</h1>
           <p className="text-slate-500 text-sm">{ros.length} total · {ros.filter((r) => r.status !== 'delivery' && r.status !== 'closed').length} active</p>
         </div>
-        <button onClick={() => setShowAdd(true)} className="flex items-center gap-2 bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] text-sm font-semibold px-4 py-2 rounded-lg transition-colors">
-          <Plus size={16} /> New RO
-        </button>
+        {!assistant && (
+          <button onClick={() => setShowAdd(true)} className="flex items-center gap-2 bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] text-sm font-semibold px-4 py-2 rounded-lg transition-colors">
+            <Plus size={16} /> New RO
+          </button>
+        )}
       </div>
 
       <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-3">
@@ -198,7 +201,7 @@ export default function RepairOrders() {
         </div>
       </div>
 
-      {selected.size > 0 && canBulk && (
+      {selected.size > 0 && canBulk && !assistant && (
         <div className="flex items-center gap-3 mb-3 p-3 bg-indigo-900/20 border border-indigo-700/40 rounded-xl">
           <input
             type="checkbox"
@@ -366,7 +369,7 @@ export default function RepairOrders() {
         </div>
       )}
 
-      {showAdd && <AddROModal onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); load() }} />}
+      {showAdd && !assistant && <AddROModal onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); load() }} />}
       {errorToast && (
         <div className="fixed bottom-4 right-4 z-50 bg-red-900/90 border border-red-600/60 text-red-100 text-sm px-4 py-2 rounded-lg shadow-lg">
           {errorToast}

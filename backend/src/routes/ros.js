@@ -1,7 +1,7 @@
 const router = require('express').Router();
 const { dbGet, dbAll, dbRun } = require('../db');
 const auth = require('../middleware/auth');
-const { requireAdmin } = require('../middleware/roles');
+const { requireAdmin, requireTechnician } = require('../middleware/roles');
 const { calculateProfit } = require('../services/profit');
 const { sendSMS, isConfigured } = require('../services/sms');
 const { sendMail } = require('../services/mailer');
@@ -398,7 +398,7 @@ router.get('/turnaround-estimate', auth, async (req, res) => {
 });
 
 // PATCH /api/ros/bulk — batch status update
-router.patch('/bulk', auth, async (req, res) => {
+router.patch('/bulk', auth, requireTechnician, async (req, res) => {
   if (!['owner', 'admin'].includes(req.user.role)) {
     return res.status(403).json({ error: 'Admin access required' });
   }
@@ -448,7 +448,7 @@ router.get('/:id/invoice', auth, async (req, res) => {
   }
 });
 
-router.post('/:id/email-invoice', auth, async (req, res) => {
+router.post('/:id/email-invoice', auth, requireTechnician, async (req, res) => {
   try {
     const ro = await dbGet('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
     if (!ro) return res.status(404).json({ error: 'Not found' });
@@ -503,7 +503,7 @@ router.get('/:id/comms', auth, async (req, res) => {
   }
 });
 
-router.post('/:id/comms', auth, async (req, res) => {
+router.post('/:id/comms', auth, requireTechnician, async (req, res) => {
   try {
     await ensureRoCommsTable();
     const ro = await dbGet('SELECT id FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
@@ -578,7 +578,7 @@ router.get('/:id/insurance', auth, async (req, res) => {
   }
 });
 
-router.patch('/:id/insurance', auth, async (req, res) => {
+router.patch('/:id/insurance', auth, requireTechnician, async (req, res) => {
   try {
     const ro = await dbGet('SELECT id FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
     if (!ro) return res.status(404).json({ error: 'Not found' });
@@ -668,7 +668,7 @@ router.patch('/:id/insurance', auth, async (req, res) => {
   }
 });
 
-router.post('/:id/supplement', auth, async (req, res) => {
+router.post('/:id/supplement', auth, requireTechnician, async (req, res) => {
   try {
     const ro = await dbGet(
       'SELECT id, shop_id, ro_number, insurance_approved_amount FROM repair_orders WHERE id = $1 AND shop_id = $2',
@@ -730,7 +730,7 @@ router.post('/:id/supplement', auth, async (req, res) => {
   }
 });
 
-router.post('/:id/approval-link', auth, async (req, res) => {
+router.post('/:id/approval-link', auth, requireTechnician, async (req, res) => {
   try {
     await ensureApprovalLinksTable();
     const ro = await dbGet('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
@@ -830,7 +830,7 @@ router.post('/approval/:token/respond', async (req, res) => {
   }
 });
 
-router.post('/', auth, roLimitGuard, async (req, res) => {
+router.post('/', auth, requireTechnician, roLimitGuard, async (req, res) => {
   try {
     const { customer_id, vehicle_id, job_type, payment_type, claim_number, insurer, adjuster_name, adjuster_phone, deductible, notes, estimated_delivery, damaged_panels } = req.body;
     if (!customer_id || !vehicle_id) {
@@ -976,7 +976,7 @@ router.post('/', auth, roLimitGuard, async (req, res) => {
   }
 });
 
-router.put('/:id', auth, async (req, res) => {
+router.put('/:id', auth, requireTechnician, async (req, res) => {
   try {
     const ro = await dbGet('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
     if (!ro) return res.status(404).json({ error: 'Not found' });
@@ -997,7 +997,7 @@ router.put('/:id', auth, async (req, res) => {
   }
 });
 
-router.put('/:id/status', auth, async (req, res) => {
+router.put('/:id/status', auth, requireTechnician, async (req, res) => {
   try {
     const { status, note } = req.body;
     if (!STATUSES.includes(status)) return res.status(400).json({ error: 'Invalid status' });
@@ -1060,7 +1060,7 @@ router.patch('/:id/assign', auth, requireAdmin, async (req, res) => {
   }
 });
 
-router.patch('/:id', auth, async (req, res) => {
+router.patch('/:id', auth, requireTechnician, async (req, res) => {
   try {
     const { status, note, ...otherFields } = req.body || {};
     const ro = await dbGet('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
@@ -1169,7 +1169,7 @@ router.patch('/:id', auth, async (req, res) => {
   }
 });
 
-router.post('/:id/approve-estimate', auth, async (req, res) => {
+router.post('/:id/approve-estimate', auth, requireTechnician, async (req, res) => {
   try {
     const ro = await dbGet('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
     if (!ro) return res.status(404).json({ error: 'Not found' });
@@ -1198,7 +1198,7 @@ router.post('/:id/approve-estimate', auth, async (req, res) => {
   }
 });
 
-router.post('/:id/mark-paid', auth, async (req, res) => {
+router.post('/:id/mark-paid', auth, requireTechnician, async (req, res) => {
   try {
     const { payment_method } = req.body || {};
     const ro = await dbGet('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
@@ -1254,7 +1254,7 @@ router.post('/:id/mark-paid', auth, async (req, res) => {
   }
 });
 
-router.delete('/:id', auth, async (req, res) => {
+router.delete('/:id', auth, requireTechnician, async (req, res) => {
   try {
     const { id } = req.params;
     const ro = await dbGet(

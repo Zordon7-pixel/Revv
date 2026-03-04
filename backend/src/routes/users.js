@@ -48,7 +48,7 @@ router.get('/', auth, requireAdmin, async (req, res) => {
       FROM users u
       LEFT JOIN customers c ON c.id = u.customer_id
       WHERE u.shop_id = $1
-      ORDER BY CASE u.role WHEN 'owner' THEN 1 WHEN 'admin' THEN 2 WHEN 'employee' THEN 3 WHEN 'staff' THEN 4 ELSE 5 END, u.name
+      ORDER BY CASE u.role WHEN 'owner' THEN 1 WHEN 'admin' THEN 2 WHEN 'employee' THEN 3 WHEN 'staff' THEN 4 WHEN 'assistant' THEN 5 ELSE 6 END, u.name
     `, [req.user.shop_id]);
     res.json({ users });
   } catch (err) {
@@ -60,7 +60,7 @@ router.post('/', auth, requireAdmin, async (req, res) => {
   try {
     const { name, email, password, role, customer_id } = req.body;
     if (!name?.trim() || !email?.trim() || !password) return res.status(400).json({ error: 'name, email, password required' });
-    const validRoles = ['admin', 'employee', 'staff', 'customer'];
+    const validRoles = ['admin', 'employee', 'staff', 'assistant', 'customer'];
     if (!validRoles.includes(role)) return res.status(400).json({ error: `role must be one of: ${validRoles.join(', ')}` });
 
     const existing = await dbGet('SELECT id FROM users WHERE email = $1', [email]);
@@ -78,6 +78,32 @@ router.post('/', auth, requireAdmin, async (req, res) => {
     res.status(201).json(await dbGet('SELECT id, name, email, role, customer_id, created_at FROM users WHERE id = $1', [id]));
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/assistant', auth, requireAdmin, async (req, res) => {
+  try {
+    const { name, email, password } = req.body || {};
+    if (!name?.trim() || !email?.trim() || !password) {
+      return res.status(400).json({ error: 'name, email, password required' });
+    }
+
+    const existing = await dbGet('SELECT id FROM users WHERE email = $1', [email.trim().toLowerCase()]);
+    if (existing) return res.status(409).json({ error: 'Email already in use' });
+
+    const id = uuidv4();
+    await dbRun(
+      'INSERT INTO users (id, shop_id, name, email, password_hash, role) VALUES ($1, $2, $3, $4, $5, $6)',
+      [id, req.user.shop_id, name.trim(), email.trim().toLowerCase(), bcrypt.hashSync(password, 10), 'assistant']
+    );
+
+    const assistant = await dbGet(
+      'SELECT id, name, email, role, customer_id, created_at FROM users WHERE id = $1',
+      [id]
+    );
+    return res.status(201).json(assistant);
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
   }
 });
 

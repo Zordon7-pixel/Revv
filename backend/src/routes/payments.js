@@ -2,6 +2,7 @@ const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { dbGet, dbAll, dbRun } = require('../db');
 const auth = require('../middleware/auth');
+const { requireTechnician } = require('../middleware/roles');
 const { createNotification } = require('../services/notifications');
 const { createPaymentIntent, constructWebhookEvent } = require('../services/stripe');
 
@@ -103,10 +104,10 @@ async function handleCreateIntent(req, res) {
   }
 }
 
-router.post('/intent', auth, handleCreateIntent);
+router.post('/intent', auth, requireTechnician, handleCreateIntent);
 
 // Backward-compat alias
-router.post('/create-intent', auth, async (req, res) => {
+router.post('/create-intent', auth, requireTechnician, async (req, res) => {
   req.body = {
     ro_id: req.body?.ro_id || req.body?.roId,
     amount: req.body?.amount,
@@ -219,7 +220,7 @@ router.post('/webhook', async (req, res) => {
   }
 });
 
-router.get('/history/:shopId', auth, async (req, res) => {
+router.get('/history/:shopId', auth, requireTechnician, async (req, res) => {
   try {
     const { shopId } = req.params;
     if (shopId !== req.user.shop_id) return res.status(403).json({ error: 'Forbidden' });
@@ -256,7 +257,7 @@ router.get('/history/:shopId', auth, async (req, res) => {
   }
 });
 
-router.get('/ro/:roId', auth, async (req, res) => {
+router.get('/ro/:roId', auth, requireTechnician, async (req, res) => {
   try {
     const ro = await dbGet(
       `SELECT id, shop_id, ro_number, payment_status, payment_received, payment_received_at, payment_method,

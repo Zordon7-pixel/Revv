@@ -6,17 +6,22 @@ const ROLES = ['admin', 'employee', 'staff']  // customers self-register via /re
 const ROLE_META = {
   owner:    { label: 'Owner',    icon: Shield, cls: 'text-purple-400 bg-purple-900/30 border-purple-700' },
   admin:    { label: 'Admin',    icon: Shield, cls: 'text-indigo-400 bg-indigo-900/30 border-indigo-700' },
-  employee: { label: 'Employee', icon: Wrench, cls: 'text-amber-400  bg-amber-900/30  border-amber-700'  },
+  employee: { label: 'Employee', icon: Wrench, cls: 'text-orange-400 bg-orange-900/30 border-orange-700'  },
   staff:    { label: 'Staff',    icon: Wrench, cls: 'text-blue-400   bg-blue-900/30   border-blue-700'   },
+  assistant:{ label: 'Assistant',icon: Wrench, cls: 'text-yellow-300 bg-yellow-900/30 border-yellow-700' },
   customer: { label: 'Customer', icon: Car,    cls: 'text-emerald-400 bg-emerald-900/30 border-emerald-700' },
 }
 
 export default function Users() {
   const [users,   setUsers]   = useState([])
   const [showAdd, setShowAdd] = useState(false)
+  const [showAddAssistant, setShowAddAssistant] = useState(false)
   const [saving,    setSaving]    = useState(false)
+  const [savingAssistant, setSavingAssistant] = useState(false)
   const empty = { name:'', email:'', password:'', role:'employee', customer_id:'' }
+  const emptyAssistant = { name:'', email:'', password:'' }
   const [form, setForm] = useState(empty)
+  const [assistantForm, setAssistantForm] = useState(emptyAssistant)
 
   useEffect(() => { load() }, [])
   function load() {
@@ -42,12 +47,28 @@ export default function Users() {
   }
 
   function close() { setShowAdd(false); setForm(empty) }
+  function closeAssistant() { setShowAddAssistant(false); setAssistantForm(emptyAssistant) }
+
+  async function saveAssistant(e) {
+    e.preventDefault()
+    setSavingAssistant(true)
+    try {
+      await api.post('/users/assistant', assistantForm)
+      load()
+      closeAssistant()
+    } catch (err) {
+      alert(err?.response?.data?.error || 'Error creating assistant')
+    } finally {
+      setSavingAssistant(false)
+    }
+  }
 
   const inp = 'w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition-colors'
   const lbl = 'block text-xs font-medium text-slate-400 mb-1.5'
 
   const admins    = users.filter(u => ['owner','admin'].includes(u.role))
   const employees = users.filter(u => ['employee','staff'].includes(u.role))
+  const assistants = users.filter(u => u.role === 'assistant')
   const customerU = users.filter(u => u.role === 'customer')
 
   function Section({ title, list }) {
@@ -98,6 +119,21 @@ export default function Users() {
         </button>
       </div>
 
+      <div className="bg-yellow-900/10 border border-yellow-700/30 rounded-xl p-4 space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-yellow-300">Assistant Access</h3>
+            <p className="text-xs text-slate-400 mt-1">Assistants can only view Dashboard, Repair Orders, and Customers. They cannot edit records, billing, reports, users, settings, or payments.</p>
+          </div>
+          <button
+            onClick={() => setShowAddAssistant(true)}
+            className="flex-shrink-0 flex items-center gap-2 bg-yellow-400 hover:bg-yellow-300 text-[#0f1117] font-semibold px-3 py-2 rounded-lg text-xs transition-colors"
+          >
+            <Plus size={13} /> Add Assistant
+          </button>
+        </div>
+      </div>
+
       {/* Role explainer */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         {[
@@ -120,6 +156,7 @@ export default function Users() {
 
       <Section title="Admins" list={admins} />
       <Section title="Employees" list={employees} />
+      <Section title="Assistants" list={assistants} />
       {/* Customer Logins — self-registration info */}
       <div className="space-y-3">
         <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Customer Logins</h3>
@@ -168,6 +205,28 @@ export default function Users() {
                 <button type="button" onClick={close} className="flex-1 bg-[#0f1117] text-slate-400 rounded-lg py-2.5 text-sm border border-[#2a2d3e]">Cancel</button>
                 <button type="submit" disabled={saving} className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg py-2.5 text-sm disabled:opacity-50">
                   {saving ? 'Creating...' : 'Create User'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showAddAssistant && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className="bg-[#1a1d2e] rounded-2xl border border-[#2a2d3e] w-full max-w-md">
+            <div className="flex items-center justify-between p-5 border-b border-[#2a2d3e]">
+              <h3 className="font-bold text-white">Add Assistant</h3>
+              <button onClick={closeAssistant} className="text-slate-400 hover:text-white"><X size={18}/></button>
+            </div>
+            <form onSubmit={saveAssistant} className="p-5 space-y-4">
+              <div><label className={lbl}>Full Name *</label><input className={inp} required value={assistantForm.name} onChange={e => setAssistantForm(f => ({ ...f, name: e.target.value }))} placeholder="Alex Rivera"/></div>
+              <div><label className={lbl}>Email *</label><input className={inp} required type="email" value={assistantForm.email} onChange={e => setAssistantForm(f => ({ ...f, email: e.target.value }))} placeholder="alex@example.com"/></div>
+              <div><label className={lbl}>Temp Password *</label><input className={inp} required type="password" value={assistantForm.password} onChange={e => setAssistantForm(f => ({ ...f, password: e.target.value }))} placeholder="Temporary password"/></div>
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={closeAssistant} className="flex-1 bg-[#0f1117] text-slate-400 rounded-lg py-2.5 text-sm border border-[#2a2d3e]">Cancel</button>
+                <button type="submit" disabled={savingAssistant} className="flex-1 bg-yellow-400 hover:bg-yellow-300 text-[#0f1117] font-bold rounded-lg py-2.5 text-sm disabled:opacity-50">
+                  {savingAssistant ? 'Creating...' : 'Create Assistant'}
                 </button>
               </div>
             </form>

@@ -40,7 +40,8 @@ import Terms from './pages/Terms'
 import Privacy from './pages/Privacy'
 import ReviewSubmit from './pages/ReviewSubmit'
 import Reviews from './pages/Reviews'
-import { getToken } from './lib/auth'
+import StorageHold from './pages/StorageHold'
+import { getToken, isAssistant } from './lib/auth'
 
 function PrivateRoute({ children }) {
   return getToken() ? children : <Navigate to="/login" />
@@ -75,6 +76,12 @@ function EmployeeOnlyRoute({ children }) {
   return children
 }
 
+function NonAssistantRoute({ children }) {
+  if (!getToken()) return <Navigate to="/login" />
+  if (isAssistant()) return <Navigate to="/dashboard" />
+  return children
+}
+
 export default function App() {
   return (
     <LanguageProvider>
@@ -103,7 +110,8 @@ export default function App() {
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="ros" element={<RepairOrders />} />
             <Route path="parts" element={<OwnerRoute><PartsOnOrder /></OwnerRoute>} />
-            <Route path="payments" element={<Payments />} />
+            <Route path="payments" element={<NonAssistantRoute><Payments /></NonAssistantRoute>} />
+            <Route path="storage" element={<NonAssistantRoute><StorageHold /></NonAssistantRoute>} />
             <Route path="tech" element={<EmployeeOnlyRoute><TechView /></EmployeeOnlyRoute>} />
             <Route path="ros/:id" element={<RODetail />} />
             <Route path="ros/:id/inspection/:inspectionId" element={<InspectionEditor />} />

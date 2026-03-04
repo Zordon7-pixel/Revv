@@ -1,25 +1,46 @@
-// Role-based access control middleware
-// Roles: owner > admin > employee/staff > customer
-
-const ADMIN_ROLES    = ['owner', 'admin'];
-const EMPLOYEE_ROLES = ['owner', 'admin', 'employee', 'staff'];
-
-const requireAdmin = (req, res, next) => {
-  if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
-  if (!ADMIN_ROLES.includes(req.user.role)) return res.status(403).json({ error: 'Admin access required' });
-  next();
+const ROLE_RANK = {
+  owner: 4,
+  admin: 3,
+  technician: 2,
+  employee: 2,
+  staff: 2,
+  assistant: 1,
+  customer: 0,
 };
 
-const requireEmployee = (req, res, next) => {
+function getRoleRank(role) {
+  return ROLE_RANK[String(role || '').toLowerCase()] ?? -1;
+}
+
+const requireRole = (minRole) => (req, res, next) => {
   if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
-  if (!EMPLOYEE_ROLES.includes(req.user.role)) return res.status(403).json({ error: 'Staff access required' });
-  next();
+  const current = getRoleRank(req.user.role);
+  const minimum = getRoleRank(minRole);
+  if (current < minimum) {
+    return res.status(403).json({ error: `${minRole} access required` });
+  }
+  return next();
 };
+
+const requireOwner = requireRole('owner');
+const requireAdmin = requireRole('admin');
+const requireTechnician = requireRole('technician');
+const requireAssistant = requireRole('assistant');
+const requireEmployee = requireTechnician;
 
 const requireCustomer = (req, res, next) => {
   if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
   if (req.user.role !== 'customer') return res.status(403).json({ error: 'Customer access only' });
-  next();
+  return next();
 };
 
-module.exports = { requireAdmin, requireEmployee, requireCustomer };
+module.exports = {
+  ROLE_RANK,
+  requireRole,
+  requireOwner,
+  requireAdmin,
+  requireTechnician,
+  requireAssistant,
+  requireEmployee,
+  requireCustomer,
+};

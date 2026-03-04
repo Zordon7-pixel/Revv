@@ -1,13 +1,7 @@
 const router = require('express').Router();
 const { dbGet, dbAll } = require('../db');
 const auth = require('../middleware/auth');
-const { requireAdmin } = require('../middleware/roles');
-
-function requireOwner(req, res, next) {
-  if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
-  if (req.user.role !== 'owner') return res.status(403).json({ error: 'Owner access required' });
-  return next();
-}
+const { requireAdmin, requireOwner, requireTechnician } = require('../middleware/roles');
 
 function toCsvValue(value) {
   if (value === null || value === undefined) return '';
@@ -15,7 +9,7 @@ function toCsvValue(value) {
   return `"${str}"`;
 }
 
-router.get('/summary', auth, requireAdmin, async (req, res) => {
+router.get('/summary', auth, requireTechnician, requireAdmin, async (req, res) => {
   try {
     const sid = req.user.shop_id;
     const totalRow    = await dbGet("SELECT COUNT(*)::int as n FROM repair_orders WHERE shop_id = $1 AND billing_month = TO_CHAR(NOW(), 'YYYY-MM')", [sid]);
@@ -102,7 +96,7 @@ router.get('/summary', auth, requireAdmin, async (req, res) => {
   }
 });
 
-router.get('/monthly/:yearMonth', auth, requireOwner, async (req, res) => {
+router.get('/monthly/:yearMonth', auth, requireTechnician, requireOwner, async (req, res) => {
   try {
     const { yearMonth } = req.params;
     if (!/^\d{4}-\d{2}$/.test(yearMonth)) {
@@ -161,7 +155,7 @@ router.get('/monthly/:yearMonth', auth, requireOwner, async (req, res) => {
   }
 });
 
-router.get('/monthly/:yearMonth/csv', auth, requireOwner, async (req, res) => {
+router.get('/monthly/:yearMonth/csv', auth, requireTechnician, requireOwner, async (req, res) => {
   try {
     const { yearMonth } = req.params;
     if (!/^\d{4}-\d{2}$/.test(yearMonth)) {
@@ -229,7 +223,7 @@ router.get('/monthly/:yearMonth/csv', auth, requireOwner, async (req, res) => {
   }
 });
 
-router.get('/:tab', auth, requireAdmin, async (req, res) => {
+router.get('/:tab', auth, requireTechnician, requireAdmin, async (req, res) => {
   try {
     const sid = req.user.shop_id;
     const { tab } = req.params;
