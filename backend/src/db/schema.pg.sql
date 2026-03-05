@@ -240,6 +240,23 @@ CREATE TABLE IF NOT EXISTS claim_links (
   submitted_at TIMESTAMPTZ
 );
 
+CREATE TABLE IF NOT EXISTS estimate_requests (
+  id UUID PRIMARY KEY,
+  shop_id UUID REFERENCES shops(id) ON DELETE SET NULL,
+  name TEXT NOT NULL,
+  phone TEXT NOT NULL,
+  email TEXT NOT NULL,
+  year TEXT NOT NULL,
+  make TEXT NOT NULL,
+  model TEXT NOT NULL,
+  damage_type TEXT NOT NULL,
+  description TEXT,
+  preferred_date TEXT,
+  photos_json TEXT,
+  status TEXT DEFAULT 'pending',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 CREATE INDEX IF NOT EXISTS idx_users_shop_id ON users(shop_id);
 CREATE INDEX IF NOT EXISTS idx_users_customer_id ON users(customer_id);
 CREATE INDEX IF NOT EXISTS idx_customers_shop_id ON customers(shop_id);
@@ -265,3 +282,5 @@ CREATE INDEX IF NOT EXISTS idx_market_config_shop_id ON market_config(shop_id);
 CREATE INDEX IF NOT EXISTS idx_claim_links_shop_id ON claim_links(shop_id);
 CREATE INDEX IF NOT EXISTS idx_claim_links_ro_id ON claim_links(ro_id);
 CREATE INDEX IF NOT EXISTS idx_claim_links_token ON claim_links(token);
+CREATE INDEX IF NOT EXISTS idx_estimate_requests_shop_id ON estimate_requests(shop_id);
+CREATE INDEX IF NOT EXISTS idx_estimate_requests_status ON estimate_requests(status);

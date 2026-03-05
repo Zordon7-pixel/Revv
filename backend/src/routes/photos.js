@@ -19,7 +19,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 5 * 1024 * 1024 },
+  limits: { fileSize: 200 * 1024 },
   fileFilter: (req, file, cb) => {
     if (!file.mimetype.startsWith('image/')) return cb(new Error('Only image files are allowed'));
     cb(null, true);
@@ -28,9 +28,22 @@ const upload = multer({
 
 router.post('/:ro_id', auth, upload.single('photo'), async (req, res) => {
   try {
+    if (Array.isArray(req.body?.photos) && req.body.photos.length > 5) {
+      return res.status(400).json({ error: 'A maximum of 5 photos is allowed' });
+    }
+
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
     const ro = await dbGet('SELECT id FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.ro_id, req.user.shop_id]);
     if (!ro) return res.status(404).json({ error: 'Repair order not found' });
+
+    const existingCountRow = await dbGet(
+      'SELECT COUNT(*)::int AS count FROM ro_photos WHERE ro_id = $1',
+      [req.params.ro_id]
+    );
+    if ((existingCountRow?.count || 0) >= 5) {
+      return res.status(400).json({ error: 'A maximum of 5 photos is allowed' });
+    }
+
     const { caption, photo_type } = req.body;
     const id = uuidv4();
     const photo_url = `/uploads/photos/${req.file.filename}`;
@@ -40,7 +53,8 @@ router.post('/:ro_id', auth, upload.single('photo'), async (req, res) => {
     );
     res.status(201).json(await dbGet('SELECT * FROM ro_photos WHERE id = $1', [id]));
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[Photos] POST upload error:', err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -49,7 +63,8 @@ router.get('/:ro_id', auth, async (req, res) => {
     const photos = await dbAll('SELECT * FROM ro_photos WHERE ro_id = $1 ORDER BY created_at ASC', [req.params.ro_id]);
     res.json({ photos });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[Photos] GET by RO error:', err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -62,12 +77,13 @@ router.delete('/:photo_id', auth, async (req, res) => {
     await dbRun('DELETE FROM ro_photos WHERE id = $1', [req.params.photo_id]);
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[Photos] DELETE error:', err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
 router.use((err, req, res, next) => {
-  if (err.code === 'LIMIT_FILE_SIZE') return res.status(400).json({ error: 'File too large (max 5MB)' });
+  if (err.code === 'LIMIT_FILE_SIZE') return res.status(400).json({ error: 'File too large (max 200KB)' });
   res.status(400).json({ error: err.message });
 });
 

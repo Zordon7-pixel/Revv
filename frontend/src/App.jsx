@@ -31,6 +31,8 @@ import SuperAdminRoute from './components/SuperAdminRoute'
 import TrackPortal from './pages/TrackPortal'
 import ShopProfile from './pages/ShopProfile'
 import ADASCalibration from './pages/ADASCalibration'
+import PublicEstimateRequest from './pages/PublicEstimateRequest'
+import EstimateRequests from './pages/EstimateRequests'
 import { LanguageProvider } from './contexts/LanguageContext'
 import JobCosting from './pages/JobCosting'
 import Landing from './pages/Landing'
@@ -99,6 +101,7 @@ export default function App() {
           <Route path="/track/:token" element={<TrackPortal />} />
           <Route path="/shop/:shopId" element={<ShopProfile />} />
           <Route path="/book" element={<BookAppointment />} />
+          <Route path="/estimate-request" element={<PublicEstimateRequest />} />
           <Route path="/terms" element={<Terms />} />
           <Route path="/privacy" element={<Privacy />} />
           <Route path="/review/:token" element={<ReviewSubmit />} />
@@ -126,6 +129,7 @@ export default function App() {
             <Route path="users" element={<AdminRoute><Users /></AdminRoute>} />
             <Route path="settings" element={<OwnerRoute><Settings /></OwnerRoute>} />
             <Route path="adas" element={<AdminRoute><ADASCalibration /></AdminRoute>} />
+            <Route path="estimate-requests" element={<AdminRoute><EstimateRequests /></AdminRoute>} />
             <Route path="job-costing" element={<OwnerRoute><JobCosting /></OwnerRoute>} />
           </Route>
         </Routes>

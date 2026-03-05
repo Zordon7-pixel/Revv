@@ -9,7 +9,7 @@ const pool = new Pool({
 async function initDb() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS shops (
-      id TEXT PRIMARY KEY,
+      id UUID PRIMARY KEY,
       name TEXT NOT NULL,
       onboarded BOOLEAN DEFAULT FALSE,
       phone TEXT,
@@ -34,8 +34,8 @@ async function initDb() {
     );
 
     CREATE TABLE IF NOT EXISTS customers (
-      id TEXT PRIMARY KEY,
-      shop_id TEXT REFERENCES shops(id),
+      id UUID PRIMARY KEY,
+      shop_id UUID REFERENCES shops(id),
       name TEXT NOT NULL,
       phone TEXT,
       email TEXT,
@@ -46,22 +46,22 @@ async function initDb() {
     );
 
     CREATE TABLE IF NOT EXISTS users (
-      id TEXT PRIMARY KEY,
-      shop_id TEXT REFERENCES shops(id),
+      id UUID PRIMARY KEY,
+      shop_id UUID REFERENCES shops(id) ON DELETE SET NULL,
       name TEXT NOT NULL,
       email TEXT UNIQUE NOT NULL,
       password_hash TEXT NOT NULL,
       role TEXT DEFAULT 'staff',
       phone TEXT,
-      customer_id TEXT REFERENCES customers(id),
+      customer_id UUID REFERENCES customers(id),
       revoke_all_before TEXT,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     );
 
     CREATE TABLE IF NOT EXISTS vehicles (
-      id TEXT PRIMARY KEY,
-      shop_id TEXT REFERENCES shops(id),
-      customer_id TEXT REFERENCES customers(id),
+      id UUID PRIMARY KEY,
+      shop_id UUID REFERENCES shops(id),
+      customer_id UUID REFERENCES customers(id),
       year INTEGER,
       make TEXT,
       model TEXT,
@@ -73,11 +73,11 @@ async function initDb() {
     );
 
     CREATE TABLE IF NOT EXISTS repair_orders (
-      id TEXT PRIMARY KEY,
-      shop_id TEXT REFERENCES shops(id),
+      id UUID PRIMARY KEY,
+      shop_id UUID REFERENCES shops(id),
       ro_number TEXT UNIQUE,
-      vehicle_id TEXT REFERENCES vehicles(id),
-      customer_id TEXT REFERENCES customers(id),
+      vehicle_id UUID REFERENCES vehicles(id),
+      customer_id UUID REFERENCES customers(id),
       job_type TEXT DEFAULT 'collision',
       status TEXT DEFAULT 'intake',
       payment_type TEXT DEFAULT 'insurance',
@@ -124,8 +124,8 @@ async function initDb() {
     );
 
     CREATE TABLE IF NOT EXISTS job_status_log (
-      id TEXT PRIMARY KEY,
-      ro_id TEXT REFERENCES repair_orders(id),
+      id UUID PRIMARY KEY,
+      ro_id UUID REFERENCES repair_orders(id),
       from_status TEXT,
       to_status TEXT NOT NULL,
       changed_by TEXT,
@@ -134,9 +134,9 @@ async function initDb() {
     );
 
     CREATE TABLE IF NOT EXISTS claim_links (
-      id TEXT PRIMARY KEY,
-      shop_id TEXT NOT NULL,
-      ro_id TEXT NOT NULL,
+      id UUID PRIMARY KEY,
+      shop_id UUID NOT NULL,
+      ro_id UUID NOT NULL,
       token TEXT NOT NULL UNIQUE,
       created_by TEXT NOT NULL,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -153,9 +153,9 @@ async function initDb() {
     );
 
     CREATE TABLE IF NOT EXISTS parts_orders (
-      id TEXT PRIMARY KEY,
-      shop_id TEXT REFERENCES shops(id),
-      ro_id TEXT REFERENCES repair_orders(id),
+      id UUID PRIMARY KEY,
+      shop_id UUID REFERENCES shops(id),
+      ro_id UUID REFERENCES repair_orders(id),
       part_name TEXT NOT NULL,
       part_number TEXT,
       vendor TEXT,
@@ -176,9 +176,9 @@ async function initDb() {
     );
 
     CREATE TABLE IF NOT EXISTS schedules (
-      id TEXT PRIMARY KEY,
-      shop_id TEXT REFERENCES shops(id),
-      user_id TEXT REFERENCES users(id),
+      id UUID PRIMARY KEY,
+      shop_id UUID REFERENCES shops(id),
+      user_id UUID REFERENCES users(id),
       shift_date TEXT NOT NULL,
       start_time TEXT NOT NULL,
       end_time TEXT NOT NULL,
@@ -188,9 +188,9 @@ async function initDb() {
     );
 
     CREATE TABLE IF NOT EXISTS early_clockin_authorizations (
-      id TEXT PRIMARY KEY,
-      shop_id TEXT NOT NULL,
-      employee_id TEXT NOT NULL,
+      id UUID PRIMARY KEY,
+      shop_id UUID NOT NULL,
+      employee_id UUID NOT NULL,
       date TEXT NOT NULL,
       authorized_by TEXT NOT NULL,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -198,9 +198,9 @@ async function initDb() {
     );
 
     CREATE TABLE IF NOT EXISTS time_entries (
-      id TEXT PRIMARY KEY,
-      shop_id TEXT REFERENCES shops(id),
-      user_id TEXT REFERENCES users(id),
+      id UUID PRIMARY KEY,
+      shop_id UUID REFERENCES shops(id),
+      user_id UUID REFERENCES users(id),
       clock_in TEXT,
       clock_out TEXT,
       clock_in_lat REAL,
@@ -218,24 +218,24 @@ async function initDb() {
     );
 
     CREATE TABLE IF NOT EXISTS password_reset_tokens (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
+      id UUID PRIMARY KEY,
+      user_id UUID NOT NULL,
       token TEXT NOT NULL UNIQUE,
       expires_at TEXT NOT NULL,
       used SMALLINT DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS revoked_tokens (
-      id TEXT PRIMARY KEY,
+      id UUID PRIMARY KEY,
       token_jti TEXT UNIQUE NOT NULL,
-      user_id TEXT,
+      user_id UUID,
       revoked_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     );
 
     CREATE TABLE IF NOT EXISTS ro_photos (
-      id TEXT PRIMARY KEY,
-      ro_id TEXT,
-      user_id TEXT,
+      id UUID PRIMARY KEY,
+      ro_id UUID,
+      user_id UUID,
       photo_url TEXT,
       caption TEXT,
       photo_type TEXT DEFAULT 'damage',
@@ -243,8 +243,8 @@ async function initDb() {
     );
 
     CREATE TABLE IF NOT EXISTS parts_requests (
-      id TEXT PRIMARY KEY,
-      ro_id TEXT,
+      id UUID PRIMARY KEY,
+      ro_id UUID,
       requested_by TEXT,
       part_name TEXT,
       part_number TEXT,
@@ -255,7 +255,7 @@ async function initDb() {
     );
 
     CREATE TABLE IF NOT EXISTS feedback (
-      id TEXT PRIMARY KEY,
+      id UUID PRIMARY KEY,
       app TEXT DEFAULT 'shopcommand',
       tester_name TEXT,
       category TEXT,
@@ -269,9 +269,9 @@ async function initDb() {
     );
 
     CREATE TABLE IF NOT EXISTS ro_payments (
-      id TEXT PRIMARY KEY,
-      shop_id TEXT NOT NULL REFERENCES shops(id),
-      ro_id TEXT NOT NULL REFERENCES repair_orders(id),
+      id UUID PRIMARY KEY,
+      shop_id UUID NOT NULL REFERENCES shops(id),
+      ro_id UUID NOT NULL REFERENCES repair_orders(id),
       stripe_payment_intent_id TEXT UNIQUE,
       amount_cents INTEGER NOT NULL,
       currency TEXT DEFAULT 'usd',
@@ -310,10 +310,10 @@ async function initDb() {
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS lunch_breaks (
-      id TEXT PRIMARY KEY,
-      shop_id TEXT NOT NULL,
-      employee_id TEXT NOT NULL,
-      time_entry_id TEXT,
+      id UUID PRIMARY KEY,
+      shop_id UUID NOT NULL,
+      employee_id UUID NOT NULL,
+      time_entry_id UUID,
       lunch_start TIMESTAMP WITH TIME ZONE NOT NULL,
       lunch_end TIMESTAMP WITH TIME ZONE,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -345,10 +345,10 @@ async function initDb() {
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS ro_comms (
-      id TEXT PRIMARY KEY,
-      ro_id TEXT NOT NULL REFERENCES repair_orders(id),
-      shop_id TEXT NOT NULL REFERENCES shops(id),
-      user_id TEXT REFERENCES users(id),
+      id UUID PRIMARY KEY,
+      ro_id UUID NOT NULL REFERENCES repair_orders(id),
+      shop_id UUID NOT NULL REFERENCES shops(id),
+      user_id UUID REFERENCES users(id),
       type TEXT NOT NULL,
       notes TEXT NOT NULL,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -357,11 +357,11 @@ async function initDb() {
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS estimate_approval_links (
-      id TEXT PRIMARY KEY,
-      ro_id TEXT NOT NULL REFERENCES repair_orders(id),
-      shop_id TEXT NOT NULL REFERENCES shops(id),
+      id UUID PRIMARY KEY,
+      ro_id UUID NOT NULL REFERENCES repair_orders(id),
+      shop_id UUID NOT NULL REFERENCES shops(id),
       token TEXT NOT NULL UNIQUE,
-      created_by TEXT REFERENCES users(id),
+      created_by UUID REFERENCES users(id),
       decline_reason TEXT,
       responded_at TEXT,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -370,8 +370,8 @@ async function initDb() {
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS appointment_requests (
-      id TEXT PRIMARY KEY,
-      shop_id TEXT NOT NULL REFERENCES shops(id),
+      id UUID PRIMARY KEY,
+      shop_id UUID NOT NULL REFERENCES shops(id),
       name TEXT NOT NULL,
       phone TEXT NOT NULL,
       email TEXT,
@@ -385,12 +385,31 @@ async function initDb() {
     )
   `);
 
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS estimate_requests (
+      id UUID PRIMARY KEY,
+      shop_id UUID REFERENCES shops(id) ON DELETE SET NULL,
+      name TEXT NOT NULL,
+      phone TEXT NOT NULL,
+      email TEXT NOT NULL,
+      year TEXT NOT NULL,
+      make TEXT NOT NULL,
+      model TEXT NOT NULL,
+      damage_type TEXT NOT NULL,
+      description TEXT,
+      preferred_date TEXT,
+      photos_json TEXT,
+      status TEXT DEFAULT 'pending',
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    )
+  `);
+
   // Customer experience: portal tokens for tracking
   await pool.query(`
     CREATE TABLE IF NOT EXISTS portal_tokens (
-      id TEXT PRIMARY KEY,
-      ro_id TEXT NOT NULL REFERENCES repair_orders(id),
-      shop_id TEXT NOT NULL REFERENCES shops(id),
+      id UUID PRIMARY KEY,
+      ro_id UUID NOT NULL REFERENCES repair_orders(id),
+      shop_id UUID NOT NULL REFERENCES shops(id),
       token TEXT NOT NULL UNIQUE,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
       expires_at TEXT
@@ -400,9 +419,9 @@ async function initDb() {
   // Customer experience: ratings
   await pool.query(`
     CREATE TABLE IF NOT EXISTS ro_ratings (
-      id TEXT PRIMARY KEY,
-      ro_id TEXT NOT NULL REFERENCES repair_orders(id),
-      shop_id TEXT NOT NULL REFERENCES shops(id),
+      id UUID PRIMARY KEY,
+      ro_id UUID NOT NULL REFERENCES repair_orders(id),
+      shop_id UUID NOT NULL REFERENCES shops(id),
       rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     )
@@ -410,8 +429,8 @@ async function initDb() {
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS monthly_goals (
-      id TEXT PRIMARY KEY,
-      shop_id TEXT NOT NULL REFERENCES shops(id),
+      id UUID PRIMARY KEY,
+      shop_id UUID NOT NULL REFERENCES shops(id),
       year_month TEXT NOT NULL,
       revenue_goal REAL,
       ro_goal INTEGER,
