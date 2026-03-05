@@ -873,48 +873,79 @@ router.post('/', auth, requireTechnician, roLimitGuard, async (req, res) => {
       duplicateParams
     );
 
-    const countRow = await dbGet('SELECT COUNT(*)::int as n FROM repair_orders WHERE shop_id = $1', [req.user.shop_id]);
-    const roNumber = `RO-2026-${String(countRow.n + 1).padStart(4, '0')}`;
-    const id = uuidv4();
+    let roNumber;
+    let roId;
+    let attempts = 0;
     const today = new Date().toISOString().split('T')[0];
     const panelsJson = Array.isArray(damaged_panels) ? JSON.stringify(damaged_panels) : (damaged_panels || '[]');
-    await dbRun(`
-      INSERT INTO repair_orders (
-        id, shop_id, ro_number, vehicle_id, customer_id, job_type, status, payment_type,
-        claim_number, insurer, insurance_claim_number, insurance_company,
-        adjuster_name, adjuster_phone, deductible, intake_date, estimated_delivery, notes, damaged_panels
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, 'intake', $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
-    `, [
-      id,
-      req.user.shop_id,
-      roNumber,
-      vehicle_id,
-      customer_id,
-      job_type || 'collision',
-      payment_type || 'insurance',
-      claim_number || null,
-      insurer || null,
-      claim_number || null,
-      insurer || null,
-      adjuster_name || null,
-      adjuster_phone || null,
-      deductible || 0,
-      today,
-      estimated_delivery || null,
-      notes || null,
-      panelsJson
-    ]);
-    await dbRun('INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by) VALUES ($1, $2, $3, $4, $5)', [uuidv4(), id, null, 'intake', req.user.id]);
+    while (attempts < 5) {
+      const maxRow = await dbGet(
+        `
+          SELECT COALESCE(
+            MAX(
+              CASE
+                WHEN ro_number ~ '^RO-[0-9]{4}-[0-9]+$' THEN CAST(SPLIT_PART(ro_number, '-', 3) AS INTEGER)
+                ELSE NULL
+              END
+            ),
+            0
+          )::int as n
+          FROM repair_orders
+          WHERE shop_id = $1
+        `,
+        [req.user.shop_id]
+      );
+      const nextNum = (maxRow?.n || 0) + 1;
+      roNumber = `RO-2026-${String(nextNum).padStart(4, '0')}`;
+      roId = uuidv4();
+      try {
+        await dbRun(`
+          INSERT INTO repair_orders (
+            id, shop_id, ro_number, vehicle_id, customer_id, job_type, status, payment_type,
+            claim_number, insurer, insurance_claim_number, insurance_company,
+            adjuster_name, adjuster_phone, deductible, intake_date, estimated_delivery, notes, damaged_panels
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, 'intake', $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+        `, [
+          roId,
+          req.user.shop_id,
+          roNumber,
+          vehicle_id,
+          customer_id,
+          job_type || 'collision',
+          payment_type || 'insurance',
+          claim_number || null,
+          insurer || null,
+          claim_number || null,
+          insurer || null,
+          adjuster_name || null,
+          adjuster_phone || null,
+          deductible || 0,
+          today,
+          estimated_delivery || null,
+          notes || null,
+          panelsJson
+        ]);
+        break;
+      } catch (err) {
+        if (err?.code === '23505' || (err?.message && err.message.includes('duplicate key'))) {
+          attempts += 1;
+          continue;
+        }
+        throw err;
+      }
+    }
+    if (attempts >= 5) throw new Error('Failed to generate unique RO number after 5 attempts');
+    await dbRun('INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by) VALUES ($1, $2, $3, $4, $5)', [uuidv4(), roId, null, 'intake', req.user.id]);
     await createNotification(
       req.user.shop_id,
       null,
       'ro_created',
       'New Repair Order Created',
       `RO #${roNumber} — ${job_type || 'collision'} job has been opened`,
-      id
+      roId
     );
-    const ro = await dbGet('SELECT * FROM repair_orders WHERE id = $1', [id]);
+    const ro = await dbGet('SELECT * FROM repair_orders WHERE id = $1', [roId]);
     
     // Auto-generate tracking link and send SMS (non-blocking)
     setImmediate(async () => {
@@ -930,7 +961,7 @@ router.post('/', auth, requireTechnician, roLimitGuard, async (req, res) => {
           LEFT JOIN customers c ON c.id = ro.customer_id
           LEFT JOIN shops s ON s.id = ro.shop_id
           WHERE ro.id = $1
-        `, [id]);
+        `, [roId]);
         
         if (!roContext?.customer_phone) return;
         
@@ -940,7 +971,7 @@ router.post('/', auth, requireTechnician, roLimitGuard, async (req, res) => {
         await run(`
           INSERT INTO portal_tokens (id, ro_id, shop_id, token)
           VALUES ($1, $2, $3, $4)
-        `, [tokenId, id, req.user.shop_id, token]);
+        `, [tokenId, roId, req.user.shop_id, token]);
         
         // Send SMS
         if (isConfigured()) {
