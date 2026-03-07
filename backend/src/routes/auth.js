@@ -139,7 +139,6 @@ router.post('/forgot-password', async (req, res) => {
       const token = crypto.randomBytes(32).toString('hex');
       const expiresAt = new Date(Date.now() + 3600000).toISOString();
       await dbRun('INSERT INTO password_reset_tokens (id, user_id, token, expires_at) VALUES ($1, $2, $3, $4)', [uuidv4(), user.id, token, expiresAt]);
-      console.log(`PASSWORD RESET LINK: /reset-password?token=${token}`);
     }
     res.json({ ok: true });
   } catch (err) {

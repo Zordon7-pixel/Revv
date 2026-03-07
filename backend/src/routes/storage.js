@@ -15,7 +15,7 @@ router.get('/summary', async (req, res) => {
     );
     return res.json({ unpaid_total: Number(summary?.unpaid_total || 0) });
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -57,7 +57,7 @@ router.get('/', async (req, res) => {
     );
     return res.json({ ros: rows });
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -78,7 +78,7 @@ router.get('/:roId/charges', async (req, res) => {
     );
     return res.json({ charges });
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -115,7 +115,7 @@ router.post('/:roId/charges', requireTechnician, async (req, res) => {
 
     return res.status(201).json({ charge });
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -131,7 +131,7 @@ router.patch('/:roId/charges/:chargeId', requireTechnician, async (req, res) => 
     if (!updated) return res.status(404).json({ error: 'Charge not found' });
     return res.json({ charge: updated });
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -175,7 +175,7 @@ router.patch('/:roId', requireTechnician, async (req, res) => {
 
     return res.json({ ro: updated });
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });
 

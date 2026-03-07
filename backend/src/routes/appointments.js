@@ -1,8 +1,14 @@
 const router = require('express').Router();
+const rateLimit = require('express-rate-limit');
 const { dbGet, dbAll, dbRun } = require('../db');
 const auth = require('../middleware/auth');
 const { requireAdmin } = require('../middleware/roles');
 const { v4: uuidv4 } = require('uuid');
+const appointmentLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { error: 'Too many requests, please try again later.' },
+});
 
 async function ensureTable() {
   await dbRun(`
@@ -23,7 +29,7 @@ async function ensureTable() {
   `);
 }
 
-router.post('/request', async (req, res) => {
+router.post('/request', appointmentLimiter, async (req, res) => {
   try {
     await ensureTable();
     const {
@@ -42,8 +48,15 @@ router.post('/request', async (req, res) => {
     if (!name?.trim() || !phone?.trim() || !service?.trim()) {
       return res.status(400).json({ error: 'name, phone, and service are required' });
     }
+    if (notes && notes.trim().length > 1000) {
+      return res.status(400).json({ error: 'Notes must be 1000 characters or less' });
+    }
 
     let shopId = req.query?.shop || null;
+    if (shopId) {
+      const shopExists = await dbGet('SELECT id FROM shops WHERE id = $1', [shopId]);
+      if (!shopExists) return res.status(400).json({ error: 'Invalid shop' });
+    }
     if (!shopId) {
       const firstShop = await dbGet('SELECT id FROM shops ORDER BY created_at ASC LIMIT 1');
       if (!firstShop?.id) return res.status(400).json({ error: 'No shop configured' });

@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const { dbGet, dbAll, dbRun } = require('../db');
 const auth = require('../middleware/auth');
+const { requireAdmin } = require('../middleware/roles');
 
 function decodeReviewToken(rawToken) {
   try {
@@ -83,7 +84,7 @@ router.post('/submit/:token', async (req, res) => {
   }
 });
 
-router.get('/', auth, async (req, res) => {
+router.get('/', auth, requireAdmin, async (req, res) => {
   try {
     const reviews = await dbAll(
       `SELECT id, ro_id, rating, comment, customer_name, submitted_at
