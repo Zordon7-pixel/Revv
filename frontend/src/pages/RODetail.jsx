@@ -120,6 +120,8 @@ export default function RODetail() {
   const [showStorageBillModal, setShowStorageBillModal] = useState(false)
   const [billingStorage, setBillingStorage] = useState({ days: 0, rate_per_day: 0, billed_to: '', notes: '' })
   const [billingStorageSaving, setBillingStorageSaving] = useState(false)
+  const [vinDraft, setVinDraft] = useState('')
+  const [savingVin, setSavingVin] = useState(false)
 
   const userIsAdmin = isAdmin()
   const userIsEmployee = isEmployee()
@@ -128,6 +130,7 @@ export default function RODetail() {
   const load = () => api.get(`/ros/${id}`).then(r => {
     setRo(r.data)
     setForm(r.data)
+    setVinDraft(r.data.vehicle?.vin || '')
     setParts(r.data.parts || [])
     setTechNotes(r.data.tech_notes || '')
     setStorageForm({
@@ -453,6 +456,26 @@ export default function RODetail() {
       await loadStorageCharges()
     } catch (err) {
       alert(err?.response?.data?.error || 'Could not mark charge as paid')
+    }
+  }
+
+  async function saveVin() {
+    if (!ro || savingVin) return
+    const currentVin = ro.vehicle?.vin || ''
+    const nextVin = vinDraft.trim()
+    if (nextVin === currentVin) return
+
+    setSavingVin(true)
+    try {
+      const { data } = await api.patch(`/ros/${id}`, { vin: nextVin })
+      setRo(data)
+      setForm(data)
+      setVinDraft(data.vehicle?.vin || '')
+    } catch (err) {
+      alert(err?.response?.data?.error || 'Could not update VIN')
+      setVinDraft(currentVin)
+    } finally {
+      setSavingVin(false)
     }
   }
 
@@ -784,7 +807,6 @@ export default function RODetail() {
             {[
               [`${t('common.year')}/${t('common.make')}/${t('common.model')}`, `${ro.vehicle?.year} ${ro.vehicle?.make} ${ro.vehicle?.model}`],
               ['Color', ro.vehicle?.color],
-              [t('common.vin'), ro.vehicle?.vin],
               ['Plate', ro.vehicle?.plate],
               ['Job Type', ro.job_type],
               ['Intake Date', ro.intake_date],
@@ -794,6 +816,27 @@ export default function RODetail() {
                 <span className="text-white font-medium capitalize">{v || '—'}</span>
               </div>
             ))}
+            <div className="flex justify-between text-xs items-center gap-2">
+              <span className="text-slate-500">{t('common.vin')}</span>
+              {userIsAssistant ? (
+                <span className="text-white font-medium">{ro.vehicle?.vin || '—'}</span>
+              ) : (
+                <input
+                  value={vinDraft}
+                  onChange={(e) => setVinDraft(e.target.value)}
+                  onBlur={saveVin}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      saveVin()
+                    }
+                  }}
+                  placeholder="Enter VIN"
+                  className="bg-[#0f1117] border border-[#2a2d3e] rounded px-2 py-0.5 text-xs text-white focus:outline-none focus:border-indigo-500 text-right font-mono w-56"
+                />
+              )}
+              {savingVin && <span className="text-[10px] text-slate-500">Saving...</span>}
+            </div>
             <div className="flex justify-between text-xs">
               <span className="text-slate-500">{t('portal.estimatedCompletion')}</span>
               {editing
@@ -822,7 +865,16 @@ export default function RODetail() {
               <VehicleDiagram
                 value={(() => { try { return JSON.parse(ro.damaged_panels || '[]') } catch { return [] } })()}
                 onChange={async (panels) => {
-                  try { await api.patch(`/ros/${ro.id}`, { damaged_panels: JSON.stringify(panels) }) } catch {}
+                  const nextPanels = JSON.stringify(panels)
+                  const prevPanels = ro.damaged_panels
+                  setRo((prev) => (prev ? { ...prev, damaged_panels: nextPanels } : prev))
+                  try {
+                    const { data } = await api.patch(`/ros/${ro.id}`, { damaged_panels: nextPanels })
+                    setRo(data)
+                    setForm(data)
+                  } catch {
+                    setRo((prev) => (prev ? { ...prev, damaged_panels: prevPanels } : prev))
+                  }
                 }}
                 readOnly={!isAdmin() && !isEmployee()}
               />

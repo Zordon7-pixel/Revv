@@ -1098,9 +1098,20 @@ router.patch('/:id', auth, requireTechnician, async (req, res) => {
     if (!ro) return res.status(404).json({ error: 'Not found' });
 
     if (!status) {
+      const hasVinUpdate = Object.prototype.hasOwnProperty.call(otherFields, 'vin');
+      const { vin, ...nonVinFields } = otherFields;
       const ALLOWED_PATCH_FIELDS = ['tech_notes','damaged_panels','claim_status','parts_cost','labor_cost','sublet_cost','tax','total','notes','estimated_delivery'];
-      const updates = Object.fromEntries(Object.entries(otherFields).filter(([k]) => ALLOWED_PATCH_FIELDS.includes(k)));
-      if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'No valid fields to update' });
+      const updates = Object.fromEntries(Object.entries(nonVinFields).filter(([k]) => ALLOWED_PATCH_FIELDS.includes(k)));
+      if (!hasVinUpdate && Object.keys(updates).length === 0) return res.status(400).json({ error: 'No valid fields to update' });
+
+      if (hasVinUpdate) {
+        if (!ro.vehicle_id) return res.status(400).json({ error: 'No vehicle attached to this RO' });
+        const normalizedVin = String(vin || '').trim() || null;
+        await dbRun(
+          'UPDATE vehicles SET vin = $1 WHERE id = $2 AND shop_id = $3',
+          [normalizedVin, ro.vehicle_id, req.user.shop_id]
+        );
+      }
 
       // Claim status business logic
       if (updates.claim_status) {
