@@ -12,6 +12,16 @@ async function runMigrations() {
   const schemaSql = fs.readFileSync(schemaPath, 'utf8');
 
   try {
+    // ── Clean up orphaned tables from old schema versions ──────────────────────
+    // estimate_requests is a stale table that no longer exists in schema.pg.sql.
+    // If it exists in the database, drop it to prevent FK constraint errors.
+    try {
+      await query(`DROP TABLE IF EXISTS estimate_requests CASCADE`);
+      console.log('[migrate] Dropped orphaned estimate_requests table (if existed)');
+    } catch (e) {
+      console.warn('[migrate] Orphaned table cleanup warning:', e.message.split('\n')[0]);
+    }
+
     // Check if base schema exists
     const exists = await query(
       `SELECT EXISTS (
