@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Pencil, Save, X, Package, PackageCheck, PackageX, Plus, CheckCircle, AlertCircle, Clock, Truck, RefreshCw, ExternalLink, Car, DollarSign, ClipboardList, Smartphone, AlertTriangle, Copy, Printer, User, Phone, MessageSquare, Mail, Users, CreditCard, Search, FileText } from 'lucide-react'
 import api from '../lib/api'
@@ -120,8 +120,6 @@ export default function RODetail() {
   const [showStorageBillModal, setShowStorageBillModal] = useState(false)
   const [billingStorage, setBillingStorage] = useState({ days: 0, rate_per_day: 0, billed_to: '', notes: '' })
   const [billingStorageSaving, setBillingStorageSaving] = useState(false)
-  const [vinDraft, setVinDraft] = useState('')
-  const [savingVin, setSavingVin] = useState(false)
 
   const userIsAdmin = isAdmin()
   const userIsEmployee = isEmployee()
@@ -129,8 +127,7 @@ export default function RODetail() {
 
   const load = () => api.get(`/ros/${id}`).then(r => {
     setRo(r.data)
-    setForm(r.data)
-    setVinDraft(r.data.vehicle?.vin || '')
+    setForm({ ...r.data, vin: r.data.vehicle?.vin || '' })
     setParts(r.data.parts || [])
     setTechNotes(r.data.tech_notes || '')
     setStorageForm({
@@ -259,7 +256,7 @@ export default function RODetail() {
   async function save() {
     setSaving(true)
     try {
-      await api.put(`/ros/${id}`, {
+      const roPayload = {
         parts_cost: +form.parts_cost || 0,
         labor_cost: +form.labor_cost || 0,
         sublet_cost: +form.sublet_cost || 0,
@@ -268,9 +265,12 @@ export default function RODetail() {
         goodwill_repair_cost: +form.goodwill_repair_cost || 0,
         estimated_delivery: form.estimated_delivery,
         notes: form.notes,
-      })
+        vin: form.vin,
+      }
+      const { data } = await api.put(`/ros/${id}`, roPayload)
+      setRo(data)
+      setForm({ ...data, vin: data.vehicle?.vin || '' })
       setEditing(false)
-      load()
     } finally { setSaving(false) }
   }
 
@@ -459,26 +459,6 @@ export default function RODetail() {
     }
   }
 
-  async function saveVin() {
-    if (!ro || savingVin) return
-    const currentVin = ro.vehicle?.vin || ''
-    const nextVin = vinDraft.trim()
-    if (nextVin === currentVin) return
-
-    setSavingVin(true)
-    try {
-      const { data } = await api.patch(`/ros/${id}`, { vin: nextVin })
-      setRo(data)
-      setForm(data)
-      setVinDraft(data.vehicle?.vin || '')
-    } catch (err) {
-      alert(err?.response?.data?.error || 'Could not update VIN')
-      setVinDraft(currentVin)
-    } finally {
-      setSavingVin(false)
-    }
-  }
-
   if (!ro) return <div className="flex items-center justify-center h-64 text-slate-500">{t('common.loading')}</div>
 
   const p = ro.profit || {}
@@ -506,6 +486,13 @@ export default function RODetail() {
     .filter((charge) => !charge.paid)
     .reduce((sum, charge) => sum + Number(charge.total_amount || 0), 0)
   const inp = 'w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500'
+  const damagedPanels = useMemo(() => {
+    try {
+      return JSON.parse(ro?.damaged_panels || '[]')
+    } catch {
+      return []
+    }
+  }, [ro?.damaged_panels])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
@@ -563,7 +550,7 @@ export default function RODetail() {
                 <button onClick={save} disabled={saving} className="flex-1 sm:flex-none w-full sm:w-auto flex items-center justify-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
                   <Save size={12} /> {saving ? 'Saving...' : t('common.save')}
                 </button>
-                <button onClick={() => { setEditing(false); setForm(ro) }} className="flex-1 sm:flex-none w-full sm:w-auto flex items-center justify-center gap-1 bg-[#2a2d3e] text-slate-400 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
+                <button onClick={() => { setEditing(false); setForm({ ...ro, vin: ro?.vehicle?.vin || '' }) }} className="flex-1 sm:flex-none w-full sm:w-auto flex items-center justify-center gap-1 bg-[#2a2d3e] text-slate-400 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
                   <X size={12} />
                 </button>
               </div>
@@ -816,26 +803,12 @@ export default function RODetail() {
                 <span className="text-white font-medium capitalize">{v || '—'}</span>
               </div>
             ))}
-            <div className="flex justify-between text-xs items-center gap-2">
+            <div className="flex justify-between text-xs">
               <span className="text-slate-500">{t('common.vin')}</span>
-              {userIsAssistant ? (
-                <span className="text-white font-medium">{ro.vehicle?.vin || '—'}</span>
-              ) : (
-                <input
-                  value={vinDraft}
-                  onChange={(e) => setVinDraft(e.target.value)}
-                  onBlur={saveVin}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault()
-                      saveVin()
-                    }
-                  }}
-                  placeholder="Enter VIN"
-                  className="bg-[#0f1117] border border-[#2a2d3e] rounded px-2 py-0.5 text-xs text-white focus:outline-none focus:border-indigo-500 text-right font-mono w-56"
-                />
-              )}
-              {savingVin && <span className="text-[10px] text-slate-500">Saving...</span>}
+              {editing
+                ? <input value={form.vin || ''} onChange={e => set('vin', e.target.value)} className="bg-[#0f1117] border border-[#2a2d3e] rounded px-2 py-0.5 text-xs text-white focus:outline-none focus:border-indigo-500 w-52 max-w-full" placeholder="VIN" />
+                : <span className="text-white font-medium">{ro.vehicle?.vin || '—'}</span>
+              }
             </div>
             <div className="flex justify-between text-xs">
               <span className="text-slate-500">{t('portal.estimatedCompletion')}</span>
@@ -863,17 +836,15 @@ export default function RODetail() {
           <div className="overflow-auto">
             <div className="min-w-[580px] sm:min-w-0">
               <VehicleDiagram
-                value={(() => { try { return JSON.parse(ro.damaged_panels || '[]') } catch { return [] } })()}
+                value={damagedPanels}
                 onChange={async (panels) => {
                   const nextPanels = JSON.stringify(panels)
-                  const prevPanels = ro.damaged_panels
-                  setRo((prev) => (prev ? { ...prev, damaged_panels: nextPanels } : prev))
+                  setRo(prev => (prev ? { ...prev, damaged_panels: nextPanels } : prev))
                   try {
                     const { data } = await api.patch(`/ros/${ro.id}`, { damaged_panels: nextPanels })
                     setRo(data)
-                    setForm(data)
                   } catch {
-                    setRo((prev) => (prev ? { ...prev, damaged_panels: prevPanels } : prev))
+                    load()
                   }
                 }}
                 readOnly={!isAdmin() && !isEmployee()}
