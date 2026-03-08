@@ -9,7 +9,9 @@ if (!connectionString) {
 
 const pool = new Pool({
   connectionString,
-  ssl: process.env.PGSSLMODE === 'disable' ? false : { rejectUnauthorized: false },
+  ssl: process.env.PGSSLMODE === 'disable'
+    ? false
+    : { rejectUnauthorized: process.env.NODE_ENV === 'production' },
 });
 
 async function query(text, params = []) {

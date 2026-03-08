@@ -143,7 +143,7 @@ router.patch('/:roId', requireTechnician, async (req, res) => {
     );
     if (!ro) return res.status(404).json({ error: 'Repair order not found' });
 
-    const updatableFields = [
+    const ALLOWED_STORAGE_FIELDS = [
       'storage_hold',
       'storage_rate_per_day',
       'storage_start_date',
@@ -151,7 +151,7 @@ router.patch('/:roId', requireTechnician, async (req, res) => {
       'storage_contact',
       'storage_notes',
     ];
-    const entries = Object.entries(req.body || {}).filter(([key]) => updatableFields.includes(key));
+    const entries = Object.entries(req.body || {}).filter(([key]) => ALLOWED_STORAGE_FIELDS.includes(key));
     if (!entries.length) return res.status(400).json({ error: 'No valid fields provided' });
 
     const values = [];

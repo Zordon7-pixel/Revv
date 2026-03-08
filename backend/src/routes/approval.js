@@ -1,7 +1,18 @@
 const router = require('express').Router();
+const rateLimit = require('express-rate-limit');
 const { dbGet, dbAll, dbRun } = require('../db');
 const { v4: uuidv4 } = require('uuid');
 const { createNotification } = require('../services/notifications');
+
+const publicApprovalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Try again in 15 minutes.' },
+});
+
+router.use(publicApprovalLimiter);
 
 async function notifyOwnersAndAdmins(shopId, roId, title, body) {
   const users = await dbAll(

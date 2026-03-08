@@ -3,7 +3,9 @@ const { Pool } = require('pg');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false,
+  ssl: process.env.DATABASE_URL
+    ? { rejectUnauthorized: process.env.NODE_ENV === 'production' }
+    : false,
 });
 
 async function initDb() {
@@ -444,20 +446,29 @@ async function initDb() {
     ADD COLUMN IF NOT EXISTS sms_notifications_enabled BOOLEAN DEFAULT TRUE
   `);
 
-  // Ensure demo shop is always marked as onboarded (fixes existing deployments)
-  await pool.query(`
-    UPDATE shops
-    SET onboarded = TRUE
-    WHERE id IN (SELECT shop_id FROM users WHERE email = 'demo@shop.com')
-  `).catch(() => {});
+  const demoOwnerEmail = (process.env.DEMO_OWNER_EMAIL || '').trim().toLowerCase();
+  if (demoOwnerEmail) {
+    // Ensure configured demo shop is always marked as onboarded (fixes existing deployments)
+    await pool.query(
+      `
+        UPDATE shops
+        SET onboarded = TRUE
+        WHERE id IN (SELECT shop_id FROM users WHERE email = $1)
+      `,
+      [demoOwnerEmail]
+    ).catch(() => {});
 
-  // Fix demo shop stuck at DC (Railway migration)
-  await pool.query(`
-    UPDATE shops
-    SET city = 'New York', state = 'NY', zip = '10001', address = '123 Miles Ave', market_tier = 1
-    WHERE id IN (SELECT shop_id FROM users WHERE email = 'demo@shop.com')
-    AND state = 'DC'
-  `).catch(() => {});
+    // Fix configured demo shop stuck at DC (Railway migration)
+    await pool.query(
+      `
+        UPDATE shops
+        SET city = 'New York', state = 'NY', zip = '10001', address = '123 Miles Ave', market_tier = 1
+        WHERE id IN (SELECT shop_id FROM users WHERE email = $1)
+        AND state = 'DC'
+      `,
+      [demoOwnerEmail]
+    ).catch(() => {});
+  }
 }
 
 async function dbGet(sql, params = []) {

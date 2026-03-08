@@ -1,20 +1,47 @@
 const router = require('express').Router();
+const crypto = require('crypto');
+const rateLimit = require('express-rate-limit');
 const { dbGet, dbAll, dbRun } = require('../db');
 const auth = require('../middleware/auth');
 const { requireAdmin } = require('../middleware/roles');
 
+const publicReviewLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Try again in 15 minutes.' },
+});
+
+function decodeBase64Url(input) {
+  const normalized = String(input || '').replace(/-/g, '+').replace(/_/g, '/');
+  const padding = normalized.length % 4 === 0 ? '' : '='.repeat(4 - (normalized.length % 4));
+  return Buffer.from(`${normalized}${padding}`, 'base64');
+}
+
 function decodeReviewToken(rawToken) {
   try {
-    const normalized = String(rawToken || '').replace(/-/g, '+').replace(/_/g, '/');
-    const padding = normalized.length % 4 === 0 ? '' : '='.repeat(4 - (normalized.length % 4));
-    const decoded = Buffer.from(`${normalized}${padding}`, 'base64').toString('utf8');
+    const [payloadPart, signaturePart] = String(rawToken || '').split('.');
+    if (!payloadPart || !signaturePart) return null;
+    if (!process.env.JWT_SECRET) return null;
+
+    const expectedSignature = crypto
+      .createHmac('sha256', process.env.JWT_SECRET)
+      .update(payloadPart)
+      .digest();
+    const providedSignature = decodeBase64Url(signaturePart);
+
+    if (providedSignature.length !== expectedSignature.length) return null;
+    if (!crypto.timingSafeEqual(providedSignature, expectedSignature)) return null;
+
+    const decoded = decodeBase64Url(payloadPart).toString('utf8');
     return JSON.parse(decoded);
   } catch {
     return null;
   }
 }
 
-router.get('/context/:token', async (req, res) => {
+router.get('/context/:token', publicReviewLimiter, async (req, res) => {
   const payload = decodeReviewToken(req.params.token);
   const exp = Number(payload?.exp);
   if (!payload?.ro_id || !payload?.shop_id || !Number.isFinite(exp)) {
@@ -40,7 +67,7 @@ router.get('/context/:token', async (req, res) => {
   }
 });
 
-router.post('/submit/:token', async (req, res) => {
+router.post('/submit/:token', publicReviewLimiter, async (req, res) => {
   const payload = decodeReviewToken(req.params.token);
   const exp = Number(payload?.exp);
   if (!payload?.ro_id || !payload?.shop_id || !Number.isFinite(exp)) {
