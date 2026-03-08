@@ -79,7 +79,7 @@ router.put('/:id', auth, async (req, res) => {
     }
 
     const ALLOWED_PARTS_FIELDS = ['status','carrier','tracking_number','expected_date','received_date','notes','name','part_number','cost','quantity','part_name','vendor','unit_cost','tracking_status','tracking_detail','tracking_updated_at'];
-    const updates = Object.fromEntries(Object.entries(req.body).filter(([k]) => ALLOWED_PARTS_FIELDS.includes(k)));
+    const updates = Object.fromEntries(Object.entries(req.body || {}).filter(([k]) => ALLOWED_PARTS_FIELDS.includes(k)));
     if (updates.name !== undefined && updates.part_name === undefined) updates.part_name = updates.name;
     if (updates.cost !== undefined && updates.unit_cost === undefined) updates.unit_cost = updates.cost;
     delete updates.name;

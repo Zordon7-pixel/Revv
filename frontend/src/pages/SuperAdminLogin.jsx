@@ -53,7 +53,7 @@ export default function SuperAdminLogin() {
               onChange={e => setEmail(e.target.value)}
               required
               className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-[#EAB308] transition-colors"
-              placeholder="admin@revv.app"
+              placeholder="superadmin@example.com"
             />
           </div>
           <div>
@@ -75,7 +75,7 @@ export default function SuperAdminLogin() {
           >
             {loading ? 'Signing in...' : 'Sign In'}
           </button>
-          <p className="text-xs text-slate-500">Superadmin: admin@revv.app / admin1234</p>
+          <p className="text-xs text-slate-500">Use your superadmin credentials.</p>
         </form>
       </div>
     </div>

@@ -4,12 +4,20 @@ const { dbGet, dbRun } = require('../db');
 const auth = require('../middleware/auth');
 const { v4: uuidv4 } = require('uuid');
 const multer = require('multer');
+const rateLimit = require('express-rate-limit');
 const path = require('path');
 const fs = require('fs');
 
 const uploadDir = path.join(__dirname, '../../uploads/assessments');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 const upload = multer({ dest: uploadDir, limits: { fileSize: 20 * 1024 * 1024 } });
+const publicTokenLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Try again in 15 minutes.' },
+});
 
 router.post('/:roId', auth, async (req, res) => {
   try {
@@ -31,7 +39,7 @@ router.post('/:roId', auth, async (req, res) => {
   }
 });
 
-router.get('/view/:token', async (req, res) => {
+router.get('/view/:token', publicTokenLimiter, async (req, res) => {
   try {
     const link = await dbGet('SELECT * FROM claim_links WHERE token = $1', [req.params.token]);
     if (!link) return res.status(404).json({ error: 'Link not found or expired' });
@@ -45,7 +53,7 @@ router.get('/view/:token', async (req, res) => {
   }
 });
 
-router.get('/:token', async (req, res, next) => {
+router.get('/:token', publicTokenLimiter, async (req, res, next) => {
   if (req.params.token === 'ro') return next();
   try {
     const link = await dbGet('SELECT * FROM claim_links WHERE token = $1', [req.params.token]);
@@ -60,7 +68,7 @@ router.get('/:token', async (req, res, next) => {
   }
 });
 
-router.post('/view/:token/submit', upload.single('assessment'), async (req, res) => {
+router.post('/view/:token/submit', publicTokenLimiter, upload.single('assessment'), async (req, res) => {
   try {
     const link = await dbGet('SELECT * FROM claim_links WHERE token = $1', [req.params.token]);
     if (!link) return res.status(404).json({ error: 'Link not found' });
@@ -88,7 +96,7 @@ router.post('/view/:token/submit', upload.single('assessment'), async (req, res)
   }
 });
 
-router.post('/:token/submit', upload.single('assessment'), async (req, res) => {
+router.post('/:token/submit', publicTokenLimiter, upload.single('assessment'), async (req, res) => {
   try {
     const link = await dbGet('SELECT * FROM claim_links WHERE token = $1', [req.params.token]);
     if (!link) return res.status(404).json({ error: 'Link not found' });

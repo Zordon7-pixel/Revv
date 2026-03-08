@@ -14,7 +14,7 @@ router.get('/rates', (req, res) => {
 
 router.get('/shop', auth, async (req, res) => {
   try {
-    const shop = await dbGet('SELECT id, name, phone, address, city, state, zip, market_tier, labor_rate, parts_markup, tax_rate, lat, lng, geofence_radius, tracking_api_key, twilio_account_sid, twilio_auth_token, twilio_phone_number, monthly_revenue_target FROM shops WHERE id = $1', [req.user.shop_id]);
+    const shop = await dbGet('SELECT id, name, phone, address, city, state, zip, market_tier, labor_rate, parts_markup, tax_rate, lat, lng, geofence_radius, twilio_phone_number, monthly_revenue_target FROM shops WHERE id = $1', [req.user.shop_id]);
     if (!shop) return res.status(404).json({ error: 'Shop not found' });
     res.json({ ...shop, sms_configured: isConfigured(), sms_phone: process.env.TWILIO_PHONE_NUMBER || null });
   } catch (err) {
@@ -64,7 +64,7 @@ router.put('/shop', auth, async (req, res) => {
     const setClauses = fields.map((f, i) => `${f} = $${i + 1}`).join(', ');
     await dbRun(`UPDATE shops SET ${setClauses} WHERE id = $${fields.length + 1}`, vals);
 
-    const updated = await dbGet('SELECT id, name, phone, address, city, state, zip, market_tier, labor_rate, parts_markup, tax_rate, lat, lng, geofence_radius, tracking_api_key, twilio_account_sid, twilio_auth_token, twilio_phone_number, monthly_revenue_target FROM shops WHERE id = $1', [req.user.shop_id]);
+    const updated = await dbGet('SELECT id, name, phone, address, city, state, zip, market_tier, labor_rate, parts_markup, tax_rate, lat, lng, geofence_radius, twilio_phone_number, monthly_revenue_target FROM shops WHERE id = $1', [req.user.shop_id]);
     res.json({ ...updated, sms_configured: isConfigured(), sms_phone: process.env.TWILIO_PHONE_NUMBER || null });
   } catch (err) {
     res.status(500).json({ error: err.message });

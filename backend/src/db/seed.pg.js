@@ -1,9 +1,11 @@
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 const { query, pool } = require('./postgres');
 
 async function runSeed() {
-  const existing = await query('SELECT id FROM users WHERE email = $1 LIMIT 1', ['demo@shop.com']);
+  const demoOwnerEmail = (process.env.DEMO_OWNER_EMAIL || '').trim().toLowerCase();
+  const existing = await query('SELECT id FROM shops LIMIT 1');
   if (existing.rows.length) {
     console.log('PostgreSQL already seeded — skipping.');
     return;
@@ -16,13 +18,16 @@ async function runSeed() {
     [shopId, 'Miles Automotive', '(555) 400-0100', '123 Miles Ave', 'New York', 'NY', '10001', 1, 95, 0.40, 0.08875]
   );
 
-  const hash = bcrypt.hashSync('demo1234', 10);
+  const seedPassword = process.env.DEMO_OWNER_PASSWORD || crypto.randomBytes(12).toString('hex');
+  const hash = bcrypt.hashSync(seedPassword, 10);
 
-  await query(
-    `INSERT INTO users (id, shop_id, name, email, password_hash, role)
-     VALUES ($1,$2,$3,$4,$5,$6)`,
-    [uuidv4(), shopId, 'Shop Owner', 'demo@shop.com', hash, 'owner']
-  );
+  if (demoOwnerEmail) {
+    await query(
+      `INSERT INTO users (id, shop_id, name, email, password_hash, role)
+       VALUES ($1,$2,$3,$4,$5,$6)`,
+      [uuidv4(), shopId, 'Shop Owner', demoOwnerEmail, hash, 'owner']
+    );
+  }
 
   await query(
     `INSERT INTO users (id, shop_id, name, email, password_hash, role)

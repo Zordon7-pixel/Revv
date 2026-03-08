@@ -51,8 +51,15 @@ router.patch('/:id', auth, requireAdmin, async (req, res) => {
     const { status } = req.body;
     const ALLOWED = ['pending', 'ordered', 'received', 'cancelled'];
     if (!ALLOWED.includes(status)) return res.status(400).json({ error: 'Invalid status' });
-    const request = await dbGet('SELECT * FROM parts_requests WHERE id = $1', [req.params.id]);
+    const request = await dbGet(
+      `SELECT pr.*, ro.shop_id
+       FROM parts_requests pr
+       LEFT JOIN repair_orders ro ON ro.id = pr.ro_id
+       WHERE pr.id = $1`,
+      [req.params.id]
+    );
     if (!request) return res.status(404).json({ error: 'Not found' });
+    if (request.shop_id !== req.user.shop_id) return res.status(403).json({ error: 'Forbidden' });
     await dbRun('UPDATE parts_requests SET status = $1 WHERE id = $2', [status, req.params.id]);
     res.json(await dbGet('SELECT * FROM parts_requests WHERE id = $1', [req.params.id]));
   } catch (err) {

@@ -113,7 +113,7 @@ router.put('/:id', auth, requireAdmin, async (req, res) => {
     if (!user) return res.status(404).json({ error: 'Not found' });
 
     const ALLOWED_USER_FIELDS = ['name','phone','role','email','password'];
-    const updates = Object.fromEntries(Object.entries(req.body).filter(([k]) => ALLOWED_USER_FIELDS.includes(k)));
+    const updates = Object.fromEntries(Object.entries(req.body || {}).filter(([k]) => ALLOWED_USER_FIELDS.includes(k)));
     const fields = []; const vals = [];
     if (updates.name)     { fields.push('name');          vals.push(updates.name.trim()); }
     if (updates.email)    { fields.push('email');         vals.push(updates.email.trim().toLowerCase()); }

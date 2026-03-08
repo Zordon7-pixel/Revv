@@ -5,6 +5,7 @@ const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
+const rateLimit = require('express-rate-limit');
 const { createNotification } = require('../services/notifications');
 
 const STATUS_MESSAGES = {
@@ -37,6 +38,14 @@ const upload = multer({
     if (!file.mimetype.startsWith('image/')) return cb(new Error('Only image files are allowed'));
     cb(null, true);
   },
+});
+
+const publicTokenLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Try again in 15 minutes.' },
 });
 
 async function notifyOwnersAndAdmins(shopId, type, title, body, roId) {
@@ -92,6 +101,7 @@ router.get('/shop', auth, async (req, res) => {
 });
 
 // Customer tracking portal - public endpoints
+router.use('/track/:token', publicTokenLimiter);
 
 router.get('/track/:token', async (req, res) => {
   try {

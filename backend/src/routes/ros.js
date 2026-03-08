@@ -8,6 +8,8 @@ const { sendMail } = require('../services/mailer');
 const { createNotification } = require('../services/notifications');
 const roLimitGuard = require('../middleware/roLimitGuard');
 const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
+const rateLimit = require('express-rate-limit');
 
 const STATUSES = ['intake','estimate','approval','parts','repair','paint','qc','delivery','closed','total_loss','siu_hold'];
 const COMM_TYPES = ['call', 'text', 'email', 'in-person'];
@@ -22,6 +24,21 @@ const STATUS_SMS_LABELS = {
   delivery: 'Ready for Pickup',
 };
 const SMS_STATUSES = new Set(Object.keys(STATUS_SMS_LABELS));
+const publicTokenLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Try again in 15 minutes.' },
+});
+
+function toBase64Url(input) {
+  return Buffer.from(input)
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+}
 
 function queueStatusSMS(roId, shopId, toStatus) {
   setImmediate(async () => {
@@ -81,11 +98,11 @@ async function queueClosedReviewEmail(roId) {
       shop_id: reviewContext.shop_id,
       exp: closedAtMs + (72 * 60 * 60 * 1000),
     };
-    const token = Buffer.from(JSON.stringify(tokenPayload))
-      .toString('base64')
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_')
-      .replace(/=+$/g, '');
+    const payloadPart = toBase64Url(JSON.stringify(tokenPayload));
+    const signaturePart = toBase64Url(
+      crypto.createHmac('sha256', process.env.JWT_SECRET).update(payloadPart).digest()
+    );
+    const token = `${payloadPart}.${signaturePart}`;
     const appUrl = process.env.APP_URL || 'https://revvshop.app';
     const reviewLink = `${appUrl}/review/${token}`;
     const shopName = reviewContext.shop_name || 'our shop';
@@ -175,17 +192,49 @@ async function ensureApprovalLinksTable() {
 
 async function enrichRO(ro) {
   if (!ro) return null;
-  const vehicle  = await dbGet('SELECT * FROM vehicles WHERE id = $1', [ro.vehicle_id]);
-  const customer = await dbGet('SELECT * FROM customers WHERE id = $1', [ro.customer_id]);
-  const log      = await dbAll('SELECT * FROM job_status_log WHERE ro_id = $1 ORDER BY created_at ASC', [ro.id]);
-  const parts    = await dbAll('SELECT * FROM parts_orders WHERE ro_id = $1 ORDER BY created_at ASC', [ro.id]);
+  const enriched = await dbGet(
+    `SELECT
+       row_to_json(v) AS vehicle,
+       CASE WHEN c.id IS NULL THEN NULL ELSE row_to_json(c) END AS customer,
+       COALESCE(log_data.log, '[]'::json) AS log,
+       COALESCE(parts_data.parts, '[]'::json) AS parts,
+       CASE
+         WHEN tech.id IS NULL THEN NULL
+         ELSE json_build_object('id', tech.id, 'name', tech.name, 'role', tech.role)
+       END AS assigned_tech,
+       EXISTS (
+         SELECT 1
+         FROM users portal_user
+         WHERE portal_user.customer_id = ro.customer_id
+           AND portal_user.shop_id = ro.shop_id
+       ) AS has_portal_access
+     FROM repair_orders ro
+     LEFT JOIN vehicles v ON v.id = ro.vehicle_id
+     LEFT JOIN customers c ON c.id = ro.customer_id
+     LEFT JOIN users tech ON tech.id = ro.assigned_to
+     LEFT JOIN LATERAL (
+       SELECT json_agg(l ORDER BY l.created_at ASC) AS log
+       FROM job_status_log l
+       WHERE l.ro_id = ro.id
+     ) log_data ON TRUE
+     LEFT JOIN LATERAL (
+       SELECT json_agg(p ORDER BY p.created_at ASC) AS parts
+       FROM parts_orders p
+       WHERE p.ro_id = ro.id
+     ) parts_data ON TRUE
+     WHERE ro.id = $1`,
+    [ro.id]
+  );
   const profit   = calculateProfit(ro);
-  const assigned_tech = ro.assigned_to
-    ? await dbGet('SELECT id, name, role FROM users WHERE id = $1', [ro.assigned_to])
+  const assigned_tech = enriched?.assigned_tech || null;
+  const vehicle = enriched?.vehicle || null;
+  const customer = enriched?.customer
+    ? { ...enriched.customer, has_portal_access: !!enriched.has_portal_access }
     : null;
+  const log = Array.isArray(enriched?.log) ? enriched.log : [];
+  const parts = Array.isArray(enriched?.parts) ? enriched.parts : [];
   if (customer) {
-    const portalUser = await dbGet('SELECT id FROM users WHERE customer_id = $1 AND shop_id = $2', [customer.id, ro.shop_id]);
-    customer.has_portal_access = !!portalUser;
+    customer.has_portal_access = !!enriched?.has_portal_access;
   }
   return { ...ro, vehicle, customer, log, parts, profit, assigned_tech };
 }
@@ -753,7 +802,7 @@ router.post('/:id/approval-link', auth, requireTechnician, async (req, res) => {
   }
 });
 
-router.get('/approval/:token', async (req, res) => {
+router.get('/approval/:token', publicTokenLimiter, async (req, res) => {
   try {
     await ensureApprovalLinksTable();
     const link = await dbGet('SELECT * FROM estimate_approval_links WHERE token = $1', [req.params.token]);
@@ -786,7 +835,7 @@ router.get('/approval/:token', async (req, res) => {
   }
 });
 
-router.post('/approval/:token/respond', async (req, res) => {
+router.post('/approval/:token/respond', publicTokenLimiter, async (req, res) => {
   try {
     await ensureApprovalLinksTable();
     await ensureRoCommsTable();

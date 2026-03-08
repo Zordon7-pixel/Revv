@@ -1,17 +1,21 @@
 const { dbGet, dbRun } = require('./index');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 
 async function runSeed() {
-  const superadminEmail = 'admin@revv.app';
-  const existingSuperadmin = await dbGet('SELECT id FROM users WHERE email = $1', [superadminEmail]);
-  if (!existingSuperadmin) {
-    const superadminHash = await bcrypt.hash('admin1234', 10);
-    await dbRun(
-      'INSERT INTO users (id, shop_id, name, email, password_hash, role) VALUES ($1, $2, $3, $4, $5, $6)',
-      [uuidv4(), null, 'Super Admin', superadminEmail, superadminHash, 'superadmin']
-    );
-    console.log('✅ Superadmin seeded.');
+  const superadminEmail = (process.env.SUPERADMIN_EMAIL || '').trim().toLowerCase();
+  const superadminPassword = process.env.SUPERADMIN_PASSWORD || '';
+  if (superadminEmail && superadminPassword) {
+    const existingSuperadmin = await dbGet('SELECT id FROM users WHERE email = $1', [superadminEmail]);
+    if (!existingSuperadmin) {
+      const superadminHash = await bcrypt.hash(superadminPassword, 10);
+      await dbRun(
+        'INSERT INTO users (id, shop_id, name, email, password_hash, role) VALUES ($1, $2, $3, $4, $5, $6)',
+        [uuidv4(), null, 'Super Admin', superadminEmail, superadminHash, 'superadmin']
+      );
+      console.log('✅ Superadmin seeded.');
+    }
   }
 
   const existing = await dbGet('SELECT id FROM shops LIMIT 1', []);
@@ -23,13 +27,17 @@ async function runSeed() {
     [shopId, "Miles Automotive", "(555) 400-0100", "123 Miles Ave", "New York", "NY", "10001", 1, 95, 0.40, 0.08875]
   );
 
-  const hash = await bcrypt.hash('demo1234', 10);
+  const demoOwnerEmail = (process.env.DEMO_OWNER_EMAIL || '').trim().toLowerCase();
+  const seedPassword = process.env.DEMO_OWNER_PASSWORD || crypto.randomBytes(12).toString('hex');
+  const hash = await bcrypt.hash(seedPassword, 10);
 
-  const userId = uuidv4();
-  await dbRun(
-    `INSERT INTO users (id, shop_id, name, email, password_hash, role) VALUES ($1, $2, $3, $4, $5, $6)`,
-    [userId, shopId, "Shop Owner", "demo@shop.com", hash, "owner"]
-  );
+  if (demoOwnerEmail) {
+    const userId = uuidv4();
+    await dbRun(
+      `INSERT INTO users (id, shop_id, name, email, password_hash, role) VALUES ($1, $2, $3, $4, $5, $6)`,
+      [userId, shopId, "Shop Owner", demoOwnerEmail, hash, "owner"]
+    );
+  }
 
   await dbRun(
     `INSERT INTO users (id, shop_id, name, email, password_hash, role) VALUES ($1, $2, $3, $4, $5, $6)`,
@@ -123,9 +131,7 @@ async function runSeed() {
 
   console.log('✅ REVV seeded.');
   console.log('   Shop: Miles Automotive');
-  console.log('   Owner login:    demo@shop.com / demo1234');
-  console.log('   Employee login: employee@shop.com / demo1234');
-  console.log('   Customer login: marcus@customer.com / demo1234 → /portal');
+  console.log('   Default accounts seeded without hardcoded credentials.');
   console.log('   7 ROs: 5 active (all stages) + 2 completed');
 }
 

@@ -4,6 +4,7 @@ const auth = require('../middleware/auth');
 const { v4: uuidv4 } = require('uuid');
 
 const CONDITION_VALUES = ['good', 'fair', 'needs_attention', 'critical'];
+const ALLOWED_ITEM_UPDATE_FIELDS = ['condition', 'note', 'photo_url'];
 
 const DEFAULT_CHECKLIST = {
   'Body Damage': [
@@ -190,7 +191,10 @@ router.get('/ro/:roId', async (req, res) => {
 
 router.patch('/:id/items/:itemId', async (req, res) => {
   try {
-    const { condition, note, photo_url } = req.body || {};
+    const updates = Object.fromEntries(
+      Object.entries(req.body || {}).filter(([key]) => ALLOWED_ITEM_UPDATE_FIELDS.includes(key))
+    );
+    const { condition, note, photo_url } = updates;
 
     if (condition !== undefined && condition !== null && !CONDITION_VALUES.includes(condition)) {
       return res.status(400).json({ error: 'Invalid condition value' });
@@ -213,15 +217,15 @@ router.patch('/:id/items/:itemId', async (req, res) => {
     const fields = [];
     const values = [];
 
-    if (condition !== undefined) {
+    if (Object.prototype.hasOwnProperty.call(updates, 'condition')) {
       values.push(condition || null);
       fields.push(`condition = $${values.length}`);
     }
-    if (note !== undefined) {
+    if (Object.prototype.hasOwnProperty.call(updates, 'note')) {
       values.push(note || null);
       fields.push(`note = $${values.length}`);
     }
-    if (photo_url !== undefined) {
+    if (Object.prototype.hasOwnProperty.call(updates, 'photo_url')) {
       values.push(photo_url || null);
       fields.push(`photo_url = $${values.length}`);
     }

@@ -65,7 +65,7 @@ export default function Login() {
               <label className="block text-xs font-medium text-slate-400 mb-1.5">Email</label>
               <input type="email" value={email} onChange={e => setEmail(e.target.value)} required
                 className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition-colors"
-                placeholder="demo@shop.com" />
+                placeholder="you@example.com" />
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-400 mb-1.5">Password</label>
@@ -79,7 +79,7 @@ export default function Login() {
               {loading ? 'Signing in...' : 'Sign In'}
             </button>
             <div className="flex items-center justify-between">
-              <p className="text-xs text-slate-600">Demo: demo@shop.com / demo1234</p>
+              <p className="text-xs text-slate-600">Use your shop credentials.</p>
               <button type="button" onClick={() => { setForgotMode(true); setForgotMsg('') }}
                 className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
                 Forgot password?
