@@ -94,8 +94,8 @@ async function runMigrations() {
       `ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS storage_notes TEXT`,
       `CREATE TABLE IF NOT EXISTS storage_charges (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
-        ro_id UUID NOT NULL REFERENCES repair_orders(id) ON DELETE CASCADE,
+        shop_id TEXT NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+        ro_id TEXT NOT NULL REFERENCES repair_orders(id) ON DELETE CASCADE,
         days INTEGER NOT NULL,
         rate_per_day NUMERIC(10,2) NOT NULL,
         total_amount NUMERIC(10,2) NOT NULL,
@@ -107,13 +107,13 @@ async function runMigrations() {
       )`,
       `CREATE TABLE IF NOT EXISTS notifications (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
-        user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+        shop_id TEXT NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+        user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
         type TEXT NOT NULL,
         title TEXT NOT NULL,
         body TEXT,
         message TEXT,
-        ro_id UUID REFERENCES repair_orders(id) ON DELETE CASCADE,
+        ro_id TEXT REFERENCES repair_orders(id) ON DELETE CASCADE,
         read BOOLEAN DEFAULT FALSE,
         created_at TIMESTAMPTZ DEFAULT NOW()
       )`,
@@ -127,9 +127,9 @@ async function runMigrations() {
        ON notifications(shop_id, user_id, read, created_at DESC)`,
       `CREATE TABLE IF NOT EXISTS inspections (
         id UUID PRIMARY KEY,
-        ro_id UUID REFERENCES repair_orders(id) ON DELETE CASCADE,
-        shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
-        created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+        ro_id TEXT REFERENCES repair_orders(id) ON DELETE CASCADE,
+        shop_id TEXT NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+        created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
         status TEXT DEFAULT 'draft',
         sent_at TIMESTAMPTZ,
         viewed_at TIMESTAMPTZ,
@@ -158,16 +158,16 @@ async function runMigrations() {
        WHERE insurance_company IS NULL AND insurer IS NOT NULL`,
       `CREATE TABLE IF NOT EXISTS early_clockin_authorizations (
         id UUID PRIMARY KEY,
-        shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
-        employee_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        shop_id TEXT NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+        employee_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         date DATE NOT NULL,
-        authorized_by UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        authorized_by TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         created_at TIMESTAMPTZ DEFAULT NOW(),
         used SMALLINT DEFAULT 0
       )`,
       `CREATE TABLE IF NOT EXISTS password_reset_tokens (
         id UUID PRIMARY KEY,
-        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         token TEXT NOT NULL UNIQUE,
         expires_at TIMESTAMPTZ NOT NULL,
         used SMALLINT DEFAULT 0
@@ -175,13 +175,13 @@ async function runMigrations() {
       `CREATE TABLE IF NOT EXISTS revoked_tokens (
         id UUID PRIMARY KEY,
         token_jti TEXT UNIQUE NOT NULL,
-        user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+        user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
         revoked_at TIMESTAMPTZ DEFAULT NOW()
       )`,
       `CREATE TABLE IF NOT EXISTS ro_photos (
         id UUID PRIMARY KEY,
-        ro_id UUID REFERENCES repair_orders(id) ON DELETE CASCADE,
-        user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+        ro_id TEXT REFERENCES repair_orders(id) ON DELETE CASCADE,
+        user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
         photo_url TEXT,
         caption TEXT,
         photo_type TEXT DEFAULT 'damage',
@@ -189,8 +189,8 @@ async function runMigrations() {
       )`,
       `CREATE TABLE IF NOT EXISTS parts_requests (
         id UUID PRIMARY KEY,
-        ro_id UUID REFERENCES repair_orders(id) ON DELETE CASCADE,
-        requested_by UUID REFERENCES users(id) ON DELETE SET NULL,
+        ro_id TEXT REFERENCES repair_orders(id) ON DELETE CASCADE,
+        requested_by TEXT REFERENCES users(id) ON DELETE SET NULL,
         part_name TEXT,
         part_number TEXT,
         quantity INTEGER DEFAULT 1,
@@ -213,26 +213,26 @@ async function runMigrations() {
       )`,
       `CREATE TABLE IF NOT EXISTS ro_comms (
         id UUID PRIMARY KEY,
-        ro_id UUID NOT NULL REFERENCES repair_orders(id) ON DELETE CASCADE,
-        shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
-        user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+        ro_id TEXT NOT NULL REFERENCES repair_orders(id) ON DELETE CASCADE,
+        shop_id TEXT NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+        user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
         type TEXT NOT NULL,
         notes TEXT NOT NULL,
         created_at TIMESTAMPTZ DEFAULT NOW()
       )`,
       `CREATE TABLE IF NOT EXISTS estimate_approval_links (
         id UUID PRIMARY KEY,
-        ro_id UUID NOT NULL REFERENCES repair_orders(id) ON DELETE CASCADE,
-        shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+        ro_id TEXT NOT NULL REFERENCES repair_orders(id) ON DELETE CASCADE,
+        shop_id TEXT NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
         token TEXT NOT NULL UNIQUE,
-        created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+        created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
         decline_reason TEXT,
         responded_at TIMESTAMPTZ,
         created_at TIMESTAMPTZ DEFAULT NOW()
       )`,
       `CREATE TABLE IF NOT EXISTS appointment_requests (
         id UUID PRIMARY KEY,
-        shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+        shop_id TEXT NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
         name TEXT NOT NULL,
         phone TEXT NOT NULL,
         email TEXT,
@@ -246,16 +246,16 @@ async function runMigrations() {
       )`,
       `CREATE TABLE IF NOT EXISTS portal_tokens (
         id UUID PRIMARY KEY,
-        ro_id UUID NOT NULL REFERENCES repair_orders(id) ON DELETE CASCADE,
-        shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+        ro_id TEXT NOT NULL REFERENCES repair_orders(id) ON DELETE CASCADE,
+        shop_id TEXT NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
         token TEXT NOT NULL UNIQUE,
         created_at TIMESTAMPTZ DEFAULT NOW(),
         expires_at TIMESTAMPTZ
       )`,
       `CREATE TABLE IF NOT EXISTS shop_reviews (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
-        ro_id UUID REFERENCES repair_orders(id) ON DELETE SET NULL,
+        shop_id TEXT NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+        ro_id TEXT REFERENCES repair_orders(id) ON DELETE SET NULL,
         rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
         comment TEXT,
         customer_name TEXT,
@@ -266,14 +266,14 @@ async function runMigrations() {
        WHERE ro_id IS NOT NULL`,
       `CREATE TABLE IF NOT EXISTS ro_ratings (
         id UUID PRIMARY KEY,
-        ro_id UUID NOT NULL REFERENCES repair_orders(id) ON DELETE CASCADE,
-        shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+        ro_id TEXT NOT NULL REFERENCES repair_orders(id) ON DELETE CASCADE,
+        shop_id TEXT NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
         rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
         created_at TIMESTAMPTZ DEFAULT NOW()
       )`,
       `CREATE TABLE IF NOT EXISTS monthly_goals (
         id UUID PRIMARY KEY,
-        shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+        shop_id TEXT NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
         year_month TEXT NOT NULL,
         revenue_goal NUMERIC(12,2),
         ro_goal INTEGER,
@@ -283,8 +283,8 @@ async function runMigrations() {
       // Supplement tracker — individual supplement line items per RO
       `CREATE TABLE IF NOT EXISTS ro_supplements (
         id UUID PRIMARY KEY,
-        ro_id UUID NOT NULL REFERENCES repair_orders(id) ON DELETE CASCADE,
-        shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+        ro_id TEXT NOT NULL REFERENCES repair_orders(id) ON DELETE CASCADE,
+        shop_id TEXT NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
         description TEXT NOT NULL,
         amount NUMERIC(12,2) NOT NULL DEFAULT 0,
         status TEXT NOT NULL DEFAULT 'Pending',
