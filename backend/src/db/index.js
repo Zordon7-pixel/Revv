@@ -388,7 +388,7 @@ async function initDb() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS estimate_requests (
       id UUID PRIMARY KEY,
-      shop_id UUID REFERENCES shops(id) ON DELETE SET NULL,
+      shop_id TEXT REFERENCES shops(id) ON DELETE SET NULL,
       name TEXT NOT NULL,
       phone TEXT NOT NULL,
       email TEXT NOT NULL,
