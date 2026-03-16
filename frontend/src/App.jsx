@@ -35,6 +35,7 @@ import PublicEstimateRequest from './pages/PublicEstimateRequest'
 import EstimateRequests from './pages/EstimateRequests'
 import { LanguageProvider } from './contexts/LanguageContext'
 import JobCosting from './pages/JobCosting'
+import Goals from './pages/Goals'
 import Landing from './pages/Landing'
 import InspectionEditor from './pages/InspectionEditor'
 import InspectionPublic from './pages/InspectionPublic'
@@ -131,6 +132,7 @@ export default function App() {
             <Route path="adas" element={<AdminRoute><ADASCalibration /></AdminRoute>} />
             <Route path="estimate-requests" element={<AdminRoute><EstimateRequests /></AdminRoute>} />
             <Route path="job-costing" element={<OwnerRoute><JobCosting /></OwnerRoute>} />
+            <Route path="goals" element={<OwnerRoute><Goals /></OwnerRoute>} />
           </Route>
         </Routes>
       </BrowserRouter>

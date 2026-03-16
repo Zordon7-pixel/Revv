@@ -16,7 +16,8 @@
     "users": "Users",
     "settings": "Settings",
     "performance": "Performance",
-    "jobCosting": "Job Costing"
+    "jobCosting": "Job Costing",
+    "goals": "Goals"
   },
   "common": {
     "save": "Save",
