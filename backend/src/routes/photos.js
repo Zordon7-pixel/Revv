@@ -26,6 +26,52 @@ const upload = multer({
   },
 });
 
+router.post('/ro/:roId/predropoff', auth, upload.single('photo'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    const ro = await dbGet(
+      'SELECT id FROM repair_orders WHERE id = $1 AND shop_id = $2',
+      [req.params.roId, req.user.shop_id]
+    );
+    if (!ro) return res.status(404).json({ error: 'Repair order not found' });
+
+    const id = uuidv4();
+    const photo_url = `/uploads/photos/${req.file.filename}`;
+    const caption = String(req.body?.caption || '').trim() || null;
+    await dbRun(
+      `INSERT INTO ro_photos (id, ro_id, user_id, photo_url, caption, photo_type)
+       VALUES ($1, $2, $3, $4, $5, 'predropoff')`,
+      [id, req.params.roId, req.user.id, photo_url, caption]
+    );
+    return res.status(201).json(await dbGet('SELECT * FROM ro_photos WHERE id = $1', [id]));
+  } catch (err) {
+    console.error('[Photos] POST predropoff error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.get('/ro/:roId/predropoff', auth, async (req, res) => {
+  try {
+    const ro = await dbGet(
+      'SELECT id FROM repair_orders WHERE id = $1 AND shop_id = $2',
+      [req.params.roId, req.user.shop_id]
+    );
+    if (!ro) return res.status(404).json({ error: 'Repair order not found' });
+
+    const photos = await dbAll(
+      `SELECT *
+       FROM ro_photos
+       WHERE ro_id = $1 AND photo_type = 'predropoff'
+       ORDER BY created_at ASC`,
+      [req.params.roId]
+    );
+    return res.json({ photos });
+  } catch (err) {
+    console.error('[Photos] GET predropoff error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 router.post('/:ro_id', auth, upload.single('photo'), async (req, res) => {
   try {
     if (Array.isArray(req.body?.photos) && req.body.photos.length > 5) {

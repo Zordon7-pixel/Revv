@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Pencil, Save, X, Package, PackageCheck, PackageX, Plus, CheckCircle, AlertCircle, Clock, Truck, RefreshCw, ExternalLink, Car, DollarSign, ClipboardList, Smartphone, AlertTriangle, Copy, Printer, User, Phone, MessageSquare, Mail, Users, CreditCard, Search, FileText } from 'lucide-react'
+import { ArrowLeft, Pencil, Save, X, Package, PackageCheck, PackageX, Plus, CheckCircle, AlertCircle, Clock, Truck, RefreshCw, ExternalLink, Car, DollarSign, ClipboardList, Smartphone, AlertTriangle, Copy, Printer, User, Phone, MessageSquare, Mail, Users, CreditCard, Search, FileText, Camera, Trash2, ChevronDown, ChevronUp } from 'lucide-react'
 import api from '../lib/api'
 import { STATUS_COLORS, STATUS_LABELS } from './RepairOrders'
 import StatusBadge from '../components/StatusBadge'
@@ -97,6 +97,13 @@ export default function RODetail() {
   const [showCommForm, setShowCommForm] = useState(false)
   const [commForm, setCommForm] = useState({ type: 'call', notes: '' })
   const [savingComm, setSavingComm] = useState(false)
+  const [internalNotes, setInternalNotes] = useState([])
+  const [internalNoteText, setInternalNoteText] = useState('')
+  const [savingInternalNote, setSavingInternalNote] = useState(false)
+  const [deletingInternalNote, setDeletingInternalNote] = useState(null)
+  const [preDropoffPhotos, setPreDropoffPhotos] = useState([])
+  const [preDropoffUploading, setPreDropoffUploading] = useState(false)
+  const [preDropoffExpanded, setPreDropoffExpanded] = useState(true)
   const [inspectionSummary, setInspectionSummary] = useState([])
   const [creatingInspection, setCreatingInspection] = useState(false)
 
@@ -141,6 +148,8 @@ export default function RODetail() {
   })
   const loadPartsRequests = () => api.get(`/parts-requests/${id}`).then(r => setPartsRequests(r.data.requests || [])).catch(() => {})
   const loadComms = () => api.get(`/ros/${id}/comms`).then(r => setComms(r.data.comms || [])).catch(() => setComms([]))
+  const loadInternalNotes = () => api.get(`/ros/${id}/notes`).then(r => setInternalNotes(r.data.notes || [])).catch(() => setInternalNotes([]))
+  const loadPreDropoffPhotos = () => api.get(`/photos/ro/${id}/predropoff`).then(r => setPreDropoffPhotos(r.data.photos || [])).catch(() => setPreDropoffPhotos([]))
   const loadInspections = () => api.get(`/inspections/ro/${id}`).then(r => setInspectionSummary(r.data.inspections || [])).catch(() => setInspectionSummary([]))
   const loadSupplements = () => api.get(`/ros/${id}/supplements`).then(r => { setSupplements(r.data.supplements || []); setTotalApproved(r.data.totalApproved || 0) }).catch(() => {})
   const loadStorageCharges = () => api.get(`/storage/${id}/charges`).then(r => setStorageCharges(r.data.charges || [])).catch(() => setStorageCharges([]))
@@ -154,6 +163,14 @@ export default function RODetail() {
   }, [])
   useEffect(() => { loadPartsRequests() }, [id])
   useEffect(() => { loadComms() }, [id])
+  useEffect(() => {
+    if (!userIsAdmin) return
+    loadInternalNotes()
+  }, [id, userIsAdmin])
+  useEffect(() => {
+    if (!userIsEmployee) return
+    loadPreDropoffPhotos()
+  }, [id, userIsEmployee])
   useEffect(() => { loadInspections() }, [id])
   useEffect(() => { loadSupplements() }, [id])
   useEffect(() => { loadStorageCharges() }, [id])
@@ -348,6 +365,54 @@ export default function RODetail() {
       alert(err?.response?.data?.error || 'Could not log communication')
     } finally {
       setSavingComm(false)
+    }
+  }
+
+  async function submitInternalNote(e) {
+    e.preventDefault()
+    const note = internalNoteText.trim()
+    if (!note) return
+    setSavingInternalNote(true)
+    try {
+      await api.post(`/ros/${id}/notes`, { note })
+      setInternalNoteText('')
+      loadInternalNotes()
+    } catch (err) {
+      alert(err?.response?.data?.error || 'Could not save internal note')
+    } finally {
+      setSavingInternalNote(false)
+    }
+  }
+
+  async function deleteInternalNote(noteId) {
+    if (!confirm('Delete this internal note?')) return
+    setDeletingInternalNote(noteId)
+    try {
+      await api.delete(`/ros/${id}/notes/${noteId}`)
+      loadInternalNotes()
+    } catch (err) {
+      alert(err?.response?.data?.error || 'Could not delete note')
+    } finally {
+      setDeletingInternalNote(null)
+    }
+  }
+
+  async function uploadPreDropoffPhoto(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setPreDropoffUploading(true)
+    try {
+      const fd = new FormData()
+      fd.append('photo', file)
+      await api.post(`/photos/ro/${id}/predropoff`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      loadPreDropoffPhotos()
+    } catch (err) {
+      alert(err?.response?.data?.error || 'Could not upload photo')
+    } finally {
+      setPreDropoffUploading(false)
+      e.target.value = ''
     }
   }
 
@@ -1122,6 +1187,121 @@ export default function RODetail() {
           </div>
         )}
       </div>
+
+      {userIsEmployee && (
+        <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
+          <button
+            type="button"
+            onClick={() => setPreDropoffExpanded((v) => !v)}
+            className="w-full flex items-center justify-between"
+          >
+            <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
+              <Camera size={12} /> Pre-Dropoff Condition
+            </h2>
+            <span className="text-slate-500">
+              {preDropoffExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </span>
+          </button>
+          <p className="text-xs text-slate-500 mt-2">
+            These photos document vehicle condition before work begins
+          </p>
+
+          {preDropoffExpanded && (
+            <div className="mt-3 space-y-3">
+              <label
+                className={`inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg cursor-pointer transition-colors ${
+                  preDropoffUploading
+                    ? 'bg-indigo-800 text-indigo-300 opacity-50 pointer-events-none'
+                    : 'bg-indigo-600 hover:bg-indigo-500 text-white'
+                }`}
+              >
+                <Camera size={12} /> {preDropoffUploading ? 'Uploading...' : 'Upload Pre-Dropoff Photo'}
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  disabled={preDropoffUploading}
+                  onChange={uploadPreDropoffPhoto}
+                />
+              </label>
+
+              {preDropoffPhotos.length === 0 ? (
+                <p className="text-sm text-slate-500">No pre-dropoff photos added yet.</p>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {preDropoffPhotos.map((photo) => (
+                    <a
+                      key={photo.id}
+                      href={photo.photo_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="relative group rounded-xl overflow-hidden border border-[#2a2d3e] aspect-video bg-[#0f1117]"
+                    >
+                      <img src={photo.photo_url} alt="Pre-dropoff" className="w-full h-full object-cover" />
+                      <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/80">
+                        <span className="text-[9px] px-1.5 py-0.5 rounded-full border font-semibold text-cyan-300 bg-cyan-900/30 border-cyan-700/40">
+                          Pre-Dropoff
+                        </span>
+                      </div>
+                    </a>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {userIsAdmin && (
+        <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
+          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">🔒 Internal Notes</h2>
+          <form onSubmit={submitInternalNote} className="space-y-2 mb-3">
+            <textarea
+              rows={3}
+              value={internalNoteText}
+              onChange={(e) => setInternalNoteText(e.target.value)}
+              placeholder="Add private staff note..."
+              className={`${inp} w-full`}
+            />
+            <div className="flex justify-end">
+              <button
+                type="submit"
+                disabled={savingInternalNote}
+                className="text-xs bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-3 py-1.5 rounded-lg disabled:opacity-50"
+              >
+                {savingInternalNote ? 'Adding...' : 'Add Note'}
+              </button>
+            </div>
+          </form>
+
+          {internalNotes.length === 0 ? (
+            <p className="text-sm text-slate-500">No internal notes yet.</p>
+          ) : (
+            <div className="space-y-2">
+              {internalNotes.map((entry) => (
+                <div key={entry.id} className="bg-[#0f1117] border border-[#2a2d3e] rounded-xl p-3">
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <div className="text-[11px] text-slate-400">
+                      {new Date(entry.created_at).toLocaleString()} · {entry.author_name || 'Unknown'}
+                    </div>
+                    {userIsAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => deleteInternalNote(entry.id)}
+                        disabled={deletingInternalNote === entry.id}
+                        className="text-red-300 hover:text-red-200 disabled:opacity-50"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-sm text-slate-200 whitespace-pre-wrap">{entry.note}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Notes */}
       <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">

@@ -588,6 +588,92 @@ router.post('/:id/comms', auth, requireTechnician, async (req, res) => {
   }
 });
 
+router.get('/:id/notes', auth, requireTechnician, async (req, res) => {
+  try {
+    const ro = await dbGet(
+      'SELECT id FROM repair_orders WHERE id = $1 AND shop_id = $2',
+      [req.params.id, req.user.shop_id]
+    );
+    if (!ro) return res.status(404).json({ error: 'Not found' });
+
+    const notes = await dbAll(
+      `SELECT
+         n.id,
+         n.ro_id,
+         n.user_id,
+         n.note,
+         n.created_at,
+         COALESCE(u.name, 'Unknown') AS author_name
+       FROM ro_internal_notes n
+       LEFT JOIN users u ON u.id = n.user_id
+       WHERE n.ro_id = $1 AND n.shop_id = $2
+       ORDER BY n.created_at DESC`,
+      [req.params.id, req.user.shop_id]
+    );
+    return res.json({ notes });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/:id/notes', auth, requireTechnician, async (req, res) => {
+  try {
+    const ro = await dbGet(
+      'SELECT id FROM repair_orders WHERE id = $1 AND shop_id = $2',
+      [req.params.id, req.user.shop_id]
+    );
+    if (!ro) return res.status(404).json({ error: 'Not found' });
+
+    const note = String(req.body?.note || '').trim();
+    if (!note) return res.status(400).json({ error: 'Note is required' });
+
+    const id = uuidv4();
+    await dbRun(
+      `INSERT INTO ro_internal_notes (id, ro_id, shop_id, user_id, note)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [id, req.params.id, req.user.shop_id, req.user.id, note]
+    );
+
+    const created = await dbGet(
+      `SELECT
+         n.id,
+         n.ro_id,
+         n.user_id,
+         n.note,
+         n.created_at,
+         COALESCE(u.name, 'Unknown') AS author_name
+       FROM ro_internal_notes n
+       LEFT JOIN users u ON u.id = n.user_id
+       WHERE n.id = $1`,
+      [id]
+    );
+    return res.status(201).json({ note: created });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete('/:id/notes/:noteId', auth, requireAdmin, async (req, res) => {
+  try {
+    const ro = await dbGet(
+      'SELECT id FROM repair_orders WHERE id = $1 AND shop_id = $2',
+      [req.params.id, req.user.shop_id]
+    );
+    if (!ro) return res.status(404).json({ error: 'Not found' });
+
+    const note = await dbGet(
+      'SELECT id FROM ro_internal_notes WHERE id = $1 AND ro_id = $2 AND shop_id = $3',
+      [req.params.noteId, req.params.id, req.user.shop_id]
+    );
+    if (!note) return res.status(404).json({ error: 'Note not found' });
+
+    await dbRun('DELETE FROM ro_internal_notes WHERE id = $1', [req.params.noteId]);
+    return res.json({ ok: true });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/:id/insurance', auth, async (req, res) => {
   try {
     const ro = await dbGet(

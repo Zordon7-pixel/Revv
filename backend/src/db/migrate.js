@@ -294,6 +294,14 @@ async function runMigrations() {
       )`,
       `CREATE INDEX IF NOT EXISTS idx_ro_supplements_ro_id ON ro_supplements(ro_id)`,
       `CREATE INDEX IF NOT EXISTS idx_ro_supplements_shop_id ON ro_supplements(shop_id)`,
+      `CREATE TABLE IF NOT EXISTS ro_internal_notes (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        ro_id TEXT NOT NULL REFERENCES repair_orders(id) ON DELETE CASCADE,
+        shop_id TEXT NOT NULL,
+        user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+        note TEXT NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )`,
     ];
 
     // Fix job_status_log FK to use ON DELETE CASCADE
