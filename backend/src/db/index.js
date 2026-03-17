@@ -378,8 +378,8 @@ async function initDb() {
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS parts_inventory (
-      id UUID PRIMARY KEY,
-      shop_id UUID NOT NULL REFERENCES shops(id),
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      shop_id TEXT NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
       part_number TEXT NOT NULL,
       name TEXT NOT NULL,
       qty_on_hand INTEGER NOT NULL DEFAULT 0,
