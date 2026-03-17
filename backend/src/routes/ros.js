@@ -241,14 +241,82 @@ async function enrichRO(ro) {
 
 router.get('/', auth, async (req, res) => {
   try {
+    const {
+      search = '',
+      status = '',
+      assigned_to = '',
+      type = '',
+      date_from = '',
+      date_to = '',
+      payment_status = '',
+    } = req.query || {};
+    const params = [req.user.shop_id];
+    const where = ['ro.shop_id = $1'];
+
+    const normalizedSearch = String(search || '').trim();
+    const normalizedStatus = String(status || '').trim().toLowerCase();
+    const normalizedAssignedTo = String(assigned_to || '').trim();
+    const normalizedType = String(type || '').trim().toLowerCase();
+    const normalizedDateFrom = String(date_from || '').trim();
+    const normalizedDateTo = String(date_to || '').trim();
+    const normalizedPaymentStatus = String(payment_status || '').trim().toLowerCase();
+
+    if (normalizedSearch) {
+      params.push(`%${normalizedSearch}%`);
+      const idx = params.length;
+      where.push(`(
+        ro.ro_number ILIKE $${idx}
+        OR c.name ILIKE $${idx}
+        OR CONCAT_WS(' ', v.year::text, v.make, v.model) ILIKE $${idx}
+      )`);
+    }
+
+    if (normalizedStatus && normalizedStatus !== 'all') {
+      if (normalizedStatus === 'open') {
+        where.push(`ro.status NOT IN ('delivery', 'closed')`);
+      } else if (normalizedStatus === 'in-progress') {
+        where.push(`ro.status IN ('repair', 'paint', 'qc', 'in-progress')`);
+      } else if (normalizedStatus === 'ready') {
+        where.push(`ro.status = 'ready'`);
+      } else {
+        params.push(normalizedStatus);
+        where.push(`ro.status = $${params.length}`);
+      }
+    }
+
+    if (normalizedAssignedTo && normalizedAssignedTo !== 'all') {
+      params.push(normalizedAssignedTo);
+      where.push(`ro.assigned_to = $${params.length}`);
+    }
+
+    if (normalizedType && normalizedType !== 'all') {
+      params.push(normalizedType);
+      where.push(`ro.job_type = $${params.length}`);
+    }
+
+    if (normalizedDateFrom) {
+      params.push(normalizedDateFrom);
+      where.push(`ro.created_at >= $${params.length}::date`);
+    }
+
+    if (normalizedDateTo) {
+      params.push(normalizedDateTo);
+      where.push(`ro.created_at < ($${params.length}::date + INTERVAL '1 day')`);
+    }
+
+    if (normalizedPaymentStatus && normalizedPaymentStatus !== 'all') {
+      params.push(normalizedPaymentStatus);
+      where.push(`ro.payment_status = $${params.length}`);
+    }
+
     const ros = await dbAll(`
       SELECT ro.*, v.year, v.make, v.model, v.color, c.name as customer_name, c.phone as customer_phone
       FROM repair_orders ro
       LEFT JOIN vehicles v ON v.id = ro.vehicle_id
       LEFT JOIN customers c ON c.id = ro.customer_id
-      WHERE ro.shop_id = $1
+      WHERE ${where.join('\n        AND ')}
       ORDER BY ro.created_at DESC
-    `, [req.user.shop_id]);
+    `, params);
     res.json({ ros });
   } catch (err) {
     res.status(500).json({ error: err.message });
