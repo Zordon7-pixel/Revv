@@ -5,6 +5,7 @@ const { requireAdmin, requireTechnician } = require('../middleware/roles');
 const { calculateProfit } = require('../services/profit');
 const { sendSMS, isConfigured } = require('../services/sms');
 const { sendMail } = require('../services/mailer');
+const { statusChangeEmail } = require('../services/emailTemplates');
 const { createNotification } = require('../services/notifications');
 const roLimitGuard = require('../middleware/roLimitGuard');
 const { v4: uuidv4 } = require('uuid');
@@ -76,6 +77,50 @@ function queueStatusSMS(roId, shopId, toStatus) {
       await sendSMS(ro.customer_phone, message);
     } catch (_) {
       // Non-blocking fire-and-forget path; ignore SMS errors.
+    }
+  });
+}
+
+function queueStatusEmail(roId, shopId, toStatus) {
+  setImmediate(async () => {
+    try {
+      const emailContext = await dbGet(
+        `SELECT ro.ro_number, ro.estimate_token, c.email AS customer_email, s.name AS shop_name,
+                v.year, v.make, v.model,
+                COALESCE(s.email_notifications_enabled, TRUE) AS email_notifications_enabled
+         FROM repair_orders ro
+         LEFT JOIN customers c ON c.id = ro.customer_id
+         LEFT JOIN shops s ON s.id = ro.shop_id
+         LEFT JOIN vehicles v ON v.id = ro.vehicle_id
+         WHERE ro.id = $1 AND ro.shop_id = $2`,
+        [roId, shopId]
+      );
+      if (!emailContext?.customer_email) return;
+      if (!emailContext.email_notifications_enabled) return;
+
+      let portalToken = null;
+      const tokenRow = await dbGet(
+        'SELECT token FROM portal_tokens WHERE ro_id = $1 ORDER BY created_at DESC LIMIT 1',
+        [roId]
+      );
+      portalToken = tokenRow?.token || emailContext.estimate_token || null;
+
+      const appUrl = process.env.APP_URL || process.env.PUBLIC_URL || 'https://revvshop.app';
+      const portalUrl = portalToken ? `${appUrl}/track/${portalToken}` : null;
+      const vehicle = [emailContext.year, emailContext.make, emailContext.model].filter(Boolean).join(' ') || 'Vehicle on file';
+      const { subject, html } = statusChangeEmail({
+        shopName: emailContext.shop_name || 'Your Repair Shop',
+        roNumber: emailContext.ro_number || 'N/A',
+        vehicle,
+        status: toStatus,
+        portalUrl,
+      });
+
+      sendMail(emailContext.customer_email, subject, html).catch((e) => {
+        console.error('[Email] status notification failed:', e.message);
+      });
+    } catch (_) {
+      // Non-blocking fire-and-forget path; ignore email errors.
     }
   });
 }
@@ -1148,6 +1193,7 @@ router.put('/:id', auth, requireTechnician, async (req, res) => {
     if (!ro) return res.status(404).json({ error: 'Not found' });
     const ALLOWED_RO_FIELDS = ['status','notes','tech_notes','assigned_to','estimate_amount','actual_amount','updated_at','insurance_company','adjuster_name','adjuster_phone','claim_number','insurance_claim_number','policy_number','is_drp','insurance_approved_amount','supplement_status','supplement_amount','supplement_notes','total_insurer_owed','deductible','auth_number','job_type','payment_type','insurer','adjuster_email','estimated_delivery','parts_cost','labor_cost','sublet_cost','tax','total','deductible_waived','referral_fee','goodwill_repair_cost','damaged_panels','claim_status'];
     const updates = Object.fromEntries(Object.entries(req.body).filter(([k]) => ALLOWED_RO_FIELDS.includes(k)));
+    const statusChanged = Object.prototype.hasOwnProperty.call(updates, 'status') && updates.status !== ro.status;
     if (Object.keys(updates).length > 0) {
       const profit = calculateProfit({ ...ro, ...updates });
       updates.true_profit = profit.trueProfit;
@@ -1156,6 +1202,9 @@ router.put('/:id', auth, requireTechnician, async (req, res) => {
       const updateVals = Object.values(updates);
       const setClauses = updateKeys.map((k, i) => `${k} = $${i + 1}`).join(', ');
       await dbRun(`UPDATE repair_orders SET ${setClauses} WHERE id = $${updateKeys.length + 1}`, [...updateVals, req.params.id]);
+    }
+    if (statusChanged) {
+      queueStatusEmail(req.params.id, req.user.shop_id, updates.status);
     }
     res.json(await enrichRO(await dbGet('SELECT * FROM repair_orders WHERE id = $1', [req.params.id])));
   } catch (err) {
