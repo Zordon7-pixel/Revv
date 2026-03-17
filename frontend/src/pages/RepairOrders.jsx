@@ -27,6 +27,7 @@ export default function RepairOrders() {
   const [selected, setSelected] = useState(new Set())
   const [bulkStatus, setBulkStatus] = useState('')
   const [bulkLoading, setBulkLoading] = useState(false)
+  const [successToast, setSuccessToast] = useState('')
   const [errorToast, setErrorToast] = useState('')
   const assistant = isAssistant()
   const canBulk = isAdmin() || isOwner()
@@ -68,6 +69,21 @@ export default function RepairOrders() {
   }, [ros])
 
   useEffect(() => {
+    setSelected((prev) => {
+      if (!prev.size) return prev
+      const validIds = new Set(ros.map((r) => r.id))
+      const next = new Set([...prev].filter((id) => validIds.has(id)))
+      return next.size === prev.size ? prev : next
+    })
+  }, [ros])
+
+  useEffect(() => {
+    if (!successToast) return undefined
+    const t = setTimeout(() => setSuccessToast(''), 3500)
+    return () => clearTimeout(t)
+  }, [successToast])
+
+  useEffect(() => {
     if (!errorToast) return undefined
     const t = setTimeout(() => setErrorToast(''), 3500)
     return () => clearTimeout(t)
@@ -106,12 +122,10 @@ export default function RepairOrders() {
     })
   }
 
+  const visibleIds = filteredRos.map((r) => r.id)
+  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selected.has(id))
+
   function toggleAll() {
-    if (selected.size === filteredRos.length) {
-      setSelected(new Set())
-    } else {
-      setSelected(new Set(filteredRos.map((r) => r.id)))
-    }
   }
 
   function canDeleteRO(ro) {
@@ -215,27 +229,15 @@ export default function RepairOrders() {
 
       {selected.size > 0 && canBulk && !assistant && (
         <div className="flex items-center gap-3 mb-3 p-3 bg-indigo-900/20 border border-indigo-700/40 rounded-xl">
-          <input
-            type="checkbox"
-            checked={selected.size === filteredRos.length && filteredRos.length > 0}
-            onChange={toggleAll}
-            className="accent-indigo-500 cursor-pointer"
-          />
-          <span className="text-xs font-semibold text-indigo-300">{selected.size} selected</span>
           <select
             value={bulkStatus}
             onChange={(e) => setBulkStatus(e.target.value)}
             className="text-xs bg-[#0f1117] border border-[#2a2d3e] text-white rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500"
           >
-            <option value="">Change status to...</option>
-            <option value="intake">Intake</option>
-            <option value="estimate">Estimate</option>
-            <option value="approval">Approval</option>
-            <option value="in-progress">In Progress</option>
-            <option value="parts-hold">Parts Hold</option>
-            <option value="qc">QC</option>
-            <option value="ready">Ready</option>
-            <option value="closed">Closed</option>
+            <option value="">Select status</option>
+            {Object.entries(STATUS_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
           </select>
           <button
             disabled={!bulkStatus || bulkLoading}
@@ -243,14 +245,15 @@ export default function RepairOrders() {
               if (!bulkStatus) return
               setBulkLoading(true)
               try {
-                await api.patch('/ros/bulk', { ids: [...selected], status: bulkStatus })
+                const { data } = await api.post('/ros/bulk-update', { ids: [...selected], status: bulkStatus })
+                const updatedCount = Number(data?.updated || 0)
                 setSelected(new Set())
                 setBulkStatus('')
-                api.get('/ros', { params: apiParams }).then((r) => setRos(r.data.ros || []))
               } catch (e) {
-                console.error('Bulk update failed', e)
+                setErrorToast(e?.response?.data?.error || 'Bulk update failed')
+              } finally {
+                setBulkLoading(false)
               }
-              setBulkLoading(false)
             }}
             className="text-xs bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white px-3 py-1.5 rounded-lg transition-colors"
           >
@@ -276,7 +279,6 @@ export default function RepairOrders() {
           <table className="hidden md:table w-full bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl overflow-hidden">
             <thead className="bg-[#0f1117] border-b border-[#2a2d3e]">
               <tr className="text-left text-xs text-slate-400">
-                {canBulk && <th className="px-3 py-2 w-10"><input type="checkbox" checked={selected.size === filteredRos.length && filteredRos.length > 0} onChange={toggleAll} className="accent-indigo-500 cursor-pointer" /></th>}
                 <th className="px-3 py-2">RO #</th>
                 <th className="px-3 py-2">Customer</th>
                 <th className="px-3 py-2">Vehicle</th>
@@ -382,6 +384,11 @@ export default function RepairOrders() {
       )}
 
       {showAdd && !assistant && <AddROModal onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); load() }} />}
+      {successToast && (
+        <div className="fixed bottom-4 right-4 z-50 bg-emerald-900/90 border border-emerald-600/60 text-emerald-100 text-sm px-4 py-2 rounded-lg shadow-lg">
+          {successToast}
+        </div>
+      )}
       {errorToast && (
         <div className="fixed bottom-4 right-4 z-50 bg-red-900/90 border border-red-600/60 text-red-100 text-sm px-4 py-2 rounded-lg shadow-lg">
           {errorToast}
