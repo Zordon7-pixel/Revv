@@ -1,7 +1,7 @@
 const router = require('express').Router();
 const { dbAll, dbGet, dbRun } = require('../db');
 const superadmin = require('../middleware/superadmin');
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
 
 router.use(superadmin);
 
