@@ -28,6 +28,53 @@ router.get('/:id/full', auth, async (req, res) => {
   }
 });
 
+router.get('/:id/history', auth, async (req, res) => {
+  try {
+    const customer = await dbGet('SELECT id, name FROM customers WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
+    if (!customer) return res.status(404).json({ error: 'Not found' });
+
+    const limitRaw = Number(req.query.limit);
+    const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(limitRaw, 50)) : 10;
+    const excludeRoId = req.query.exclude_ro_id ? String(req.query.exclude_ro_id) : null;
+
+    const history = await dbAll(
+      `
+        SELECT
+          ro.id,
+          ro.ro_number,
+          ro.status,
+          ro.job_type,
+          ro.created_at,
+          ro.updated_at,
+          ro.intake_date,
+          ro.estimated_delivery,
+          ro.actual_delivery,
+          ro.total,
+          v.id AS vehicle_id,
+          v.year,
+          v.make,
+          v.model,
+          v.vin
+        FROM repair_orders ro
+        LEFT JOIN vehicles v ON v.id = ro.vehicle_id
+        WHERE ro.shop_id = $1
+          AND ro.customer_id = $2
+          AND ($3::text IS NULL OR ro.id <> $3)
+        ORDER BY ro.created_at DESC
+        LIMIT $4
+      `,
+      [req.user.shop_id, req.params.id, excludeRoId, limit]
+    );
+
+    return res.json({
+      customer,
+      history,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/:id', auth, async (req, res) => {
   try {
     const customer = await dbGet('SELECT * FROM customers WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);

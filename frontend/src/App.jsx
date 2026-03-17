@@ -44,7 +44,6 @@ import Privacy from './pages/Privacy'
 import ReviewSubmit from './pages/ReviewSubmit'
 import Reviews from './pages/Reviews'
 import StorageHold from './pages/StorageHold'
-import Inventory from './pages/Inventory'
 import { getToken, isAssistant } from './lib/auth'
 
 function PrivateRoute({ children }) {
@@ -120,11 +119,13 @@ export default function App() {
             <Route path="storage" element={<NonAssistantRoute><StorageHold /></NonAssistantRoute>} />
             <Route path="tech" element={<EmployeeOnlyRoute><TechView /></EmployeeOnlyRoute>} />
             <Route path="ros/:id" element={<RODetail />} />
+            <Route path="estimate-builder/:roId" element={<EstimateBuilder />} />
             <Route path="ros/:id/inspection/:inspectionId" element={<InspectionEditor />} />
             <Route path="customers" element={<Customers />} />
             <Route path="timeclock" element={<TimeClock />} />
             <Route path="schedule" element={<Schedule />} />
             <Route path="reports" element={<AdminRoute><Reports /></AdminRoute>} />
+            <Route path="workload" element={<AdminRoute><TechWorkload /></AdminRoute>} />
             <Route path="reviews" element={<Reviews />} />
             <Route path="monthly-report" element={<OwnerRoute><MonthlyReport /></OwnerRoute>} />
             <Route path="performance" element={<AdminRoute><Performance /></AdminRoute>} />

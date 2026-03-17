@@ -94,6 +94,7 @@ export default function RODetail() {
   const [showMarkPaidModal, setShowMarkPaidModal] = useState(false)
   const [paymentMethod, setPaymentMethod] = useState('cash')
   const [markingPaid, setMarkingPaid] = useState(false)
+  const [downloadingInvoice, setDownloadingInvoice] = useState(false)
   const [comms, setComms] = useState([])
   const [showCommForm, setShowCommForm] = useState(false)
   const [commForm, setCommForm] = useState({ channel: 'call', direction: 'outbound', summary: '' })
@@ -128,6 +129,10 @@ export default function RODetail() {
   const [showStorageBillModal, setShowStorageBillModal] = useState(false)
   const [billingStorage, setBillingStorage] = useState({ days: 0, rate_per_day: 0, billed_to: '', notes: '' })
   const [billingStorageSaving, setBillingStorageSaving] = useState(false)
+  const [vehicleHistoryExpanded, setVehicleHistoryExpanded] = useState(false)
+  const [vehicleHistory, setVehicleHistory] = useState([])
+  const [vehicleHistoryLoading, setVehicleHistoryLoading] = useState(false)
+  const [vehicleHistoryError, setVehicleHistoryError] = useState('')
 
   const userIsAdmin = isAdmin()
   const userIsEmployee = isEmployee()
@@ -175,6 +180,33 @@ export default function RODetail() {
   useEffect(() => { loadInspections() }, [id])
   useEffect(() => { loadSupplements() }, [id])
   useEffect(() => { loadStorageCharges() }, [id])
+  useEffect(() => {
+    if (!vehicleHistoryExpanded || !ro?.customer?.id) return
+
+    let cancelled = false
+    setVehicleHistoryLoading(true)
+    setVehicleHistoryError('')
+
+    api.get(`/customers/${ro.customer.id}/history`, {
+      params: { limit: 10, exclude_ro_id: id }
+    })
+      .then((r) => {
+        if (cancelled) return
+        setVehicleHistory(r.data.history || [])
+      })
+      .catch((err) => {
+        if (cancelled) return
+        setVehicleHistoryError(err?.response?.data?.error || 'Could not load history')
+      })
+      .finally(() => {
+        if (cancelled) return
+        setVehicleHistoryLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [vehicleHistoryExpanded, ro?.customer?.id, id])
 
   async function addPart(e) {
     e.preventDefault(); setSavingPart(true)
@@ -350,6 +382,25 @@ export default function RODetail() {
       alert(err?.response?.data?.error || 'Could not generate approval link')
     } finally {
       setSendingForApproval(false)
+    }
+  }
+
+  async function downloadInvoicePdf() {
+    setDownloadingInvoice(true)
+    try {
+      const response = await api.get(`/invoice/${id}`, { responseType: 'blob' })
+      const blobUrl = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }))
+      const a = document.createElement('a')
+      a.href = blobUrl
+      a.download = `invoice-${ro?.ro_number || id}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      window.URL.revokeObjectURL(blobUrl)
+    } catch (e) {
+      alert(e?.response?.data?.error || 'Could not download invoice PDF')
+    } finally {
+      setDownloadingInvoice(false)
     }
   }
 
@@ -617,6 +668,21 @@ export default function RODetail() {
           <button onClick={() => window.open(`/invoice/${id}`, '_blank')}
             className="w-full sm:w-auto flex items-center justify-center gap-1 bg-[#2a2d3e] hover:bg-[#3a3d4e] text-slate-300 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
             <Printer size={12} /> {t('ro.invoice')}
+          </button>
+          {!userIsAssistant && (
+            <button
+              onClick={() => navigate(`/estimate-builder/${id}`)}
+              className="w-full sm:w-auto flex items-center justify-center gap-1 bg-[#2a2d3e] hover:bg-[#3a3d4e] text-slate-300 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
+            >
+              <FileText size={12} /> Build Estimate
+            </button>
+          )}
+          <button
+            onClick={downloadInvoicePdf}
+            disabled={downloadingInvoice}
+            className="w-full sm:w-auto flex items-center justify-center gap-1 bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+          >
+            <FileText size={12} /> {downloadingInvoice ? 'Downloading...' : 'Download Invoice'}
           </button>
           {!userIsAssistant && (!editing
             ? <button onClick={() => setEditing(true)} className="w-full sm:w-auto flex items-center justify-center gap-1 bg-[#2a2d3e] hover:bg-[#3a3d4e] text-slate-300 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
@@ -902,6 +968,62 @@ export default function RODetail() {
               />
             )}
           </div>
+        </div>
+
+        {/* Vehicle History */}
+        <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
+          <button
+            type="button"
+            onClick={() => setVehicleHistoryExpanded((v) => !v)}
+            className="w-full flex items-center justify-between"
+          >
+            <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
+              <Car size={12} /> Vehicle History
+            </h2>
+            <span className="text-slate-500">
+              {vehicleHistoryExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </span>
+          </button>
+          <p className="text-xs text-slate-500 mt-2">
+            Last 10 visits for {ro.customer?.name || 'this customer'}
+          </p>
+
+          {vehicleHistoryExpanded && (
+            <div className="mt-3">
+              {vehicleHistoryLoading ? (
+                <p className="text-sm text-slate-500">Loading history…</p>
+              ) : vehicleHistoryError ? (
+                <p className="text-sm text-red-300">{vehicleHistoryError}</p>
+              ) : vehicleHistory.length === 0 ? (
+                <p className="text-sm text-slate-500">No prior visits found.</p>
+              ) : (
+                <div className="space-y-2">
+                  {vehicleHistory.map((visit) => (
+                    <div key={visit.id} className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <button
+                            onClick={() => navigate(`/ros/${visit.id}`)}
+                            className="text-sm font-semibold text-white hover:text-indigo-300"
+                          >
+                            {visit.ro_number || 'RO'}
+                          </button>
+                          <p className="text-[11px] text-slate-500 truncate">
+                            {[visit.year, visit.make, visit.model].filter(Boolean).join(' ') || 'Vehicle not set'}
+                          </p>
+                          <p className="text-[11px] text-slate-500">
+                            Opened: {visit.created_at ? new Date(visit.created_at).toLocaleDateString() : '—'}
+                            {visit.actual_delivery ? ` · Closed: ${new Date(visit.actual_delivery).toLocaleDateString()}` : ''}
+                          </p>
+                        </div>
+                        <StatusBadge status={visit.status} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Damage Diagram */}

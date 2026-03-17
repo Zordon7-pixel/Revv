@@ -78,6 +78,7 @@ app.use('/api/settings', require('./routes/settings'));
 app.use('/api/goals', require('./routes/goals'));
 app.use('/api/appointments', require('./routes/appointments'));
 app.use('/api/estimate-requests', require('./routes/estimateRequests'));
+app.use('/api/estimate-items', require('./routes/estimateLineItems'));
 app.use('/api/approval', require('./routes/approval'));
 app.use('/api/public', require('./routes/public'));
 app.use('/api/payments', require('./routes/payments'));
@@ -89,8 +90,6 @@ app.use('/api/v1', require('./routes/apiV1'));
 app.use('/api/notifications', notificationsRouter);
 app.use('/api/subscriptions', subscriptionsRouter);
 app.use('/api/storage', require('./routes/storage'));
-app.use('/api/comms', require('./routes/comms'));
-app.use('/api/inventory', require('./routes/inventory'));
 
 // Serve uploaded files
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
