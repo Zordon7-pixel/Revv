@@ -216,10 +216,30 @@ async function runMigrations() {
         ro_id TEXT NOT NULL REFERENCES repair_orders(id) ON DELETE CASCADE,
         shop_id TEXT NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
         user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
-        type TEXT NOT NULL,
-        notes TEXT NOT NULL,
+        channel TEXT NOT NULL,
+        direction TEXT NOT NULL DEFAULT 'outbound',
+        summary TEXT NOT NULL,
         created_at TIMESTAMPTZ DEFAULT NOW()
       )`,
+      `ALTER TABLE ro_comms ADD COLUMN IF NOT EXISTS channel TEXT`,
+      `ALTER TABLE ro_comms ADD COLUMN IF NOT EXISTS direction TEXT`,
+      `ALTER TABLE ro_comms ADD COLUMN IF NOT EXISTS summary TEXT`,
+      `UPDATE ro_comms
+       SET channel = CASE
+         WHEN channel IS NOT NULL THEN channel
+         WHEN type = 'text' THEN 'sms'
+         WHEN type IN ('call', 'email', 'in-person') THEN type
+         ELSE 'call'
+       END`,
+      `UPDATE ro_comms
+       SET direction = COALESCE(direction, 'outbound')`,
+      `UPDATE ro_comms
+       SET summary = COALESCE(summary, notes, '')`,
+      `ALTER TABLE ro_comms ALTER COLUMN channel SET DEFAULT 'call'`,
+      `ALTER TABLE ro_comms ALTER COLUMN direction SET DEFAULT 'outbound'`,
+      `ALTER TABLE ro_comms ALTER COLUMN summary SET DEFAULT ''`,
+      `CREATE INDEX IF NOT EXISTS idx_ro_comms_ro_created ON ro_comms(ro_id, created_at DESC)`,
+      `CREATE INDEX IF NOT EXISTS idx_ro_comms_shop_ro ON ro_comms(shop_id, ro_id)`,
       `CREATE TABLE IF NOT EXISTS estimate_approval_links (
         id UUID PRIMARY KEY,
         ro_id TEXT NOT NULL REFERENCES repair_orders(id) ON DELETE CASCADE,
@@ -302,22 +322,6 @@ async function runMigrations() {
         note TEXT NOT NULL,
         created_at TIMESTAMPTZ DEFAULT NOW()
       )`,
-      `CREATE TABLE IF NOT EXISTS estimate_line_items (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        ro_id TEXT NOT NULL REFERENCES repair_orders(id) ON DELETE CASCADE,
-        shop_id TEXT NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
-        type TEXT NOT NULL CHECK (type IN ('labor', 'parts', 'sublet', 'other')),
-        description TEXT NOT NULL DEFAULT '',
-        quantity NUMERIC(12,2) NOT NULL DEFAULT 1,
-        unit_price NUMERIC(12,2) NOT NULL DEFAULT 0,
-        total NUMERIC(12,2) GENERATED ALWAYS AS (ROUND(quantity * unit_price, 2)) STORED,
-        taxable BOOLEAN NOT NULL DEFAULT FALSE,
-        sort_order INTEGER NOT NULL DEFAULT 0,
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        updated_at TIMESTAMPTZ DEFAULT NOW()
-      )`,
-      `CREATE INDEX IF NOT EXISTS idx_estimate_line_items_ro_id ON estimate_line_items(ro_id)`,
-      `CREATE INDEX IF NOT EXISTS idx_estimate_line_items_shop_id ON estimate_line_items(shop_id)`,
     ];
 
     // Fix job_status_log FK to use ON DELETE CASCADE

@@ -351,11 +351,51 @@ async function initDb() {
       ro_id UUID NOT NULL REFERENCES repair_orders(id),
       shop_id UUID NOT NULL REFERENCES shops(id),
       user_id UUID REFERENCES users(id),
-      type TEXT NOT NULL,
-      notes TEXT NOT NULL,
+      channel TEXT NOT NULL,
+      direction TEXT NOT NULL DEFAULT 'outbound',
+      summary TEXT NOT NULL,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     )
   `);
+  await pool.query(`ALTER TABLE ro_comms ADD COLUMN IF NOT EXISTS channel TEXT`);
+  await pool.query(`ALTER TABLE ro_comms ADD COLUMN IF NOT EXISTS direction TEXT`);
+  await pool.query(`ALTER TABLE ro_comms ADD COLUMN IF NOT EXISTS summary TEXT`);
+  await pool.query(`
+    UPDATE ro_comms
+    SET channel = CASE
+      WHEN channel IS NOT NULL THEN channel
+      WHEN type = 'text' THEN 'sms'
+      WHEN type IN ('call', 'email', 'in-person') THEN type
+      ELSE 'call'
+    END
+  `).catch(() => {});
+  await pool.query(`UPDATE ro_comms SET direction = COALESCE(direction, 'outbound')`).catch(() => {});
+  await pool.query(`UPDATE ro_comms SET summary = COALESCE(summary, notes, '')`).catch(() => {});
+  await pool.query(`ALTER TABLE ro_comms ALTER COLUMN direction SET DEFAULT 'outbound'`).catch(() => {});
+  await pool.query(`ALTER TABLE ro_comms ALTER COLUMN channel SET DEFAULT 'call'`).catch(() => {});
+  await pool.query(`ALTER TABLE ro_comms ALTER COLUMN summary SET DEFAULT ''`).catch(() => {});
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS parts_inventory (
+      id UUID PRIMARY KEY,
+      shop_id UUID NOT NULL REFERENCES shops(id),
+      part_number TEXT NOT NULL,
+      name TEXT NOT NULL,
+      qty_on_hand INTEGER NOT NULL DEFAULT 0,
+      reorder_point INTEGER NOT NULL DEFAULT 0,
+      cost_cents INTEGER NOT NULL DEFAULT 0,
+      supplier TEXT,
+      location TEXT,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    )
+  `);
+  await pool.query(`ALTER TABLE parts_inventory ADD COLUMN IF NOT EXISTS cost_cents INTEGER`).catch(() => {});
+  await pool.query(`UPDATE parts_inventory SET cost_cents = COALESCE(cost_cents, ROUND(cost * 100)::INTEGER, 0)`).catch(() => {});
+  await pool.query(`ALTER TABLE parts_inventory ALTER COLUMN cost_cents SET DEFAULT 0`).catch(() => {});
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_parts_inventory_shop ON parts_inventory(shop_id)`).catch(() => {});
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_parts_inventory_low_stock ON parts_inventory(shop_id, qty_on_hand, reorder_point)`).catch(() => {});
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_parts_inventory_shop_part_number ON parts_inventory(shop_id, part_number)`).catch(() => {});
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS estimate_approval_links (

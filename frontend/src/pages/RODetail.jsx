@@ -44,7 +44,8 @@ const REQ_STATUS_META = {
 
 const COMM_TYPE_META = {
   call: { label: 'Call', Icon: Phone },
-  text: { label: 'Text', Icon: MessageSquare },
+  sms: { label: 'SMS', Icon: MessageSquare },
+  text: { label: 'SMS', Icon: MessageSquare },
   email: { label: 'Email', Icon: Mail },
   'in-person': { label: 'In Person', Icon: Users },
 }
@@ -96,7 +97,7 @@ export default function RODetail() {
   const [downloadingInvoice, setDownloadingInvoice] = useState(false)
   const [comms, setComms] = useState([])
   const [showCommForm, setShowCommForm] = useState(false)
-  const [commForm, setCommForm] = useState({ type: 'call', notes: '' })
+  const [commForm, setCommForm] = useState({ channel: 'call', direction: 'outbound', summary: '' })
   const [savingComm, setSavingComm] = useState(false)
   const [internalNotes, setInternalNotes] = useState([])
   const [internalNoteText, setInternalNoteText] = useState('')
@@ -152,7 +153,7 @@ export default function RODetail() {
     })
   })
   const loadPartsRequests = () => api.get(`/parts-requests/${id}`).then(r => setPartsRequests(r.data.requests || [])).catch(() => {})
-  const loadComms = () => api.get(`/ros/${id}/comms`).then(r => setComms(r.data.comms || [])).catch(() => setComms([]))
+  const loadComms = () => api.get(`/comms/ro/${id}`).then(r => setComms(r.data.comms || [])).catch(() => setComms([]))
   const loadInternalNotes = () => api.get(`/ros/${id}/notes`).then(r => setInternalNotes(r.data.notes || [])).catch(() => setInternalNotes([]))
   const loadPreDropoffPhotos = () => api.get(`/photos/ro/${id}/predropoff`).then(r => setPreDropoffPhotos(r.data.photos || [])).catch(() => setPreDropoffPhotos([]))
   const loadInspections = () => api.get(`/inspections/ro/${id}`).then(r => setInspectionSummary(r.data.inspections || [])).catch(() => setInspectionSummary([]))
@@ -405,17 +406,27 @@ export default function RODetail() {
 
   async function submitComm(e) {
     e.preventDefault()
-    if (!commForm.notes.trim()) return
+    if (!commForm.summary.trim()) return
     setSavingComm(true)
     try {
-      await api.post(`/ros/${id}/comms`, commForm)
-      setCommForm({ type: 'call', notes: '' })
+      await api.post(`/comms/ro/${id}`, commForm)
+      setCommForm({ channel: 'call', direction: 'outbound', summary: '' })
       setShowCommForm(false)
       loadComms()
     } catch (err) {
       alert(err?.response?.data?.error || 'Could not log communication')
     } finally {
       setSavingComm(false)
+    }
+  }
+
+  async function deleteComm(commId) {
+    if (!confirm('Delete this communication log entry?')) return
+    try {
+      await api.delete(`/comms/${commId}`)
+      loadComms()
+    } catch (err) {
+      alert(err?.response?.data?.error || 'Could not delete communication entry')
     }
   }
 
@@ -1489,60 +1500,50 @@ export default function RODetail() {
             <MessageSquare size={12} /> Communication Log
           </h2>
           <button
-            onClick={() => setShowCommForm((s) => !s)}
+            onClick={() => setShowCommForm(true)}
             className="text-xs bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] font-semibold px-3 py-1.5 rounded-lg transition-colors"
           >
-            {showCommForm ? 'Cancel' : 'Log Contact'}
+            Log Communication
           </button>
         </div>
-
-        {showCommForm && (
-          <form onSubmit={submitComm} className="bg-[#0f1117] border border-[#2a2d3e] rounded-xl p-3 mb-3 space-y-2">
-            <select
-              value={commForm.type}
-              onChange={(e) => setCommForm((f) => ({ ...f, type: e.target.value }))}
-              className="w-full bg-[#1a1d2e] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#EAB308]"
-            >
-              <option value="call">Call</option>
-              <option value="text">Text</option>
-              <option value="email">Email</option>
-              <option value="in-person">In-Person</option>
-            </select>
-            <textarea
-              rows={3}
-              value={commForm.notes}
-              onChange={(e) => setCommForm((f) => ({ ...f, notes: e.target.value }))}
-              placeholder="Contact summary..."
-              className="w-full bg-[#1a1d2e] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#EAB308]"
-            />
-            <button
-              type="submit"
-              disabled={savingComm}
-              className="bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] text-xs font-semibold px-3 py-2 rounded-lg disabled:opacity-50"
-            >
-              {savingComm ? 'Saving...' : 'Submit'}
-            </button>
-          </form>
-        )}
 
         {comms.length === 0 ? (
           <p className="text-slate-500 text-sm">No communication entries yet.</p>
         ) : (
           <div className="space-y-2">
             {comms.map((entry) => {
-              const meta = COMM_TYPE_META[entry.type] || COMM_TYPE_META.call
+              const meta = COMM_TYPE_META[entry.channel] || COMM_TYPE_META.call
               const Icon = meta.Icon
               return (
                 <div key={entry.id} className="bg-[#0f1117] border border-[#2a2d3e] rounded-xl p-3">
                   <div className="flex items-center gap-2 text-xs text-slate-400 mb-1">
                     <Icon size={12} className="text-[#EAB308]" />
                     <span className="text-white font-medium">{meta.label}</span>
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold ${
+                      entry.direction === 'inbound'
+                        ? 'bg-emerald-900/30 text-emerald-300 border-emerald-700/40'
+                        : 'bg-indigo-900/30 text-indigo-300 border-indigo-700/40'
+                    }`}>
+                      {entry.direction === 'inbound' ? 'Inbound' : 'Outbound'}
+                    </span>
                     <span>·</span>
                     <span>{new Date(entry.created_at).toLocaleString()}</span>
                     <span>·</span>
                     <span>{entry.logged_by || 'System'}</span>
                   </div>
-                  <p className="text-sm text-slate-200 whitespace-pre-wrap">{entry.notes}</p>
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="text-sm text-slate-200 whitespace-pre-wrap">{entry.summary}</p>
+                    {!userIsAssistant && (
+                      <button
+                        type="button"
+                        onClick={() => deleteComm(entry.id)}
+                        className="text-slate-500 hover:text-red-400 transition-colors"
+                        title="Delete communication entry"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    )}
+                  </div>
                 </div>
               )
             })}
@@ -1763,6 +1764,89 @@ export default function RODetail() {
           </div>
         )}
       </div>
+
+      {showCommForm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <form onSubmit={submitComm} className="w-full max-w-lg bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-white font-semibold text-sm">Log Communication</h3>
+              <button
+                type="button"
+                onClick={() => setShowCommForm(false)}
+                className="text-slate-500 hover:text-slate-300"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div>
+              <label className="text-[11px] text-slate-500 block mb-1">Channel</label>
+              <select
+                value={commForm.channel}
+                onChange={(e) => setCommForm((f) => ({ ...f, channel: e.target.value }))}
+                className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#EAB308]"
+              >
+                <option value="call">Call</option>
+                <option value="email">Email</option>
+                <option value="sms">SMS</option>
+                <option value="in-person">In Person</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-[11px] text-slate-500 block mb-1">Direction</label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCommForm((f) => ({ ...f, direction: 'outbound' }))}
+                  className={`flex-1 text-xs font-semibold px-3 py-2 rounded-lg border ${
+                    commForm.direction === 'outbound'
+                      ? 'bg-indigo-900/30 text-indigo-300 border-indigo-700/40'
+                      : 'bg-[#0f1117] text-slate-400 border-[#2a2d3e]'
+                  }`}
+                >
+                  Outbound
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCommForm((f) => ({ ...f, direction: 'inbound' }))}
+                  className={`flex-1 text-xs font-semibold px-3 py-2 rounded-lg border ${
+                    commForm.direction === 'inbound'
+                      ? 'bg-emerald-900/30 text-emerald-300 border-emerald-700/40'
+                      : 'bg-[#0f1117] text-slate-400 border-[#2a2d3e]'
+                  }`}
+                >
+                  Inbound
+                </button>
+              </div>
+            </div>
+            <div>
+              <label className="text-[11px] text-slate-500 block mb-1">Summary</label>
+              <textarea
+                rows={4}
+                value={commForm.summary}
+                onChange={(e) => setCommForm((f) => ({ ...f, summary: e.target.value }))}
+                placeholder="Communication summary..."
+                className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#EAB308]"
+              />
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setShowCommForm(false)}
+                className="flex-1 bg-[#0f1117] border border-[#2a2d3e] text-slate-300 py-2 rounded-lg text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={savingComm}
+                className="flex-1 bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] py-2 rounded-lg text-sm font-semibold disabled:opacity-50"
+              >
+                {savingComm ? 'Saving...' : 'Save Communication'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {/* Mark as Paid Modal */}
       {showMarkPaidModal && (
