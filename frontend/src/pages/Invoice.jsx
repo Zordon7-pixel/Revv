@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { Printer, Mail } from 'lucide-react'
+import { Printer, Mail, Download } from 'lucide-react'
 import api from '../lib/api'
 
 export default function Invoice() {
@@ -8,6 +8,7 @@ export default function Invoice() {
   const [data, setData] = useState(null)
   const [error, setError] = useState('')
   const [emailing, setEmailing] = useState(false)
+  const [downloading, setDownloading] = useState(false)
   const [notice, setNotice] = useState('')
 
   useEffect(() => {
@@ -54,6 +55,26 @@ export default function Invoice() {
     }
   }
 
+  async function downloadPdf() {
+    setDownloading(true)
+    setNotice('')
+    try {
+      const response = await api.get(`/invoice/${id}`, { responseType: 'blob' })
+      const blobUrl = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }))
+      const a = document.createElement('a')
+      a.href = blobUrl
+      a.download = `invoice-${ro_number || id}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      window.URL.revokeObjectURL(blobUrl)
+    } catch (e) {
+      setNotice(e?.response?.data?.error || 'Could not download invoice PDF.')
+    } finally {
+      setDownloading(false)
+    }
+  }
+
   return (
     <>
       <style>{`
@@ -75,16 +96,24 @@ export default function Invoice() {
       {/* Print button — hidden on print */}
       <div className="no-print" style={{ background: '#1a1d2e', padding: '0.75rem 1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
         <button
+          onClick={downloadPdf}
+          disabled={downloading}
+          style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: '#EAB308', color: '#0f1117', border: 'none', borderRadius: '8px', padding: '0.5rem 1.25rem', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer', opacity: downloading ? 0.6 : 1 }}
+        >
+          <Download size={15} />
+          {downloading ? 'Downloading...' : 'Download PDF'}
+        </button>
+        <button
           onClick={() => window.print()}
-          style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: '#EAB308', color: '#0f1117', border: 'none', borderRadius: '8px', padding: '0.5rem 1.25rem', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer' }}
+          style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: '#334155', color: '#fff', border: 'none', borderRadius: '8px', padding: '0.5rem 1.25rem', fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer' }}
         >
           <Printer size={15} />
-          Download PDF
+          Print
         </button>
         <button
           onClick={emailInvoice}
           disabled={emailing}
-          style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: '#334155', color: '#fff', border: 'none', borderRadius: '8px', padding: '0.5rem 1.25rem', fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer', opacity: emailing ? 0.6 : 1 }}
+          style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: '#475569', color: '#fff', border: 'none', borderRadius: '8px', padding: '0.5rem 1.25rem', fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer', opacity: emailing ? 0.6 : 1 }}
         >
           <Mail size={15} />
           {emailing ? 'Sending...' : 'Email to Customer'}

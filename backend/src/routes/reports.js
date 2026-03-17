@@ -223,6 +223,102 @@ router.get('/monthly/:yearMonth/csv', auth, requireTechnician, requireOwner, asy
   }
 });
 
+router.get('/tech-workload', auth, requireTechnician, requireAdmin, async (req, res) => {
+  try {
+    const sid = req.user.shop_id;
+
+    const [techs, ros] = await Promise.all([
+      dbAll(
+        `
+          SELECT id, name, role
+          FROM users
+          WHERE shop_id = $1
+            AND role IN ('owner', 'admin', 'employee', 'staff')
+          ORDER BY name ASC
+        `,
+        [sid]
+      ),
+      dbAll(
+        `
+          SELECT
+            ro.id,
+            ro.ro_number,
+            ro.status,
+            ro.assigned_to,
+            ro.updated_at,
+            ro.intake_date,
+            ro.estimated_delivery,
+            ro.total,
+            c.name AS customer_name,
+            v.year,
+            v.make,
+            v.model
+          FROM repair_orders ro
+          LEFT JOIN customers c ON c.id = ro.customer_id
+          LEFT JOIN vehicles v ON v.id = ro.vehicle_id
+          WHERE ro.shop_id = $1
+            AND ro.status NOT IN ('closed', 'delivery')
+          ORDER BY ro.updated_at DESC
+        `,
+        [sid]
+      ),
+    ]);
+
+    const columnsByTechId = new Map(
+      techs.map((tech) => [
+        tech.id,
+        {
+          tech_id: tech.id,
+          tech_name: tech.name,
+          tech_role: tech.role,
+          ros: [],
+        },
+      ])
+    );
+    const unassigned = {
+      tech_id: 'unassigned',
+      tech_name: 'Unassigned',
+      tech_role: null,
+      ros: [],
+    };
+
+    for (const ro of ros) {
+      const roCard = {
+        id: ro.id,
+        ro_number: ro.ro_number,
+        status: ro.status,
+        customer_name: ro.customer_name,
+        vehicle: [ro.year, ro.make, ro.model].filter(Boolean).join(' '),
+        total: Number(ro.total || 0),
+        updated_at: ro.updated_at,
+        intake_date: ro.intake_date,
+        estimated_delivery: ro.estimated_delivery,
+      };
+
+      if (ro.assigned_to && columnsByTechId.has(ro.assigned_to)) {
+        columnsByTechId.get(ro.assigned_to).ros.push(roCard);
+      } else {
+        unassigned.ros.push(roCard);
+      }
+    }
+
+    const columns = [...columnsByTechId.values(), unassigned]
+      .map((col) => ({ ...col, count: col.ros.length }))
+      .sort((a, b) => {
+        if (a.tech_id === 'unassigned') return -1;
+        if (b.tech_id === 'unassigned') return 1;
+        return a.tech_name.localeCompare(b.tech_name);
+      });
+
+    return res.json({
+      total_active_ros: ros.length,
+      columns,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/:tab', auth, requireTechnician, requireAdmin, async (req, res) => {
   try {
     const sid = req.user.shop_id;

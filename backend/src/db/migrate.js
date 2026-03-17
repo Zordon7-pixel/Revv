@@ -217,10 +217,30 @@ async function runMigrations() {
         ro_id TEXT NOT NULL REFERENCES repair_orders(id) ON DELETE CASCADE,
         shop_id TEXT NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
         user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
-        type TEXT NOT NULL,
-        notes TEXT NOT NULL,
+        channel TEXT NOT NULL,
+        direction TEXT NOT NULL DEFAULT 'outbound',
+        summary TEXT NOT NULL,
         created_at TIMESTAMPTZ DEFAULT NOW()
       )`,
+      `ALTER TABLE ro_comms ADD COLUMN IF NOT EXISTS channel TEXT`,
+      `ALTER TABLE ro_comms ADD COLUMN IF NOT EXISTS direction TEXT`,
+      `ALTER TABLE ro_comms ADD COLUMN IF NOT EXISTS summary TEXT`,
+      `UPDATE ro_comms
+       SET channel = CASE
+         WHEN channel IS NOT NULL THEN channel
+         WHEN type = 'text' THEN 'sms'
+         WHEN type IN ('call', 'email', 'in-person') THEN type
+         ELSE 'call'
+       END`,
+      `UPDATE ro_comms
+       SET direction = COALESCE(direction, 'outbound')`,
+      `UPDATE ro_comms
+       SET summary = COALESCE(summary, notes, '')`,
+      `ALTER TABLE ro_comms ALTER COLUMN channel SET DEFAULT 'call'`,
+      `ALTER TABLE ro_comms ALTER COLUMN direction SET DEFAULT 'outbound'`,
+      `ALTER TABLE ro_comms ALTER COLUMN summary SET DEFAULT ''`,
+      `CREATE INDEX IF NOT EXISTS idx_ro_comms_ro_created ON ro_comms(ro_id, created_at DESC)`,
+      `CREATE INDEX IF NOT EXISTS idx_ro_comms_shop_ro ON ro_comms(shop_id, ro_id)`,
       `CREATE TABLE IF NOT EXISTS estimate_approval_links (
         id UUID PRIMARY KEY,
         ro_id TEXT NOT NULL REFERENCES repair_orders(id) ON DELETE CASCADE,
