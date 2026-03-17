@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const { dbAll, dbGet, dbRun } = require('../db');
 const superadmin = require('../middleware/superadmin');
+const bcrypt = require('bcrypt');
 
 router.use(superadmin);
 
@@ -107,6 +108,23 @@ router.get('/ratings', async (req, res) => {
       ORDER BY avg_rating DESC NULLS LAST, review_count DESC
     `);
     res.json({ shops });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Force-set a user's password (superadmin only)
+router.post('/users/:userId/set-password', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { password } = req.body || {};
+    if (!password || password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    const user = await dbGet('SELECT id, email, role FROM users WHERE id = $1', [userId]);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (user.role === 'superadmin') return res.status(403).json({ error: 'Cannot modify superadmin accounts' });
+    const hash = await bcrypt.hash(password, 10);
+    await dbRun('UPDATE users SET password_hash = $1 WHERE id = $2', [hash, userId]);
+    res.json({ ok: true, email: user.email });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
