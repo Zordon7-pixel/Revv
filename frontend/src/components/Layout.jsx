@@ -1,6 +1,6 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useState } from 'react'
-import { LayoutDashboard, ClipboardList, ClipboardCheck, Users, BarChart3, BarChart2, Settings, UserCog, LogOut, Menu, Wrench, Clock, CalendarDays, Package, CreditCard, Radar, TrendingUp, X, HelpCircle, Star, Target } from 'lucide-react'
+import { LayoutDashboard, ClipboardList, ClipboardCheck, Users, BarChart3, BarChart2, Settings, UserCog, LogOut, Menu, Wrench, Clock, CalendarDays, Package, CreditCard, Radar, TrendingUp, X, HelpCircle, Star, Target, Moon, Sun } from 'lucide-react'
 import FeedbackButton from './FeedbackButton'
 import HelpPanel from './HelpPanel'
 import NotificationBell from './NotificationBell'
@@ -8,6 +8,7 @@ import { getRole, getTokenPayload, isAdmin, isEmployee, isAssistant } from '../l
 import api from '../lib/api'
 import { useLanguage } from '../contexts/LanguageContext'
 import LanguageToggle from './LanguageToggle'
+import { useTheme } from '../context/ThemeContext'
 
 const allNav = [
   { to: '/',             icon: LayoutDashboard, labelKey: 'nav.dashboard',    adminOnly: false },
@@ -32,6 +33,7 @@ const allNav = [
 
 export default function Layout() {
   const { t } = useLanguage()
+  const { theme, toggleTheme } = useTheme()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
   const navigate = useNavigate()
@@ -56,16 +58,29 @@ export default function Layout() {
     return true
   })
 
+  const themeToggleLabel = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'
+
+  const ThemeToggleButton = ({ mobile = false }) => (
+    <button
+      onClick={toggleTheme}
+      className={`${mobile ? 'w-8 h-8' : 'w-9 h-9'} rounded-lg border border-slate-300 dark:border-[#2a2d3e] bg-white dark:bg-[#0f1117] text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:border-indigo-400 transition-colors flex items-center justify-center`}
+      aria-label={themeToggleLabel}
+      title={themeToggleLabel}
+    >
+      {theme === 'dark' ? <Sun size={mobile ? 16 : 17} /> : <Moon size={mobile ? 16 : 17} />}
+    </button>
+  )
+
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
-      <div className="p-5 border-b border-[#2a2d3e]">
+      <div className="p-5 border-b border-slate-200 dark:border-[#2a2d3e]">
         <div className="flex items-center gap-3 mb-1">
           <div className="w-9 h-9 bg-indigo-600 rounded-lg flex items-center justify-center">
             <Wrench size={18} className="text-white" />
           </div>
           <div>
-            <div className="font-bold text-white text-sm">REVV</div>
-            <div className="text-[10px] text-slate-500">Shop HQ</div>
+            <div className="font-bold text-slate-900 dark:text-white text-sm">REVV</div>
+            <div className="text-[10px] text-slate-500 dark:text-slate-500">Shop HQ</div>
           </div>
         </div>
         <div className="text-[9px] text-indigo-400 italic mt-2 leading-tight">
@@ -75,18 +90,18 @@ export default function Layout() {
         {nav.map(({ to, icon: Icon, labelKey }) => (
           <NavLink key={to} to={to} end={to === '/'}
             className={({ isActive }) =>
-              `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all ${isActive ? 'bg-indigo-600 text-white font-medium' : 'text-slate-400 hover:bg-[#2a2d3e] hover:text-white'}`
+              `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all ${isActive ? 'bg-indigo-600 text-white font-medium' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-[#2a2d3e] hover:text-slate-900 dark:hover:text-white'}`
             }
             onClick={() => setSidebarOpen(false)}>
             <Icon size={16} /> {t(labelKey)}
           </NavLink>
         ))}
       </nav>
-      <div className="p-3 border-t border-[#2a2d3e]">
+      <div className="p-3 border-t border-slate-200 dark:border-[#2a2d3e]">
         <div className="mb-3">
           <LanguageToggle />
         </div>
-        <button onClick={logout} className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-slate-400 hover:bg-red-900/30 hover:text-red-400 transition-all w-full">
+        <button onClick={logout} className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-slate-600 dark:text-slate-400 hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-500 dark:hover:text-red-400 transition-all w-full">
           <LogOut size={16} /> Sign Out
         </button>
       </div>
@@ -94,20 +109,20 @@ export default function Layout() {
   )
 
   return (
-    <div className="flex h-screen bg-[#0f1117] overflow-hidden">
+    <div className="flex h-screen bg-slate-50 dark:bg-[#0f1117] overflow-hidden text-slate-900 dark:text-slate-100">
       {/* Desktop sidebar */}
-      <aside className="hidden md:flex flex-col w-56 bg-[#1a1d2e] border-r border-[#2a2d3e] flex-shrink-0">
+      <aside className="hidden md:flex flex-col w-56 bg-white dark:bg-[#1a1d2e] border-r border-slate-200 dark:border-[#2a2d3e] flex-shrink-0">
         <SidebarContent />
       </aside>
 
       {/* Mobile sidebar */}
       <div className={`fixed inset-0 z-50 md:hidden transition-opacity ${sidebarOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}>
         <div className="absolute inset-0 bg-black/60" onClick={() => setSidebarOpen(false)} />
-        <aside className={`fixed inset-y-0 left-0 z-50 w-56 bg-[#1a1d2e] border-r border-[#2a2d3e] transform transition-transform duration-200 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-          <div className="flex justify-end p-3 border-b border-[#2a2d3e]">
+        <aside className={`fixed inset-y-0 left-0 z-50 w-56 bg-white dark:bg-[#1a1d2e] border-r border-slate-200 dark:border-[#2a2d3e] transform transition-transform duration-200 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+          <div className="flex justify-end p-3 border-b border-slate-200 dark:border-[#2a2d3e]">
             <button
               onClick={() => setSidebarOpen(false)}
-              className="text-slate-400 hover:text-white"
+              className="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
               aria-label="Close sidebar"
             >
               <X size={18} />
@@ -122,8 +137,8 @@ export default function Layout() {
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Mobile topbar */}
-        <header className="md:hidden flex items-center gap-3 px-4 py-3 bg-[#1a1d2e] border-b border-[#2a2d3e]">
-          <button onClick={() => setSidebarOpen(true)} className="text-slate-400 hover:text-white">
+        <header className="md:hidden flex items-center gap-3 px-4 py-3 bg-white dark:bg-[#1a1d2e] border-b border-slate-200 dark:border-[#2a2d3e]">
+          <button onClick={() => setSidebarOpen(true)} className="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">
             <Menu size={20} />
           </button>
           <div className="flex items-center gap-2 flex-1">
@@ -131,25 +146,27 @@ export default function Layout() {
             <span className="font-bold text-sm">REVV</span>
           </div>
           <LanguageToggle />
+          <ThemeToggleButton mobile />
           <button
             onClick={() => setHelpOpen(true)}
-            className="w-8 h-8 rounded-lg border border-[#2a2d3e] bg-[#0f1117] text-slate-300 hover:text-white hover:border-indigo-400 transition-colors flex items-center justify-center"
+            className="w-8 h-8 rounded-lg border border-slate-300 dark:border-[#2a2d3e] bg-white dark:bg-[#0f1117] text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:border-indigo-400 transition-colors flex items-center justify-center"
             aria-label="Open quick start help"
           >
             <HelpCircle size={16} />
           </button>
           {staff && <NotificationBell />}
-          <div className="w-8 h-8 rounded-full bg-[#2a2d3e] text-slate-200 text-xs font-semibold flex items-center justify-center">
+          <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-[#2a2d3e] text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center justify-center">
             {userInitial}
           </div>
         </header>
 
         {/* Desktop navbar */}
-        <header className="hidden md:flex items-center justify-end gap-3 px-6 py-3 bg-[#1a1d2e] border-b border-[#2a2d3e]">
+        <header className="hidden md:flex items-center justify-end gap-3 px-6 py-3 bg-white dark:bg-[#1a1d2e] border-b border-slate-200 dark:border-[#2a2d3e]">
           <LanguageToggle />
+          <ThemeToggleButton />
           <button
             onClick={() => setHelpOpen(true)}
-            className="w-9 h-9 rounded-lg border border-[#2a2d3e] bg-[#0f1117] text-slate-300 hover:text-white hover:border-indigo-400 transition-colors flex items-center justify-center"
+            className="w-9 h-9 rounded-lg border border-slate-300 dark:border-[#2a2d3e] bg-white dark:bg-[#0f1117] text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:border-indigo-400 transition-colors flex items-center justify-center"
             aria-label="Open quick start help"
           >
             <HelpCircle size={17} />
@@ -157,7 +174,7 @@ export default function Layout() {
           {staff && (
             <NotificationBell />
           )}
-          <div className="w-9 h-9 rounded-full bg-[#2a2d3e] text-slate-200 text-sm font-semibold flex items-center justify-center">
+          <div className="w-9 h-9 rounded-full bg-slate-200 dark:bg-[#2a2d3e] text-slate-700 dark:text-slate-200 text-sm font-semibold flex items-center justify-center">
             {userInitial}
           </div>
         </header>

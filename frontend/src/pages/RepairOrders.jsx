@@ -110,6 +110,9 @@ export default function RepairOrders() {
     return !assistant
   }
 
+  const panel = 'bg-white border border-slate-200 dark:bg-[#1a1d2e] dark:border-[#2a2d3e]'
+  const input = 'w-full bg-slate-50 dark:bg-[#0f1117] border border-slate-300 dark:border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-[#EAB308]'
+
   async function deleteRO(ro) {
     const roNumber = ro.ro_number || 'this RO'
     if (!window.confirm(`Delete ${roNumber}? This cannot be undone.`)) return
@@ -130,7 +133,7 @@ export default function RepairOrders() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-white">Repair Orders</h1>
+          <h1 className="text-xl font-bold text-slate-900 dark:text-white">Repair Orders</h1>
           <p className="text-slate-500 text-sm">{ros.length} total · {ros.filter((r) => r.status !== 'delivery' && r.status !== 'closed').length} active</p>
         </div>
         {!assistant && (
@@ -140,7 +143,7 @@ export default function RepairOrders() {
         )}
       </div>
 
-      <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-3">
+      <div className={`${panel} rounded-xl p-3`}>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
           <div className="md:col-span-2 relative w-full">
             <Search size={14} className="absolute left-3 top-2.5 text-slate-500" />
@@ -148,13 +151,13 @@ export default function RepairOrders() {
               value={filters.search}
               onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
               placeholder="Search customer, vehicle, or RO#"
-              className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg pl-9 pr-3 py-2 text-sm text-white focus:outline-none focus:border-[#EAB308]"
+              className={`${input} pl-9`}
             />
           </div>
           <select
             value={filters.status}
             onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))}
-            className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#EAB308]"
+            className={input}
           >
             <option value="all">All Statuses</option>
             <option value="intake">Intake</option>
@@ -177,7 +180,7 @@ export default function RepairOrders() {
                 navigate(`/ros?customer_id=${encodeURIComponent(customerId)}`)
               }
             }}
-            className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#EAB308]"
+            className={input}
           >
             <option value="all">All Customers</option>
             {uniqueCustomers.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
@@ -186,14 +189,14 @@ export default function RepairOrders() {
             <select
               value={filters.tech}
               onChange={(e) => setFilters((f) => ({ ...f, tech: e.target.value }))}
-              className="w-full flex-1 bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#EAB308]"
+              className={`${input} flex-1`}
             >
               <option value="all">All Techs</option>
               {techs.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
             <button
               onClick={clearFilters}
-              className="w-full sm:w-auto bg-[#0f1117] border border-[#2a2d3e] hover:border-[#EAB308]/60 text-slate-300 text-sm px-3 py-2 rounded-lg"
+              className="w-full sm:w-auto bg-slate-50 dark:bg-[#0f1117] border border-slate-300 dark:border-[#2a2d3e] hover:border-[#EAB308]/60 text-slate-700 dark:text-slate-300 text-sm px-3 py-2 rounded-lg"
             >
               Clear
             </button>
@@ -213,7 +216,7 @@ export default function RepairOrders() {
           <select
             value={bulkStatus}
             onChange={(e) => setBulkStatus(e.target.value)}
-            className="text-xs bg-[#0f1117] border border-[#2a2d3e] text-white rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500"
+            className="text-xs bg-slate-50 dark:bg-[#0f1117] border border-slate-300 dark:border-[#2a2d3e] text-slate-900 dark:text-white rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500"
           >
             <option value="">Change status to...</option>
             <option value="intake">Intake</option>
@@ -246,7 +249,7 @@ export default function RepairOrders() {
           </button>
           <button
             onClick={() => setSelected(new Set())}
-            className="text-xs text-slate-400 hover:text-white ml-auto"
+            className="text-xs text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white ml-auto"
           >
             Clear
           </button>
@@ -254,16 +257,16 @@ export default function RepairOrders() {
       )}
 
       {filteredRos.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 gap-4 bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl">
+        <div className={`flex flex-col items-center justify-center py-16 gap-4 ${panel} rounded-xl`}>
           <img src="/empty-ros.png" alt="No repair orders" className="w-40 h-40 opacity-80 object-contain" />
-          <p className="text-slate-400 text-sm font-medium">No repair orders match your filters.</p>
-          <p className="text-slate-600 text-xs">Try clearing filters or creating a new RO.</p>
+          <p className="text-slate-500 dark:text-slate-400 text-sm font-medium">No repair orders match your filters.</p>
+          <p className="text-slate-500 dark:text-slate-600 text-xs">Try clearing filters or creating a new RO.</p>
         </div>
       ) : (
         <div className="space-y-3">
-          <table className="hidden md:table w-full bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl overflow-hidden">
-            <thead className="bg-[#0f1117] border-b border-[#2a2d3e]">
-              <tr className="text-left text-xs text-slate-400">
+          <table className="hidden md:table w-full bg-white dark:bg-[#1a1d2e] border border-slate-200 dark:border-[#2a2d3e] rounded-xl overflow-hidden">
+            <thead className="bg-slate-50 dark:bg-[#0f1117] border-b border-slate-200 dark:border-[#2a2d3e]">
+              <tr className="text-left text-xs text-slate-500 dark:text-slate-400">
                 {canBulk && <th className="px-3 py-2 w-10"><input type="checkbox" checked={selected.size === ros.length && ros.length > 0} onChange={toggleAll} className="accent-indigo-500 cursor-pointer" /></th>}
                 <th className="px-3 py-2">RO #</th>
                 <th className="px-3 py-2">Customer</th>
@@ -275,7 +278,7 @@ export default function RepairOrders() {
             </thead>
             <tbody>
               {filteredRos.map((ro) => (
-                <tr key={ro.id} className="border-b border-[#2a2d3e] last:border-b-0 hover:bg-[#1e2235]">
+                <tr key={ro.id} className="border-b border-slate-200 dark:border-[#2a2d3e] last:border-b-0 hover:bg-slate-100 dark:hover:bg-[#1e2235]">
                   {canBulk && (
                     <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
                       <input
@@ -297,10 +300,10 @@ export default function RepairOrders() {
                       )}
                     </div>
                   </td>
-                  <td className="px-3 py-2 text-sm text-white">{ro.customer_name || '—'}</td>
-                  <td className="px-3 py-2 text-sm text-slate-300">{[ro.year, ro.make, ro.model].filter(Boolean).join(' ') || '—'}</td>
+                  <td className="px-3 py-2 text-sm text-slate-900 dark:text-white">{ro.customer_name || '—'}</td>
+                  <td className="px-3 py-2 text-sm text-slate-600 dark:text-slate-300">{[ro.year, ro.make, ro.model].filter(Boolean).join(' ') || '—'}</td>
                   <td className="px-3 py-2"><StatusBadge status={ro.status} /></td>
-                  <td className="px-3 py-2 text-xs text-slate-400">{techById[ro.assigned_to] || 'Unassigned'}</td>
+                  <td className="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">{techById[ro.assigned_to] || 'Unassigned'}</td>
                   <td className="px-3 py-2 text-right">
                     <div className="inline-flex items-center gap-2">
                       {canDeleteRO(ro) && (
@@ -327,15 +330,15 @@ export default function RepairOrders() {
 
           <div className="md:hidden space-y-2">
             {filteredRos.map((ro) => (
-              <div key={ro.id} className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-3">
+              <div key={ro.id} className={`${panel} rounded-xl p-3`}>
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <p className="text-[#EAB308] text-xs font-bold flex items-center gap-1.5">
                       <span>{ro.ro_number || '—'}</span>
                       {hasInsuranceClaim(ro) && <Shield size={11} className="text-sky-400" />}
                     </p>
-                    <p className="text-white font-semibold text-sm">{ro.customer_name || '—'}</p>
-                    <p className="text-slate-400 text-xs">{[ro.year, ro.make, ro.model].filter(Boolean).join(' ') || '—'}</p>
+                    <p className="text-slate-900 dark:text-white font-semibold text-sm">{ro.customer_name || '—'}</p>
+                    <p className="text-slate-500 dark:text-slate-400 text-xs">{[ro.year, ro.make, ro.model].filter(Boolean).join(' ') || '—'}</p>
                     {hasOpenSupplement(ro) && (
                       <p className="text-yellow-300 text-[10px] mt-1 inline-flex items-center gap-1">
                         <AlertTriangle size={10} /> Supplement {String(ro.supplement_status).toLowerCase()}
