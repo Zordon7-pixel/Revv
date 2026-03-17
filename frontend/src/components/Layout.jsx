@@ -12,6 +12,7 @@ import LanguageToggle from './LanguageToggle'
 import AppOverlay from './AppOverlay'
 import CommandPalette from './CommandPalette'
 import { Logo } from './ui'
+import ThemeToggleButton from './ThemeToggleButton'
 import { resolveUploadedMediaUrl } from '../lib/mediaUrls'
 
 const NAV_GROUPS = [
@@ -51,7 +52,9 @@ const allNav = [
 
 export default function Layout() {
   const { t } = useLanguage()
-  const { theme, setTheme } = useTheme()
+  const themeContext = useTheme()
+  const theme = themeContext?.theme === 'light' ? 'light' : 'dark'
+  const setTheme = themeContext?.setTheme || (() => {})
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     try { return localStorage.getItem('revv_sidebar_collapsed') === '1' } catch { return false }
@@ -449,6 +452,7 @@ export default function Layout() {
             <HelpCircle size={16} />
           </button>
           {staff && <div className="hidden shrink-0 min-[620px]:block"><NotificationBell /></div>}
+          <ThemeToggleButton mobile />
           <div ref={userMenuMobileRef} className="relative">
             <button
               type="button"
@@ -508,6 +512,7 @@ export default function Layout() {
             {staff && (
               <NotificationBell />
             )}
+            <ThemeToggleButton />
             <div ref={userMenuDesktopRef} className="relative">
               <button
                 type="button"
