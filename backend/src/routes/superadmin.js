@@ -112,13 +112,20 @@ router.get('/ratings', async (req, res) => {
   }
 });
 
-// Delete a user by ID (superadmin only — cross-shop)
+// Delete a user by ID (superadmin only — cross-shop, cascades)
 router.delete('/users/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
     const user = await dbGet('SELECT id, role, email FROM users WHERE id = $1', [userId]);
     if (!user) return res.status(404).json({ error: 'User not found' });
     if (user.role === 'superadmin') return res.status(403).json({ error: 'Cannot delete superadmin accounts' });
+    
+    // Delete dependent records first
+    await dbRun('DELETE FROM time_entries WHERE user_id = $1', [userId]);
+    await dbRun('DELETE FROM job_status_log WHERE user_id = $1', [userId]);
+    await dbRun('DELETE FROM ro_internal_notes WHERE user_id = $1', [userId]);
+    
+    // Then delete the user
     await dbRun('DELETE FROM users WHERE id = $1', [userId]);
     res.json({ ok: true, deleted: user.email });
   } catch (err) {
