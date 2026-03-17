@@ -15,6 +15,9 @@ if (!process.env.JWT_SECRET) {
 
 const app = express();
 
+// Trust Railway's load balancer proxy (fixes X-Forwarded-For for rate limiting)
+app.set('trust proxy', 1);
+
 // CORS — restrict to known origin in production
 const allowedOrigins = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(',').map(s => s.trim())
