@@ -446,31 +446,24 @@ router.get('/turnaround-estimate', auth, async (req, res) => {
   }
 });
 
-// PATCH /api/ros/bulk — batch status update
-router.patch('/bulk', auth, requireTechnician, async (req, res) => {
+// POST /api/ros/bulk-update — batch status update
+router.post('/bulk-update', auth, requireTechnician, async (req, res) => {
   if (!['owner', 'admin'].includes(req.user.role)) {
     return res.status(403).json({ error: 'Admin access required' });
   }
   try {
-    const { ids, status } = req.body;
+    const { ids, status } = req.body || {};
     if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids required' });
-    const VALID = ['intake', 'estimate', 'approval', 'in-progress', 'parts-hold', 'qc', 'ready', 'closed'];
-    if (status && !VALID.includes(status)) return res.status(400).json({ error: 'Invalid status' });
+    if (!STATUSES.includes(status)) return res.status(400).json({ error: 'Invalid status' });
 
-    let updated = 0;
-    for (const id of ids) {
-      const ro = await dbGet('SELECT id, shop_id, status FROM repair_orders WHERE id = $1 AND shop_id = $2', [id, req.user.shop_id]);
-      if (!ro) continue;
-      if (status) {
-        await dbRun('UPDATE repair_orders SET status = $1, updated_at = NOW() WHERE id = $2', [status, id]);
-        await dbRun(
-          'INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by) VALUES ($1, $2, $3, $4, $5)',
-          [uuidv4(), id, ro.status, status, req.user.id]
-        );
-      }
-      updated++;
-    }
-    res.json({ updated });
+    const result = await dbRun(
+      `UPDATE repair_orders
+       SET status = $1, updated_at = NOW()
+       WHERE shop_id = $2
+         AND id = ANY($3::uuid[])`,
+      [status, req.user.shop_id, ids]
+    );
+    res.json({ updated: result.rowCount || 0 });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
