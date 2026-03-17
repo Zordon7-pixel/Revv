@@ -153,7 +153,7 @@ export default function RODetail() {
     })
   })
   const loadPartsRequests = () => api.get(`/parts-requests/${id}`).then(r => setPartsRequests(r.data.requests || [])).catch(() => {})
-  const loadComms = () => api.get(`/comms/ro/${id}`).then(r => setComms(r.data.comms || [])).catch(() => setComms([]))
+  const loadComms = () => api.get(`/comms/${id}`).then(r => setComms(r.data.comms || [])).catch(() => setComms([]))
   const loadInternalNotes = () => api.get(`/ros/${id}/notes`).then(r => setInternalNotes(r.data.notes || [])).catch(() => setInternalNotes([]))
   const loadPreDropoffPhotos = () => api.get(`/photos/ro/${id}/predropoff`).then(r => setPreDropoffPhotos(r.data.photos || [])).catch(() => setPreDropoffPhotos([]))
   const loadInspections = () => api.get(`/inspections/ro/${id}`).then(r => setInspectionSummary(r.data.inspections || [])).catch(() => setInspectionSummary([]))
