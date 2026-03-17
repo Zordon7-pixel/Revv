@@ -1,5 +1,5 @@
 const router = require('express').Router();
-const { dbAll, dbGet } = require('../db');
+const { dbAll, dbGet, dbRun } = require('../db');
 const superadmin = require('../middleware/superadmin');
 
 router.use(superadmin);
@@ -107,6 +107,20 @@ router.get('/ratings', async (req, res) => {
       ORDER BY avg_rating DESC NULLS LAST, review_count DESC
     `);
     res.json({ shops });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete a user by ID (superadmin only — cross-shop)
+router.delete('/users/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const user = await dbGet('SELECT id, role, email FROM users WHERE id = $1', [userId]);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (user.role === 'superadmin') return res.status(403).json({ error: 'Cannot delete superadmin accounts' });
+    await dbRun('DELETE FROM users WHERE id = $1', [userId]);
+    res.json({ ok: true, deleted: user.email });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
