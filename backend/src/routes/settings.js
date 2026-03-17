@@ -50,7 +50,11 @@ async function resetTimeclock(shopId) {
 router.get('/', auth, requireTechnician, async (req, res) => {
   try {
     const settings = await dbGet(
-      'SELECT COALESCE(sms_notifications_enabled, TRUE) AS sms_notifications_enabled FROM shops WHERE id = $1',
+      `SELECT
+         COALESCE(sms_notifications_enabled, TRUE) AS sms_notifications_enabled,
+         COALESCE(email_notifications_enabled, TRUE) AS email_notifications_enabled
+       FROM shops
+       WHERE id = $1`,
       [req.user.shop_id]
     );
     if (!settings) return res.status(404).json({ error: 'Shop not found' });
@@ -70,17 +74,32 @@ router.patch('/', auth, requireTechnician, async (req, res) => {
     if (req.body && Object.prototype.hasOwnProperty.call(req.body, 'sms_notifications_enabled')) {
       updates.sms_notifications_enabled = !!req.body.sms_notifications_enabled;
     }
+    if (req.body && Object.prototype.hasOwnProperty.call(req.body, 'email_notifications_enabled')) {
+      updates.email_notifications_enabled = !!req.body.email_notifications_enabled;
+    }
     if (Object.keys(updates).length === 0) {
       return res.status(400).json({ error: 'No valid settings provided' });
     }
 
-    await dbRun(
-      'UPDATE shops SET sms_notifications_enabled = $1 WHERE id = $2',
-      [updates.sms_notifications_enabled, req.user.shop_id]
-    );
+    const setClauses = [];
+    const values = [];
+    if (Object.prototype.hasOwnProperty.call(updates, 'sms_notifications_enabled')) {
+      values.push(updates.sms_notifications_enabled);
+      setClauses.push(`sms_notifications_enabled = $${values.length}`);
+    }
+    if (Object.prototype.hasOwnProperty.call(updates, 'email_notifications_enabled')) {
+      values.push(updates.email_notifications_enabled);
+      setClauses.push(`email_notifications_enabled = $${values.length}`);
+    }
+    values.push(req.user.shop_id);
+    await dbRun(`UPDATE shops SET ${setClauses.join(', ')} WHERE id = $${values.length}`, values);
 
     const updated = await dbGet(
-      'SELECT COALESCE(sms_notifications_enabled, TRUE) AS sms_notifications_enabled FROM shops WHERE id = $1',
+      `SELECT
+         COALESCE(sms_notifications_enabled, TRUE) AS sms_notifications_enabled,
+         COALESCE(email_notifications_enabled, TRUE) AS email_notifications_enabled
+       FROM shops
+       WHERE id = $1`,
       [req.user.shop_id]
     );
     return res.json(updated);

@@ -78,6 +78,7 @@ app.use('/api/settings', require('./routes/settings'));
 app.use('/api/goals', require('./routes/goals'));
 app.use('/api/appointments', require('./routes/appointments'));
 app.use('/api/estimate-requests', require('./routes/estimateRequests'));
+app.use('/api/estimate-items', require('./routes/estimateLineItems'));
 app.use('/api/approval', require('./routes/approval'));
 app.use('/api/public', require('./routes/public'));
 app.use('/api/payments', require('./routes/payments'));

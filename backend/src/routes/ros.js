@@ -5,6 +5,7 @@ const { requireAdmin, requireTechnician } = require('../middleware/roles');
 const { calculateProfit } = require('../services/profit');
 const { sendSMS, isConfigured } = require('../services/sms');
 const { sendMail } = require('../services/mailer');
+const { statusChangeEmail } = require('../services/emailTemplates');
 const { createNotification } = require('../services/notifications');
 const roLimitGuard = require('../middleware/roLimitGuard');
 const { v4: uuidv4 } = require('uuid');
@@ -12,7 +13,6 @@ const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
 
 const STATUSES = ['intake','estimate','approval','parts','repair','paint','qc','delivery','closed','total_loss','siu_hold'];
-const COMM_TYPES = ['call', 'text', 'email', 'in-person'];
 const STATUS_SMS_LABELS = {
   intake: 'Inspection',
   estimate: 'Estimate Ready',
@@ -76,6 +76,50 @@ function queueStatusSMS(roId, shopId, toStatus) {
       await sendSMS(ro.customer_phone, message);
     } catch (_) {
       // Non-blocking fire-and-forget path; ignore SMS errors.
+    }
+  });
+}
+
+function queueStatusEmail(roId, shopId, toStatus) {
+  setImmediate(async () => {
+    try {
+      const emailContext = await dbGet(
+        `SELECT ro.ro_number, ro.estimate_token, c.email AS customer_email, s.name AS shop_name,
+                v.year, v.make, v.model,
+                COALESCE(s.email_notifications_enabled, TRUE) AS email_notifications_enabled
+         FROM repair_orders ro
+         LEFT JOIN customers c ON c.id = ro.customer_id
+         LEFT JOIN shops s ON s.id = ro.shop_id
+         LEFT JOIN vehicles v ON v.id = ro.vehicle_id
+         WHERE ro.id = $1 AND ro.shop_id = $2`,
+        [roId, shopId]
+      );
+      if (!emailContext?.customer_email) return;
+      if (!emailContext.email_notifications_enabled) return;
+
+      let portalToken = null;
+      const tokenRow = await dbGet(
+        'SELECT token FROM portal_tokens WHERE ro_id = $1 ORDER BY created_at DESC LIMIT 1',
+        [roId]
+      );
+      portalToken = tokenRow?.token || emailContext.estimate_token || null;
+
+      const appUrl = process.env.APP_URL || process.env.PUBLIC_URL || 'https://revvshop.app';
+      const portalUrl = portalToken ? `${appUrl}/track/${portalToken}` : null;
+      const vehicle = [emailContext.year, emailContext.make, emailContext.model].filter(Boolean).join(' ') || 'Vehicle on file';
+      const { subject, html } = statusChangeEmail({
+        shopName: emailContext.shop_name || 'Your Repair Shop',
+        roNumber: emailContext.ro_number || 'N/A',
+        vehicle,
+        status: toStatus,
+        portalUrl,
+      });
+
+      sendMail(emailContext.customer_email, subject, html).catch((e) => {
+        console.error('[Email] status notification failed:', e.message);
+      });
+    } catch (_) {
+      // Non-blocking fire-and-forget path; ignore email errors.
     }
   });
 }
@@ -168,11 +212,26 @@ async function ensureRoCommsTable() {
       ro_id TEXT NOT NULL,
       shop_id TEXT NOT NULL,
       user_id TEXT,
-      type TEXT NOT NULL,
-      notes TEXT NOT NULL,
+      channel TEXT NOT NULL,
+      direction TEXT NOT NULL DEFAULT 'outbound',
+      summary TEXT NOT NULL,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     )
   `);
+  await dbRun(`ALTER TABLE ro_comms ADD COLUMN IF NOT EXISTS channel TEXT`).catch(() => {});
+  await dbRun(`ALTER TABLE ro_comms ADD COLUMN IF NOT EXISTS direction TEXT`).catch(() => {});
+  await dbRun(`ALTER TABLE ro_comms ADD COLUMN IF NOT EXISTS summary TEXT`).catch(() => {});
+  await dbRun(`
+    UPDATE ro_comms
+    SET channel = CASE
+      WHEN channel IS NOT NULL THEN channel
+      WHEN type = 'text' THEN 'sms'
+      WHEN type IN ('call', 'email', 'in-person') THEN type
+      ELSE 'call'
+    END
+  `).catch(() => {});
+  await dbRun(`UPDATE ro_comms SET direction = COALESCE(direction, 'outbound')`).catch(() => {});
+  await dbRun(`UPDATE ro_comms SET summary = COALESCE(summary, notes, '')`).catch(() => {});
 }
 
 async function ensureApprovalLinksTable() {
@@ -241,14 +300,82 @@ async function enrichRO(ro) {
 
 router.get('/', auth, async (req, res) => {
   try {
+    const {
+      search = '',
+      status = '',
+      assigned_to = '',
+      type = '',
+      date_from = '',
+      date_to = '',
+      payment_status = '',
+    } = req.query || {};
+    const params = [req.user.shop_id];
+    const where = ['ro.shop_id = $1'];
+
+    const normalizedSearch = String(search || '').trim();
+    const normalizedStatus = String(status || '').trim().toLowerCase();
+    const normalizedAssignedTo = String(assigned_to || '').trim();
+    const normalizedType = String(type || '').trim().toLowerCase();
+    const normalizedDateFrom = String(date_from || '').trim();
+    const normalizedDateTo = String(date_to || '').trim();
+    const normalizedPaymentStatus = String(payment_status || '').trim().toLowerCase();
+
+    if (normalizedSearch) {
+      params.push(`%${normalizedSearch}%`);
+      const idx = params.length;
+      where.push(`(
+        ro.ro_number ILIKE $${idx}
+        OR c.name ILIKE $${idx}
+        OR CONCAT_WS(' ', v.year::text, v.make, v.model) ILIKE $${idx}
+      )`);
+    }
+
+    if (normalizedStatus && normalizedStatus !== 'all') {
+      if (normalizedStatus === 'open') {
+        where.push(`ro.status NOT IN ('delivery', 'closed')`);
+      } else if (normalizedStatus === 'in-progress') {
+        where.push(`ro.status IN ('repair', 'paint', 'qc', 'in-progress')`);
+      } else if (normalizedStatus === 'ready') {
+        where.push(`ro.status = 'ready'`);
+      } else {
+        params.push(normalizedStatus);
+        where.push(`ro.status = $${params.length}`);
+      }
+    }
+
+    if (normalizedAssignedTo && normalizedAssignedTo !== 'all') {
+      params.push(normalizedAssignedTo);
+      where.push(`ro.assigned_to = $${params.length}`);
+    }
+
+    if (normalizedType && normalizedType !== 'all') {
+      params.push(normalizedType);
+      where.push(`ro.job_type = $${params.length}`);
+    }
+
+    if (normalizedDateFrom) {
+      params.push(normalizedDateFrom);
+      where.push(`ro.created_at >= $${params.length}::date`);
+    }
+
+    if (normalizedDateTo) {
+      params.push(normalizedDateTo);
+      where.push(`ro.created_at < ($${params.length}::date + INTERVAL '1 day')`);
+    }
+
+    if (normalizedPaymentStatus && normalizedPaymentStatus !== 'all') {
+      params.push(normalizedPaymentStatus);
+      where.push(`ro.payment_status = $${params.length}`);
+    }
+
     const ros = await dbAll(`
       SELECT ro.*, v.year, v.make, v.model, v.color, c.name as customer_name, c.phone as customer_phone
       FROM repair_orders ro
       LEFT JOIN vehicles v ON v.id = ro.vehicle_id
       LEFT JOIN customers c ON c.id = ro.customer_id
-      WHERE ro.shop_id = $1
+      WHERE ${where.join('\n        AND ')}
       ORDER BY ro.created_at DESC
-    `, [req.user.shop_id]);
+    `, params);
     res.json({ ros });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -526,68 +653,6 @@ router.post('/:id/email-invoice', auth, requireTechnician, async (req, res) => {
   }
 });
 
-router.get('/:id/comms', auth, async (req, res) => {
-  try {
-    await ensureRoCommsTable();
-    const ro = await dbGet('SELECT id FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
-    if (!ro) return res.status(404).json({ error: 'Not found' });
-
-    const comms = await dbAll(
-      `SELECT
-        c.id,
-        c.type,
-        c.notes,
-        c.created_at,
-        c.user_id,
-        COALESCE(u.name, 'System') AS logged_by
-       FROM ro_comms c
-       LEFT JOIN users u ON u.id = c.user_id
-       WHERE c.ro_id = $1 AND c.shop_id = $2
-       ORDER BY c.created_at DESC`,
-      [req.params.id, req.user.shop_id]
-    );
-    return res.json({ comms });
-  } catch (err) {
-    return res.status(500).json({ error: err.message });
-  }
-});
-
-router.post('/:id/comms', auth, requireTechnician, async (req, res) => {
-  try {
-    await ensureRoCommsTable();
-    const ro = await dbGet('SELECT id FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
-    if (!ro) return res.status(404).json({ error: 'Not found' });
-
-    const { type, notes } = req.body || {};
-    if (!COMM_TYPES.includes(type)) return res.status(400).json({ error: 'Invalid communication type' });
-    if (!notes?.trim()) return res.status(400).json({ error: 'Notes are required' });
-
-    const id = uuidv4();
-    await dbRun(
-      `INSERT INTO ro_comms (id, ro_id, shop_id, user_id, type, notes)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [id, req.params.id, req.user.shop_id, req.user.id, type, notes.trim()]
-    );
-
-    const comm = await dbGet(
-      `SELECT
-        c.id,
-        c.type,
-        c.notes,
-        c.created_at,
-        c.user_id,
-        COALESCE(u.name, 'System') AS logged_by
-       FROM ro_comms c
-       LEFT JOIN users u ON u.id = c.user_id
-       WHERE c.id = $1`,
-      [id]
-    );
-    return res.status(201).json({ comm });
-  } catch (err) {
-    return res.status(500).json({ error: err.message });
-  }
-});
-
 router.get('/:id/notes', auth, requireTechnician, async (req, res) => {
   try {
     const ro = await dbGet(
@@ -832,14 +897,15 @@ router.post('/:id/supplement', auth, requireTechnician, async (req, res) => {
 
     await ensureRoCommsTable();
     await dbRun(
-      `INSERT INTO ro_comms (id, ro_id, shop_id, user_id, type, notes)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
+      `INSERT INTO ro_comms (id, ro_id, shop_id, user_id, channel, direction, summary)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
       [
         uuidv4(),
         req.params.id,
         req.user.shop_id,
         req.user.id,
         'in-person',
+        'outbound',
         `Supplement requested: $${(amount / 100).toFixed(2)}${notes ? ` — ${notes}` : ''}`,
       ]
     );
@@ -954,9 +1020,9 @@ router.post('/approval/:token/respond', publicTokenLimiter, async (req, res) => 
     if (!reason?.trim()) return res.status(400).json({ error: 'Reason is required when requesting changes' });
 
     await dbRun(
-      `INSERT INTO ro_comms (id, ro_id, shop_id, user_id, type, notes)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [uuidv4(), ro.id, ro.shop_id, null, 'email', `Estimate change request: ${reason.trim()}`]
+      `INSERT INTO ro_comms (id, ro_id, shop_id, user_id, channel, direction, summary)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [uuidv4(), ro.id, ro.shop_id, null, 'email', 'inbound', `Estimate change request: ${reason.trim()}`]
     );
     await dbRun('UPDATE estimate_approval_links SET responded_at = $1, decline_reason = $2 WHERE token = $3', [now, reason.trim(), req.params.token]);
     return res.json({ ok: true, decision: 'decline' });
@@ -1148,6 +1214,7 @@ router.put('/:id', auth, requireTechnician, async (req, res) => {
     if (!ro) return res.status(404).json({ error: 'Not found' });
     const ALLOWED_RO_FIELDS = ['status','notes','tech_notes','assigned_to','estimate_amount','actual_amount','updated_at','insurance_company','adjuster_name','adjuster_phone','claim_number','insurance_claim_number','policy_number','is_drp','insurance_approved_amount','supplement_status','supplement_amount','supplement_notes','total_insurer_owed','deductible','auth_number','job_type','payment_type','insurer','adjuster_email','estimated_delivery','parts_cost','labor_cost','sublet_cost','tax','total','deductible_waived','referral_fee','goodwill_repair_cost','damaged_panels','claim_status'];
     const updates = Object.fromEntries(Object.entries(req.body).filter(([k]) => ALLOWED_RO_FIELDS.includes(k)));
+    const statusChanged = Object.prototype.hasOwnProperty.call(updates, 'status') && updates.status !== ro.status;
     if (Object.keys(updates).length > 0) {
       const profit = calculateProfit({ ...ro, ...updates });
       updates.true_profit = profit.trueProfit;
@@ -1156,6 +1223,9 @@ router.put('/:id', auth, requireTechnician, async (req, res) => {
       const updateVals = Object.values(updates);
       const setClauses = updateKeys.map((k, i) => `${k} = $${i + 1}`).join(', ');
       await dbRun(`UPDATE repair_orders SET ${setClauses} WHERE id = $${updateKeys.length + 1}`, [...updateVals, req.params.id]);
+    }
+    if (statusChanged) {
+      queueStatusEmail(req.params.id, req.user.shop_id, updates.status);
     }
     res.json(await enrichRO(await dbGet('SELECT * FROM repair_orders WHERE id = $1', [req.params.id])));
   } catch (err) {
