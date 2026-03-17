@@ -35,6 +35,7 @@ async function runMigrations() {
     const alters = [
       `ALTER TABLE shops ADD COLUMN IF NOT EXISTS onboarded BOOLEAN DEFAULT FALSE`,
       `ALTER TABLE shops ADD COLUMN IF NOT EXISTS sms_notifications_enabled BOOLEAN DEFAULT TRUE`,
+      `ALTER TABLE shops ADD COLUMN IF NOT EXISTS email_notifications_enabled BOOLEAN DEFAULT TRUE`,
       `ALTER TABLE shops ADD COLUMN IF NOT EXISTS twilio_account_sid TEXT`,
       `ALTER TABLE shops ADD COLUMN IF NOT EXISTS twilio_auth_token TEXT`,
       `ALTER TABLE shops ADD COLUMN IF NOT EXISTS twilio_phone_number TEXT`,

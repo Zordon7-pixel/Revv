@@ -31,6 +31,7 @@ async function initDb() {
       twilio_auth_token TEXT,
       twilio_phone_number TEXT,
       sms_notifications_enabled BOOLEAN DEFAULT TRUE,
+      email_notifications_enabled BOOLEAN DEFAULT TRUE,
       monthly_revenue_target INTEGER DEFAULT 85000,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     );
@@ -484,6 +485,10 @@ async function initDb() {
   await pool.query(`
     ALTER TABLE shops
     ADD COLUMN IF NOT EXISTS sms_notifications_enabled BOOLEAN DEFAULT TRUE
+  `);
+  await pool.query(`
+    ALTER TABLE shops
+    ADD COLUMN IF NOT EXISTS email_notifications_enabled BOOLEAN DEFAULT TRUE
   `);
 
   const demoOwnerEmail = (process.env.DEMO_OWNER_EMAIL || '').trim().toLowerCase();
