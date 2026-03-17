@@ -44,6 +44,7 @@ import Privacy from './pages/Privacy'
 import ReviewSubmit from './pages/ReviewSubmit'
 import Reviews from './pages/Reviews'
 import StorageHold from './pages/StorageHold'
+import Inventory from './pages/Inventory'
 import { getToken, isAssistant } from './lib/auth'
 
 function PrivateRoute({ children }) {
@@ -114,6 +115,7 @@ export default function App() {
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="ros" element={<RepairOrders />} />
             <Route path="parts" element={<OwnerRoute><PartsOnOrder /></OwnerRoute>} />
+            <Route path="inventory" element={<NonAssistantRoute><Inventory /></NonAssistantRoute>} />
             <Route path="payments" element={<NonAssistantRoute><Payments /></NonAssistantRoute>} />
             <Route path="storage" element={<NonAssistantRoute><StorageHold /></NonAssistantRoute>} />
             <Route path="tech" element={<EmployeeOnlyRoute><TechView /></EmployeeOnlyRoute>} />
