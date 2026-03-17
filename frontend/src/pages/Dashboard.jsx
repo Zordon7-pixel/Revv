@@ -77,51 +77,57 @@ export default function Dashboard() {
       label: 'Active Jobs',
       value: displayActive,
       icon: ClipboardList,
-      color: 'text-indigo-300',
+      color: 'text-indigo-700 dark:text-indigo-300',
       accent: 'bg-indigo-500',
-      card: 'bg-gradient-to-br from-indigo-900/40 to-[#1a1d2e]'
+      card: 'bg-gradient-to-br from-indigo-100 to-white dark:from-indigo-900/40 dark:to-[#1a1d2e]'
     },
     {
       label: 'Completed',
       value: displayCompleted,
       icon: CheckCircle,
-      color: 'text-emerald-300',
+      color: 'text-emerald-700 dark:text-emerald-300',
       accent: 'bg-emerald-500',
-      card: 'bg-gradient-to-br from-slate-800/60 to-[#1a1d2e]'
+      card: 'bg-gradient-to-br from-slate-100 to-white dark:from-slate-800/60 dark:to-[#1a1d2e]'
     },
     ...(admin ? [
       {
         label: 'Total Revenue',
         value: `$${displayRevenue.toLocaleString('en-US', { minimumFractionDigits: 0 })}`,
         icon: DollarSign,
-        color: 'text-emerald-300',
+        color: 'text-emerald-700 dark:text-emerald-300',
         accent: 'bg-emerald-500',
-        card: 'bg-gradient-to-br from-emerald-900/40 to-[#1a1d2e]'
+        card: 'bg-gradient-to-br from-emerald-100 to-white dark:from-emerald-900/40 dark:to-[#1a1d2e]'
       },
       {
         label: 'True Profit',
         value: `$${displayProfit.toLocaleString('en-US', { minimumFractionDigits: 0 })}`,
         icon: TrendingUp,
-        color: 'text-amber-300',
+        color: 'text-amber-700 dark:text-amber-300',
         accent: 'bg-amber-500',
-        card: 'bg-gradient-to-br from-amber-900/40 to-[#1a1d2e]'
+        card: 'bg-gradient-to-br from-amber-100 to-white dark:from-amber-900/40 dark:to-[#1a1d2e]'
       },
     ] : []),
   ]
 
-  if (!data) return <div className="flex items-center justify-center h-64 text-slate-500">Loading your shop data...</div>
+  const panel = 'bg-white border border-slate-200 dark:bg-[#1a1d2e] dark:border-[#2a2d3e]'
+  const panelMuted = 'bg-slate-100 dark:bg-[#0f1117]'
+  const titleText = 'text-slate-900 dark:text-white'
+  const bodyText = 'text-slate-600 dark:text-slate-300'
+  const mutedText = 'text-slate-500'
+
+  if (!data) return <div className="flex items-center justify-center h-64 text-slate-500 dark:text-slate-500">Loading your shop data...</div>
 
   return (
     <div className="space-y-6">
       <div>
-        <p className="text-slate-400 text-sm font-medium mb-1 flex items-center gap-1.5">{greetingText} <Hand size={14} /></p>
-        <h1 className="text-xl font-bold text-white">Dashboard</h1>
+        <p className="text-slate-600 dark:text-slate-400 text-sm font-medium mb-1 flex items-center gap-1.5">{greetingText} <Hand size={14} /></p>
+        <h1 className={`text-xl font-bold ${titleText}`}>Dashboard</h1>
       </div>
 
-      <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-3 flex items-center justify-between">
-        <div className="inline-flex items-center gap-2 text-sm text-slate-300">
+      <div className={`${panel} rounded-xl p-3 flex items-center justify-between`}>
+        <div className={`inline-flex items-center gap-2 text-sm ${bodyText}`}>
           <CalendarDays size={15} className="text-indigo-300" />
-          Current Period: <span className="text-white font-semibold">{nowLabel}</span>
+          Current Period: <span className={`font-semibold ${titleText}`}>{nowLabel}</span>
         </div>
         {admin && (
           <button
@@ -135,9 +141,9 @@ export default function Dashboard() {
       </div>
 
       {goal && (
-        <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 space-y-3">
+        <div className={`${panel} rounded-xl p-4 space-y-3`}>
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-white">Monthly Goals</h2>
+            <h2 className={`text-sm font-semibold ${titleText}`}>Monthly Goals</h2>
             <button
               onClick={() => navigate('/settings')}
               className="text-xs text-indigo-300 hover:text-indigo-200"
@@ -147,19 +153,19 @@ export default function Dashboard() {
           </div>
 
           <div>
-            <div className="text-xs text-slate-300 mb-1">
+            <div className={`text-xs ${bodyText} mb-1`}>
               Revenue: ${(data?.revenue || 0).toLocaleString()} / ${revenueGoal.toLocaleString()} - {Math.round(revenueProgress)}%
             </div>
-            <div className="h-2 bg-[#0f1117] rounded-full overflow-hidden">
+            <div className={`h-2 ${panelMuted} rounded-full overflow-hidden`}>
               <div className="h-full bg-emerald-500 transition-all" style={{ width: `${revenueProgress}%` }} />
             </div>
           </div>
 
           <div>
-            <div className="text-xs text-slate-300 mb-1">
+            <div className={`text-xs ${bodyText} mb-1`}>
               RO Count: {(data?.total || 0).toLocaleString()} / {roGoal.toLocaleString()} - {Math.round(roProgress)}%
             </div>
-            <div className="h-2 bg-[#0f1117] rounded-full overflow-hidden">
+            <div className={`h-2 ${panelMuted} rounded-full overflow-hidden`}>
               <div className="h-full bg-indigo-500 transition-all" style={{ width: `${roProgress}%` }} />
             </div>
           </div>
@@ -168,10 +174,10 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {stats.map(s => (
-          <div key={s.label} className={`${s.card} rounded-xl p-4 border border-[#2a2d3e] shadow-sm`}>
+          <div key={s.label} className={`${s.card} rounded-xl p-4 border border-slate-200 dark:border-[#2a2d3e] shadow-sm`}>
             <div className={`h-1.5 w-10 rounded-full ${s.accent} mb-3 opacity-90`} />
             <div className="flex items-center justify-between mb-3">
-              <div className="text-xs text-slate-400">{s.label}</div>
+              <div className="text-xs text-slate-500 dark:text-slate-400">{s.label}</div>
               <s.icon size={18} className={s.color} />
             </div>
             <div className={`text-2xl font-bold ${s.color}`}>{s.value}</div>
@@ -200,7 +206,7 @@ export default function Dashboard() {
             <h2 className="text-sm font-semibold text-cyan-200 inline-flex items-center gap-1.5">
               <Radar size={14} /> ADAS Calibration Queue
             </h2>
-            <p className="text-slate-300 text-xs mt-1">
+            <p className={`text-xs mt-1 ${bodyText}`}>
               {adasQueue.length} vehicle{adasQueue.length === 1 ? '' : 's'} need post-repair calibration.
             </p>
           </div>
@@ -214,10 +220,10 @@ export default function Dashboard() {
       )}
 
       {admin && (
-        <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 flex items-center justify-between">
+        <div className={`${panel} rounded-xl p-4 flex items-center justify-between`}>
           <div>
-            <h2 className="text-sm font-semibold text-white">Appointment Requests</h2>
-            <p className="text-slate-400 text-xs mt-1">{pendingAppointments} pending request{pendingAppointments === 1 ? '' : 's'}</p>
+            <h2 className={`text-sm font-semibold ${titleText}`}>Appointment Requests</h2>
+            <p className={`${mutedText} text-xs mt-1`}>{pendingAppointments} pending request{pendingAppointments === 1 ? '' : 's'}</p>
           </div>
           <button
             onClick={() => navigate('/book')}
@@ -229,8 +235,8 @@ export default function Dashboard() {
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
-          <h2 className="font-semibold text-sm text-white mb-3">Jobs by Stage</h2>
+        <div className={`${panel} rounded-xl p-4`}>
+          <h2 className={`font-semibold text-sm ${titleText} mb-3`}>Jobs by Stage</h2>
           <div className="space-y-2">
             {['intake', 'estimate', 'approval', 'parts', 'repair', 'paint', 'qc', 'delivery'].map(s => {
               const found = data.byStatus?.find(x => x.status === s)
@@ -238,27 +244,27 @@ export default function Dashboard() {
               return (
                 <div key={s} className="flex items-center gap-3">
                   <div className={`w-2 h-2 rounded-full flex-shrink-0`} style={{ background: STATUS_COLORS[s] }} />
-                  <span className="text-xs text-slate-400 w-20 capitalize">{STATUS_LABELS[s]}</span>
-                  <div className="flex-1 bg-[#0f1117] rounded-full h-1.5">
+                  <span className={`text-xs ${mutedText} w-20 capitalize`}>{STATUS_LABELS[s]}</span>
+                  <div className={`flex-1 ${panelMuted} rounded-full h-1.5`}>
                     <div className="h-1.5 rounded-full transition-all" style={{ width: `${Math.min((count / (data.total || 1)) * 100, 100)}%`, background: STATUS_COLORS[s] }} />
                   </div>
-                  <span className="text-xs text-slate-400 w-4 text-right">{count}</span>
+                  <span className={`text-xs ${mutedText} w-4 text-right`}>{count}</span>
                 </div>
               )
             })}
           </div>
         </div>
 
-        <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
-          <h2 className="font-semibold text-sm text-white mb-3">Recent Activity</h2>
+        <div className={`${panel} rounded-xl p-4`}>
+          <h2 className={`font-semibold text-sm ${titleText} mb-3`}>Recent Activity</h2>
           <div className="space-y-2">
             {data.recent?.slice(0, 6).map(ro => (
               <div key={ro.id} onClick={() => navigate(`/ros/${ro.id}`)}
-                className="flex items-center gap-3 p-2 rounded-lg hover:bg-[#2a2d3e] cursor-pointer transition-colors">
+                className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-[#2a2d3e] cursor-pointer transition-colors">
                 <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: STATUS_COLORS[ro.status] }} />
                 <div className="flex-1 min-w-0">
-                  <div className="text-xs font-medium text-white truncate">{ro.ro_number} — {ro.year} {ro.make} {ro.model}</div>
-                  <div className="text-[10px] text-slate-500">{ro.customer_name}</div>
+                  <div className={`text-xs font-medium ${titleText} truncate`}>{ro.ro_number} — {ro.year} {ro.make} {ro.model}</div>
+                  <div className={`text-[10px] ${mutedText}`}>{ro.customer_name}</div>
                 </div>
                 <StatusBadge status={ro.status} />
               </div>

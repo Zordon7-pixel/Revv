@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { MapPin, Wrench, DollarSign, Save, RefreshCw, CheckCircle, ShieldCheck, Truck, Trash2, MessageSquare, ChevronDown, X, AlertTriangle, Smartphone, LogOut, CalendarDays } from 'lucide-react'
 import api from '../lib/api'
+import { useTheme } from '../context/ThemeContext'
 
 const TIER_COLORS = {
   1: 'text-purple-400 bg-purple-900/30 border-purple-700',
@@ -11,6 +12,7 @@ const TIER_COLORS = {
 const TIER_LABELS = { 1:'Major Metro', 2:'Large City', 3:'Mid-Size Market', 4:'Small Market' }
 
 export default function Settings() {
+  const { theme, toggleTheme } = useTheme()
   const currentYearMonth = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
   const [shop,   setShop]   = useState(null)
   const [states, setStates] = useState([])
@@ -307,20 +309,20 @@ export default function Settings() {
       ? 'bg-blue-900/30 border-blue-700 text-blue-300'
       : 'bg-slate-800 border-slate-700 text-slate-300'
 
-  const inp = 'w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition-colors'
-  const lbl = 'block text-xs font-medium text-slate-400 mb-1.5'
+  const inp = 'w-full bg-slate-50 dark:bg-[#0f1117] border border-slate-300 dark:border-[#2a2d3e] rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition-colors'
+  const lbl = 'block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5'
 
-  if (!shop) return <div className="flex items-center justify-center h-64 text-slate-500">Loading...</div>
+  if (!shop) return <div className="flex items-center justify-center h-64 text-slate-500 dark:text-slate-500">Loading...</div>
 
   return (
     <div className="space-y-6 max-w-2xl">
 
       {/* Header */}
       <div>
-        <h1 className="text-xl font-bold text-white">Shop Settings</h1>
+        <h1 className="text-xl font-bold text-slate-900 dark:text-white">Shop Settings</h1>
       </div>
 
-      <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-5 space-y-3">
+      <div className="bg-white border border-slate-200 dark:bg-[#1a1d2e] dark:border-[#2a2d3e] rounded-xl p-5 space-y-3">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <h2 className="font-semibold text-white text-sm">Billing</h2>
           {billingLoading ? (
@@ -394,8 +396,8 @@ export default function Settings() {
       <form onSubmit={handleSave} className="space-y-6">
 
         {/* My Profile */}
-        <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-5 space-y-4">
-          <h2 className="font-semibold text-white text-sm">My Profile</h2>
+        <div className="bg-white border border-slate-200 dark:bg-[#1a1d2e] dark:border-[#2a2d3e] rounded-xl p-5 space-y-4">
+          <h2 className="font-semibold text-slate-900 dark:text-white text-sm">My Profile</h2>
           <p className="text-xs text-slate-500">Your name and the phone number where REVV will send you notifications (late clock-ins, alerts).</p>
           <div>
             <label className={lbl}>Full Name</label>
@@ -409,6 +411,26 @@ export default function Settings() {
           <button onClick={saveProfile} type="button" className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium px-4 py-2 rounded-lg transition-colors">
             {profileSaved ? <span className="inline-flex items-center gap-1"><CheckCircle size={12} /> Saved</span> : 'Save Profile'}
           </button>
+        </div>
+
+        <div className="bg-white border border-slate-200 dark:bg-[#1a1d2e] dark:border-[#2a2d3e] rounded-xl p-5">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="font-semibold text-slate-900 dark:text-white text-sm">Theme</h2>
+              <p className="text-xs text-slate-500 mt-1">Choose how REVV looks across all pages.</p>
+            </div>
+            <button
+              type="button"
+              onClick={toggleTheme}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${theme === 'dark' ? 'bg-indigo-500' : 'bg-slate-400'}`}
+              aria-pressed={theme === 'dark'}
+              aria-label="Toggle theme"
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${theme === 'dark' ? 'translate-x-6' : 'translate-x-1'}`}
+              />
+            </button>
+          </div>
         </div>
 
         {/* Shop Info */}
