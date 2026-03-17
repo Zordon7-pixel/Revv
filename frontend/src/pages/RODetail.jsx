@@ -93,6 +93,7 @@ export default function RODetail() {
   const [showMarkPaidModal, setShowMarkPaidModal] = useState(false)
   const [paymentMethod, setPaymentMethod] = useState('cash')
   const [markingPaid, setMarkingPaid] = useState(false)
+  const [downloadingInvoice, setDownloadingInvoice] = useState(false)
   const [comms, setComms] = useState([])
   const [showCommForm, setShowCommForm] = useState(false)
   const [commForm, setCommForm] = useState({ type: 'call', notes: '' })
@@ -352,6 +353,25 @@ export default function RODetail() {
     }
   }
 
+  async function downloadInvoicePdf() {
+    setDownloadingInvoice(true)
+    try {
+      const response = await api.get(`/invoice/${id}`, { responseType: 'blob' })
+      const blobUrl = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }))
+      const a = document.createElement('a')
+      a.href = blobUrl
+      a.download = `invoice-${ro?.ro_number || id}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      window.URL.revokeObjectURL(blobUrl)
+    } catch (e) {
+      alert(e?.response?.data?.error || 'Could not download invoice PDF')
+    } finally {
+      setDownloadingInvoice(false)
+    }
+  }
+
   async function submitComm(e) {
     e.preventDefault()
     if (!commForm.notes.trim()) return
@@ -606,6 +626,13 @@ export default function RODetail() {
           <button onClick={() => window.open(`/invoice/${id}`, '_blank')}
             className="w-full sm:w-auto flex items-center justify-center gap-1 bg-[#2a2d3e] hover:bg-[#3a3d4e] text-slate-300 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
             <Printer size={12} /> {t('ro.invoice')}
+          </button>
+          <button
+            onClick={downloadInvoicePdf}
+            disabled={downloadingInvoice}
+            className="w-full sm:w-auto flex items-center justify-center gap-1 bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+          >
+            <FileText size={12} /> {downloadingInvoice ? 'Downloading...' : 'Download Invoice'}
           </button>
           {!userIsAssistant && (!editing
             ? <button onClick={() => setEditing(true)} className="w-full sm:w-auto flex items-center justify-center gap-1 bg-[#2a2d3e] hover:bg-[#3a3d4e] text-slate-300 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
