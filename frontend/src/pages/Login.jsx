@@ -40,7 +40,7 @@ export default function Login() {
     setForgotLoading(true); setForgotMsg('')
     try {
       await api.post('/auth/forgot-password', { email: forgotEmail })
-      setForgotMsg('If that email exists, a reset link has been sent. Check the server console.')
+      setForgotMsg('If that email exists, a reset link has been sent. Check your inbox (and spam folder).')
     } catch {
       setForgotMsg('Something went wrong. Please try again.')
     } finally {
@@ -95,7 +95,7 @@ export default function Login() {
         ) : (
           <form onSubmit={submitForgot} className="bg-[#1a1d2e] rounded-2xl p-6 border border-[#2a2d3e] space-y-4">
             <h2 className="text-sm font-semibold text-white">Reset your password</h2>
-            <p className="text-xs text-slate-500">Enter your email address and we will log a reset link to the server console.</p>
+            <p className="text-xs text-slate-500">Enter your email address and we'll send you a reset link.</p>
             <div>
               <label className="block text-xs font-medium text-slate-400 mb-1.5">Email</label>
               <input type="email" value={forgotEmail} onChange={e => setForgotEmail(e.target.value)} required
