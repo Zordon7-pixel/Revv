@@ -658,6 +658,14 @@ export default function RODetail() {
             className="w-full sm:w-auto flex items-center justify-center gap-1 bg-[#2a2d3e] hover:bg-[#3a3d4e] text-slate-300 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
             <Printer size={12} /> {t('ro.invoice')}
           </button>
+          {!userIsAssistant && (
+            <button
+              onClick={() => navigate(`/estimate-builder/${id}`)}
+              className="w-full sm:w-auto flex items-center justify-center gap-1 bg-[#2a2d3e] hover:bg-[#3a3d4e] text-slate-300 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
+            >
+              <FileText size={12} /> Build Estimate
+            </button>
+          )}
           <button
             onClick={downloadInvoicePdf}
             disabled={downloadingInvoice}

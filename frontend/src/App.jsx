@@ -44,6 +44,7 @@ import Privacy from './pages/Privacy'
 import ReviewSubmit from './pages/ReviewSubmit'
 import Reviews from './pages/Reviews'
 import StorageHold from './pages/StorageHold'
+import EstimateBuilder from './pages/EstimateBuilder'
 import TechWorkload from './pages/TechWorkload'
 import { getToken, isAssistant } from './lib/auth'
 
@@ -119,6 +120,7 @@ export default function App() {
             <Route path="storage" element={<NonAssistantRoute><StorageHold /></NonAssistantRoute>} />
             <Route path="tech" element={<EmployeeOnlyRoute><TechView /></EmployeeOnlyRoute>} />
             <Route path="ros/:id" element={<RODetail />} />
+            <Route path="estimate-builder/:roId" element={<EstimateBuilder />} />
             <Route path="ros/:id/inspection/:inspectionId" element={<InspectionEditor />} />
             <Route path="customers" element={<Customers />} />
             <Route path="timeclock" element={<TimeClock />} />
