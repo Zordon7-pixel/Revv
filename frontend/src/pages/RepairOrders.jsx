@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Plus, Search, Shield, AlertTriangle, Trash2 } from 'lucide-react'
 import api from '../lib/api'
 import { isAdmin, isAssistant, isOwner } from '../lib/auth'
@@ -19,13 +19,11 @@ export const STATUS_LABELS = {
   total_loss: 'Total Loss', siu_hold: 'SIU Hold'
 }
 export default function RepairOrders() {
-  const location = useLocation()
   const navigate = useNavigate()
-  const initialCustomerFilter = new URLSearchParams(location.search).get('customer_id') || 'all'
+  const [searchParams, setSearchParams] = useSearchParams()
   const [ros, setRos] = useState([])
   const [showAdd, setShowAdd] = useState(false)
   const [techs, setTechs] = useState([])
-  const [filters, setFilters] = useState({ search: '', status: 'all', tech: 'all', customerId: initialCustomerFilter })
   const [selected, setSelected] = useState(new Set())
   const [bulkStatus, setBulkStatus] = useState('')
   const [bulkLoading, setBulkLoading] = useState(false)
@@ -34,19 +32,41 @@ export default function RepairOrders() {
   const assistant = isAssistant()
   const canBulk = isAdmin() || isOwner()
 
-  const load = () => api.get('/ros').then((r) => setRos(r.data.ros || []))
+  const filters = useMemo(() => ({
+    search: searchParams.get('search') || '',
+    status: searchParams.get('status') || 'all',
+    type: searchParams.get('type') || 'all',
+    tech: searchParams.get('assigned_to') || 'all',
+    dateFrom: searchParams.get('date_from') || '',
+    dateTo: searchParams.get('date_to') || '',
+  }), [searchParams])
+
+  const apiParams = useMemo(() => {
+    const params = {}
+    if (filters.search.trim()) params.search = filters.search.trim()
+    if (filters.status !== 'all') params.status = filters.status
+    if (filters.type !== 'all') params.type = filters.type
+    if (filters.tech !== 'all') params.assigned_to = filters.tech
+    if (filters.dateFrom) params.date_from = filters.dateFrom
+    if (filters.dateTo) params.date_to = filters.dateTo
+    return params
+  }, [filters])
 
   useEffect(() => {
-    load()
     api.get('/users')
       .then((r) => setTechs((r.data.users || []).filter((u) => ['owner', 'admin', 'employee', 'staff'].includes(u.role))))
       .catch(() => setTechs([]))
   }, [])
 
   useEffect(() => {
-    const customerId = new URLSearchParams(location.search).get('customer_id') || 'all'
-    setFilters((f) => ({ ...f, customerId }))
-  }, [location.search])
+    api.get('/ros', { params: apiParams })
+      .then((r) => setRos(r.data.ros || []))
+      .catch(() => setRos([]))
+  }, [apiParams])
+
+  useEffect(() => {
+    setSelected((prev) => new Set([...prev].filter((id) => ros.some((ro) => ro.id === id))))
+  }, [ros])
 
   useEffect(() => {
     setSelected((prev) => {
@@ -70,28 +90,7 @@ export default function RepairOrders() {
   }, [errorToast])
 
   const techById = useMemo(() => Object.fromEntries(techs.map((t) => [t.id, t.name])), [techs])
-  const uniqueCustomers = useMemo(() => {
-    const m = new Map()
-    for (const ro of ros) {
-      if (!ro.customer_id || m.has(ro.customer_id)) continue
-      m.set(ro.customer_id, ro.customer_name || 'Unknown')
-    }
-    return [...m.entries()]
-  }, [ros])
-
-  const filteredRos = useMemo(() => {
-    const q = filters.search.trim().toLowerCase()
-    return ros.filter((ro) => {
-      if (filters.status !== 'all' && ro.status !== filters.status) return false
-      if (filters.tech !== 'all' && ro.assigned_to !== filters.tech) return false
-      if (filters.customerId !== 'all' && ro.customer_id !== filters.customerId) return false
-      if (!q) return true
-      const customer = String(ro.customer_name || '').toLowerCase()
-      const roNum = String(ro.ro_number || '').toLowerCase()
-      const vehicle = `${ro.year || ''} ${ro.make || ''} ${ro.model || ''}`.toLowerCase()
-      return customer.includes(q) || roNum.includes(q) || vehicle.includes(q)
-    })
-  }, [ros, filters])
+  const filteredRos = ros
 
   function hasInsuranceClaim(ro) {
     return !!(ro.insurance_claim_number || ro.claim_number)
@@ -102,8 +101,17 @@ export default function RepairOrders() {
   }
 
   function clearFilters() {
-    setFilters({ search: '', status: 'all', tech: 'all', customerId: 'all' })
-    navigate('/ros')
+    setSearchParams({})
+  }
+
+  function updateFilter(key, value) {
+    const next = new URLSearchParams(searchParams)
+    if (!value || value === 'all') {
+      next.delete(key)
+    } else {
+      next.set(key, value)
+    }
+    setSearchParams(next)
   }
 
   function toggleSelect(id) {
@@ -118,15 +126,6 @@ export default function RepairOrders() {
   const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selected.has(id))
 
   function toggleAll() {
-    setSelected((prev) => {
-      const next = new Set(prev)
-      if (allVisibleSelected) {
-        visibleIds.forEach((id) => next.delete(id))
-      } else {
-        visibleIds.forEach((id) => next.add(id))
-      }
-      return next
-    })
   }
 
   function canDeleteRO(ro) {
@@ -164,69 +163,72 @@ export default function RepairOrders() {
       </div>
 
       <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-3">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+        <div className="grid grid-cols-1 md:grid-cols-7 gap-2">
           <div className="md:col-span-2 relative w-full">
             <Search size={14} className="absolute left-3 top-2.5 text-slate-500" />
             <input
               value={filters.search}
-              onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
-              placeholder="Search customer, vehicle, or RO#"
+              onChange={(e) => updateFilter('search', e.target.value)}
+              placeholder="Search RO#, customer, or vehicle"
               className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg pl-9 pr-3 py-2 text-sm text-white focus:outline-none focus:border-[#EAB308]"
             />
           </div>
           <select
             value={filters.status}
-            onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))}
+            onChange={(e) => updateFilter('status', e.target.value)}
             className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#EAB308]"
           >
             <option value="all">All Statuses</option>
-            <option value="intake">Intake</option>
-            <option value="estimate">Estimate</option>
-            <option value="approval">Approval</option>
-            <option value="parts">Parts</option>
-            <option value="repair">Repair</option>
-            <option value="paint">Paint</option>
-            <option value="qc">QC</option>
+            <option value="open">Open</option>
+            <option value="in-progress">In Progress</option>
+            <option value="ready">Ready</option>
             <option value="delivery">Delivery</option>
+            <option value="closed">Closed</option>
           </select>
           <select
-            value={filters.customerId}
-            onChange={(e) => {
-              const customerId = e.target.value
-              setFilters((f) => ({ ...f, customerId }))
-              if (customerId === 'all') {
-                navigate('/ros')
-              } else {
-                navigate(`/ros?customer_id=${encodeURIComponent(customerId)}`)
-              }
-            }}
+            value={filters.type}
+            onChange={(e) => updateFilter('type', e.target.value)}
             className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#EAB308]"
           >
-            <option value="all">All Customers</option>
-            {uniqueCustomers.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+            <option value="all">All Job Types</option>
+            <option value="collision">Collision</option>
+            <option value="mechanical">Mechanical</option>
+            <option value="body">Body</option>
+            <option value="paint">Paint</option>
+            <option value="adas">ADAS</option>
+            <option value="other">Other</option>
           </select>
-          <div className="flex flex-col sm:flex-row gap-2">
-            <select
-              value={filters.tech}
-              onChange={(e) => setFilters((f) => ({ ...f, tech: e.target.value }))}
-              className="w-full flex-1 bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#EAB308]"
-            >
-              <option value="all">All Techs</option>
-              {techs.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-            </select>
-            <button
-              onClick={clearFilters}
-              className="w-full sm:w-auto bg-[#0f1117] border border-[#2a2d3e] hover:border-[#EAB308]/60 text-slate-300 text-sm px-3 py-2 rounded-lg"
-            >
-              Clear
-            </button>
-          </div>
+          <input
+            type="date"
+            value={filters.dateFrom}
+            onChange={(e) => updateFilter('date_from', e.target.value)}
+            className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#EAB308]"
+          />
+          <input
+            type="date"
+            value={filters.dateTo}
+            onChange={(e) => updateFilter('date_to', e.target.value)}
+            className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#EAB308]"
+          />
+          <select
+            value={filters.tech}
+            onChange={(e) => updateFilter('assigned_to', e.target.value)}
+            className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#EAB308]"
+          >
+            <option value="all">All Techs</option>
+            {techs.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+          <button
+            onClick={clearFilters}
+            className="w-full bg-[#0f1117] border border-[#2a2d3e] hover:border-[#EAB308]/60 text-slate-300 text-sm px-3 py-2 rounded-lg"
+          >
+            Clear Filters
+          </button>
         </div>
       </div>
 
       {selected.size > 0 && canBulk && !assistant && (
         <div className="flex items-center gap-3 mb-3 p-3 bg-indigo-900/20 border border-indigo-700/40 rounded-xl">
-          <span className="text-xs font-semibold text-indigo-300">{selected.size} selected - Change status to:</span>
           <select
             value={bulkStatus}
             onChange={(e) => setBulkStatus(e.target.value)}
@@ -247,8 +249,6 @@ export default function RepairOrders() {
                 const updatedCount = Number(data?.updated || 0)
                 setSelected(new Set())
                 setBulkStatus('')
-                await load()
-                setSuccessToast(`Updated ${updatedCount} repair orders`)
               } catch (e) {
                 setErrorToast(e?.response?.data?.error || 'Bulk update failed')
               } finally {
@@ -279,7 +279,6 @@ export default function RepairOrders() {
           <table className="hidden md:table w-full bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl overflow-hidden">
             <thead className="bg-[#0f1117] border-b border-[#2a2d3e]">
               <tr className="text-left text-xs text-slate-400">
-                {canBulk && <th className="px-3 py-2 w-10"><input type="checkbox" checked={allVisibleSelected} onChange={toggleAll} className="accent-indigo-500 cursor-pointer" /></th>}
                 <th className="px-3 py-2">RO #</th>
                 <th className="px-3 py-2">Customer</th>
                 <th className="px-3 py-2">Vehicle</th>

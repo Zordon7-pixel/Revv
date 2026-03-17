@@ -114,15 +114,18 @@ export default function App() {
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="ros" element={<RepairOrders />} />
             <Route path="parts" element={<OwnerRoute><PartsOnOrder /></OwnerRoute>} />
+            <Route path="inventory" element={<NonAssistantRoute><Inventory /></NonAssistantRoute>} />
             <Route path="payments" element={<NonAssistantRoute><Payments /></NonAssistantRoute>} />
             <Route path="storage" element={<NonAssistantRoute><StorageHold /></NonAssistantRoute>} />
             <Route path="tech" element={<EmployeeOnlyRoute><TechView /></EmployeeOnlyRoute>} />
             <Route path="ros/:id" element={<RODetail />} />
+            <Route path="estimate-builder/:roId" element={<EstimateBuilder />} />
             <Route path="ros/:id/inspection/:inspectionId" element={<InspectionEditor />} />
             <Route path="customers" element={<Customers />} />
             <Route path="timeclock" element={<TimeClock />} />
             <Route path="schedule" element={<Schedule />} />
             <Route path="reports" element={<AdminRoute><Reports /></AdminRoute>} />
+            <Route path="workload" element={<AdminRoute><TechWorkload /></AdminRoute>} />
             <Route path="reviews" element={<Reviews />} />
             <Route path="monthly-report" element={<OwnerRoute><MonthlyReport /></OwnerRoute>} />
             <Route path="performance" element={<AdminRoute><Performance /></AdminRoute>} />

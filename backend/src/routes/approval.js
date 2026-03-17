@@ -41,11 +41,26 @@ async function ensureTables() {
       ro_id TEXT NOT NULL,
       shop_id TEXT NOT NULL,
       user_id TEXT,
-      type TEXT NOT NULL,
-      notes TEXT NOT NULL,
+      channel TEXT NOT NULL,
+      direction TEXT NOT NULL DEFAULT 'outbound',
+      summary TEXT NOT NULL,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     )
   `);
+  await dbRun(`ALTER TABLE ro_comms ADD COLUMN IF NOT EXISTS channel TEXT`).catch(() => {});
+  await dbRun(`ALTER TABLE ro_comms ADD COLUMN IF NOT EXISTS direction TEXT`).catch(() => {});
+  await dbRun(`ALTER TABLE ro_comms ADD COLUMN IF NOT EXISTS summary TEXT`).catch(() => {});
+  await dbRun(`
+    UPDATE ro_comms
+    SET channel = CASE
+      WHEN channel IS NOT NULL THEN channel
+      WHEN type = 'text' THEN 'sms'
+      WHEN type IN ('call', 'email', 'in-person') THEN type
+      ELSE 'call'
+    END
+  `).catch(() => {});
+  await dbRun(`UPDATE ro_comms SET direction = COALESCE(direction, 'outbound')`).catch(() => {});
+  await dbRun(`UPDATE ro_comms SET summary = COALESCE(summary, notes, '')`).catch(() => {});
 }
 
 router.get('/:token', async (req, res) => {
@@ -116,9 +131,9 @@ router.post('/:token/respond', async (req, res) => {
 
     if (!reason?.trim()) return res.status(400).json({ error: 'Reason is required when requesting changes' });
     await dbRun(
-      `INSERT INTO ro_comms (id, ro_id, shop_id, user_id, type, notes)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [uuidv4(), ro.id, ro.shop_id, null, 'email', `Estimate change request: ${reason.trim()}`]
+      `INSERT INTO ro_comms (id, ro_id, shop_id, user_id, channel, direction, summary)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [uuidv4(), ro.id, ro.shop_id, null, 'email', 'inbound', `Estimate change request: ${reason.trim()}`]
     );
     await dbRun('UPDATE estimate_approval_links SET responded_at = $1, decline_reason = $2 WHERE token = $3', [now, reason.trim(), req.params.token]);
     await notifyOwnersAndAdmins(

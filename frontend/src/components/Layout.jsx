@@ -13,6 +13,7 @@ const allNav = [
   { to: '/',             icon: LayoutDashboard, labelKey: 'nav.dashboard',    adminOnly: false },
   { to: '/ros',          icon: ClipboardList,   labelKey: 'nav.repairOrders', adminOnly: false },
   { to: '/parts',        icon: Package,         labelKey: 'nav.parts',        ownerOnly: true  },
+  { to: '/inventory',    icon: Package,         labelKey: 'nav.inventory',    adminOnly: false },
   { to: '/payments',     icon: CreditCard,      labelKey: 'nav.payments',     adminOnly: false },
   { to: '/storage',      icon: Package,         labelKey: 'nav.storage',      adminOnly: false },
   { to: '/estimate-requests', icon: ClipboardCheck,  labelKey: 'nav.leads',        adminOnly: true  },
