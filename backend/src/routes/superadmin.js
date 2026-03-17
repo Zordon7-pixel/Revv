@@ -120,11 +120,12 @@ router.delete('/users/:userId', async (req, res) => {
     if (!user) return res.status(404).json({ error: 'User not found' });
     if (user.role === 'superadmin') return res.status(403).json({ error: 'Cannot delete superadmin accounts' });
     
-    // Delete dependent records first
-    await dbRun('DELETE FROM time_entries WHERE user_id = $1', [userId]);
-    await dbRun('DELETE FROM job_status_log WHERE user_id = $1', [userId]);
-    await dbRun('DELETE FROM ro_internal_notes WHERE user_id = $1', [userId]);
-    
+    // Null out FK references that aren't already ON DELETE CASCADE/SET NULL
+    await dbRun('UPDATE time_entries SET user_id = NULL WHERE user_id = $1', [userId]);
+    await dbRun('UPDATE job_status_log SET user_id = NULL WHERE user_id = $1', [userId]).catch(() => {});
+    await dbRun('UPDATE ro_comms SET user_id = NULL WHERE user_id = $1', [userId]).catch(() => {});
+    await dbRun('DELETE FROM ro_internal_notes WHERE user_id = $1', [userId]).catch(() => {});
+
     // Then delete the user
     await dbRun('DELETE FROM users WHERE id = $1', [userId]);
     res.json({ ok: true, deleted: user.email });
