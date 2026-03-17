@@ -302,6 +302,22 @@ async function runMigrations() {
         note TEXT NOT NULL,
         created_at TIMESTAMPTZ DEFAULT NOW()
       )`,
+      `CREATE TABLE IF NOT EXISTS estimate_line_items (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        ro_id TEXT NOT NULL REFERENCES repair_orders(id) ON DELETE CASCADE,
+        shop_id TEXT NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+        type TEXT NOT NULL CHECK (type IN ('labor', 'parts', 'sublet', 'other')),
+        description TEXT NOT NULL DEFAULT '',
+        quantity NUMERIC(12,2) NOT NULL DEFAULT 1,
+        unit_price NUMERIC(12,2) NOT NULL DEFAULT 0,
+        total NUMERIC(12,2) GENERATED ALWAYS AS (ROUND(quantity * unit_price, 2)) STORED,
+        taxable BOOLEAN NOT NULL DEFAULT FALSE,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_estimate_line_items_ro_id ON estimate_line_items(ro_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_estimate_line_items_shop_id ON estimate_line_items(shop_id)`,
     ];
 
     // Fix job_status_log FK to use ON DELETE CASCADE
