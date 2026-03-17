@@ -90,6 +90,7 @@ app.use('/api/v1', require('./routes/apiV1'));
 app.use('/api/notifications', notificationsRouter);
 app.use('/api/subscriptions', subscriptionsRouter);
 app.use('/api/storage', require('./routes/storage'));
+app.use('/api/invoice', require('./routes/invoice'));
 
 // Serve uploaded files
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
