@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ClipboardList, DollarSign, CheckCircle, TrendingUp, Hand, AlertCircle, CalendarDays, ChevronRight, Radar, ArrowUpRight, ArrowDownRight, Minus } from 'lucide-react'
-import Chart from 'chart.js/auto'
 import api from '../lib/api'
 import { isAdmin } from '../lib/auth'
 import { STATUS_COLORS, STATUS_LABELS } from './RepairOrders'
@@ -82,45 +81,57 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!weekly?.chart || !weeklyChartRef.current) return undefined
-    if (weeklyChartInstanceRef.current) {
-      weeklyChartInstanceRef.current.destroy()
-      weeklyChartInstanceRef.current = null
-    }
+    
+    let destroyed = false
+    
+    // Lazy-load Chart.js to reduce initial bundle size
+    import('chart.js/auto').then(({ default: Chart }) => {
+      if (destroyed || !weeklyChartRef.current) return
+      
+      if (weeklyChartInstanceRef.current) {
+        weeklyChartInstanceRef.current.destroy()
+        weeklyChartInstanceRef.current = null
+      }
 
-    weeklyChartInstanceRef.current = new Chart(weeklyChartRef.current, {
-      type: 'bar',
-      data: {
-        labels: weekly.chart.labels || [],
-        datasets: [{
-          label: 'ROs Opened',
-          data: weekly.chart.data || [],
-          backgroundColor: ['rgba(99, 102, 241, 0.85)', 'rgba(14, 165, 233, 0.85)'],
-          borderRadius: 8,
-        }],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: {
-            labels: { color: '#cbd5e1' },
+      weeklyChartInstanceRef.current = new Chart(weeklyChartRef.current, {
+        type: 'bar',
+        data: {
+          labels: weekly.chart.labels || [],
+          datasets: [{
+            label: 'ROs Opened',
+            data: weekly.chart.data || [],
+            backgroundColor: ['rgba(99, 102, 241, 0.85)', 'rgba(14, 165, 233, 0.85)'],
+            borderRadius: 8,
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              labels: { color: '#cbd5e1' },
+            },
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              ticks: { color: '#94a3b8', precision: 0 },
+              grid: { color: 'rgba(148, 163, 184, 0.15)' },
+            },
+            x: {
+              ticks: { color: '#94a3b8' },
+              grid: { display: false },
+            },
           },
         },
-        scales: {
-          y: {
-            beginAtZero: true,
-            ticks: { color: '#94a3b8', precision: 0 },
-            grid: { color: 'rgba(148, 163, 184, 0.15)' },
-          },
-          x: {
-            ticks: { color: '#94a3b8' },
-            grid: { display: false },
-          },
-        },
-      },
+      })
+    }).catch(err => {
+      console.error('Failed to load Chart.js:', err)
+      // Dashboard still renders without the chart
     })
 
     return () => {
+      destroyed = true
       if (weeklyChartInstanceRef.current) {
         weeklyChartInstanceRef.current.destroy()
         weeklyChartInstanceRef.current = null
