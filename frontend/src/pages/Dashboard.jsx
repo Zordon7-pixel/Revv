@@ -33,6 +33,7 @@ export default function Dashboard() {
   const [pendingAppointments, setPendingAppointments] = useState(0)
   const [adasQueue, setAdasQueue] = useState([])
   const [showCarryoverModal, setShowCarryoverModal] = useState(false)
+  const [loadError, setLoadError] = useState(false)
   const weeklyChartRef = useRef(null)
   const weeklyChartInstanceRef = useRef(null)
   const navigate = useNavigate()
@@ -60,7 +61,10 @@ export default function Dashboard() {
   }
 
   useEffect(() => {
-    loadDashboardData().catch(err => console.error('Failed to load dashboard:', err))
+    loadDashboardData().catch(err => {
+      console.error('Failed to load dashboard:', err)
+      setLoadError(true)
+    })
   }, [])
 
   const admin = isAdmin()
@@ -176,6 +180,7 @@ export default function Dashboard() {
     ] : []),
   ]
 
+  if (loadError) return <div className="flex items-center justify-center h-64 text-red-400 text-sm">Failed to load dashboard. Please refresh the page.</div>
   if (!data) return <div className="flex items-center justify-center h-64 text-slate-500">Loading your shop data...</div>
 
   return (

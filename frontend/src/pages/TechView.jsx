@@ -17,12 +17,9 @@ export default function TechView() {
   const role = getRole()
 
   const isTechRole = ['employee', 'staff'].includes(role)
-  if (!isTechRole) {
-    if (isAdmin()) return <Navigate to="/ros" replace />
-    return <Navigate to="/" replace />
-  }
 
   async function load() {
+    if (!isTechRole) return
     setLoading(true)
     try {
       const { data } = await api.get('/ros')
@@ -39,6 +36,12 @@ export default function TechView() {
   }, [])
 
   const openRos = useMemo(() => ros.filter((ro) => ro.status !== 'closed'), [ros])
+
+  // Redirect AFTER all hooks
+  if (!isTechRole) {
+    if (isAdmin()) return <Navigate to="/ros" replace />
+    return <Navigate to="/" replace />
+  }
 
   async function saveNotes(roId) {
     setSavingId(roId)

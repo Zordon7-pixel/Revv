@@ -138,20 +138,25 @@ export default function RODetail() {
   const userIsEmployee = isEmployee()
   const userIsAssistant = isAssistant()
 
-  const load = () => api.get(`/ros/${id}`).then(r => {
-    setRo(r.data)
-    setForm({ ...r.data, vin: r.data.vehicle?.vin || '' })
-    setParts(r.data.parts || [])
-    setTechNotes(r.data.tech_notes || '')
-    setStorageForm({
-      storage_hold: !!r.data.storage_hold,
-      storage_rate_per_day: r.data.storage_rate_per_day ?? '',
-      storage_start_date: r.data.storage_start_date || '',
-      storage_company: r.data.storage_company || '',
-      storage_contact: r.data.storage_contact || '',
-      storage_notes: r.data.storage_notes || '',
-    })
-  })
+  const load = async () => {
+    try {
+      const r = await api.get(`/ros/${id}`)
+      setRo(r.data)
+      setForm({ ...r.data, vin: r.data.vehicle?.vin || '' })
+      setParts(r.data.parts || [])
+      setTechNotes(r.data.tech_notes || '')
+      setStorageForm({
+        storage_hold: !!r.data.storage_hold,
+        storage_rate_per_day: r.data.storage_rate_per_day ?? '',
+        storage_start_date: r.data.storage_start_date || '',
+        storage_company: r.data.storage_company || '',
+        storage_contact: r.data.storage_contact || '',
+        storage_notes: r.data.storage_notes || '',
+      })
+    } catch (err) {
+      console.error('Failed to load RO:', err)
+    }
+  }
   const loadPartsRequests = () => api.get(`/parts-requests/${id}`).then(r => setPartsRequests(r.data.requests || [])).catch(() => {})
   const loadComms = () => api.get(`/comms/${id}`).then(r => setComms(r.data.comms || [])).catch(() => setComms([]))
   const loadInternalNotes = () => api.get(`/ros/${id}/notes`).then(r => setInternalNotes(r.data.notes || [])).catch(() => setInternalNotes([]))
@@ -215,6 +220,8 @@ export default function RODetail() {
       load()
       setShowAddPart(false)
       setPartForm({ part_name:'', part_number:'', vendor:'', quantity:1, unit_cost:'', expected_date:'', notes:'', tracking_number:'' })
+    } catch (err) {
+      alert(err?.response?.data?.error || 'Could not add part')
     } finally { setSavingPart(false) }
   }
 
@@ -235,11 +242,19 @@ export default function RODetail() {
   }
 
   async function updatePartStatus(partId, status) {
-    await api.put(`/parts/${partId}`, { status }); load()
+    try {
+      await api.put(`/parts/${partId}`, { status }); load()
+    } catch (err) {
+      alert(err?.response?.data?.error || 'Could not update part status')
+    }
   }
 
   async function deletePart(partId) {
-    await api.delete(`/parts/${partId}`); load()
+    try {
+      await api.delete(`/parts/${partId}`); load()
+    } catch (err) {
+      alert(err?.response?.data?.error || 'Could not delete part')
+    }
   }
 
   function handleCatalogPartAdded(part) {
@@ -325,8 +340,12 @@ export default function RODetail() {
   }
 
   async function assignTech(userId) {
-    await api.patch(`/ros/${id}/assign`, { user_id: userId || null })
-    load()
+    try {
+      await api.patch(`/ros/${id}/assign`, { user_id: userId || null })
+      load()
+    } catch (err) {
+      alert(err?.response?.data?.error || 'Could not assign technician')
+    }
   }
 
   async function saveTechNotes() {

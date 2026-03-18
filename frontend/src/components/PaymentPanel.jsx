@@ -64,7 +64,7 @@ export default function PaymentPanel({ roId, totalAmount, onSuccess, onMarkManua
   const [paid, setPaid] = useState(false)
   const [error, setError] = useState('')
 
-  const publishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || import.meta.env.STRIPE_PUBLISHABLE_KEY
+  const publishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY
   const stripePromise = useMemo(() => (publishableKey ? loadStripe(publishableKey) : null), [publishableKey])
 
   async function startCardPayment() {

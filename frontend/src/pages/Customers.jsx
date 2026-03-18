@@ -260,8 +260,12 @@ export default function Customers() {
   const assistantUser = isAssistant()
 
   async function refreshCustomers() {
-    const r = await api.get('/customers')
-    setCustomers(r.data.customers)
+    try {
+      const r = await api.get('/customers')
+      setCustomers(r.data.customers || [])
+    } catch {
+      // keep existing list on transient errors
+    }
   }
 
   useEffect(() => { refreshCustomers() }, [])
