@@ -578,28 +578,34 @@ router.get('/turnaround-estimate', auth, async (req, res) => {
   }
 });
 
-// POST /api/ros/bulk-update — batch status update
-router.post('/bulk-update', auth, requireTechnician, async (req, res) => {
+async function bulkStatusUpdateHandler(req, res) {
   if (!['owner', 'admin'].includes(req.user.role)) {
     return res.status(403).json({ error: 'Admin access required' });
   }
   try {
-    const { ids, status } = req.body || {};
+    const { ids, status, new_status } = req.body || {};
+    const normalizedStatus = String(new_status || status || '').trim().toLowerCase();
     if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids required' });
-    if (!STATUSES.includes(status)) return res.status(400).json({ error: 'Invalid status' });
+    if (!STATUSES.includes(normalizedStatus)) return res.status(400).json({ error: 'Invalid status' });
 
     const result = await dbRun(
       `UPDATE repair_orders
        SET status = $1, updated_at = NOW()
        WHERE shop_id = $2
          AND id = ANY($3::uuid[])`,
-      [status, req.user.shop_id, ids]
+      [normalizedStatus, req.user.shop_id, ids]
     );
     res.json({ updated: result.rowCount || 0 });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
-});
+}
+
+// POST /api/repair-orders/bulk-status
+router.post('/bulk-status', auth, requireTechnician, bulkStatusUpdateHandler);
+
+// POST /api/ros/bulk-update — backward compatible bulk status endpoint
+router.post('/bulk-update', auth, requireTechnician, bulkStatusUpdateHandler);
 
 router.get('/:id', auth, async (req, res) => {
   try {

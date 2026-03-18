@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Plus, Search, Shield, AlertTriangle, Trash2 } from 'lucide-react'
 import api from '../lib/api'
-import { isAssistant } from '../lib/auth'
+import { isAdmin, isAssistant, isOwner } from '../lib/auth'
 import AddROModal from '../components/AddROModal'
 import StatusBadge from '../components/StatusBadge'
 
@@ -26,9 +26,14 @@ export default function RepairOrders() {
   const [ros, setRos] = useState([])
   const [showAdd, setShowAdd] = useState(false)
   const [techs, setTechs] = useState([])
+  const [selected, setSelected] = useState(new Set())
+  const [bulkStatus, setBulkStatus] = useState('')
+  const [bulkLoading, setBulkLoading] = useState(false)
   const [searchInput, setSearchInput] = useState(searchParams.get('search') || '')
+  const [successToast, setSuccessToast] = useState('')
   const [errorToast, setErrorToast] = useState('')
   const assistant = isAssistant()
+  const canBulk = isAdmin() || isOwner()
 
   const filters = useMemo(() => ({
     search: searchParams.get('search') || '',
@@ -92,7 +97,23 @@ export default function RepairOrders() {
     return () => clearTimeout(t)
   }, [errorToast])
 
+  useEffect(() => {
+    if (!successToast) return undefined
+    const t = setTimeout(() => setSuccessToast(''), 3500)
+    return () => clearTimeout(t)
+  }, [successToast])
+
+  useEffect(() => {
+    setSelected((prev) => {
+      if (!prev.size) return prev
+      const validIds = new Set(ros.map((ro) => ro.id))
+      const next = new Set([...prev].filter((id) => validIds.has(id)))
+      return next.size === prev.size ? prev : next
+    })
+  }, [ros])
+
   const techById = useMemo(() => Object.fromEntries(techs.map((t) => [t.id, t.name])), [techs])
+  const allVisibleSelected = ros.length > 0 && ros.every((ro) => selected.has(ro.id))
 
   function hasInsuranceClaim(ro) {
     return !!(ro.insurance_claim_number || ro.claim_number)
@@ -115,6 +136,41 @@ export default function RepairOrders() {
       next.set(key, value)
     }
     setSearchParams(next)
+  }
+
+  function toggleSelect(id) {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function toggleAll() {
+    setSelected((prev) => {
+      if (allVisibleSelected) return new Set()
+      return new Set(ros.map((ro) => ro.id))
+    })
+  }
+
+  async function applyBulkStatus() {
+    if (!bulkStatus || selected.size === 0) return
+    setBulkLoading(true)
+    try {
+      const { data } = await api.post('/repair-orders/bulk-status', {
+        ids: [...selected],
+        new_status: bulkStatus,
+      })
+      await loadRos()
+      setSelected(new Set())
+      setBulkStatus('')
+      setSuccessToast(`Updated ${Number(data?.updated || 0)} repair order(s).`)
+    } catch (e) {
+      setErrorToast(e?.response?.data?.error || 'Bulk update failed')
+    } finally {
+      setBulkLoading(false)
+    }
   }
 
   async function deleteRO(ro) {
@@ -204,6 +260,16 @@ export default function RepairOrders() {
           <table className="hidden md:table w-full bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl overflow-hidden">
             <thead className="bg-[#0f1117] border-b border-[#2a2d3e]">
               <tr className="text-left text-xs text-slate-400">
+                {canBulk && !assistant && (
+                  <th className="px-3 py-2 w-10">
+                    <input
+                      type="checkbox"
+                      checked={allVisibleSelected}
+                      onChange={toggleAll}
+                      className="accent-indigo-500 cursor-pointer"
+                    />
+                  </th>
+                )}
                 <th className="px-3 py-2">RO #</th>
                 <th className="px-3 py-2">Customer</th>
                 <th className="px-3 py-2">Vehicle</th>
@@ -215,6 +281,16 @@ export default function RepairOrders() {
             <tbody>
               {ros.map((ro) => (
                 <tr key={ro.id} className="border-b border-[#2a2d3e] last:border-b-0 hover:bg-[#1e2235]">
+                  {canBulk && !assistant && (
+                    <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selected.has(ro.id)}
+                        onChange={() => toggleSelect(ro.id)}
+                        className="accent-indigo-500 cursor-pointer"
+                      />
+                    </td>
+                  )}
                   <td className="px-3 py-2 text-xs font-bold text-[#EAB308]">
                     <div className="inline-flex items-center gap-1.5">
                       <span>{ro.ro_number || '—'}</span>
@@ -259,6 +335,17 @@ export default function RepairOrders() {
               <div key={ro.id} className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-3">
                 <div className="flex items-start justify-between gap-2">
                   <div>
+                    {canBulk && !assistant && (
+                      <label className="inline-flex items-center gap-2 text-xs text-slate-400 mb-2">
+                        <input
+                          type="checkbox"
+                          checked={selected.has(ro.id)}
+                          onChange={() => toggleSelect(ro.id)}
+                          className="accent-indigo-500 cursor-pointer"
+                        />
+                        Select
+                      </label>
+                    )}
                     <p className="text-[#EAB308] text-xs font-bold flex items-center gap-1.5">
                       <span>{ro.ro_number || '—'}</span>
                       {hasInsuranceClaim(ro) && <Shield size={11} className="text-sky-400" />}
@@ -306,6 +393,41 @@ export default function RepairOrders() {
             await loadRos()
           }}
         />
+      )}
+      {selected.size > 0 && canBulk && !assistant && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 w-[calc(100%-1.5rem)] md:w-auto md:min-w-[520px] bg-[#121427] border border-indigo-500/40 rounded-xl shadow-xl px-3 py-2">
+          <div className="flex items-center gap-2 md:gap-3">
+            <div className="text-xs md:text-sm text-white font-semibold">{selected.size} selected</div>
+            <select
+              value={bulkStatus}
+              onChange={(e) => setBulkStatus(e.target.value)}
+              className="flex-1 md:w-56 bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-2.5 py-1.5 text-xs md:text-sm text-white focus:outline-none focus:border-indigo-400"
+            >
+              <option value="">Update Status</option>
+              {Object.entries(STATUS_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
+            <button
+              disabled={!bulkStatus || bulkLoading}
+              onClick={applyBulkStatus}
+              className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs md:text-sm font-semibold px-3 py-1.5 rounded-lg transition-colors"
+            >
+              {bulkLoading ? 'Updating...' : 'Apply'}
+            </button>
+            <button
+              onClick={() => setSelected(new Set())}
+              className="text-xs md:text-sm text-slate-400 hover:text-white"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+      )}
+      {successToast && (
+        <div className="fixed bottom-4 right-4 z-50 bg-emerald-900/90 border border-emerald-600/60 text-emerald-100 text-sm px-4 py-2 rounded-lg shadow-lg">
+          {successToast}
+        </div>
       )}
       {errorToast && (
         <div className="fixed bottom-4 right-4 z-50 bg-red-900/90 border border-red-600/60 text-red-100 text-sm px-4 py-2 rounded-lg shadow-lg">
