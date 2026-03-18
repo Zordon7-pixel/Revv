@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ClipboardList, DollarSign, CheckCircle, TrendingUp, Hand, AlertCircle, CalendarDays, ChevronRight, Radar } from 'lucide-react'
+import { ClipboardList, DollarSign, CheckCircle, TrendingUp, Hand, AlertCircle, CalendarDays, ChevronRight, Radar, ArrowUpRight, ArrowDownRight, Minus } from 'lucide-react'
+import Chart from 'chart.js/auto'
 import api from '../lib/api'
 import { isAdmin } from '../lib/auth'
 import { STATUS_COLORS, STATUS_LABELS } from './RepairOrders'
@@ -27,11 +28,14 @@ function useCountUp(target, duration = 1000) {
 
 export default function Dashboard() {
   const [data, setData] = useState(null)
+  const [weekly, setWeekly] = useState(null)
   const [goal, setGoal] = useState(null)
   const [pendingCarryover, setPendingCarryover] = useState([])
   const [pendingAppointments, setPendingAppointments] = useState(0)
   const [adasQueue, setAdasQueue] = useState([])
   const [showCarryoverModal, setShowCarryoverModal] = useState(false)
+  const weeklyChartRef = useRef(null)
+  const weeklyChartInstanceRef = useRef(null)
   const navigate = useNavigate()
 
   const yearMonth = (() => {
@@ -40,18 +44,20 @@ export default function Dashboard() {
   })()
 
   async function loadDashboardData() {
-    const [summaryRes, carryoverRes, appointmentsRes, goalsRes, adasRes] = await Promise.all([
+    const [summaryRes, carryoverRes, appointmentsRes, goalsRes, adasRes, weeklyRes] = await Promise.all([
       api.get('/reports/summary'),
       api.get('/ros/carryover-pending').catch(() => ({ data: { ros: [] } })),
       api.get('/appointments').catch(() => ({ data: { requests: [] } })),
       api.get(`/goals/${yearMonth}`).catch(() => ({ data: { goal: null } })),
       api.get('/adas/queue').catch(() => ({ data: { queue: [] } })),
+      api.get('/dashboard/weekly').catch(() => ({ data: null })),
     ])
     setData(summaryRes.data)
     setPendingCarryover(carryoverRes.data?.ros || [])
     setPendingAppointments(appointmentsRes.data?.requests?.length || 0)
     setGoal(goalsRes.data?.goal || null)
     setAdasQueue(adasRes.data?.queue || [])
+    setWeekly(weeklyRes.data || null)
   }
 
   useEffect(() => {
@@ -71,6 +77,56 @@ export default function Dashboard() {
   const roGoal = Number(goal?.ro_goal || 0)
   const revenueProgress = revenueGoal > 0 ? Math.min((data?.revenue || 0) / revenueGoal, 1) * 100 : 0
   const roProgress = roGoal > 0 ? Math.min((data?.total || 0) / roGoal, 1) * 100 : 0
+  const weeklyTrendDirection = weekly?.ro_opened?.trend_direction || 'flat'
+  const weeklyTrendPercent = Number(weekly?.ro_opened?.trend_percent || 0)
+
+  useEffect(() => {
+    if (!weekly?.chart || !weeklyChartRef.current) return undefined
+    if (weeklyChartInstanceRef.current) {
+      weeklyChartInstanceRef.current.destroy()
+      weeklyChartInstanceRef.current = null
+    }
+
+    weeklyChartInstanceRef.current = new Chart(weeklyChartRef.current, {
+      type: 'bar',
+      data: {
+        labels: weekly.chart.labels || [],
+        datasets: [{
+          label: 'ROs Opened',
+          data: weekly.chart.data || [],
+          backgroundColor: ['rgba(99, 102, 241, 0.85)', 'rgba(14, 165, 233, 0.85)'],
+          borderRadius: 8,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            labels: { color: '#cbd5e1' },
+          },
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            ticks: { color: '#94a3b8', precision: 0 },
+            grid: { color: 'rgba(148, 163, 184, 0.15)' },
+          },
+          x: {
+            ticks: { color: '#94a3b8' },
+            grid: { display: false },
+          },
+        },
+      },
+    })
+
+    return () => {
+      if (weeklyChartInstanceRef.current) {
+        weeklyChartInstanceRef.current.destroy()
+        weeklyChartInstanceRef.current = null
+      }
+    }
+  }, [weekly])
 
   const stats = [
     {
@@ -178,6 +234,69 @@ export default function Dashboard() {
           </div>
         ))}
       </div>
+
+      {weekly && (
+        <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-white">Weekly</h2>
+            <span className="text-xs text-slate-400">This week vs last week</span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3">
+              <div className="text-xs text-slate-400 mb-1">ROs Opened</div>
+              <div className="text-2xl font-bold text-white">{weekly.ro_opened?.this_week || 0}</div>
+              <div className="mt-1 inline-flex items-center gap-1 text-xs">
+                {weeklyTrendDirection === 'up' && <ArrowUpRight size={14} className="text-emerald-300" />}
+                {weeklyTrendDirection === 'down' && <ArrowDownRight size={14} className="text-rose-300" />}
+                {weeklyTrendDirection === 'flat' && <Minus size={14} className="text-slate-300" />}
+                <span className={weeklyTrendDirection === 'down' ? 'text-rose-300' : weeklyTrendDirection === 'up' ? 'text-emerald-300' : 'text-slate-300'}>
+                  {weeklyTrendPercent > 0 ? '+' : ''}{weeklyTrendPercent}% vs last week ({weekly.ro_opened?.last_week || 0})
+                </span>
+              </div>
+            </div>
+            <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3">
+              <div className="text-xs text-slate-400 mb-1">Revenue Collected</div>
+              <div className="text-2xl font-bold text-emerald-300">
+                ${(Number(weekly.revenue_collected_this_week || 0)).toLocaleString('en-US', { maximumFractionDigits: 0 })}
+              </div>
+              <div className="text-xs text-slate-500 mt-1">Paid invoices this week</div>
+            </div>
+            <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3 md:col-span-2">
+              <div className="text-xs text-slate-400 mb-2">Top Techs by Jobs Completed</div>
+              {weekly.top_techs?.length ? (
+                <div className="space-y-2">
+                  {weekly.top_techs.map((tech, idx) => (
+                    <div key={tech.tech_id} className="flex items-center justify-between text-sm">
+                      <span className="text-white">{idx + 1}. {tech.tech_name}</span>
+                      <span className="text-indigo-300 font-semibold">{tech.jobs_completed}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-xs text-slate-500">No completed jobs yet this week.</div>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3">
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-xs text-slate-400">RO Opened Trend</div>
+                <div className="text-xs text-slate-500">This week vs last 7 days</div>
+              </div>
+              <div className="h-48">
+                <canvas ref={weeklyChartRef} />
+              </div>
+            </div>
+            <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3">
+              <div className="text-xs text-slate-400 mb-1">Pending Parts</div>
+              <div className="text-3xl font-bold text-amber-300">{weekly.pending_parts_count || 0}</div>
+              <div className="text-xs text-slate-500 mt-1">ROs with parts ordered or awaiting</div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {pendingCarryover.length > 0 && (
         <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 flex items-center justify-between gap-3">

@@ -58,6 +58,7 @@ app.use('/api/ros', require('./routes/supplements'));
 app.use('/api/customers', require('./routes/customers'));
 app.use('/api/vehicles', require('./routes/vehicles'));
 app.use('/api/reports', require('./routes/reports'));
+app.use('/api/dashboard', require('./routes/dashboard'));
 app.use('/api/feedback', require('./routes/feedback'));
 app.use('/api/market',   require('./routes/market'));
 app.use('/api/portal',   require('./routes/portal'));
