@@ -53,6 +53,7 @@ const authLimiter = rateLimit({
 // API Routes
 app.use('/api/auth', authLimiter, require('./routes/auth'));
 app.use('/api/ros', require('./routes/ros'));
+app.use('/api/repair-orders', require('./routes/ros'));
 app.use('/api/ros', require('./routes/supplements'));
 app.use('/api/customers', require('./routes/customers'));
 app.use('/api/vehicles', require('./routes/vehicles'));

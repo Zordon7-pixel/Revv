@@ -303,6 +303,7 @@ router.get('/', auth, async (req, res) => {
     const {
       search = '',
       status = '',
+      tech_id = '',
       assigned_to = '',
       type = '',
       date_from = '',
@@ -314,7 +315,9 @@ router.get('/', auth, async (req, res) => {
 
     const normalizedSearch = String(search || '').trim();
     const normalizedStatus = String(status || '').trim().toLowerCase();
+    const normalizedTechId = String(tech_id || '').trim();
     const normalizedAssignedTo = String(assigned_to || '').trim();
+    const assignedFilter = normalizedTechId || normalizedAssignedTo;
     const normalizedType = String(type || '').trim().toLowerCase();
     const normalizedDateFrom = String(date_from || '').trim();
     const normalizedDateTo = String(date_to || '').trim();
@@ -332,19 +335,21 @@ router.get('/', auth, async (req, res) => {
 
     if (normalizedStatus && normalizedStatus !== 'all') {
       if (normalizedStatus === 'open') {
-        where.push(`ro.status NOT IN ('delivery', 'closed')`);
+        where.push(`ro.status IN ('intake', 'estimate', 'approval', 'parts')`);
       } else if (normalizedStatus === 'in-progress') {
         where.push(`ro.status IN ('repair', 'paint', 'qc', 'in-progress')`);
-      } else if (normalizedStatus === 'ready') {
-        where.push(`ro.status = 'ready'`);
+      } else if (normalizedStatus === 'completed') {
+        where.push(`ro.status IN ('delivery', 'ready')`);
+      } else if (normalizedStatus === 'closed') {
+        where.push(`ro.status = 'closed'`);
       } else {
         params.push(normalizedStatus);
         where.push(`ro.status = $${params.length}`);
       }
     }
 
-    if (normalizedAssignedTo && normalizedAssignedTo !== 'all') {
-      params.push(normalizedAssignedTo);
+    if (assignedFilter && assignedFilter !== 'all') {
+      params.push(assignedFilter);
       where.push(`ro.assigned_to = $${params.length}`);
     }
 
