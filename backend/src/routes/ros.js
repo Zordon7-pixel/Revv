@@ -306,9 +306,11 @@ router.get('/', auth, async (req, res) => {
       tech_id = '',
       assigned_to = '',
       type = '',
+      job_type = '',
       date_from = '',
       date_to = '',
       payment_status = '',
+      payment_type = '',
     } = req.query || {};
     const params = [req.user.shop_id];
     const where = ['ro.shop_id = $1'];
@@ -319,9 +321,11 @@ router.get('/', auth, async (req, res) => {
     const normalizedAssignedTo = String(assigned_to || '').trim();
     const assignedFilter = normalizedTechId || normalizedAssignedTo;
     const normalizedType = String(type || '').trim().toLowerCase();
+    const normalizedJobType = String(job_type || '').trim().toLowerCase() || normalizedType;
     const normalizedDateFrom = String(date_from || '').trim();
     const normalizedDateTo = String(date_to || '').trim();
     const normalizedPaymentStatus = String(payment_status || '').trim().toLowerCase();
+    const normalizedPaymentType = String(payment_type || '').trim().toLowerCase();
 
     if (normalizedSearch) {
       params.push(`%${normalizedSearch}%`);
@@ -353,8 +357,8 @@ router.get('/', auth, async (req, res) => {
       where.push(`ro.assigned_to = $${params.length}`);
     }
 
-    if (normalizedType && normalizedType !== 'all') {
-      params.push(normalizedType);
+    if (normalizedJobType && normalizedJobType !== 'all') {
+      params.push(normalizedJobType);
       where.push(`ro.job_type = $${params.length}`);
     }
 
@@ -369,8 +373,15 @@ router.get('/', auth, async (req, res) => {
     }
 
     if (normalizedPaymentStatus && normalizedPaymentStatus !== 'all') {
-      params.push(normalizedPaymentStatus);
-      where.push(`ro.payment_status = $${params.length}`);
+      const paymentStatusExpr = `COALESCE(NULLIF(LOWER(ro.payment_status), ''), CASE WHEN COALESCE(ro.payment_received, 0) = 1 THEN 'succeeded' ELSE 'unpaid' END)`;
+      const effectivePaymentStatus = normalizedPaymentStatus === 'paid' ? 'succeeded' : normalizedPaymentStatus;
+      params.push(effectivePaymentStatus);
+      where.push(`${paymentStatusExpr} = $${params.length}`);
+    }
+
+    if (normalizedPaymentType && normalizedPaymentType !== 'all') {
+      params.push(normalizedPaymentType);
+      where.push(`ro.payment_type = $${params.length}`);
     }
 
     const ros = await dbAll(`

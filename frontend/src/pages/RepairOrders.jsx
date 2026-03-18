@@ -20,6 +20,26 @@ export const STATUS_LABELS = {
   total_loss: 'Total Loss', siu_hold: 'SIU Hold'
 }
 
+const JOB_TYPES = [
+  'collision',
+  'paint',
+  'detailing',
+  'glass',
+  'towing',
+  'key_programming',
+  'wheel_recon',
+  'car_wrap',
+]
+
+const PAYMENT_STATUSES = [
+  { value: 'unpaid', label: 'Unpaid' },
+  { value: 'pending', label: 'Payment Pending' },
+  { value: 'requires_payment_method', label: 'Action Required' },
+  { value: 'failed', label: 'Payment Failed' },
+  { value: 'canceled', label: 'Payment Canceled' },
+  { value: 'succeeded', label: 'Paid' },
+]
+
 export default function RepairOrders() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -39,6 +59,8 @@ export default function RepairOrders() {
     search: searchParams.get('search') || '',
     status: searchParams.get('status') || 'all',
     techId: searchParams.get('tech_id') || 'all',
+    jobType: searchParams.get('job_type') || searchParams.get('type') || 'all',
+    paymentStatus: searchParams.get('payment_status') || 'all',
     dateFrom: searchParams.get('date_from') || '',
     dateTo: searchParams.get('date_to') || '',
   }), [searchParams])
@@ -48,6 +70,8 @@ export default function RepairOrders() {
     if (filters.search.trim()) params.search = filters.search.trim()
     if (filters.status !== 'all') params.status = filters.status
     if (filters.techId !== 'all') params.tech_id = filters.techId
+    if (filters.jobType !== 'all') params.job_type = filters.jobType
+    if (filters.paymentStatus !== 'all') params.payment_status = filters.paymentStatus
     if (filters.dateFrom) params.date_from = filters.dateFrom
     if (filters.dateTo) params.date_to = filters.dateTo
     return params
@@ -199,7 +223,7 @@ export default function RepairOrders() {
       </div>
 
       <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-3">
-        <div className="grid grid-cols-1 md:grid-cols-6 gap-2">
+        <div className="grid grid-cols-1 md:grid-cols-8 gap-2">
           <div className="md:col-span-2 relative w-full">
             <Search size={14} className="absolute left-3 top-2.5 text-slate-500" />
             <input
@@ -227,6 +251,30 @@ export default function RepairOrders() {
           >
             <option value="all">All Techs</option>
             {techs.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+          <select
+            value={filters.jobType}
+            onChange={(e) => updateFilter('job_type', e.target.value)}
+            className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#EAB308]"
+          >
+            <option value="all">All Job Types</option>
+            {JOB_TYPES.map((jobType) => (
+              <option key={jobType} value={jobType}>
+                {jobType.replaceAll('_', ' ')}
+              </option>
+            ))}
+          </select>
+          <select
+            value={filters.paymentStatus}
+            onChange={(e) => updateFilter('payment_status', e.target.value)}
+            className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#EAB308]"
+          >
+            <option value="all">All Payments</option>
+            {PAYMENT_STATUSES.map((paymentStatus) => (
+              <option key={paymentStatus.value} value={paymentStatus.value}>
+                {paymentStatus.label}
+              </option>
+            ))}
           </select>
           <input
             type="date"
