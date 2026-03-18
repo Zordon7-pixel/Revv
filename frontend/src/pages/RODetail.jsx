@@ -138,6 +138,15 @@ export default function RODetail() {
   const userIsEmployee = isEmployee()
   const userIsAssistant = isAssistant()
 
+  // useMemo must be before any early return — moved here from line 635
+  const damagedPanels = useMemo(() => {
+    try {
+      return JSON.parse(ro?.damaged_panels || '[]')
+    } catch {
+      return []
+    }
+  }, [ro?.damaged_panels])
+
   const load = async () => {
     try {
       const r = await api.get(`/ros/${id}`)
@@ -632,13 +641,7 @@ export default function RODetail() {
     .filter((charge) => !charge.paid)
     .reduce((sum, charge) => sum + Number(charge.total_amount || 0), 0)
   const inp = 'w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500'
-  const damagedPanels = useMemo(() => {
-    try {
-      return JSON.parse(ro?.damaged_panels || '[]')
-    } catch {
-      return []
-    }
-  }, [ro?.damaged_panels])
+  // damagedPanels useMemo moved above the if(!ro) early return to avoid hook violation
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
