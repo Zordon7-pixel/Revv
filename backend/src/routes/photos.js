@@ -5,6 +5,44 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
+const Anthropic = require('@anthropic-ai/sdk');
+
+async function analyzeDamagePhoto(filePath) {
+  if (!process.env.ANTHROPIC_API_KEY) return null;
+  try {
+    const client = new Anthropic();
+    const imageData = fs.readFileSync(filePath);
+    const base64Image = imageData.toString('base64');
+    const ext = path.extname(filePath).toLowerCase().replace('.', '');
+    const mediaType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+
+    const response = await client.messages.create({
+      model: 'claude-haiku-4-5',
+      max_tokens: 256,
+      messages: [{
+        role: 'user',
+        content: [
+          {
+            type: 'image',
+            source: { type: 'base64', media_type: mediaType, data: base64Image }
+          },
+          {
+            type: 'text',
+            text: 'You are an auto body damage assessor. Analyze this vehicle damage photo. Respond with JSON only, no markdown: {"severity":"minor|moderate|severe","zones":["affected body parts"],"description":"one sentence max"}'
+          }
+        ]
+      }]
+    });
+
+    const text = (response.content[0]?.text || '').trim();
+    // Strip markdown code fences if model wraps response
+    const clean = text.replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
+    return JSON.parse(clean);
+  } catch (err) {
+    console.error('[Photos] AI assessment error:', err.message);
+    return null;
+  }
+}
 
 const uploadDir = path.join(__dirname, '../../uploads/photos');
 fs.mkdirSync(uploadDir, { recursive: true });
@@ -38,10 +76,13 @@ router.post('/ro/:roId/predropoff', auth, upload.single('photo'), async (req, re
     const id = uuidv4();
     const photo_url = `/uploads/photos/${req.file.filename}`;
     const caption = String(req.body?.caption || '').trim() || null;
+    const fullPath = path.join(uploadDir, req.file.filename);
+    const ai = await analyzeDamagePhoto(fullPath);
     await dbRun(
-      `INSERT INTO ro_photos (id, ro_id, user_id, photo_url, caption, photo_type)
-       VALUES ($1, $2, $3, $4, $5, 'predropoff')`,
-      [id, req.params.roId, req.user.id, photo_url, caption]
+      `INSERT INTO ro_photos (id, ro_id, user_id, photo_url, caption, photo_type, ai_severity, ai_zones, ai_description)
+       VALUES ($1, $2, $3, $4, $5, 'predropoff', $6, $7, $8)`,
+      [id, req.params.roId, req.user.id, photo_url, caption,
+       ai?.severity || null, ai?.zones ? JSON.stringify(ai.zones) : null, ai?.description || null]
     );
     return res.status(201).json(await dbGet('SELECT * FROM ro_photos WHERE id = $1', [id]));
   } catch (err) {
@@ -93,9 +134,13 @@ router.post('/:ro_id', auth, upload.single('photo'), async (req, res) => {
     const { caption, photo_type } = req.body;
     const id = uuidv4();
     const photo_url = `/uploads/photos/${req.file.filename}`;
+    const resolvedType = photo_type || 'damage';
+    const fullPath = path.join(uploadDir, req.file.filename);
+    const ai = resolvedType === 'damage' ? await analyzeDamagePhoto(fullPath) : null;
     await dbRun(
-      'INSERT INTO ro_photos (id, ro_id, user_id, photo_url, caption, photo_type) VALUES ($1, $2, $3, $4, $5, $6)',
-      [id, req.params.ro_id, req.user.id, photo_url, caption || null, photo_type || 'damage']
+      'INSERT INTO ro_photos (id, ro_id, user_id, photo_url, caption, photo_type, ai_severity, ai_zones, ai_description) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)',
+      [id, req.params.ro_id, req.user.id, photo_url, caption || null, resolvedType,
+       ai?.severity || null, ai?.zones ? JSON.stringify(ai.zones) : null, ai?.description || null]
     );
     res.status(201).json(await dbGet('SELECT * FROM ro_photos WHERE id = $1', [id]));
   } catch (err) {

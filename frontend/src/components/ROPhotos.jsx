@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Camera, Trash2, ZoomIn, Upload, X } from 'lucide-react'
+import { Camera, Trash2, ZoomIn, Upload, X, Sparkles } from 'lucide-react'
 import api from '../lib/api'
 
 const PHOTO_TYPE_META = {
@@ -8,9 +8,16 @@ const PHOTO_TYPE_META = {
   complete: { label: 'Complete', cls: 'text-emerald-400 bg-emerald-900/30 border-emerald-700/40' },
 }
 
+const SEVERITY_META = {
+  minor:    { label: 'Minor',    cls: 'text-yellow-400 bg-yellow-900/30 border-yellow-600/40' },
+  moderate: { label: 'Moderate', cls: 'text-orange-400 bg-orange-900/30 border-orange-600/40' },
+  severe:   { label: 'Severe',   cls: 'text-red-300 bg-red-800/40 border-red-500/50' },
+}
+
 export default function ROPhotos({ roId, isAdmin }) {
   const [photos, setPhotos] = useState([])
   const [uploading, setUploading] = useState(false)
+  const [analyzingMsg, setAnalyzingMsg] = useState('')
   const [lightbox, setLightbox] = useState(null)
   const [caption, setCaption] = useState('')
   const [photoType, setPhotoType] = useState('damage')
@@ -25,6 +32,7 @@ export default function ROPhotos({ roId, isAdmin }) {
     const file = e.target.files?.[0]
     if (!file) return
     setUploading(true)
+    setAnalyzingMsg(photoType === 'damage' ? 'Analyzing damage…' : 'Uploading…')
     try {
       const fd = new FormData()
       fd.append('photo', file)
@@ -39,6 +47,7 @@ export default function ROPhotos({ roId, isAdmin }) {
       alert(err?.response?.data?.error || 'Upload failed')
     } finally {
       setUploading(false)
+      setAnalyzingMsg('')
       if (fileRef.current) fileRef.current.value = ''
     }
   }
@@ -81,7 +90,10 @@ export default function ROPhotos({ roId, isAdmin }) {
                 : 'bg-indigo-600 hover:bg-indigo-500 text-white'
             }`}
           >
-            <Upload size={12} /> {uploading ? 'Uploading...' : 'Upload'}
+            {uploading
+              ? <><Sparkles size={12} className="animate-pulse" /> {analyzingMsg}</>
+              : <><Upload size={12} /> Upload</>
+            }
             <input
               ref={fileRef}
               type="file"
@@ -94,6 +106,13 @@ export default function ROPhotos({ roId, isAdmin }) {
         </div>
       </div>
 
+      {/* Damage AI hint */}
+      {photoType === 'damage' && !uploading && (
+        <p className="text-[10px] text-indigo-400/70 flex items-center gap-1 mb-3">
+          <Sparkles size={10} /> AI will auto-analyze damage severity and zones
+        </p>
+      )}
+
       {photos.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-10 border border-dashed border-[#2a2d3e] rounded-xl">
           <Camera size={28} className="text-slate-600 mb-2" />
@@ -104,6 +123,14 @@ export default function ROPhotos({ roId, isAdmin }) {
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           {photos.map(photo => {
             const meta = PHOTO_TYPE_META[photo.photo_type] || PHOTO_TYPE_META.damage
+            const sevMeta = photo.ai_severity ? SEVERITY_META[photo.ai_severity] : null
+            const zones = Array.isArray(photo.ai_zones)
+              ? photo.ai_zones
+              : photo.ai_zones
+                ? (() => { try { return JSON.parse(photo.ai_zones) } catch { return [] } })()
+                : []
+            const displayCaption = photo.caption || photo.ai_description || null
+
             return (
               <div
                 key={photo.id}
@@ -111,9 +138,18 @@ export default function ROPhotos({ roId, isAdmin }) {
               >
                 <img
                   src={photo.photo_url}
-                  alt={photo.caption || 'Photo'}
+                  alt={displayCaption || 'Photo'}
                   className="w-full h-full object-cover"
                 />
+
+                {/* AI assessed badge — top right */}
+                {photo.ai_severity && (
+                  <div className="absolute top-1.5 right-1.5 flex items-center gap-0.5 bg-indigo-900/80 border border-indigo-700/50 rounded-full px-1.5 py-0.5">
+                    <Sparkles size={8} className="text-indigo-300" />
+                    <span className="text-[8px] text-indigo-300 font-semibold">AI</span>
+                  </div>
+                )}
+
                 <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
                   <button
                     onClick={() => setLightbox(photo)}
@@ -130,12 +166,25 @@ export default function ROPhotos({ roId, isAdmin }) {
                     </button>
                   )}
                 </div>
+
                 <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/80">
-                  <span className={`text-[9px] px-1.5 py-0.5 rounded-full border font-semibold ${meta.cls}`}>
-                    {meta.label}
-                  </span>
-                  {photo.caption && (
-                    <p className="text-[10px] text-slate-300 truncate mt-0.5">{photo.caption}</p>
+                  <div className="flex flex-wrap items-center gap-1 mb-0.5">
+                    <span className={`text-[9px] px-1.5 py-0.5 rounded-full border font-semibold ${meta.cls}`}>
+                      {meta.label}
+                    </span>
+                    {sevMeta && (
+                      <span className={`text-[9px] px-1.5 py-0.5 rounded-full border font-semibold ${sevMeta.cls}`}>
+                        {sevMeta.label}
+                      </span>
+                    )}
+                  </div>
+                  {zones.length > 0 && (
+                    <p className="text-[9px] text-slate-400 truncate">
+                      {zones.join(', ')}
+                    </p>
+                  )}
+                  {displayCaption && (
+                    <p className="text-[10px] text-slate-300 truncate mt-0.5">{displayCaption}</p>
                   )}
                 </div>
               </div>
@@ -156,11 +205,44 @@ export default function ROPhotos({ roId, isAdmin }) {
           >
             <img
               src={lightbox.photo_url}
-              alt={lightbox.caption || 'Photo'}
+              alt={lightbox.caption || lightbox.ai_description || 'Photo'}
               className="max-h-[85vh] max-w-full object-contain rounded-xl"
             />
-            {lightbox.caption && (
-              <p className="text-center text-slate-300 text-sm mt-2">{lightbox.caption}</p>
+            {/* AI assessment detail in lightbox */}
+            {lightbox.ai_severity && (
+              <div className="mt-3 bg-[#1a1d2e]/90 rounded-xl border border-[#2a2d3e] p-3">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <Sparkles size={11} className="text-indigo-400" />
+                  <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wide">AI Assessment</span>
+                  {SEVERITY_META[lightbox.ai_severity] && (
+                    <span className={`text-[9px] px-1.5 py-0.5 rounded-full border font-semibold ${SEVERITY_META[lightbox.ai_severity].cls}`}>
+                      {SEVERITY_META[lightbox.ai_severity].label}
+                    </span>
+                  )}
+                </div>
+                {(() => {
+                  const z = Array.isArray(lightbox.ai_zones)
+                    ? lightbox.ai_zones
+                    : lightbox.ai_zones
+                      ? (() => { try { return JSON.parse(lightbox.ai_zones) } catch { return [] } })()
+                      : []
+                  return z.length > 0 ? (
+                    <div className="flex flex-wrap gap-1 mb-1">
+                      {z.map((zone, i) => (
+                        <span key={i} className="text-[9px] bg-slate-700/60 text-slate-300 px-1.5 py-0.5 rounded-full">{zone}</span>
+                      ))}
+                    </div>
+                  ) : null
+                })()}
+                {lightbox.ai_description && (
+                  <p className="text-slate-300 text-xs">{lightbox.ai_description}</p>
+                )}
+              </div>
+            )}
+            {!lightbox.ai_severity && (lightbox.caption || lightbox.ai_description) && (
+              <p className="text-center text-slate-300 text-sm mt-2">
+                {lightbox.caption || lightbox.ai_description}
+              </p>
             )}
             <button
               onClick={() => setLightbox(null)}

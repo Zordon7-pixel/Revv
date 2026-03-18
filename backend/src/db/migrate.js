@@ -186,8 +186,14 @@ async function runMigrations() {
         photo_url TEXT,
         caption TEXT,
         photo_type TEXT DEFAULT 'damage',
+        ai_severity VARCHAR(20),
+        ai_zones JSONB,
+        ai_description TEXT,
         created_at TIMESTAMPTZ DEFAULT NOW()
       )`,
+      `ALTER TABLE ro_photos ADD COLUMN IF NOT EXISTS ai_severity VARCHAR(20)`,
+      `ALTER TABLE ro_photos ADD COLUMN IF NOT EXISTS ai_zones JSONB`,
+      `ALTER TABLE ro_photos ADD COLUMN IF NOT EXISTS ai_description TEXT`,
       `CREATE TABLE IF NOT EXISTS parts_requests (
         id UUID PRIMARY KEY,
         ro_id TEXT REFERENCES repair_orders(id) ON DELETE CASCADE,
