@@ -5,6 +5,8 @@ const auth = require('../middleware/auth');
 const { requireTechnician } = require('../middleware/roles');
 const { createNotification } = require('../services/notifications');
 const { createPaymentIntent, constructWebhookEvent } = require('../services/stripe');
+const { sendMail } = require('../services/mailer');
+const { paymentConfirmationEmail } = require('../services/emailTemplates');
 
 const router = express.Router();
 
@@ -182,6 +184,37 @@ router.post('/webhook', async (req, res) => {
             )
           )
         );
+
+        // Send payment confirmation email to customer
+        setImmediate(async () => {
+          try {
+            const customer = await dbGet(
+              `SELECT c.email, c.name, s.name AS shop_name
+               FROM customers c
+               JOIN repair_orders ro ON c.id = ro.customer_id
+               JOIN shops s ON s.id = ro.shop_id
+               WHERE ro.id = $1 AND ro.shop_id = $2`,
+              [roId, shopId]
+            );
+            
+            if (customer && customer.email) {
+              const amountFormatted = (amountPaid / 100).toFixed(2);
+              const { subject, html } = paymentConfirmationEmail({
+                shopName: customer.shop_name,
+                roNumber: ro?.ro_number || 'N/A',
+                amountFormatted: `$${amountFormatted}`,
+                customerName: customer.name,
+                email: customer.email,
+              });
+              
+              await sendMail(customer.email, subject, html).catch((e) => {
+                console.error(`[Email] Payment confirmation failed for RO ${roId}:`, e.message);
+              });
+            }
+          } catch (err) {
+            console.error(`[Email] Payment confirmation email handler error for RO ${roId}:`, err.message);
+          }
+        });
       }
     }
 

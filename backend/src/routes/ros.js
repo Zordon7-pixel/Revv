@@ -1272,22 +1272,39 @@ router.put('/:id/status', auth, requireTechnician, async (req, res) => {
       // Email notifications on status change
       try {
         const emailContext = await dbGet(`
-          SELECT ro.status, c.email AS customer_email, ro.ro_number
+          SELECT ro.status, ro.ro_number, ro.vehicle_make, ro.vehicle_model, ro.vehicle_year, 
+                 c.email AS customer_email, c.name AS customer_name, s.name AS shop_name
           FROM repair_orders ro
           LEFT JOIN customers c ON c.id = ro.customer_id
+          LEFT JOIN shops s ON s.id = ro.shop_id
           WHERE ro.id = $1
         `, [req.params.id]);
-        if (!emailContext) return;
+        if (!emailContext || !emailContext.customer_email) return;
 
-        if (emailContext.status === 'estimate_sent' && emailContext.customer_email) {
-          await sendMail(emailContext.customer_email, 'Your Estimate is Ready', '<p>Your vehicle repair estimate is ready for review. Log in to your portal to view it.</p>').catch(e => console.error('[Email] estimate_sent failed:', e.message));
-        } else if (emailContext.status === 'completed' && emailContext.customer_email) {
-          await sendMail(emailContext.customer_email, 'Your Vehicle is Ready for Pickup', '<p>Your vehicle repair is complete and ready for pickup. Please contact us to arrange pickup.</p>').catch(e => console.error('[Email] completed failed:', e.message));
-        } else if (emailContext.status === 'closed' && emailContext.customer_email) {
+        const vehicle = [emailContext.vehicle_year, emailContext.vehicle_make, emailContext.vehicle_model]
+          .filter(Boolean)
+          .join(' ')
+          .trim() || 'Your vehicle';
+
+        // Generate status change email using template
+        const { subject, html } = statusChangeEmail({
+          shopName: emailContext.shop_name,
+          roNumber: emailContext.ro_number,
+          vehicle,
+          status: emailContext.status,
+          portalUrl: process.env.PORTAL_URL || null,
+        });
+
+        await sendMail(emailContext.customer_email, subject, html).catch((e) => {
+          console.error(`[Email] Status change notification failed for RO ${req.params.id} (status: ${emailContext.status}):`, e.message);
+        });
+
+        // Additional special handling for closed status (send review request)
+        if (emailContext.status === 'closed') {
           await queueClosedReviewEmail(req.params.id);
         }
       } catch (err) {
-        console.error(`[Email] Status change notification failed for RO ${req.params.id}:`, err.message);
+        console.error(`[Email] Status change email handler error for RO ${req.params.id}:`, err.message);
       }
     });
   } catch (err) {

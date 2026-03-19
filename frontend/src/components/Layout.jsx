@@ -18,6 +18,7 @@ const allNav = [
   { to: '/storage',      icon: Package,         labelKey: 'nav.storage',      adminOnly: false },
   { to: '/estimate-requests', icon: ClipboardCheck,  labelKey: 'nav.leads',        adminOnly: true  },
   { to: '/adas',         icon: Radar,           labelKey: 'nav.adas',         adminOnly: true  },
+  { to: '/vehicle-diagnostics', icon: ClipboardCheck, labelKey: 'nav.vehicleDiagnostics', adminOnly: false },
   { to: '/tech',         icon: Wrench,          labelKey: 'nav.techView',     nonAdminOnly: true },
   { to: '/customers',    icon: Users,           labelKey: 'nav.customers',    adminOnly: false },
   { to: '/timeclock',    icon: Clock,           labelKey: 'nav.timeclock',    adminOnly: false },

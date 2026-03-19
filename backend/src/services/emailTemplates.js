@@ -123,4 +123,38 @@ function statusChangeEmail({ shopName, roNumber, vehicle, status, portalUrl }) {
   };
 }
 
-module.exports = { statusChangeEmail };
+function paymentConfirmationEmail({ shopName, roNumber, amountFormatted, customerName, email }) {
+  const safeShopName = escapeHtml(shopName || 'Your Repair Shop');
+  const safeRoNumber = escapeHtml(roNumber || 'N/A');
+  const safeAmount = escapeHtml(amountFormatted || '$0.00');
+  const safeCustomerName = escapeHtml(customerName || 'Valued Customer');
+
+  return {
+    subject: `Payment Confirmation — RO #${roNumber || ''}`.trim(),
+    html: `
+      <div style="font-family: Arial, sans-serif; color: #111827; line-height: 1.5;">
+        <h2 style="margin: 0 0 12px;">Payment Received</h2>
+        <p style="margin: 0 0 16px;">Hi ${safeCustomerName},</p>
+        <p style="margin: 0 0 16px;">Thank you! We have received your payment for repair order <strong>#${safeRoNumber}</strong>.</p>
+        <table cellpadding="0" cellspacing="0" style="border-collapse: collapse; margin: 0 0 16px;">
+          <tr>
+            <td style="padding: 4px 12px 4px 0; color: #6b7280;">Shop</td>
+            <td style="padding: 4px 0;"><strong>${safeShopName}</strong></td>
+          </tr>
+          <tr>
+            <td style="padding: 4px 12px 4px 0; color: #6b7280;">RO Number</td>
+            <td style="padding: 4px 0;"><strong>${safeRoNumber}</strong></td>
+          </tr>
+          <tr>
+            <td style="padding: 4px 12px 4px 0; color: #6b7280;">Amount Paid</td>
+            <td style="padding: 4px 0;"><strong>${safeAmount}</strong></td>
+          </tr>
+        </table>
+        <p style="margin: 0 0 16px;">Your vehicle will continue through our repair process. We will keep you updated on the status.</p>
+        <p style="color: #6b7280; font-size: 13px; margin: 0;">If you have any questions, please contact ${safeShopName} directly.</p>
+      </div>
+    `,
+  };
+}
+
+module.exports = { statusChangeEmail, paymentConfirmationEmail };

@@ -288,6 +288,26 @@ async function initDb() {
     );
   `);
 
+  // vehicle_diagnostic_scans — separate query; FK may fail on legacy TEXT-id local DBs
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS vehicle_diagnostic_scans (
+      id SERIAL PRIMARY KEY,
+      shop_id UUID REFERENCES shops(id),
+      ro_id UUID REFERENCES repair_orders(id),
+      vehicle_id UUID REFERENCES vehicles(id),
+      vin TEXT,
+      scan_date TIMESTAMPTZ DEFAULT NOW(),
+      scanned_by TEXT,
+      scanner_tool TEXT,
+      pre_repair BOOLEAN DEFAULT FALSE,
+      post_repair BOOLEAN DEFAULT FALSE,
+      dtc_codes JSONB DEFAULT '[]',
+      adas_systems JSONB DEFAULT '[]',
+      notes TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `).catch(e => console.warn('[DB] vehicle_diagnostic_scans skipped (schema drift):', e.message));
+
   console.log('[DB] Tables initialized');
 
   // Add missing columns to existing repair_orders table in production

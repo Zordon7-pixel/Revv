@@ -34,6 +34,7 @@ import SuperAdminRoute from './components/SuperAdminRoute'
 import TrackPortal from './pages/TrackPortal'
 import ShopProfile from './pages/ShopProfile'
 import ADASCalibration from './pages/ADASCalibration'
+import VehicleDiagnostics from './pages/VehicleDiagnostics'
 import PublicEstimateRequest from './pages/PublicEstimateRequest'
 import EstimateRequests from './pages/EstimateRequests'
 import { LanguageProvider } from './contexts/LanguageContext'
@@ -136,6 +137,7 @@ export default function App() {
             <Route path="users" element={<AdminRoute><Users /></AdminRoute>} />
             <Route path="settings" element={<OwnerRoute><Settings /></OwnerRoute>} />
             <Route path="adas" element={<AdminRoute><ADASCalibration /></AdminRoute>} />
+            <Route path="vehicle-diagnostics" element={<VehicleDiagnostics />} />
             <Route path="estimate-requests" element={<AdminRoute><EstimateRequests /></AdminRoute>} />
             <Route path="job-costing" element={<OwnerRoute><JobCosting /></OwnerRoute>} />
             <Route path="goals" element={<OwnerRoute><Goals /></OwnerRoute>} />
