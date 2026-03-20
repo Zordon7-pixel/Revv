@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Plus, Trash2 } from 'lucide-react'
+import { ArrowLeft, Camera, Plus, Trash2, X } from 'lucide-react'
 import api from '../lib/api'
 
 const ITEM_TYPES = ['labor', 'parts', 'sublet', 'other']
@@ -14,9 +14,75 @@ function money(value) {
   return `$${asNumber(value, 0).toFixed(2)}`
 }
 
+// ── OCR Preview Modal ────────────────────────────────────────────────────────
+function OcrModal({ parsed, checked, onToggle, onImport, onCancel, importing }) {
+  const checkedCount = Object.values(checked).filter(Boolean).length
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+      <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[#2a2d3e]">
+          <div>
+            <h2 className="text-white font-semibold text-base">Insurance Estimate Import</h2>
+            {(parsed.insurance_company || parsed.claim_number || parsed.vehicle) && (
+              <p className="text-slate-400 text-xs mt-0.5">
+                {[parsed.insurance_company, parsed.claim_number, parsed.vehicle].filter(Boolean).join(' · ')}
+              </p>
+            )}
+          </div>
+          <button onClick={onCancel} className="text-slate-400 hover:text-white"><X size={18} /></button>
+        </div>
+
+        <div className="overflow-y-auto flex-1 px-5 py-3 space-y-2">
+          {parsed.line_items.length === 0 ? (
+            <p className="text-slate-500 text-sm text-center py-6">No line items extracted. Try a clearer photo.</p>
+          ) : parsed.line_items.map((item, idx) => (
+            <label key={idx} className="flex items-start gap-3 p-3 rounded-lg bg-[#0f1117] border border-[#2a2d3e] cursor-pointer hover:border-indigo-500 transition-colors">
+              <input
+                type="checkbox"
+                className="mt-0.5 accent-indigo-500"
+                checked={!!checked[idx]}
+                onChange={() => onToggle(idx)}
+              />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs bg-indigo-600/30 text-indigo-300 px-2 py-0.5 rounded font-medium">{item.type}</span>
+                  <span className="text-white text-sm truncate">{item.description || '(no description)'}</span>
+                </div>
+                <div className="text-slate-400 text-xs mt-1">
+                  Qty: {item.quantity} × {money(item.unit_price)} = {money(item.quantity * item.unit_price)}
+                </div>
+              </div>
+            </label>
+          ))}
+        </div>
+
+        {parsed.total_allowed != null && (
+          <div className="px-5 py-2 text-slate-400 text-xs border-t border-[#2a2d3e]">
+            Insurance allowed total: {money(parsed.total_allowed)}
+          </div>
+        )}
+
+        <div className="flex items-center justify-between gap-3 px-5 py-4 border-t border-[#2a2d3e]">
+          <button onClick={onCancel} className="text-slate-400 hover:text-white text-sm">Cancel</button>
+          <button
+            onClick={onImport}
+            disabled={importing || checkedCount === 0}
+            className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
+          >
+            {importing ? 'Importing...' : `Import ${checkedCount} item${checkedCount !== 1 ? 's' : ''}`}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Main Page ─────────────────────────────────────────────────────────────────
 export default function EstimateBuilder() {
   const { roId } = useParams()
   const navigate = useNavigate()
+  const fileInputRef = useRef(null)
+
   const [ro, setRo] = useState(null)
   const [items, setItems] = useState([])
   const [summary, setSummary] = useState(null)
@@ -24,6 +90,13 @@ export default function EstimateBuilder() {
   const [savingId, setSavingId] = useState(null)
   const [adding, setAdding] = useState(false)
   const [deletingId, setDeletingId] = useState(null)
+
+  // OCR state
+  const [ocrLoading, setOcrLoading] = useState(false)
+  const [ocrModalOpen, setOcrModalOpen] = useState(false)
+  const [ocrParsed, setOcrParsed] = useState(null)
+  const [ocrChecked, setOcrChecked] = useState({})
+  const [ocrImporting, setOcrImporting] = useState(false)
 
   useEffect(() => {
     let mounted = true
@@ -117,25 +190,102 @@ export default function EstimateBuilder() {
     }
   }
 
+  // ── OCR handlers ────────────────────────────────────────────────────────────
+  async function handleOcrFile(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    // Reset input so same file can be re-selected
+    e.target.value = ''
+    setOcrLoading(true)
+    try {
+      const form = new FormData()
+      form.append('estimate_image', file)
+      const { data } = await api.post('/insurance-ocr/parse', form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      if (!data.success) throw new Error(data.error || 'Parse failed')
+      const parsed = data.parsed
+      const initialChecked = {}
+      parsed.line_items.forEach((_, idx) => { initialChecked[idx] = true })
+      setOcrParsed(parsed)
+      setOcrChecked(initialChecked)
+      setOcrModalOpen(true)
+    } catch (err) {
+      alert(err?.response?.data?.error || err.message || 'Could not parse estimate image')
+    } finally {
+      setOcrLoading(false)
+    }
+  }
+
+  function toggleOcrItem(idx) {
+    setOcrChecked((prev) => ({ ...prev, [idx]: !prev[idx] }))
+  }
+
+  async function importOcrItems() {
+    if (!ocrParsed) return
+    setOcrImporting(true)
+    const toImport = ocrParsed.line_items.filter((_, idx) => ocrChecked[idx])
+    let lastSummary = summary
+    let imported = 0
+    try {
+      for (const item of toImport) {
+        const nextSort = items.length + imported
+        const { data } = await api.post(`/estimate-items/${roId}`, {
+          type: item.type,
+          description: item.description,
+          quantity: asNumber(item.quantity, 1),
+          unit_price: asNumber(item.unit_price, 0),
+          taxable: false,
+          sort_order: nextSort,
+        })
+        setItems((prev) => [...prev, data.item])
+        lastSummary = data.summary || lastSummary
+        imported++
+      }
+      setSummary(lastSummary)
+      setOcrModalOpen(false)
+      setOcrParsed(null)
+      alert(`✅ ${imported} item${imported !== 1 ? 's' : ''} imported from insurance estimate.`)
+    } catch (err) {
+      alert(err?.response?.data?.error || 'Import failed — some items may not have been added')
+    } finally {
+      setOcrImporting(false)
+    }
+  }
+
+  // ── Render ──────────────────────────────────────────────────────────────────
   if (loading) {
     return <div className="text-slate-400">Loading estimate builder...</div>
   }
 
   const totals = summary || {
-    subtotal: 0,
-    labor_total: 0,
-    parts_total: 0,
-    sublet_total: 0,
-    other_total: 0,
-    taxable_subtotal: 0,
-    tax_rate: 0,
-    tax_amount: 0,
-    grand_total: 0,
-    line_count: 0,
+    subtotal: 0, labor_total: 0, parts_total: 0, sublet_total: 0,
+    other_total: 0, taxable_subtotal: 0, tax_rate: 0, tax_amount: 0,
+    grand_total: 0, line_count: 0,
   }
 
   return (
     <div className="max-w-6xl mx-auto space-y-4">
+      {ocrModalOpen && ocrParsed && (
+        <OcrModal
+          parsed={ocrParsed}
+          checked={ocrChecked}
+          onToggle={toggleOcrItem}
+          onImport={importOcrItems}
+          onCancel={() => { setOcrModalOpen(false); setOcrParsed(null) }}
+          importing={ocrImporting}
+        />
+      )}
+
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*,.pdf"
+        className="hidden"
+        onChange={handleOcrFile}
+      />
+
       <div className="flex items-center gap-3 flex-wrap">
         <button onClick={() => navigate(`/ros/${roId}`)} className="text-slate-400 hover:text-white transition-colors">
           <ArrowLeft size={20} />
@@ -144,6 +294,13 @@ export default function EstimateBuilder() {
           <h1 className="text-xl font-bold text-white">Estimate Builder</h1>
           <p className="text-slate-500 text-sm truncate">{ro?.ro_number || roId} {ro?.customer?.name ? `· ${ro.customer.name}` : ''}</p>
         </div>
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          disabled={ocrLoading}
+          className="flex items-center gap-1 bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+        >
+          <Camera size={12} /> {ocrLoading ? 'Scanning...' : 'Import Insurance Estimate'}
+        </button>
         <button
           onClick={addRow}
           disabled={adding}
@@ -200,9 +357,7 @@ export default function EstimateBuilder() {
                 </td>
                 <td className="px-3 py-2">
                   <input
-                    type="number"
-                    min="0"
-                    step="0.01"
+                    type="number" min="0" step="0.01"
                     className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded px-2 py-1 text-white text-right"
                     value={item.quantity}
                     onChange={(e) => updateItemLocal(item.id, { quantity: e.target.value })}
@@ -211,9 +366,7 @@ export default function EstimateBuilder() {
                 </td>
                 <td className="px-3 py-2">
                   <input
-                    type="number"
-                    min="0"
-                    step="0.01"
+                    type="number" min="0" step="0.01"
                     className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded px-2 py-1 text-white text-right"
                     value={item.unit_price}
                     onChange={(e) => updateItemLocal(item.id, { unit_price: e.target.value })}
@@ -234,9 +387,7 @@ export default function EstimateBuilder() {
                 </td>
                 <td className="px-3 py-2">
                   <input
-                    type="number"
-                    min="0"
-                    step="1"
+                    type="number" min="0" step="1"
                     className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded px-2 py-1 text-white text-right"
                     value={item.sort_order}
                     onChange={(e) => updateItemLocal(item.id, { sort_order: e.target.value })}
