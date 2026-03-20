@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Camera, Plus, Trash2, X } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Camera, CheckCircle, Plus, Trash2, X } from 'lucide-react'
 import api from '../lib/api'
 
 const ITEM_TYPES = ['labor', 'parts', 'sublet', 'other']
@@ -14,12 +14,25 @@ function money(value) {
   return `$${asNumber(value, 0).toFixed(2)}`
 }
 
-// ── OCR Preview Modal ────────────────────────────────────────────────────────
-function OcrModal({ parsed, checked, onToggle, onImport, onCancel, importing }) {
+// ── Severity badge helper ─────────────────────────────────────────────────────
+function SeverityBadge({ severity }) {
+  if (severity === 'high')   return <span className="text-xs bg-red-600/30 text-red-300 px-2 py-0.5 rounded font-medium">High</span>
+  if (severity === 'medium') return <span className="text-xs bg-amber-600/30 text-amber-300 px-2 py-0.5 rounded font-medium">Medium</span>
+  if (severity === 'low')    return <span className="text-xs bg-yellow-600/30 text-yellow-300 px-2 py-0.5 rounded font-medium">Review</span>
+  return null
+}
+
+// ── OCR Preview Modal ─────────────────────────────────────────────────────────
+function OcrModal({ parsed, flags, analysisSummary, checked, onToggle, onImport, onCancel, importing }) {
   const checkedCount = Object.values(checked).filter(Boolean).length
+  const hasAnalysis = flags && flags.length > 0
+  const supplementTotal = analysisSummary?.total_supplement_opportunity || 0
+  const undervalueCount = analysisSummary?.undervalue_count || 0
+
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
       <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+        {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-[#2a2d3e]">
           <div>
             <h2 className="text-white font-semibold text-base">Insurance Estimate Import</h2>
@@ -32,35 +45,82 @@ function OcrModal({ parsed, checked, onToggle, onImport, onCancel, importing }) 
           <button onClick={onCancel} className="text-slate-400 hover:text-white"><X size={18} /></button>
         </div>
 
+        {/* Phase 2: Analysis summary bar */}
+        {hasAnalysis && supplementTotal > 0 && (
+          <div className="px-5 py-3 bg-amber-950/40 border-b border-amber-800/40 flex items-center gap-3 flex-wrap">
+            <AlertTriangle size={15} className="text-amber-400 shrink-0" />
+            <span className="text-amber-300 text-sm font-medium">
+              {undervalueCount} line{undervalueCount !== 1 ? 's' : ''} below your shop rate
+            </span>
+            <span className="text-amber-400 text-sm">
+              · Supplement opportunity: <strong>{money(supplementTotal)}</strong>
+            </span>
+          </div>
+        )}
+        {hasAnalysis && supplementTotal === 0 && (
+          <div className="px-5 py-3 bg-emerald-950/30 border-b border-emerald-800/30 flex items-center gap-3">
+            <CheckCircle size={15} className="text-emerald-400 shrink-0" />
+            <span className="text-emerald-300 text-sm">All line items are at or above your shop rates.</span>
+          </div>
+        )}
+
+        {/* Line items */}
         <div className="overflow-y-auto flex-1 px-5 py-3 space-y-2">
           {parsed.line_items.length === 0 ? (
             <p className="text-slate-500 text-sm text-center py-6">No line items extracted. Try a clearer photo.</p>
-          ) : parsed.line_items.map((item, idx) => (
-            <label key={idx} className="flex items-start gap-3 p-3 rounded-lg bg-[#0f1117] border border-[#2a2d3e] cursor-pointer hover:border-indigo-500 transition-colors">
-              <input
-                type="checkbox"
-                className="mt-0.5 accent-indigo-500"
-                checked={!!checked[idx]}
-                onChange={() => onToggle(idx)}
-              />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-xs bg-indigo-600/30 text-indigo-300 px-2 py-0.5 rounded font-medium">{item.type}</span>
-                  <span className="text-white text-sm truncate">{item.description || '(no description)'}</span>
+          ) : parsed.line_items.map((item, idx) => {
+            const flag = flags?.[idx]
+            const isUndervalue = flag?.type === 'undervalue'
+            const isReview = flag?.type === 'review'
+            const borderClass = isUndervalue
+              ? 'border-amber-700/60 bg-amber-950/20'
+              : isReview
+              ? 'border-yellow-700/40 bg-yellow-950/10'
+              : 'border-[#2a2d3e]'
+
+            return (
+              <label
+                key={idx}
+                className={`flex items-start gap-3 p-3 rounded-lg bg-[#0f1117] border cursor-pointer hover:border-indigo-500 transition-colors ${borderClass}`}
+              >
+                <input
+                  type="checkbox"
+                  className="mt-0.5 accent-indigo-500"
+                  checked={!!checked[idx]}
+                  onChange={() => onToggle(idx)}
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs bg-indigo-600/30 text-indigo-300 px-2 py-0.5 rounded font-medium">{item.type}</span>
+                    {flag && flag.severity !== 'none' && <SeverityBadge severity={flag.severity} />}
+                    <span className="text-white text-sm truncate">{item.description || '(no description)'}</span>
+                  </div>
+                  <div className="text-slate-400 text-xs mt-1">
+                    Qty: {item.quantity} × {money(item.unit_price)} = {money(item.quantity * item.unit_price)}
+                  </div>
+                  {flag?.message && (
+                    <div className="text-amber-400 text-xs mt-1">{flag.message}</div>
+                  )}
                 </div>
-                <div className="text-slate-400 text-xs mt-1">
-                  Qty: {item.quantity} × {money(item.unit_price)} = {money(item.quantity * item.unit_price)}
-                </div>
-              </div>
-            </label>
-          ))}
+              </label>
+            )
+          })}
         </div>
 
-        {parsed.total_allowed != null && (
-          <div className="px-5 py-2 text-slate-400 text-xs border-t border-[#2a2d3e]">
-            Insurance allowed total: {money(parsed.total_allowed)}
-          </div>
-        )}
+        {/* Footer totals */}
+        <div className="px-5 py-2 text-slate-400 text-xs border-t border-[#2a2d3e] flex items-center gap-4 flex-wrap">
+          {parsed.total_allowed != null && (
+            <span>Insurance total: <strong className="text-slate-200">{money(parsed.total_allowed)}</strong></span>
+          )}
+          {analysisSummary && (
+            <>
+              <span>Shop value: <strong className="text-slate-200">{money(analysisSummary.total_shop_value)}</strong></span>
+              {analysisSummary.total_gap > 0 && (
+                <span className="text-amber-400">Gap: <strong>{money(analysisSummary.total_gap)}</strong></span>
+              )}
+            </>
+          )}
+        </div>
 
         <div className="flex items-center justify-between gap-3 px-5 py-4 border-t border-[#2a2d3e]">
           <button onClick={onCancel} className="text-slate-400 hover:text-white text-sm">Cancel</button>
@@ -95,6 +155,8 @@ export default function EstimateBuilder() {
   const [ocrLoading, setOcrLoading] = useState(false)
   const [ocrModalOpen, setOcrModalOpen] = useState(false)
   const [ocrParsed, setOcrParsed] = useState(null)
+  const [ocrFlags, setOcrFlags] = useState(null)
+  const [ocrAnalysisSummary, setOcrAnalysisSummary] = useState(null)
   const [ocrChecked, setOcrChecked] = useState({})
   const [ocrImporting, setOcrImporting] = useState(false)
 
@@ -194,10 +256,10 @@ export default function EstimateBuilder() {
   async function handleOcrFile(e) {
     const file = e.target.files?.[0]
     if (!file) return
-    // Reset input so same file can be re-selected
     e.target.value = ''
     setOcrLoading(true)
     try {
+      // Phase 1: parse
       const form = new FormData()
       form.append('estimate_image', file)
       const { data } = await api.post('/insurance-ocr/parse', form, {
@@ -209,7 +271,22 @@ export default function EstimateBuilder() {
       parsed.line_items.forEach((_, idx) => { initialChecked[idx] = true })
       setOcrParsed(parsed)
       setOcrChecked(initialChecked)
+      setOcrFlags(null)
+      setOcrAnalysisSummary(null)
+
+      // Phase 2: analyze (non-blocking — show modal immediately, update when ready)
       setOcrModalOpen(true)
+      try {
+        const { data: aData } = await api.post('/insurance-ocr/analyze', {
+          line_items: parsed.line_items,
+        })
+        if (aData.success) {
+          setOcrFlags(aData.flags)
+          setOcrAnalysisSummary(aData.summary)
+        }
+      } catch {
+        // Analysis failure is non-fatal — import still works
+      }
     } catch (err) {
       alert(err?.response?.data?.error || err.message || 'Could not parse estimate image')
     } finally {
@@ -220,6 +297,7 @@ export default function EstimateBuilder() {
   function toggleOcrItem(idx) {
     setOcrChecked((prev) => ({ ...prev, [idx]: !prev[idx] }))
   }
+
 
   async function importOcrItems() {
     if (!ocrParsed) return
@@ -269,10 +347,12 @@ export default function EstimateBuilder() {
       {ocrModalOpen && ocrParsed && (
         <OcrModal
           parsed={ocrParsed}
+          flags={ocrFlags}
+          analysisSummary={ocrAnalysisSummary}
           checked={ocrChecked}
           onToggle={toggleOcrItem}
           onImport={importOcrItems}
-          onCancel={() => { setOcrModalOpen(false); setOcrParsed(null) }}
+          onCancel={() => { setOcrModalOpen(false); setOcrParsed(null); setOcrFlags(null); setOcrAnalysisSummary(null) }}
           importing={ocrImporting}
         />
       )}
