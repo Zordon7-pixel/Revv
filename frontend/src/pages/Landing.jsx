@@ -1,10 +1,14 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   ArrowRight,
+  CheckCircle,
   ClipboardList,
   Clock,
+  Download,
   MessageSquare,
   Shield,
+  Smartphone,
   TrendingUp,
   Users,
   Wrench,
@@ -27,7 +31,7 @@ const features = [
     icon: Users,
     title: 'Customer Portal',
     description:
-      'Private tracking links for every customer. They check status - you stop answering phones.',
+      'Private tracking links for every customer. They check status — you stop answering phones.',
   },
   {
     icon: Shield,
@@ -48,8 +52,30 @@ const features = [
 ]
 
 export default function Landing() {
+  const [email, setEmail] = useState('')
+  const [submitted, setSubmitted] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+
+  async function handleWaitlist(e) {
+    e.preventDefault()
+    if (!email.trim()) return
+    setSubmitting(true)
+    try {
+      await fetch('/api/waitlist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim(), source: 'landing-download' }),
+      })
+    } catch {
+      // silent — still show confirmation even if endpoint isn't live yet
+    }
+    setSubmitted(true)
+    setSubmitting(false)
+  }
+
   return (
     <div className="min-h-screen bg-[#0f1117] text-slate-100">
+      {/* ── Nav ─────────────────────────────────────────────────────────── */}
       <header className="px-6 py-5 md:px-16 lg:px-24">
         <nav className="flex items-center justify-between">
           <Link to="/" className="text-2xl font-extrabold tracking-wide text-indigo-400">
@@ -62,6 +88,9 @@ export default function Landing() {
             <a href="#pricing" className="text-sm text-slate-400 transition hover:text-white">
               Pricing
             </a>
+            <a href="#download" className="text-sm text-slate-400 transition hover:text-white">
+              Download
+            </a>
             <Link to="/login" className="text-sm text-slate-400 transition hover:text-white">
               Sign In
             </Link>
@@ -73,6 +102,9 @@ export default function Landing() {
             </Link>
           </div>
           <div className="flex items-center gap-4 md:hidden">
+            <a href="#download" className="text-sm text-slate-300 transition hover:text-white">
+              Download
+            </a>
             <Link to="/login" className="text-sm text-slate-300 transition hover:text-white">
               Sign In
             </Link>
@@ -86,6 +118,7 @@ export default function Landing() {
         </nav>
       </header>
 
+      {/* ── Hero ────────────────────────────────────────────────────────── */}
       <section className="px-6 pb-16 pt-8 md:px-16 md:pb-24 lg:px-24">
         <div className="mx-auto max-w-6xl rounded-3xl border border-[#2a2d3e] bg-gradient-to-b from-indigo-500/10 via-[#0f1117] to-[#0f1117] p-8 shadow-[0_0_140px_-50px_rgba(99,102,241,0.9)] md:p-14">
           <div className="mx-auto max-w-3xl text-center">
@@ -102,12 +135,12 @@ export default function Landing() {
               >
                 Start Free <ArrowRight size={16} />
               </Link>
-              <Link
-                to="/login"
-                className="rounded-lg border border-[#2a2d3e] bg-[#1a1d2e] px-6 py-3 text-sm font-semibold text-slate-200 transition hover:border-indigo-500 hover:text-white"
+              <a
+                href="#download"
+                className="inline-flex items-center gap-2 rounded-lg border border-[#2a2d3e] bg-[#1a1d2e] px-6 py-3 text-sm font-semibold text-slate-200 transition hover:border-indigo-500 hover:text-white"
               >
-                Sign In
-              </Link>
+                <Download size={15} /> Get the App
+              </a>
             </div>
           </div>
 
@@ -127,6 +160,7 @@ export default function Landing() {
         </div>
       </section>
 
+      {/* ── Stats bar ───────────────────────────────────────────────────── */}
       <section className="border-y border-[#2a2d3e] bg-[#1a1d2e] px-6 py-8 md:px-16 lg:px-24">
         <div className="mx-auto grid max-w-6xl gap-6 text-center md:grid-cols-3 md:text-left">
           <div>
@@ -144,6 +178,7 @@ export default function Landing() {
         </div>
       </section>
 
+      {/* ── Features ────────────────────────────────────────────────────── */}
       <section id="features" className="px-6 py-16 md:px-16 md:py-24 lg:px-24">
         <div className="mx-auto max-w-6xl">
           <h2 className="text-3xl font-bold text-white md:text-4xl">Built for day-to-day shop reality</h2>
@@ -167,6 +202,7 @@ export default function Landing() {
         </div>
       </section>
 
+      {/* ── Pricing ─────────────────────────────────────────────────────── */}
       <section id="pricing" className="px-6 pb-20 md:px-16 lg:px-24">
         <div className="mx-auto max-w-6xl">
           <h2 className="text-3xl font-bold text-white md:text-4xl">Pricing that scales with your shop</h2>
@@ -225,22 +261,109 @@ export default function Landing() {
         </div>
       </section>
 
+      {/* ── Download / Early Access ──────────────────────────────────────── */}
+      <section id="download" className="border-t border-[#2a2d3e] bg-[#1a1d2e] px-6 py-20 md:px-16 lg:px-24">
+        <div className="mx-auto max-w-6xl">
+          <div className="grid gap-12 md:grid-cols-2 md:items-center">
+            {/* Left: copy */}
+            <div>
+              <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-indigo-500/30 bg-indigo-500/10 px-3 py-1 text-xs font-semibold text-indigo-300">
+                <Smartphone size={13} /> Mobile App — Coming Soon
+              </div>
+              <h2 className="text-3xl font-bold text-white md:text-4xl">
+                REVV in your pocket.
+              </h2>
+              <p className="mt-4 text-slate-400">
+                A native mobile app for techs and managers is on the way — check RO status, upload photos, and approve work orders from the floor without touching a desktop.
+              </p>
+              <ul className="mt-6 space-y-3">
+                {[
+                  'Photo uploads from the bay',
+                  'Tech job assignments & clock-in',
+                  'Real-time RO status updates',
+                  'Customer approval on the go',
+                ].map((item) => (
+                  <li key={item} className="flex items-center gap-3 text-sm text-slate-300">
+                    <CheckCircle size={16} className="shrink-0 text-indigo-400" />
+                    {item}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-6 text-sm text-slate-500">
+                In the meantime, REVV runs on any device in your browser at{' '}
+                <a href="https://revvshop.app" className="text-indigo-400 hover:underline">
+                  revvshop.app
+                </a>
+                .
+              </p>
+            </div>
+
+            {/* Right: waitlist form */}
+            <div className="rounded-2xl border border-[#2a2d3e] bg-[#0f1117] p-8">
+              <div className="mb-1 inline-flex items-center gap-2 text-indigo-400">
+                <Download size={18} />
+                <span className="text-base font-semibold text-white">Get Early Access</span>
+              </div>
+              <p className="mt-2 text-sm text-slate-400">
+                Be first to know when the mobile app drops. We'll also send you a free extended trial.
+              </p>
+
+              {submitted ? (
+                <div className="mt-6 flex items-center gap-3 rounded-xl border border-emerald-700/40 bg-emerald-950/40 p-4">
+                  <CheckCircle size={20} className="shrink-0 text-emerald-400" />
+                  <div>
+                    <p className="text-sm font-semibold text-emerald-300">You're on the list.</p>
+                    <p className="text-xs text-slate-400 mt-0.5">We'll reach out when the app is ready.</p>
+                  </div>
+                </div>
+              ) : (
+                <form onSubmit={handleWaitlist} className="mt-6 space-y-4">
+                  <input
+                    type="email"
+                    required
+                    placeholder="shop@example.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full rounded-lg border border-[#2a2d3e] bg-[#1a1d2e] px-4 py-3 text-sm text-white placeholder-slate-500 outline-none focus:border-indigo-500 transition"
+                  />
+                  <button
+                    type="submit"
+                    disabled={submitting}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-60"
+                  >
+                    <Download size={15} />
+                    {submitting ? 'Saving...' : 'Notify Me When It\'s Ready'}
+                  </button>
+                  <p className="text-center text-xs text-slate-500">No spam. Unsubscribe any time.</p>
+                </form>
+              )}
+
+              <div className="mt-6 border-t border-[#2a2d3e] pt-5">
+                <p className="text-xs text-slate-500 mb-3">Already using REVV on web?</p>
+                <Link
+                  to="/shop-register"
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-[#2a2d3e] px-4 py-2.5 text-sm font-medium text-slate-300 transition hover:border-indigo-500 hover:text-white"
+                >
+                  Start Free in Browser <ArrowRight size={14} />
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Footer ──────────────────────────────────────────────────────── */}
       <footer className="border-t border-[#2a2d3e] px-6 py-8 md:px-16 lg:px-24">
         <div className="mx-auto flex max-w-6xl flex-col gap-3 text-sm text-slate-400 md:flex-row md:items-center md:justify-between">
           <p>REVV © 2026 Zordon Technologies LLC</p>
-          <div className="flex items-center gap-4">
-            <Link to="/terms" className="transition hover:text-white">
-              Terms
-            </Link>
-            <Link to="/privacy" className="transition hover:text-white">
-              Privacy
-            </Link>
-            <Link to="/login" className="transition hover:text-white">
-              Sign In
-            </Link>
-            <Link to="/shop-register" className="transition hover:text-white">
-              Get Started
-            </Link>
+          <div className="flex items-center gap-4 flex-wrap">
+            <a href="#features" className="transition hover:text-white">Features</a>
+            <a href="#pricing" className="transition hover:text-white">Pricing</a>
+            <a href="#download" className="transition hover:text-white">Download</a>
+            <Link to="/terms" className="transition hover:text-white">Terms</Link>
+            <Link to="/privacy" className="transition hover:text-white">Privacy</Link>
+            <Link to="/login" className="transition hover:text-white">Sign In</Link>
+            <Link to="/shop-register" className="transition hover:text-white">Get Started</Link>
             <a href="mailto:revvshopapp@gmail.com" className="transition hover:text-white">
               revvshopapp@gmail.com
             </a>
