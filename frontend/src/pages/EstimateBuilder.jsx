@@ -361,7 +361,7 @@ export default function EstimateBuilder() {
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/*,.pdf"
+        accept="image/*"
         className="hidden"
         onChange={handleOcrFile}
       />

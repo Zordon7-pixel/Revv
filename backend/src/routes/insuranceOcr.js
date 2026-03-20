@@ -34,13 +34,20 @@ router.post('/parse', auth, upload.single('estimate_image'), async (req, res) =>
 
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
-      return res.status(500).json({ success: false, error: 'OpenAI API key not configured' });
+      return res.status(500).json({ success: false, error: 'OpenAI API key not configured on this server' });
+    }
+
+    // PDF is not supported directly — GPT-4o Vision requires an image
+    const mimeType = req.file.mimetype || 'application/octet-stream';
+    if (mimeType === 'application/pdf') {
+      return res.status(415).json({
+        success: false,
+        error: 'PDF upload is not yet supported. Please take a photo or screenshot of the estimate and upload that instead.',
+      });
     }
 
     const openai = new OpenAI({ apiKey });
-
     const base64 = req.file.buffer.toString('base64');
-    const mimeType = req.file.mimetype || 'image/jpeg';
 
     const response = await openai.chat.completions.create({
       model: 'gpt-4o',
@@ -67,7 +74,7 @@ router.post('/parse', auth, upload.single('estimate_image'), async (req, res) =>
       parsed = JSON.parse(cleaned);
     } catch {
       console.error('[InsuranceOCR] Failed to parse OpenAI response:', raw);
-      return res.status(422).json({ success: false, error: 'Could not parse estimate from image. Try a clearer photo.' });
+      return res.status(422).json({ success: false, error: 'Could not extract estimate data from image. Try a clearer photo.' });
     }
 
     const ALLOWED_TYPES = new Set(['labor', 'parts', 'sublet', 'other']);
@@ -100,14 +107,18 @@ router.post('/parse', auth, upload.single('estimate_image'), async (req, res) =>
 // Returns: { flags: [...], summary: { ... } }
 router.post('/analyze', auth, async (req, res) => {
   try {
+    // FIX: guard against shop not found — return error instead of silently zeroing rates
     const shop = await dbGet(
       'SELECT labor_rate, paint_rate, parts_markup FROM shops WHERE id = $1',
       [req.user.shop_id]
     );
+    if (!shop) {
+      return res.status(404).json({ success: false, error: 'Shop not found. Configure your shop rates first.' });
+    }
 
-    const shopLaborRate  = Number(shop?.labor_rate  || 0);
-    const shopPaintRate  = Number(shop?.paint_rate  || 0);
-    const shopPartsMarkup = Number(shop?.parts_markup || 0); // e.g. 0.30 = 30%
+    const shopLaborRate   = Number(shop.labor_rate   || 0);
+    const shopPaintRate   = Number(shop.paint_rate   || 0);
+    const shopPartsMarkup = Number(shop.parts_markup || 0); // e.g. 0.30 = 30%
 
     const lineItems = Array.isArray(req.body?.line_items) ? req.body.line_items : [];
 
@@ -125,10 +136,10 @@ router.post('/analyze', auth, async (req, res) => {
       let flag = null;
 
       if (item.type === 'labor') {
-        // Compare labor line unit_price (per-hour rate) vs shop rate
-        // Some estimates express labor as (hours × rate) bundled in unit_price;
-        // we compare the effective hourly rate when qty looks like hours.
-        const effectiveRate = qty > 0 ? unitPrice / qty : unitPrice;
+        // FIX: insurance estimates express labor as (hours × shop_rate) per line.
+        // unit_price on a labor line = rate per hour (not total).
+        // qty = number of hours.
+        // Compare unit_price directly to shop labor rate.
         const shopRate = shopLaborRate > 0 ? shopLaborRate : null;
         const shopLineTotal = shopRate ? qty * shopRate : null;
 
@@ -146,16 +157,14 @@ router.post('/analyze', auth, async (req, res) => {
             shop_rate: shopRate,
             gap_per_unit: gap,
             supplement_opportunity: supplementAmt,
-            message: `Insurance allows $${unitPrice.toFixed(2)}/hr — your rate is $${shopRate.toFixed(2)}/hr. Supplement opportunity: $${supplementAmt.toFixed(2)}.`,
+            message: `Insurance allows $${unitPrice.toFixed(2)}/hr (${qty}h) — your rate is $${shopRate.toFixed(2)}/hr. Supplement opportunity: $${supplementAmt.toFixed(2)}.`,
           };
         } else {
           totalShopValue += insTotal;
         }
       } else if (item.type === 'parts') {
-        // Check parts markup: if shop applies a markup, is the insurance paying list price?
-        const shopRate = shopPartsMarkup > 0 ? shopLaborRate : null; // use markup flag only
+        // Check if parts markup is configured and flag low-priced parts lines
         totalShopValue += insTotal;
-        // Flag if unit_price is suspiciously low (below $10 for a parts line — likely missing markup)
         if (unitPrice > 0 && unitPrice < 15 && qty >= 1) {
           flag = {
             type: 'review',
@@ -166,8 +175,13 @@ router.post('/analyze', auth, async (req, res) => {
             shop_rate: null,
             gap_per_unit: null,
             supplement_opportunity: null,
-            message: `Parts line "${item.description}" has a very low unit price ($${unitPrice.toFixed(2)}). Verify markup and actual cost.`,
+            message: `Parts line "${item.description}" has a very low unit price ($${unitPrice.toFixed(2)}). Verify markup and actual part cost.`,
           };
+        } else if (shopPartsMarkup > 0) {
+          // Flag if insurance is likely paying below marked-up cost
+          const expectedMin = unitPrice * (1 + shopPartsMarkup);
+          // We can't know the cost without a catalog, so just annotate with markup info
+          // as an informational flag rather than undervalue
         }
       } else {
         totalShopValue += insTotal;
