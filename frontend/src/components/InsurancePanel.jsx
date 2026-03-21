@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { BadgeDollarSign, ChevronDown, ChevronUp, Mail, Phone, ShieldCheck } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { BadgeDollarSign, ChevronDown, ChevronUp, FileImage, Mail, Phone, ShieldCheck, Upload, X } from 'lucide-react'
 import api from '../lib/api'
 
 const INSURANCE_COMPANIES = [
@@ -41,6 +41,81 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
   const [open, setOpen] = useState(true)
   const [saving, setSaving] = useState(false)
   const [requesting, setRequesting] = useState(false)
+
+  // OCR import state
+  const fileInputRef = useRef(null)
+  const [ocrFile, setOcrFile] = useState(null)
+  const [ocrPreview, setOcrPreview] = useState(null)
+  const [ocrParsing, setOcrParsing] = useState(false)
+  const [ocrItems, setOcrItems] = useState(null)     // parsed line items
+  const [ocrSelected, setOcrSelected] = useState({}) // checked items
+  const [ocrImporting, setOcrImporting] = useState(false)
+  const [ocrError, setOcrError] = useState(null)
+
+  function handleFileChange(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setOcrFile(file)
+    setOcrItems(null)
+    setOcrSelected({})
+    setOcrError(null)
+    if (file.type.startsWith('image/')) {
+      const reader = new FileReader()
+      reader.onload = (ev) => setOcrPreview(ev.target.result)
+      reader.readAsDataURL(file)
+    } else {
+      setOcrPreview(null)
+    }
+  }
+
+  async function parseEstimate() {
+    if (!ocrFile) return
+    setOcrParsing(true)
+    setOcrError(null)
+    try {
+      const form = new FormData()
+      form.append('estimate_image', ocrFile)
+      const { data } = await api.post('/insurance-ocr/parse', form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      const items = data.items || []
+      setOcrItems(items)
+      // Select all by default
+      const sel = {}
+      items.forEach((_, i) => { sel[i] = true })
+      setOcrSelected(sel)
+    } catch (err) {
+      setOcrError(err?.response?.data?.error || 'Could not parse the estimate. Try a clearer photo.')
+    } finally {
+      setOcrParsing(false)
+    }
+  }
+
+  async function importSelected() {
+    if (!ocrItems?.length) return
+    const toImport = ocrItems.filter((_, i) => ocrSelected[i])
+    if (!toImport.length) return
+    setOcrImporting(true)
+    try {
+      for (const item of toImport) {
+        await api.post(`/estimate-items/${roId}`, {
+          description: item.description,
+          type: item.type || 'labor',
+          quantity: item.quantity ?? 1,
+          unit_price: item.unit_price ?? 0,
+        })
+      }
+      onUpdated?.()
+      setOcrFile(null)
+      setOcrPreview(null)
+      setOcrItems(null)
+      setOcrSelected({})
+    } catch (err) {
+      setOcrError(err?.response?.data?.error || 'Import failed')
+    } finally {
+      setOcrImporting(false)
+    }
+  }
   const [form, setForm] = useState({
     insurance_company: '',
     insurance_claim_number: '',
@@ -149,6 +224,108 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
 
       {open && (
         <div className="mt-4 space-y-4">
+
+          {/* ── Insurance Estimate OCR Import ── */}
+          <div className="border border-dashed border-[#2a2d3e] rounded-xl p-3 bg-[#111423]">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-xs font-semibold text-white flex items-center gap-1.5">
+                <FileImage size={12} /> Import Insurance Estimate
+              </h3>
+              {ocrFile && (
+                <button type="button" onClick={() => { setOcrFile(null); setOcrPreview(null); setOcrItems(null); setOcrError(null); }} className="text-slate-500 hover:text-red-400">
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+            <p className="text-[10px] text-slate-500 mb-3">
+              Upload a photo or scan of the adjuster's estimate. AI will extract line items you can import directly into the estimate.
+            </p>
+
+            {!ocrFile && (
+              <>
+                <input ref={fileInputRef} type="file" accept="image/*,.pdf" className="hidden" onChange={handleFileChange} />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full flex items-center justify-center gap-2 border border-[#2a2d3e] rounded-lg py-3 text-sm text-slate-400 hover:text-white hover:border-indigo-500 transition-colors"
+                >
+                  <Upload size={15} /> Upload estimate photo / PDF
+                </button>
+              </>
+            )}
+
+            {ocrFile && !ocrItems && (
+              <div className="space-y-2">
+                {ocrPreview && (
+                  <img src={ocrPreview} alt="Estimate preview" className="w-full max-h-40 object-contain rounded-lg border border-[#2a2d3e]" />
+                )}
+                {!ocrPreview && (
+                  <p className="text-xs text-slate-400 italic">{ocrFile.name}</p>
+                )}
+                {ocrError && <p className="text-xs text-red-400">{ocrError}</p>}
+                <button
+                  type="button"
+                  onClick={parseEstimate}
+                  disabled={ocrParsing}
+                  className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-semibold py-2 rounded-lg"
+                >
+                  {ocrParsing ? 'Reading estimate…' : 'Extract Line Items with AI'}
+                </button>
+              </div>
+            )}
+
+            {ocrItems && (
+              <div className="space-y-2">
+                <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wide">
+                  {ocrItems.length} items found — select to import:
+                </p>
+                <div className="max-h-48 overflow-y-auto space-y-1">
+                  {ocrItems.map((item, i) => (
+                    <label key={i} className="flex items-start gap-2 cursor-pointer hover:bg-[#1a1d2e] rounded p-1">
+                      <input
+                        type="checkbox"
+                        checked={!!ocrSelected[i]}
+                        onChange={e => setOcrSelected(prev => ({ ...prev, [i]: e.target.checked }))}
+                        className="mt-0.5 accent-indigo-500"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs text-white truncate">{item.description}</p>
+                        <p className="text-[10px] text-slate-500">
+                          {item.type} · qty {item.quantity ?? 1} · ${Number(item.unit_price ?? 0).toFixed(2)}
+                        </p>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+                {ocrError && <p className="text-xs text-red-400">{ocrError}</p>}
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { const all = {}; ocrItems.forEach((_, i) => { all[i] = true }); setOcrSelected(all) }}
+                    className="text-[10px] text-slate-400 hover:text-white"
+                  >
+                    All
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setOcrSelected({})}
+                    className="text-[10px] text-slate-400 hover:text-white"
+                  >
+                    None
+                  </button>
+                  <button
+                    type="button"
+                    onClick={importSelected}
+                    disabled={ocrImporting || !Object.values(ocrSelected).some(Boolean)}
+                    className="ml-auto bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-semibold px-4 py-1.5 rounded-lg"
+                  >
+                    {ocrImporting ? 'Importing…' : `Import ${Object.values(ocrSelected).filter(Boolean).length} items`}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label className="text-[10px] text-slate-500 block mb-1">Insurance Company</label>

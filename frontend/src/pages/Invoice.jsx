@@ -123,10 +123,10 @@ export default function Invoice() {
       </div>
 
       {/* Invoice sheet */}
-      <div className="print-sheet" style={{ maxWidth: '780px', margin: '1.5rem auto', background: '#fff', borderRadius: '8px', boxShadow: '0 1px 8px rgba(0,0,0,0.1)', padding: '2.5rem' }}>
+      <div className="print-sheet" style={{ maxWidth: '780px', margin: '1.5rem auto', background: '#fff', borderRadius: '8px', boxShadow: '0 1px 8px rgba(0,0,0,0.1)', padding: 'clamp(1rem, 5vw, 2.5rem)' }}>
 
         {/* Header — shop info */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '2rem', borderBottom: '2px solid #111', paddingBottom: '1.25rem' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', marginBottom: '2rem', borderBottom: '2px solid #111', paddingBottom: '1.25rem' }}>
           <div>
             <h1 style={{ margin: 0, fontSize: '1.75rem', fontWeight: 800, letterSpacing: '-0.5px', textTransform: 'uppercase' }}>{shop?.name || 'Auto Body Shop'}</h1>
             {shop?.address && <p style={{ margin: '0.25rem 0 0', fontSize: '0.85rem', color: '#444' }}>{shop.address}{shop.city ? `, ${shop.city}` : ''}{shop.state ? `, ${shop.state}` : ''} {shop.zip || ''}</p>}
@@ -142,7 +142,7 @@ export default function Invoice() {
         </div>
 
         {/* Customer + Vehicle */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '2rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1.5rem', marginBottom: '2rem' }}>
           <div>
             <h3 style={{ margin: '0 0 0.5rem', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px', color: '#888' }}>Bill To</h3>
             <p style={{ margin: 0, fontWeight: 700, fontSize: '1rem' }}>{customer?.name || '—'}</p>
