@@ -51,7 +51,7 @@ export default function Settings() {
     setSmsLoading(true)
     try {
       const r = await api.get('/sms/status')
-      setSmsStatus({ configured: !!r.data.configured, sms_phone: r.data.sms_phone || r.data.phone || null })
+      setSmsStatus({ configured: !!r.data.configured, sms_phone: r.data.sms_phone || r.data.phone || null, auth_method: r.data.auth_method || null })
     } catch {
       setSmsStatus({ configured: false, sms_phone: null })
     } finally {
@@ -278,11 +278,12 @@ export default function Settings() {
     setSendingTest(true)
     setTestSmsResult({ type: '', message: '' })
     try {
-      await api.post('/sms/test', {
+      const r = await api.post('/sms/test', {
         phone: testPhone,
         message: `REVV test SMS from ${form.name || 'your shop'} - notifications are connected.`,
       })
-      setTestSmsResult({ type: 'success', message: 'Test SMS sent successfully.' })
+      const sid = r?.data?.sid
+      setTestSmsResult({ type: 'success', message: `Sent! Twilio SID: ${sid || 'n/a'} — if you didn't receive it, check your Twilio console for delivery status, or verify the number if on a trial account.` })
     } catch (e) {
       setTestSmsResult({ type: 'error', message: e?.response?.data?.error || 'Failed to send test SMS.' })
     } finally {
@@ -693,6 +694,7 @@ export default function Settings() {
                   <div className="text-emerald-300 font-semibold text-sm flex items-center gap-1.5"><CheckCircle size={14} /> SMS Notifications Active</div>
                   <p className="text-xs text-emerald-100/80 mt-1">Customers will receive automatic texts at every repair stage.</p>
                   <p className="text-xs text-emerald-200 mt-2">Sending from: <span className="font-semibold">{smsStatus.sms_phone || 'Twilio number configured'}</span></p>
+                  {smsStatus.auth_method && <p className="text-xs text-emerald-200/60 mt-0.5">Auth: {smsStatus.auth_method === 'api_key' ? 'API Key + Secret' : 'Auth Token'}</p>}
                 </div>
                 <button
                   type="button"

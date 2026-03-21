@@ -3,9 +3,19 @@ const { dbGet } = require('../db');
 
 function getEnvTwilioConfig() {
   const accountSid = process.env.TWILIO_ACCOUNT_SID;
-  const authToken = process.env.TWILIO_AUTH_TOKEN;
   const phoneNumber = process.env.TWILIO_PHONE_NUMBER;
-  if (!accountSid || !authToken || !phoneNumber) return null;
+  if (!accountSid || !phoneNumber) return null;
+
+  // Prefer API Key + Secret if provided (more secure, scoped credentials)
+  const apiKey = process.env.TWILIO_API_KEY;
+  const apiSecret = process.env.TWILIO_API_SECRET;
+  if (apiKey && apiSecret) {
+    return { accountSid, apiKey, apiSecret, phoneNumber };
+  }
+
+  // Fall back to Auth Token
+  const authToken = process.env.TWILIO_AUTH_TOKEN;
+  if (!authToken) return null;
   return { accountSid, authToken, phoneNumber };
 }
 
@@ -50,7 +60,12 @@ async function sendSMS(phone, message, options = {}) {
   }
 
   try {
-    const client = twilio(config.accountSid, config.authToken);
+    // API Key auth: twilio(apiKeySid, apiKeySecret, { accountSid })
+    // Auth Token auth: twilio(accountSid, authToken)
+    const client = config.apiKey
+      ? twilio(config.apiKey, config.apiSecret, { accountSid: config.accountSid })
+      : twilio(config.accountSid, config.authToken);
+
     const result = await client.messages.create({
       to: phone,
       from: config.phoneNumber,

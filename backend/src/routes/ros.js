@@ -40,8 +40,17 @@ function toBase64Url(input) {
 function queueStatusSMS(roId, shopId, toStatus) {
   setImmediate(async () => {
     try {
-      if (!SMS_STATUSES.has(toStatus)) return;
-      if (!(await isConfiguredForShop(shopId))) return;
+      const tag = `[SMS] RO ${roId} → ${toStatus}:`;
+
+      if (!SMS_STATUSES.has(toStatus)) {
+        console.log(`${tag} skipped — status "${toStatus}" does not trigger SMS`);
+        return;
+      }
+
+      if (!(await isConfiguredForShop(shopId))) {
+        console.warn(`${tag} skipped — Twilio not configured for shop ${shopId}`);
+        return;
+      }
 
       const ro = await dbGet(
         `SELECT ro.id, ro.estimate_token, v.year, v.make, v.model, c.phone AS customer_phone, s.name AS shop_name,
@@ -53,9 +62,18 @@ function queueStatusSMS(roId, shopId, toStatus) {
          WHERE ro.id = $1 AND ro.shop_id = $2`,
         [roId, shopId]
       );
-      if (!ro?.customer_phone) return;
-      if (!ro.sms_notifications_enabled) return;
 
+      if (!ro?.customer_phone) {
+        console.warn(`${tag} skipped — no customer phone on record`);
+        return;
+      }
+
+      if (!ro.sms_notifications_enabled) {
+        console.log(`${tag} skipped — SMS notifications disabled for this shop`);
+        return;
+      }
+
+      // Try to get a tracking token for the portal link — optional, send without it if missing
       let trackingToken = ro.estimate_token;
       if (!trackingToken) {
         const tokenRow = await dbGet(
@@ -64,24 +82,36 @@ function queueStatusSMS(roId, shopId, toStatus) {
         );
         trackingToken = tokenRow?.token || null;
       }
-      if (!trackingToken) return;
+      if (!trackingToken) {
+        console.log(`${tag} no tracking token found — sending SMS without portal link`);
+      }
 
-      const statusLabel = STATUS_SMS_LABELS[toStatus];
       const vehicle = [ro.year, ro.make, ro.model].filter(Boolean).join(' ') || 'your vehicle';
       const shopName = ro.shop_name || 'the shop';
+      const trackingLine = trackingToken ? `\nTrack it here: https://revvshop.app/track/${trackingToken}` : '';
 
       const messages = {
-        'repair':      `Hi! Your ${vehicle} is now in progress at ${shopName}. We'll keep you updated. Track it here: https://revvshop.app/track/${trackingToken}`,
-        'in-progress': `Hi! Your ${vehicle} is now in progress at ${shopName}. We'll keep you updated. Track it here: https://revvshop.app/track/${trackingToken}`,
+        'repair':      `Hi! Your ${vehicle} is now in progress at ${shopName}. We'll keep you updated.${trackingLine}`,
+        'in-progress': `Hi! Your ${vehicle} is now in progress at ${shopName}. We'll keep you updated.${trackingLine}`,
         'ready':       `Great news! Your ${vehicle} is ready for pickup at ${shopName}. See you soon! 🎉`,
         'delivery':    `Great news! Your ${vehicle} is ready for pickup at ${shopName}. See you soon! 🎉`,
       };
 
       const message = messages[toStatus];
-      if (!message) return;
-      await sendSMS(ro.customer_phone, message, { shopId });
-    } catch (_) {
-      // Non-blocking fire-and-forget path; ignore SMS errors.
+      if (!message) {
+        console.warn(`${tag} skipped — no message template for status "${toStatus}"`);
+        return;
+      }
+
+      console.log(`${tag} sending to ${ro.customer_phone}`);
+      const result = await sendSMS(ro.customer_phone, message, { shopId });
+      if (result.ok) {
+        console.log(`${tag} sent OK (sid: ${result.sid})`);
+      } else {
+        console.error(`${tag} failed — ${result.reason}`);
+      }
+    } catch (err) {
+      console.error(`[SMS] RO ${roId} → ${toStatus}: unexpected error —`, err.message);
     }
   });
 }

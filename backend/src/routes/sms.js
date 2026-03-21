@@ -11,8 +11,9 @@ router.get('/status', auth, requireAdmin, async (req, res) => {
   try {
     const creds = await getTwilioConfigForShop(req.user.shop_id);
     res.json({
-      configured: await isConfiguredForShop(req.user.shop_id),
-      phone: creds ? creds.phoneNumber : null,
+      configured: !!creds,
+      phone: creds?.phoneNumber || null,
+      auth_method: creds?.apiKey ? 'api_key' : creds?.authToken ? 'auth_token' : null,
     });
   } catch (err) {
     return res.status(500).json({ error: err.message });
@@ -23,7 +24,13 @@ router.post('/test', auth, requireAdmin, async (req, res) => {
   const { phone, message } = req.body || {};
   if (!phone || !message) return res.status(400).json({ error: 'phone and message are required' });
   const result = await sendSMS(phone, message, { shopId: req.user.shop_id });
-  res.json({ ok: !!result.ok, result });
+  if (!result.ok) {
+    const reason = result.reason === 'not configured'
+      ? 'SMS not configured. Add your Twilio credentials in Shop Settings.'
+      : result.reason || 'Failed to send SMS';
+    return res.status(502).json({ error: reason });
+  }
+  res.json({ ok: true, sid: result.sid });
 });
 
 // ── GET /api/sms/thread/:roId — fetch full SMS thread for an RO ───────────────
