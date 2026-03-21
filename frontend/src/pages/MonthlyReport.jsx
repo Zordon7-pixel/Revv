@@ -130,7 +130,7 @@ export default function MonthlyReport() {
 
       {!loading && summary && (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
             {[
               ['Total Revenue', formatCurrency(summary.total_revenue), 'text-emerald-300'],
               ['Total ROs', summary.total_ros, 'text-indigo-300'],

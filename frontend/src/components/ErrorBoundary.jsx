@@ -11,6 +11,30 @@ export default class ErrorBoundary extends React.Component {
   }
   componentDidCatch(error, info) {
     console.error('[REVV Error]', error, info);
+    // Auto-report React render errors to feedback
+    try {
+      const payload = {
+        app: 'revv',
+        tester_name: 'Auto-Reporter',
+        category: 'bug',
+        priority: 'high',
+        message: `[AUTO] React render crash: ${error?.message || 'Unknown'}`,
+        expected: 'No crash',
+        actual: error?.message || String(error),
+        context: JSON.stringify({
+          url: window.location.href,
+          componentStack: (info?.componentStack || '').slice(0, 600),
+          stack: (error?.stack || '').slice(0, 500),
+          timestamp: new Date().toISOString(),
+        }),
+      };
+      // Use raw fetch so we don't import api here (class component)
+      fetch('/api/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }).catch(() => {});
+    } catch (_) {}
   }
   render() {
     if (this.state.hasError) {

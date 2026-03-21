@@ -57,6 +57,7 @@ export default function Reports() {
       </div>
 
       {/* Tabs */}
+      <div className="overflow-x-auto">
       <div className="flex gap-1 bg-[#1a1d2e] border border-[#2a2d3e] rounded-lg p-1 w-fit">
         {TABS.map(tab => (
           <button
@@ -71,6 +72,7 @@ export default function Reports() {
             {tab.label}
           </button>
         ))}
+      </div>
       </div>
 
       {activeTab === 'summary' && (
@@ -97,7 +99,7 @@ export default function Reports() {
           </div>
 
           {/* Key Metrics */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
             {[
               {label:'Total Jobs', value: summaryData.total, color:'text-indigo-400'},
               {label:'Completed', value: summaryData.completed, color:'text-emerald-400'},
@@ -135,7 +137,7 @@ export default function Reports() {
           {/* Pipeline by Stage */}
           <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
             <h2 className="text-sm font-semibold text-white mb-3">Pipeline by Stage</h2>
-            <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
+            <div className="grid grid-cols-4 gap-2">
               {['intake','estimate','approval','parts','repair','paint','qc','delivery'].map(s => {
                 const found = summaryData.byStatus?.find(x => x.status === s)
                 return (
@@ -151,7 +153,7 @@ export default function Reports() {
           {summaryData.insuranceSummary && (
             <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
               <h2 className="text-sm font-semibold text-white mb-3">Insurance Jobs</h2>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
                 <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3">
                   <div className="text-lg font-bold text-sky-300">{summaryData.insuranceSummary.insuranceJobsThisMonth || 0}</div>
                   <div className="text-[11px] text-slate-500">Claims this month</div>
@@ -177,7 +179,7 @@ export default function Reports() {
       {activeTab === 'revenue' && tabData && (
         <>
           {/* Revenue Tab */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
             <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4">
               <div className="text-xs text-slate-500 mb-1">Total Revenue</div>
               <div className="text-2xl font-bold text-emerald-400">${tabData.total?.toLocaleString()}</div>
@@ -227,7 +229,7 @@ export default function Reports() {
       {activeTab === 'ros' && tabData && (
         <>
           {/* ROs Tab */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
             <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4">
               <div className="text-xs text-slate-500 mb-1">This Month</div>
               <div className="text-2xl font-bold text-indigo-400">{tabData.thisMonth}</div>
@@ -276,7 +278,7 @@ export default function Reports() {
 
       {activeTab === 'insurance' && tabData && (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
             <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4">
               <div className="text-xs text-slate-500 mb-1">Insurance ROs (Month)</div>
               <div className="text-2xl font-bold text-sky-300">{tabData.totalInsuranceJobs || 0}</div>

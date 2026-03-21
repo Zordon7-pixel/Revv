@@ -1553,6 +1553,14 @@ router.delete('/:id', auth, requireTechnician, async (req, res) => {
     await dbRun('DELETE FROM ro_payments WHERE ro_id = $1', [id]).catch(() => {});
     await dbRun('DELETE FROM estimate_approval_links WHERE ro_id = $1', [id]).catch(() => {});
     await dbRun('DELETE FROM ro_comms WHERE ro_id = $1', [id]).catch(() => {});
+    await dbRun('DELETE FROM portal_tokens WHERE ro_id = $1', [id]).catch(() => {});
+    await dbRun('DELETE FROM sms_messages WHERE ro_id = $1', [id]).catch(() => {});
+    await dbRun('DELETE FROM ro_internal_notes WHERE ro_id = $1', [id]).catch(() => {});
+    await dbRun('DELETE FROM ro_supplements WHERE ro_id = $1', [id]).catch(() => {});
+    await dbRun('DELETE FROM ro_photos WHERE ro_id = $1', [id]).catch(() => {});
+    await dbRun('DELETE FROM estimate_line_items WHERE ro_id = $1', [id]).catch(() => {});
+    await dbRun('DELETE FROM parts_requests WHERE ro_id = $1', [id]).catch(() => {});
+    await dbRun('DELETE FROM parts_orders WHERE ro_id = $1 AND shop_id = $2', [id, req.user.shop_id]).catch(() => {});
     await dbRun('DELETE FROM repair_orders WHERE id = $1 AND shop_id = $2', [id, req.user.shop_id]);
     res.json({ success: true });
   } catch (err) {

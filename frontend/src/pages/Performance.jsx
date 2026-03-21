@@ -53,7 +53,7 @@ export default function Performance() {
           <ArrowLeft size={20} />
         </button>
         <div className="flex-1">
-          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+          <h1 className="text-xl sm:text-2xl font-bold text-white flex items-center gap-2">
             <BarChart2 size={24} /> Performance Dashboard
           </h1>
           <p className="text-slate-500 text-sm mt-1">Employee productivity & revenue metrics</p>
@@ -129,7 +129,7 @@ export default function Performance() {
 
           {/* Summary Footer */}
           <div className="border-t border-[#2a2d3e] mt-4 pt-4">
-            <div className="grid grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               <div>
                 <p className="text-xs text-slate-500">Total ROs</p>
                 <p className="text-lg font-bold text-white mt-1">

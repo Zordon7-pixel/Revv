@@ -344,7 +344,8 @@ export default function Schedule() {
 
       {viewMode === 'week' ? (
         /* Weekly grid */
-        <div className="grid grid-cols-7 gap-1.5">
+        <div className="overflow-x-auto">
+        <div className="grid grid-cols-7 gap-1.5 min-w-[560px]">
         {weekDates.map((date, i) => {
           const dayShifts = shiftsFor(date)
           const isToday = isoDate(date) === today
@@ -379,9 +380,11 @@ export default function Schedule() {
           )
         })}
       </div>
+      </div>
       ) : (
         /* Monthly grid */
-        <div className="grid grid-cols-7 gap-1">
+        <div className="overflow-x-auto">
+        <div className="grid grid-cols-7 gap-1 min-w-[420px]">
           {/* Day headers */}
           {MONTH_DAYS.map(day => (
             <div key={day} className="text-[10px] font-bold text-slate-500 uppercase text-center py-2">
@@ -423,6 +426,7 @@ export default function Schedule() {
               </div>
             )
           })}
+        </div>
         </div>
       )}
 

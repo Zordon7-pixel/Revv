@@ -156,7 +156,7 @@ export default function Inventory() {
             <PackagePlus size={14} className="text-[#EAB308]" />
             <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide">Add Part</h2>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2">
             <input
               required
               className={INPUT_CLASS}

@@ -118,6 +118,7 @@ export default function App() {
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="ros" element={<RepairOrders />} />
             <Route path="parts" element={<OwnerRoute><PartsOnOrder /></OwnerRoute>} />
+            <Route path="parts-on-order" element={<OwnerRoute><PartsOnOrder /></OwnerRoute>} />
             <Route path="inventory" element={<NonAssistantRoute><Inventory /></NonAssistantRoute>} />
             <Route path="payments" element={<NonAssistantRoute><Payments /></NonAssistantRoute>} />
             <Route path="storage" element={<NonAssistantRoute><StorageHold /></NonAssistantRoute>} />

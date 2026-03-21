@@ -754,19 +754,21 @@ export default function RODetail() {
         </div>
       </div>
 
+      <div className="overflow-x-auto">
       <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-1 flex items-center gap-1 w-fit">
         <button
           onClick={() => setActiveTab('overview')}
-          className={`text-xs px-3 py-1.5 rounded-lg font-medium ${activeTab === 'overview' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-[#2a2d3e]'}`}
+          className={`text-xs px-3 py-1.5 rounded-lg font-medium whitespace-nowrap ${activeTab === 'overview' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-[#2a2d3e]'}`}
         >
           Overview
         </button>
         <button
           onClick={() => setActiveTab('storage')}
-          className={`text-xs px-3 py-1.5 rounded-lg font-medium ${activeTab === 'storage' ? 'bg-amber-400 text-[#0f1117]' : 'text-slate-300 hover:bg-[#2a2d3e]'}`}
+          className={`text-xs px-3 py-1.5 rounded-lg font-medium whitespace-nowrap ${activeTab === 'storage' ? 'bg-amber-400 text-[#0f1117]' : 'text-slate-300 hover:bg-[#2a2d3e]'}`}
         >
           Storage Hold
         </button>
+      </div>
       </div>
 
       {activeTab === 'storage' && (
@@ -1800,7 +1802,7 @@ export default function RODetail() {
 
       {/* Customer Portal Access */}
       <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1.5"><Smartphone size={12} /> Customer Portal</h2>
             <p className="text-xs text-slate-500 mt-0.5">
@@ -1853,7 +1855,7 @@ export default function RODetail() {
         {/* Tracking Link Section */}
         {ro.customer?.phone && (
           <div className="mt-4 bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
-            <div className="flex items-center justify-between mb-2">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
               <div>
                 <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
                   <Smartphone size={12} /> Send Tracking Link

@@ -150,7 +150,8 @@ export default function Dashboard() {
       icon: ClipboardList,
       color: 'text-indigo-300',
       accent: 'bg-indigo-500',
-      card: 'bg-gradient-to-br from-indigo-900/40 to-[#1a1d2e]'
+      card: 'bg-gradient-to-br from-indigo-900/40 to-[#1a1d2e]',
+      to: '/ros?status=open',
     },
     {
       label: 'Completed',
@@ -158,7 +159,8 @@ export default function Dashboard() {
       icon: CheckCircle,
       color: 'text-emerald-300',
       accent: 'bg-emerald-500',
-      card: 'bg-gradient-to-br from-slate-800/60 to-[#1a1d2e]'
+      card: 'bg-gradient-to-br from-slate-800/60 to-[#1a1d2e]',
+      to: '/ros?status=completed',
     },
     ...(admin ? [
       {
@@ -167,7 +169,8 @@ export default function Dashboard() {
         icon: DollarSign,
         color: 'text-emerald-300',
         accent: 'bg-emerald-500',
-        card: 'bg-gradient-to-br from-emerald-900/40 to-[#1a1d2e]'
+        card: 'bg-gradient-to-br from-emerald-900/40 to-[#1a1d2e]',
+        to: '/monthly-report',
       },
       {
         label: 'True Profit',
@@ -175,7 +178,8 @@ export default function Dashboard() {
         icon: TrendingUp,
         color: 'text-amber-300',
         accent: 'bg-amber-500',
-        card: 'bg-gradient-to-br from-amber-900/40 to-[#1a1d2e]'
+        card: 'bg-gradient-to-br from-amber-900/40 to-[#1a1d2e]',
+        to: '/monthly-report',
       },
     ] : []),
   ]
@@ -207,11 +211,17 @@ export default function Dashboard() {
       </div>
 
       {goal && (
-        <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 space-y-3">
+        <div
+          onClick={() => navigate('/goals')}
+          className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 space-y-3 cursor-pointer"
+        >
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-white">Monthly Goals</h2>
             <button
-              onClick={() => navigate('/settings')}
+              onClick={(e) => {
+                e.stopPropagation()
+                navigate('/settings')
+              }}
               className="text-xs text-indigo-300 hover:text-indigo-200"
             >
               Edit Goals
@@ -238,9 +248,13 @@ export default function Dashboard() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
         {stats.map(s => (
-          <div key={s.label} className={`${s.card} rounded-xl p-4 border border-[#2a2d3e] shadow-sm`}>
+          <div
+            key={s.label}
+            onClick={() => navigate(s.to)}
+            className={`${s.card} rounded-xl p-4 border border-[#2a2d3e] shadow-sm cursor-pointer hover:opacity-90 transition-opacity`}
+          >
             <div className={`h-1.5 w-10 rounded-full ${s.accent} mb-3 opacity-90`} />
             <div className="flex items-center justify-between mb-3">
               <div className="text-xs text-slate-400">{s.label}</div>
@@ -258,8 +272,11 @@ export default function Dashboard() {
             <span className="text-xs text-slate-400">This week vs last week</span>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-            <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+            <div
+              onClick={() => navigate('/ros')}
+              className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3 cursor-pointer hover:ring-1 hover:ring-indigo-500/40 transition"
+            >
               <div className="text-xs text-slate-400 mb-1">ROs Opened</div>
               <div className="text-2xl font-bold text-white">{weekly.ro_opened?.this_week || 0}</div>
               <div className="mt-1 inline-flex items-center gap-1 text-xs">
@@ -271,14 +288,20 @@ export default function Dashboard() {
                 </span>
               </div>
             </div>
-            <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3">
+            <div
+              onClick={() => navigate('/monthly-report')}
+              className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3 cursor-pointer hover:ring-1 hover:ring-indigo-500/40 transition"
+            >
               <div className="text-xs text-slate-400 mb-1">Revenue Collected</div>
               <div className="text-2xl font-bold text-emerald-300">
                 ${(Number(weekly.revenue_collected_this_week || 0)).toLocaleString('en-US', { maximumFractionDigits: 0 })}
               </div>
               <div className="text-xs text-slate-500 mt-1">Paid invoices this week</div>
             </div>
-            <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3 md:col-span-2">
+            <div
+              onClick={() => navigate('/performance')}
+              className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3 md:col-span-2 cursor-pointer hover:ring-1 hover:ring-indigo-500/40 transition"
+            >
               <div className="text-xs text-slate-400 mb-2">Top Techs by Jobs Completed</div>
               {weekly.top_techs?.length ? (
                 <div className="space-y-2">
@@ -305,7 +328,10 @@ export default function Dashboard() {
                 <canvas ref={weeklyChartRef} />
               </div>
             </div>
-            <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3">
+            <div
+              onClick={() => navigate('/parts-on-order')}
+              className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3 cursor-pointer hover:ring-1 hover:ring-indigo-500/40 transition"
+            >
               <div className="text-xs text-slate-400 mb-1">Pending Parts</div>
               <div className="text-3xl font-bold text-amber-300">{weekly.pending_parts_count || 0}</div>
               <div className="text-xs text-slate-500 mt-1">ROs with parts ordered or awaiting</div>
@@ -315,7 +341,7 @@ export default function Dashboard() {
       )}
 
       {pendingCarryover.length > 0 && (
-        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 flex items-center justify-between gap-3">
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 flex flex-wrap items-center justify-between gap-3">
           <div className="inline-flex items-center gap-2 text-sm text-amber-200">
             <AlertCircle size={16} />
             {pendingCarryover.length} job(s) carried over from last month. Assign revenue period.
@@ -330,7 +356,7 @@ export default function Dashboard() {
       )}
 
       {admin && (
-        <div className="bg-cyan-500/10 border border-cyan-500/30 rounded-xl p-4 flex items-center justify-between">
+        <div className="bg-cyan-500/10 border border-cyan-500/30 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-sm font-semibold text-cyan-200 inline-flex items-center gap-1.5">
               <Radar size={14} /> ADAS Calibration Queue
@@ -349,7 +375,7 @@ export default function Dashboard() {
       )}
 
       {admin && (
-        <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 flex items-center justify-between">
+        <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-sm font-semibold text-white">Appointment Requests</h2>
             <p className="text-slate-400 text-xs mt-1">{pendingAppointments} pending request{pendingAppointments === 1 ? '' : 's'}</p>
@@ -371,7 +397,11 @@ export default function Dashboard() {
               const found = data.byStatus?.find(x => x.status === s)
               const count = found?.count || 0
               return (
-                <div key={s} className="flex items-center gap-3">
+                <div
+                  key={s}
+                  onClick={() => navigate(`/ros?status=${s}`)}
+                  className="flex items-center gap-3 cursor-pointer hover:bg-[#2a2d3e] rounded px-1 transition-colors"
+                >
                   <div className={`w-2 h-2 rounded-full flex-shrink-0`} style={{ background: STATUS_COLORS[s] }} />
                   <span className="text-xs text-slate-400 w-20 capitalize">{STATUS_LABELS[s]}</span>
                   <div className="flex-1 bg-[#0f1117] rounded-full h-1.5">

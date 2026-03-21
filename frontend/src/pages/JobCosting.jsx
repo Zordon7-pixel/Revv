@@ -49,11 +49,11 @@ export default function JobCosting() {
   const total = data?.totalJobs || 0
 
   return (
-    <div className="min-h-screen bg-[#0f1117] p-6">
+    <div className="min-h-screen bg-[#0f1117] p-4 sm:p-6">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+          <h1 className="text-xl sm:text-2xl font-bold text-white flex items-center gap-2">
             <TrendingUp size={24} className="text-indigo-400" />
             Job Costing
           </h1>
@@ -90,7 +90,7 @@ export default function JobCosting() {
 
         {/* Summary Cards */}
         {data && (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
             <StatCard icon={DollarSign} label="Total Revenue" value={fmt(data.totalRevenue)} color="bg-indigo-600" />
             <StatCard icon={List} label="Total Cost" value={fmt(data.totalCost)} color="bg-slate-600" />
             <StatCard
