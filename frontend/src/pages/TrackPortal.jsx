@@ -136,7 +136,7 @@ export default function TrackPortal() {
       <div className="max-w-2xl mx-auto p-4 space-y-4">
         {/* Shop Info */}
         <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h1 className="text-xl font-bold text-white">{shop.name}</h1>
               <p className="text-slate-400 text-sm">{shop.address}, {shop.city}, {shop.state} {shop.zip}</p>
