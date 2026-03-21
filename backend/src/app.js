@@ -50,6 +50,9 @@ const authLimiter = rateLimit({
   legacyHeaders: false
 });
 
+// Health check — public, no auth
+app.get('/api/health', (req, res) => res.json({ ok: true, deployed: new Date().toISOString(), commit: process.env.RAILWAY_GIT_COMMIT_SHA || 'local' }));
+
 // API Routes
 app.use('/api/auth', authLimiter, require('./routes/auth'));
 app.use('/api/ros', require('./routes/ros'));

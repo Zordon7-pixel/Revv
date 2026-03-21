@@ -921,9 +921,9 @@ export default function Settings() {
             </div>
 
             {testSmsResult.message && (
-              <p className={`text-xs ${testSmsResult.type === 'success' ? 'text-emerald-400' : 'text-red-400'}`}>
+              <div className={`rounded-lg p-3 text-sm font-medium ${testSmsResult.type === 'success' ? 'bg-emerald-900/40 border border-emerald-600/40 text-emerald-300' : 'bg-red-900/40 border border-red-600/40 text-red-300'}`}>
                 {testSmsResult.message}
-              </p>
+              </div>
             )}
 
             <div className="flex justify-end gap-2">
