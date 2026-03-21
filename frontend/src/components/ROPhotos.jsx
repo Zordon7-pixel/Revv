@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Camera, Trash2, ZoomIn, Upload, X, Sparkles } from 'lucide-react'
 import api from '../lib/api'
+import { optimizeImageForUpload } from '../lib/imageUpload'
 
 const PHOTO_TYPE_META = {
   damage:   { label: 'Damage',   cls: 'text-red-400 bg-red-900/30 border-red-700/40' },
@@ -32,10 +33,15 @@ export default function ROPhotos({ roId, isAdmin }) {
     const file = e.target.files?.[0]
     if (!file) return
     setUploading(true)
-    setAnalyzingMsg(photoType === 'damage' ? 'Analyzing damage…' : 'Uploading…')
+    setAnalyzingMsg('Optimizing photo…')
     try {
+      const preparedFile = await optimizeImageForUpload(file, {
+        maxDimension: 2048,
+        targetBytes: 3 * 1024 * 1024,
+      })
+      setAnalyzingMsg(photoType === 'damage' ? 'Analyzing damage…' : 'Uploading…')
       const fd = new FormData()
-      fd.append('photo', file)
+      fd.append('photo', preparedFile)
       fd.append('caption', caption)
       fd.append('photo_type', photoType)
       await api.post(`/photos/${roId}`, fd, {

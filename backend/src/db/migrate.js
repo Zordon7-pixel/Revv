@@ -331,6 +331,25 @@ async function runMigrations() {
       )`,
     ];
 
+      // Two-way SMS message threads per RO
+      `CREATE TABLE IF NOT EXISTS sms_messages (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        shop_id TEXT NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+        ro_id TEXT REFERENCES repair_orders(id) ON DELETE CASCADE,
+        direction TEXT NOT NULL CHECK (direction IN ('outbound', 'inbound')),
+        from_phone TEXT NOT NULL,
+        to_phone TEXT NOT NULL,
+        body TEXT NOT NULL,
+        twilio_sid TEXT,
+        status TEXT DEFAULT 'sent',
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_sms_messages_ro_id ON sms_messages(ro_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_sms_messages_shop_id ON sms_messages(shop_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_sms_messages_from_phone ON sms_messages(from_phone)`,
+      `ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS customer_phone TEXT`,
+    ];
+
     // Fix job_status_log FK to use ON DELETE CASCADE
     alters.push(
       `ALTER TABLE job_status_log DROP CONSTRAINT IF EXISTS job_status_log_ro_id_fkey`,

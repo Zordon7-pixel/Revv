@@ -7,6 +7,9 @@ const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const Anthropic = require('@anthropic-ai/sdk');
 
+const MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024;
+const MAX_UPLOAD_SIZE_MB = Math.round(MAX_UPLOAD_SIZE_BYTES / (1024 * 1024));
+
 async function analyzeDamagePhoto(filePath) {
   if (!process.env.ANTHROPIC_API_KEY) return null;
   try {
@@ -57,7 +60,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 200 * 1024 },
+  limits: { fileSize: MAX_UPLOAD_SIZE_BYTES },
   fileFilter: (req, file, cb) => {
     if (!file.mimetype.startsWith('image/')) return cb(new Error('Only image files are allowed'));
     cb(null, true);
@@ -181,7 +184,9 @@ router.delete('/:photo_id', auth, async (req, res) => {
 });
 
 router.use((err, req, res, next) => {
-  if (err.code === 'LIMIT_FILE_SIZE') return res.status(400).json({ error: 'File too large (max 200KB)' });
+  if (err.code === 'LIMIT_FILE_SIZE') {
+    return res.status(400).json({ error: `File too large (max ${MAX_UPLOAD_SIZE_MB}MB)` });
+  }
   res.status(400).json({ error: err.message });
 });
 

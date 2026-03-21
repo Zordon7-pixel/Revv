@@ -17,6 +17,7 @@ import { useLanguage } from '../contexts/LanguageContext'
 import VehicleDiagram from '../components/VehicleDiagram'
 import ClaimStatusCard from '../components/ClaimStatusCard'
 import InsurancePanel from '../components/InsurancePanel'
+import { optimizeImageForUpload } from '../lib/imageUpload'
 
 const PART_STATUS_META = {
   ordered:     { label: 'Ordered',     cls: 'text-blue-400   bg-blue-900/30   border-blue-700',   icon: Clock },
@@ -109,6 +110,13 @@ export default function RODetail() {
   const [inspectionSummary, setInspectionSummary] = useState([])
   const [creatingInspection, setCreatingInspection] = useState(false)
 
+  // SMS thread state
+  const [smsThread, setSmsThread] = useState([])
+  const [smsCustomerPhone, setSmsCustomerPhone] = useState('')
+  const [smsMessage, setSmsMessage] = useState('')
+  const [smsSending, setSmsSending] = useState(false)
+  const [smsLoading, setSmsLoading] = useState(false)
+
   const [supplements, setSupplements] = useState([])
   const [totalApproved, setTotalApproved] = useState(0)
   const [showSuppForm, setShowSuppForm] = useState(false)
@@ -169,6 +177,17 @@ export default function RODetail() {
   const loadPartsRequests = () => api.get(`/parts-requests/${id}`).then(r => setPartsRequests(r.data.requests || [])).catch(() => {})
   const loadComms = () => api.get(`/comms/${id}`).then(r => setComms(r.data.comms || [])).catch(() => setComms([]))
   const loadInternalNotes = () => api.get(`/ros/${id}/notes`).then(r => setInternalNotes(r.data.notes || [])).catch(() => setInternalNotes([]))
+
+  const loadSmsThread = () => {
+    setSmsLoading(true)
+    api.get(`/sms/thread/${id}`)
+      .then(r => {
+        setSmsThread(r.data.messages || [])
+        if (r.data.customer_phone) setSmsCustomerPhone(r.data.customer_phone)
+      })
+      .catch(() => {})
+      .finally(() => setSmsLoading(false))
+  }
   const loadPreDropoffPhotos = () => api.get(`/photos/ro/${id}/predropoff`).then(r => setPreDropoffPhotos(r.data.photos || [])).catch(() => setPreDropoffPhotos([]))
   const loadInspections = () => api.get(`/inspections/ro/${id}`).then(r => setInspectionSummary(r.data.inspections || [])).catch(() => setInspectionSummary([]))
   const loadSupplements = () => api.get(`/ros/${id}/supplements`).then(r => { setSupplements(r.data.supplements || []); setTotalApproved(r.data.totalApproved || 0) }).catch(() => {})
@@ -194,6 +213,7 @@ export default function RODetail() {
   useEffect(() => { loadInspections() }, [id])
   useEffect(() => { loadSupplements() }, [id])
   useEffect(() => { loadStorageCharges() }, [id])
+  useEffect(() => { loadSmsThread() }, [id])
   useEffect(() => {
     if (!vehicleHistoryExpanded || !ro?.customer?.id) return
 
@@ -474,6 +494,22 @@ export default function RODetail() {
     }
   }
 
+  async function sendSmsMessage(e) {
+    e.preventDefault()
+    const body = smsMessage.trim()
+    if (!body || !smsCustomerPhone.trim()) return
+    setSmsSending(true)
+    try {
+      await api.post('/sms/send', { ro_id: id, to_phone: smsCustomerPhone.trim(), message: body })
+      setSmsMessage('')
+      loadSmsThread()
+    } catch (err) {
+      alert(err?.response?.data?.error || 'Could not send text message')
+    } finally {
+      setSmsSending(false)
+    }
+  }
+
   async function deleteInternalNote(noteId) {
     if (!confirm('Delete this internal note?')) return
     setDeletingInternalNote(noteId)
@@ -492,8 +528,12 @@ export default function RODetail() {
     if (!file) return
     setPreDropoffUploading(true)
     try {
+      const preparedFile = await optimizeImageForUpload(file, {
+        maxDimension: 2048,
+        targetBytes: 3 * 1024 * 1024,
+      })
       const fd = new FormData()
-      fd.append('photo', file)
+      fd.append('photo', preparedFile)
       await api.post(`/photos/ro/${id}/predropoff`, fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
       })
@@ -1449,6 +1489,84 @@ export default function RODetail() {
           )}
         </div>
       )}
+
+      {/* SMS Thread */}
+      <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
+            <MessageSquare size={13} /> Customer Text Messages
+          </h2>
+          {smsThread.some(m => m.direction === 'inbound') && (
+            <span className="text-[10px] bg-indigo-600 text-white px-2 py-0.5 rounded-full font-semibold">
+              {smsThread.filter(m => m.direction === 'inbound').length} reply
+            </span>
+          )}
+        </div>
+
+        {/* Phone input */}
+        <div className="mb-3 flex items-center gap-2">
+          <input
+            type="tel"
+            placeholder="Customer phone (e.g. +13015550123)"
+            value={smsCustomerPhone}
+            onChange={e => setSmsCustomerPhone(e.target.value)}
+            className="flex-1 text-xs bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+          />
+          <button
+            type="button"
+            onClick={loadSmsThread}
+            disabled={smsLoading}
+            className="text-xs text-slate-400 hover:text-white border border-[#2a2d3e] rounded-lg px-2 py-2"
+          >
+            <RefreshCw size={13} className={smsLoading ? 'animate-spin' : ''} />
+          </button>
+        </div>
+
+        {/* Thread messages */}
+        <div className="space-y-2 mb-3 max-h-64 overflow-y-auto">
+          {smsThread.length === 0 && !smsLoading && (
+            <p className="text-xs text-slate-500 italic">No messages yet. Send the first text below.</p>
+          )}
+          {smsThread.map(msg => (
+            <div
+              key={msg.id}
+              className={`flex ${msg.direction === 'outbound' ? 'justify-end' : 'justify-start'}`}
+            >
+              <div
+                className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm ${
+                  msg.direction === 'outbound'
+                    ? 'bg-indigo-600 text-white rounded-br-sm'
+                    : 'bg-[#0f1117] border border-[#2a2d3e] text-slate-200 rounded-bl-sm'
+                }`}
+              >
+                <p className="whitespace-pre-wrap leading-snug">{msg.body}</p>
+                <p className={`text-[10px] mt-1 ${msg.direction === 'outbound' ? 'text-indigo-200' : 'text-slate-500'}`}>
+                  {msg.direction === 'inbound' ? '← Customer' : '→ Sent'} · {new Date(msg.created_at).toLocaleString()}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Compose */}
+        <form onSubmit={sendSmsMessage} className="flex gap-2">
+          <textarea
+            rows={2}
+            placeholder="Type a message to the customer..."
+            value={smsMessage}
+            onChange={e => setSmsMessage(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendSmsMessage(e) } }}
+            className="flex-1 text-sm bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500 resize-none"
+          />
+          <button
+            type="submit"
+            disabled={smsSending || !smsMessage.trim() || !smsCustomerPhone.trim()}
+            className="self-end px-3 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-lg text-xs font-semibold flex items-center gap-1"
+          >
+            <Phone size={13} /> {smsSending ? 'Sending…' : 'Send'}
+          </button>
+        </form>
+      </div>
 
       {/* Notes */}
       <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">

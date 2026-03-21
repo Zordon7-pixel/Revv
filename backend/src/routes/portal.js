@@ -8,6 +8,9 @@ const multer = require('multer');
 const rateLimit = require('express-rate-limit');
 const { createNotification } = require('../services/notifications');
 
+const MAX_PORTAL_PHOTO_BYTES = 10 * 1024 * 1024;
+const MAX_PORTAL_PHOTO_MB = Math.round(MAX_PORTAL_PHOTO_BYTES / (1024 * 1024));
+
 const STATUS_MESSAGES = {
   intake:   { label: 'Vehicle Received',        msg: "Your vehicle has been received at the shop and is being checked in.",         emoji: '📋' },
   estimate: { label: 'Preparing Estimate',       msg: "We're inspecting your vehicle and preparing your repair estimate.",            emoji: '🔍' },
@@ -33,7 +36,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 5 * 1024 * 1024 },
+  limits: { fileSize: MAX_PORTAL_PHOTO_BYTES },
   fileFilter: (req, file, cb) => {
     if (!file.mimetype.startsWith('image/')) return cb(new Error('Only image files are allowed'));
     cb(null, true);
@@ -392,6 +395,13 @@ async function createMagicLink(req, res, roId) {
 
 router.post('/magic-link/:ro_id', auth, async (req, res) => {
   return createMagicLink(req, res, req.params.ro_id);
+});
+
+router.use((err, req, res, next) => {
+  if (err.code === 'LIMIT_FILE_SIZE') {
+    return res.status(400).json({ error: `File too large (max ${MAX_PORTAL_PHOTO_MB}MB)` });
+  }
+  return next(err);
 });
 
 module.exports = router;
