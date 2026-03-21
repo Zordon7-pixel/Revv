@@ -13,15 +13,12 @@ const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
 
 const STATUSES = ['intake','estimate','approval','parts','repair','paint','qc','delivery','closed','total_loss','siu_hold'];
-// In-person sign-off at intake = approval already done. No approval/estimate SMS.
+// Simple: status update + ready for pickup only. No approval/estimate SMS.
 const STATUS_SMS_LABELS = {
   repair: 'In Progress',
   'in-progress': 'In Progress',
-  'waiting-parts': 'Waiting on a Part',
-  qc: 'Quality Check in Progress',
-  ready: 'Ready for Pickup! 🎉',
-  delivery: 'Ready for Pickup! 🎉',
-  delivered: 'Delivered — job complete',
+  ready: 'Ready for Pickup',
+  delivery: 'Ready for Pickup',
 };
 const SMS_STATUSES = new Set(Object.keys(STATUS_SMS_LABELS));
 const publicTokenLimiter = rateLimit({
@@ -74,16 +71,14 @@ function queueStatusSMS(roId, shopId, toStatus) {
       const shopName = ro.shop_name || 'the shop';
 
       const messages = {
-        'repair':         `Hi! Your ${vehicle} is now in progress at ${shopName}. We'll keep you updated. Track it here: https://revvshop.app/track/${trackingToken}`,
-        'in-progress':    `Hi! Your ${vehicle} is now in progress at ${shopName}. We'll keep you updated. Track it here: https://revvshop.app/track/${trackingToken}`,
-        'waiting-parts':  `Hi! We're waiting on a part for your ${vehicle}. We'll reach out as soon as it arrives and we can continue. Questions? Just reply to this text.`,
-        'qc':             `Hi! Your ${vehicle} is in final quality check at ${shopName}. Almost done!`,
-        'ready':          `Great news! Your ${vehicle} is ready for pickup at ${shopName}. See you soon! 🎉`,
-        'delivery':       `Great news! Your ${vehicle} is ready for pickup at ${shopName}. See you soon! 🎉`,
-        'delivered':      `Thanks for trusting us with your ${vehicle}! If you have any questions or concerns, just reply to this text.`,
+        'repair':      `Hi! Your ${vehicle} is now in progress at ${shopName}. We'll keep you updated. Track it here: https://revvshop.app/track/${trackingToken}`,
+        'in-progress': `Hi! Your ${vehicle} is now in progress at ${shopName}. We'll keep you updated. Track it here: https://revvshop.app/track/${trackingToken}`,
+        'ready':       `Great news! Your ${vehicle} is ready for pickup at ${shopName}. See you soon! 🎉`,
+        'delivery':    `Great news! Your ${vehicle} is ready for pickup at ${shopName}. See you soon! 🎉`,
       };
 
-      const message = messages[toStatus] || `Hi! Update on your ${vehicle} at ${shopName}: ${statusLabel}. Track it: https://revvshop.app/track/${trackingToken}`;
+      const message = messages[toStatus];
+      if (!message) return;
       await sendSMS(ro.customer_phone, message);
     } catch (_) {
       // Non-blocking fire-and-forget path; ignore SMS errors.
