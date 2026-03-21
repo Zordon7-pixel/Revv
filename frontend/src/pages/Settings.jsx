@@ -51,7 +51,7 @@ export default function Settings() {
     setSmsLoading(true)
     try {
       const r = await api.get('/sms/status')
-      setSmsStatus({ configured: !!r.data.configured, sms_phone: r.data.sms_phone || r.data.phone || null, auth_method: r.data.auth_method || null })
+      setSmsStatus({ configured: !!r.data.configured, sms_phone: r.data.sms_phone || r.data.phone || null, auth_method: r.data.auth_method || null, config_source: r.data.config_source || null, db_has: r.data.db_has || null })
     } catch {
       setSmsStatus({ configured: false, sms_phone: null })
     } finally {
@@ -694,7 +694,8 @@ export default function Settings() {
                   <div className="text-emerald-300 font-semibold text-sm flex items-center gap-1.5"><CheckCircle size={14} /> SMS Notifications Active</div>
                   <p className="text-xs text-emerald-100/80 mt-1">Customers will receive automatic texts at every repair stage.</p>
                   <p className="text-xs text-emerald-200 mt-2">Sending from: <span className="font-semibold">{smsStatus.sms_phone || 'Twilio number configured'}</span></p>
-                  {smsStatus.auth_method && <p className="text-xs text-emerald-200/60 mt-0.5">Auth: {smsStatus.auth_method === 'api_key' ? 'API Key + Secret' : 'Auth Token'}</p>}
+                  {smsStatus.auth_method && <p className="text-xs text-emerald-200/60 mt-0.5">Auth: {smsStatus.auth_method === 'api_key' ? 'API Key + Secret' : 'Auth Token'} · Source: {smsStatus.config_source || 'unknown'}</p>}
+                  {smsStatus.db_has && <p className="text-xs text-slate-500 mt-0.5">DB creds: sid={smsStatus.db_has.account_sid ? '✓' : '✗'} token={smsStatus.db_has.auth_token ? '✓' : '✗'} phone={smsStatus.db_has.phone ? '✓' : '✗'}</p>}
                 </div>
                 <button
                   type="button"

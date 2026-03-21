@@ -9,11 +9,22 @@ const { dbAll, dbGet, dbRun } = require('../db');
 // ── Status / test ────────────────────────────────────────────────────────────
 router.get('/status', auth, requireAdmin, async (req, res) => {
   try {
+    // Also check raw DB state for diagnostics
+    const shopRow = await dbGet(
+      `SELECT twilio_account_sid, twilio_auth_token, twilio_phone_number FROM shops WHERE id = $1`,
+      [req.user.shop_id]
+    );
     const creds = await getTwilioConfigForShop(req.user.shop_id);
     res.json({
       configured: !!creds,
       phone: creds?.phoneNumber || null,
       auth_method: creds?.apiKey ? 'api_key' : creds?.authToken ? 'auth_token' : null,
+      config_source: creds?._source || null,
+      db_has: {
+        account_sid: !!shopRow?.twilio_account_sid,
+        auth_token: !!shopRow?.twilio_auth_token,
+        phone: !!shopRow?.twilio_phone_number,
+      },
     });
   } catch (err) {
     return res.status(500).json({ error: err.message });
