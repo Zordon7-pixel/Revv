@@ -78,14 +78,14 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
       const { data } = await api.post('/insurance-ocr/parse', form, {
         headers: { 'Content-Type': 'multipart/form-data' },
       })
-      const items = data.items || []
+      const items = data?.parsed?.line_items || data?.items || []
       setOcrItems(items)
       // Select all by default
       const sel = {}
       items.forEach((_, i) => { sel[i] = true })
       setOcrSelected(sel)
     } catch (err) {
-      setOcrError(err?.response?.data?.error || 'Could not parse the estimate. Try a clearer photo.')
+      setOcrError(err?.response?.data?.error || 'Could not parse the estimate. Try a clearer file.')
     } finally {
       setOcrParsing(false)
     }

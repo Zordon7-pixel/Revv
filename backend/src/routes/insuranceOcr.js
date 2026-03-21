@@ -1,10 +1,19 @@
 const router = require('express').Router();
 const multer = require('multer');
 const OpenAI = require('openai');
+const fs = require('fs/promises');
+const os = require('os');
+const path = require('path');
+const crypto = require('crypto');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
 const auth = require('../middleware/auth');
 const { dbGet } = require('../db');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+const execFileAsync = promisify(execFile);
+const PDF_TEXT_CHAR_LIMIT = 120000;
+const PDF_IMAGE_PAGE_LIMIT = 3;
 
 const SYSTEM_PROMPT = `You are an insurance estimate parser for auto body shops. Extract all line items from this insurance estimate document.
 Return ONLY valid JSON in this exact format:
@@ -25,6 +34,64 @@ Return ONLY valid JSON in this exact format:
 Classify each item: labor operations = "labor", parts/materials = "parts", sublet work = "sublet", everything else = "other".
 Return only the JSON object, no markdown fences, no extra text.`;
 
+async function extractPdfText(buffer) {
+  const tmpPath = path.join(os.tmpdir(), `revv-estimate-${crypto.randomBytes(8).toString('hex')}.pdf`);
+  try {
+    await fs.writeFile(tmpPath, buffer);
+    const { stdout } = await execFileAsync(process.env.PDFTOTEXT_BIN || 'pdftotext', [
+      '-layout',
+      '-nopgbrk',
+      '-enc',
+      'UTF-8',
+      tmpPath,
+      '-',
+    ], {
+      maxBuffer: 16 * 1024 * 1024,
+    });
+    return String(stdout || '').replace(/\u0000/g, '').trim();
+  } finally {
+    await fs.unlink(tmpPath).catch(() => {});
+  }
+}
+
+async function extractPdfPageImages(buffer, maxPages = PDF_IMAGE_PAGE_LIMIT) {
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'revv-estimate-'));
+  const pdfPath = path.join(tmpDir, 'input.pdf');
+  const prefix = path.join(tmpDir, 'page');
+  try {
+    await fs.writeFile(pdfPath, buffer);
+    await execFileAsync(process.env.PDFTOPPM_BIN || 'pdftoppm', [
+      '-png',
+      '-f',
+      '1',
+      '-l',
+      String(maxPages),
+      pdfPath,
+      prefix,
+    ], {
+      maxBuffer: 16 * 1024 * 1024,
+    });
+
+    const names = (await fs.readdir(tmpDir))
+      .filter((name) => /^page-\d+\.png$/i.test(name))
+      .sort((a, b) => {
+        const aNum = Number((a.match(/-(\d+)\.png$/i) || [])[1] || 0);
+        const bNum = Number((b.match(/-(\d+)\.png$/i) || [])[1] || 0);
+        return aNum - bNum;
+      })
+      .slice(0, maxPages);
+
+    const images = [];
+    for (const name of names) {
+      const img = await fs.readFile(path.join(tmpDir, name));
+      images.push(`data:image/png;base64,${img.toString('base64')}`);
+    }
+    return images;
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
 // ── Phase 1: OCR parse ───────────────────────────────────────────────────────
 router.post('/parse', auth, upload.single('estimate_image'), async (req, res) => {
   try {
@@ -37,36 +104,91 @@ router.post('/parse', auth, upload.single('estimate_image'), async (req, res) =>
       return res.status(500).json({ success: false, error: 'OpenAI API key not configured on this server' });
     }
 
-    // PDF is not supported directly — GPT-4o Vision requires an image
-    const mimeType = req.file.mimetype || 'application/octet-stream';
-    if (mimeType === 'application/pdf') {
-      return res.status(415).json({
-        success: false,
-        error: 'PDF upload is not yet supported. Please take a photo or screenshot of the estimate and upload that instead.',
-      });
-    }
-
     const openai = new OpenAI({ apiKey });
-    const base64 = req.file.buffer.toString('base64');
+    const mimeType = req.file.mimetype || 'application/octet-stream';
+    const filename = String(req.file.originalname || '').toLowerCase();
+    const isPdf = mimeType === 'application/pdf' || filename.endsWith('.pdf');
+    let raw = '';
 
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o',
-      max_tokens: 2000,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: SYSTEM_PROMPT },
+    if (isPdf) {
+      let extractedText = '';
+      try {
+        extractedText = await extractPdfText(req.file.buffer);
+      } catch (pdfErr) {
+        console.error('[InsuranceOCR] PDF text extraction failed:', pdfErr);
+      }
+
+      if (extractedText) {
+        const response = await openai.chat.completions.create({
+          model: 'gpt-4o',
+          max_tokens: 2000,
+          messages: [
             {
-              type: 'image_url',
-              image_url: { url: `data:${mimeType};base64,${base64}`, detail: 'high' },
+              role: 'user',
+              content: [
+                {
+                  type: 'text',
+                  text: `${SYSTEM_PROMPT}\n\nEstimate document text:\n${extractedText.slice(0, PDF_TEXT_CHAR_LIMIT)}`,
+                },
+              ],
             },
           ],
-        },
-      ],
-    });
+        });
+        raw = response.choices?.[0]?.message?.content || '';
+      } else {
+        let images = [];
+        try {
+          images = await extractPdfPageImages(req.file.buffer, PDF_IMAGE_PAGE_LIMIT);
+        } catch (imgErr) {
+          console.error('[InsuranceOCR] PDF image conversion failed:', imgErr);
+          return res.status(500).json({
+            success: false,
+            error: 'PDF parsing is temporarily unavailable on this server. Try again or upload an image.',
+          });
+        }
 
-    const raw = response.choices?.[0]?.message?.content || '';
+        if (!images.length) {
+          return res.status(422).json({
+            success: false,
+            error: 'Could not read pages from this PDF. Please upload a clearer PDF or a photo/screenshot.',
+          });
+        }
+
+        const response = await openai.chat.completions.create({
+          model: 'gpt-4o',
+          max_tokens: 2000,
+          messages: [
+            {
+              role: 'user',
+              content: [
+                { type: 'text', text: SYSTEM_PROMPT },
+                ...images.map((url) => ({ type: 'image_url', image_url: { url, detail: 'high' } })),
+              ],
+            },
+          ],
+        });
+        raw = response.choices?.[0]?.message?.content || '';
+      }
+    } else {
+      const base64 = req.file.buffer.toString('base64');
+      const response = await openai.chat.completions.create({
+        model: 'gpt-4o',
+        max_tokens: 2000,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: SYSTEM_PROMPT },
+              {
+                type: 'image_url',
+                image_url: { url: `data:${mimeType};base64,${base64}`, detail: 'high' },
+              },
+            ],
+          },
+        ],
+      });
+      raw = response.choices?.[0]?.message?.content || '';
+    }
 
     let parsed;
     try {
@@ -74,7 +196,7 @@ router.post('/parse', auth, upload.single('estimate_image'), async (req, res) =>
       parsed = JSON.parse(cleaned);
     } catch {
       console.error('[InsuranceOCR] Failed to parse OpenAI response:', raw);
-      return res.status(422).json({ success: false, error: 'Could not extract estimate data from image. Try a clearer photo.' });
+      return res.status(422).json({ success: false, error: 'Could not extract estimate data from file. Try a clearer upload.' });
     }
 
     const ALLOWED_TYPES = new Set(['labor', 'parts', 'sublet', 'other']);

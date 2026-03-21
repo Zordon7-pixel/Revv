@@ -288,7 +288,7 @@ export default function EstimateBuilder() {
         // Analysis failure is non-fatal — import still works
       }
     } catch (err) {
-      alert(err?.response?.data?.error || err.message || 'Could not parse estimate image')
+      alert(err?.response?.data?.error || err.message || 'Could not parse estimate file')
     } finally {
       setOcrLoading(false)
     }
@@ -361,7 +361,7 @@ export default function EstimateBuilder() {
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/*"
+        accept="image/*,.pdf,application/pdf"
         className="hidden"
         onChange={handleOcrFile}
       />
