@@ -370,10 +370,10 @@ async function createMagicLink(req, res, roId) {
     if (ro.customer_phone) {
       setImmediate(async () => {
         try {
-          const { sendSMS, isConfigured } = require('../services/sms');
-          if (isConfigured()) {
+          const { sendSMS, isConfiguredForShop } = require('../services/sms');
+          if (await isConfiguredForShop(req.user.shop_id)) {
             const message = `Hi ${ro.customer_name || 'there'}! Track your vehicle repair at ${ro.shop_name}:\n${trackingUrl}`;
-            await sendSMS(ro.customer_phone, message);
+            await sendSMS(ro.customer_phone, message, { shopId: req.user.shop_id });
             console.log(`[Portal] Tracking link SMS sent for RO ${ro.ro_number}`);
           }
         } catch (err) {

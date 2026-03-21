@@ -32,7 +32,9 @@ export default function Settings() {
   const [sendingTest, setSendingTest] = useState(false)
   const [testSmsResult, setTestSmsResult] = useState({ type: '', message: '' })
   const [profile, setProfile] = useState({ name: '', phone: '' })
+  const [profileSaving, setProfileSaving] = useState(false)
   const [profileSaved, setProfileSaved] = useState(false)
+  const [profileError, setProfileError] = useState('')
   const [revokingAll, setRevokingAll] = useState(false)
   const [revokeAllDone, setRevokeAllDone] = useState(false)
   const [goalMonth, setGoalMonth] = useState(currentYearMonth)
@@ -44,6 +46,18 @@ export default function Settings() {
   const [billing, setBilling] = useState(null)
   const [billingLoading, setBillingLoading] = useState(true)
   const [billingAction, setBillingAction] = useState('')
+
+  async function refreshSmsStatus() {
+    setSmsLoading(true)
+    try {
+      const r = await api.get('/sms/status')
+      setSmsStatus({ configured: !!r.data.configured, sms_phone: r.data.sms_phone || r.data.phone || null })
+    } catch {
+      setSmsStatus({ configured: false, sms_phone: null })
+    } finally {
+      setSmsLoading(false)
+    }
+  }
 
   useEffect(() => {
     api.get('/market/shop').then(r => {
@@ -62,15 +76,15 @@ export default function Settings() {
         lng:              r.data.lng          ?? null,
         geofence_radius:  r.data.geofence_radius != null ? Math.round(r.data.geofence_radius * 3281) : 500,
         tracking_api_key: r.data.tracking_api_key || '',
+        twilio_account_sid: '',
+        twilio_auth_token: '',
+        twilio_phone_number: r.data.twilio_phone_number || '',
         monthly_revenue_target: r.data.monthly_revenue_target ?? 85000,
       })
       if (r.data.state) fetchMarket(r.data.state)
     })
     api.get('/market/rates').then(r => setStates(r.data.states || []))
-    api.get('/sms/status')
-      .then(r => setSmsStatus({ configured: !!r.data.configured, sms_phone: r.data.sms_phone || r.data.phone || null }))
-      .catch(() => setSmsStatus({ configured: false, sms_phone: null }))
-      .finally(() => setSmsLoading(false))
+    refreshSmsStatus()
     api.get('/settings')
       .then(r => setSmsNotificationsEnabled(r?.data?.sms_notifications_enabled !== false))
       .catch(() => setSmsNotificationsEnabled(true))
@@ -189,6 +203,9 @@ export default function Settings() {
         lng:                      form.lng != null ? parseFloat(form.lng) : undefined,
         geofence_radius:          form.geofence_radius ? parseFloat(form.geofence_radius) / 3281 : 0.5,
         tracking_api_key:         form.tracking_api_key || null,
+        twilio_account_sid:       (form.twilio_account_sid || '').trim() || undefined,
+        twilio_auth_token:        (form.twilio_auth_token || '').trim() || undefined,
+        twilio_phone_number:      (form.twilio_phone_number || '').trim() || undefined,
         monthly_revenue_target:   parseInt(form.monthly_revenue_target, 10) || 85000,
       })
       await api.patch('/settings', {
@@ -206,10 +223,14 @@ export default function Settings() {
         labor_rate:   data.labor_rate   ?? f.labor_rate,
         parts_markup: data.parts_markup != null ? (data.parts_markup * 100).toFixed(0) : f.parts_markup,
         tax_rate:     data.tax_rate     != null ? (data.tax_rate * 100).toFixed(2)     : f.tax_rate,
+        twilio_phone_number: data.twilio_phone_number || f.twilio_phone_number || '',
+        twilio_account_sid: '',
+        twilio_auth_token: '',
       }))
       setSaved(true)
       setTimeout(() => setSaved(false), 2500)
       setSaveError('')
+      refreshSmsStatus()
     } catch (err) {
       setSaveError(err?.response?.data?.error || 'Failed to save settings. Please try again.')
     } finally {
@@ -218,9 +239,17 @@ export default function Settings() {
   }
 
   async function saveProfile() {
-    await api.put('/users/me', profile)
-    setProfileSaved(true)
-    setTimeout(() => setProfileSaved(false), 3000)
+    setProfileSaving(true)
+    setProfileError('')
+    try {
+      await api.put('/users/me', profile)
+      setProfileSaved(true)
+      setTimeout(() => setProfileSaved(false), 3000)
+    } catch (err) {
+      setProfileError(err?.response?.data?.error || 'Unable to save profile.')
+    } finally {
+      setProfileSaving(false)
+    }
   }
 
   async function logoutAllDevices() {
@@ -406,9 +435,10 @@ export default function Settings() {
             <input className={inp} value={profile.phone} onChange={e => setProfile(p => ({...p, phone: e.target.value}))} placeholder="(212) 555-0100" />
             <p className="text-xs text-slate-600 mt-1">REVV sends late clock-in alerts and other notifications here.</p>
           </div>
-          <button onClick={saveProfile} type="button" className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium px-4 py-2 rounded-lg transition-colors">
-            {profileSaved ? <span className="inline-flex items-center gap-1"><CheckCircle size={12} /> Saved</span> : 'Save Profile'}
+          <button onClick={saveProfile} type="button" disabled={profileSaving} className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-medium px-4 py-2 rounded-lg transition-colors">
+            {profileSaved ? <span className="inline-flex items-center gap-1"><CheckCircle size={12} /> Saved</span> : profileSaving ? 'Saving...' : 'Save Profile'}
           </button>
+          {profileError && <p className="text-xs text-red-400">{profileError}</p>}
         </div>
 
         {/* Shop Info */}
@@ -732,29 +762,58 @@ export default function Settings() {
                 </div>
               </div>
 
-              <div className="space-y-3">
-                <p className="text-xs text-slate-400">Reference fields (read-only reminder of what to set on server):</p>
-                <div className="grid grid-cols-1 gap-3">
-                  <div>
-                    <label className={lbl}>TWILIO_ACCOUNT_SID</label>
-                    <input className={inp} value="AC......................" readOnly />
-                  </div>
-                  <div>
-                    <label className={lbl}>TWILIO_AUTH_TOKEN</label>
-                    <input className={inp} type="password" value="••••••••••••••••••••••" readOnly />
-                  </div>
-                  <div>
-                    <label className={lbl}>TWILIO_PHONE_NUMBER</label>
-                    <input className={inp} value="+1..................." readOnly />
-                  </div>
-                </div>
-              </div>
-
               <div className="bg-amber-900/20 border border-amber-700/40 rounded-lg p-3 text-xs text-amber-300 flex items-start gap-2">
-                <AlertTriangle size={12} className="flex-shrink-0 mt-0.5" /> These are set as server environment variables on Railway, not saved here. Once set, redeploy and this page will show SMS as Active.
+                <AlertTriangle size={12} className="flex-shrink-0 mt-0.5" /> Enter Twilio values below and click Save Settings to activate SMS.
               </div>
             </div>
           )}
+
+          <div className="bg-[#0f1117] rounded-xl border border-[#2a2d3e] p-4 space-y-3">
+            <div>
+              <p className="text-sm font-semibold text-white">Twilio Credentials</p>
+              <p className="text-xs text-slate-400 mt-1">Leave SID/Auth Token blank to keep existing saved values.</p>
+            </div>
+            <div>
+              <label className={lbl}>Account SID</label>
+              <input
+                className={inp}
+                value={form.twilio_account_sid || ''}
+                onChange={e => setForm(f => ({ ...f, twilio_account_sid: e.target.value }))}
+                placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                autoComplete="off"
+              />
+            </div>
+            <div>
+              <label className={lbl}>Auth Token</label>
+              <input
+                className={inp}
+                type="password"
+                value={form.twilio_auth_token || ''}
+                onChange={e => setForm(f => ({ ...f, twilio_auth_token: e.target.value }))}
+                placeholder="Twilio Auth Token"
+                autoComplete="new-password"
+              />
+            </div>
+            <div>
+              <label className={lbl}>Twilio Phone Number</label>
+              <input
+                className={inp}
+                value={form.twilio_phone_number || ''}
+                onChange={e => setForm(f => ({ ...f, twilio_phone_number: e.target.value }))}
+                placeholder="+15551234567"
+              />
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[11px] text-slate-500">Current SMS sender: {smsStatus.sms_phone || 'Not configured'}</p>
+              <button
+                type="button"
+                onClick={refreshSmsStatus}
+                className="text-xs bg-[#23273a] hover:bg-[#2a2d3e] text-slate-200 px-3 py-1.5 rounded-lg"
+              >
+                Recheck SMS Status
+              </button>
+            </div>
+          </div>
         </div>
 
         {/* Parts Tracking */}

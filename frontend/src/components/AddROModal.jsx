@@ -46,12 +46,20 @@ export default function AddROModal({ onClose, onSaved }) {
 
   useEffect(() => {
     if (step !== 3 || !form.year || !form.make.trim() || !form.model.trim()) return
+    if (!Array.isArray(form.damaged_panels) || form.damaged_panels.length === 0) {
+      setSuggestions([])
+      setSuggestionSummary(null)
+      return
+    }
     setLoadingSuggestions(true)
     api.get('/estimate-assistant/suggestions', {
       params: {
+        year: form.year,
         make: form.make,
         model: form.model,
+        jobType: form.job_type,
         damageType: form.damage_type,
+        damagedPanels: form.damaged_panels.join(','),
       },
     })
       .then(({ data }) => {
@@ -63,7 +71,7 @@ export default function AddROModal({ onClose, onSaved }) {
         setSuggestionSummary(null)
       })
       .finally(() => setLoadingSuggestions(false))
-  }, [step, form.year, form.make, form.model, form.damage_type])
+  }, [step, form.year, form.make, form.model, form.job_type, form.damage_type, form.damaged_panels])
 
   useEffect(() => {
     setAddedCodes([])
@@ -265,8 +273,10 @@ export default function AddROModal({ onClose, onSaved }) {
                 </div>
                 {loadingSuggestions ? (
                   <p className="text-[11px] text-slate-500">Loading suggestions...</p>
+                ) : form.damaged_panels.length === 0 ? (
+                  <p className="text-[11px] text-slate-500">Select damaged panels to get vehicle-specific suggestions.</p>
                 ) : suggestions.length === 0 ? (
-                  <p className="text-[11px] text-slate-500">No suggestions available for this combination.</p>
+                  <p className="text-[11px] text-slate-500">No panel-specific suggestions found for this vehicle/damage combination.</p>
                 ) : (
                   <div className="space-y-1.5">
                     {suggestions.map((item) => (

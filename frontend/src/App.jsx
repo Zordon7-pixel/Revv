@@ -48,7 +48,7 @@ import Privacy from './pages/Privacy'
 import ReviewSubmit from './pages/ReviewSubmit'
 import Reviews from './pages/Reviews'
 import StorageHold from './pages/StorageHold'
-import { getToken, isAssistant } from './lib/auth'
+import { getToken, getTokenPayload, isAssistant } from './lib/auth'
 
 function PrivateRoute({ children }) {
   return getToken() ? children : <Navigate to="/login" />
@@ -57,7 +57,7 @@ function PrivateRoute({ children }) {
 function AdminRoute({ children }) {
   if (!getToken()) return <Navigate to="/login" />
   try {
-    const role = JSON.parse(atob(getToken().split('.')[1])).role
+    const role = getTokenPayload()?.role
     if (!['owner','admin'].includes(role)) return <Navigate to="/" />
   } catch {}
   return children
@@ -66,7 +66,7 @@ function AdminRoute({ children }) {
 function OwnerRoute({ children }) {
   if (!getToken()) return <Navigate to="/login" />
   try {
-    const role = JSON.parse(atob(getToken().split('.')[1])).role
+    const role = getTokenPayload()?.role
     if (role !== 'owner' && role !== 'admin') return <Navigate to="/" />
   } catch {}
   return children
@@ -75,7 +75,7 @@ function OwnerRoute({ children }) {
 function EmployeeOnlyRoute({ children }) {
   if (!getToken()) return <Navigate to="/login" />
   try {
-    const role = JSON.parse(atob(getToken().split('.')[1])).role
+    const role = getTokenPayload()?.role
     if (!['employee', 'staff'].includes(role)) return <Navigate to="/" />
   } catch {
     return <Navigate to="/" />

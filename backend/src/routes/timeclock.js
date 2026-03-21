@@ -165,7 +165,7 @@ async function handleClockIn(req, res) {
               const clockInStr = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
               const shiftStartStr = formatTime12(shiftStartDate.getHours(), shiftStartDate.getMinutes());
               const message = `Late Clock-In Alert: ${employee?.name || 'Employee'} clocked in at ${clockInStr}, ${lateByMin} minutes late for their ${shiftStartStr} shift.`;
-              awaitPromiseSafe(sms.sendSMS(admin.phone, message));
+              awaitPromiseSafe(sms.sendSMS(admin.phone, message, { shopId: req.user.shop_id }));
             }
           }
         }

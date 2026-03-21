@@ -2,7 +2,7 @@ const router = require('express').Router();
 const { dbGet, dbAll, dbRun } = require('../db');
 const auth = require('../middleware/auth');
 const { getRatesForState, getAllStates } = require('../data/market-rates');
-const { isConfigured } = require('../services/sms');
+const { isConfiguredForShop, getTwilioConfigForShop } = require('../services/sms');
 
 router.get('/rates', (req, res) => {
   const { state } = req.query;
@@ -16,7 +16,8 @@ router.get('/shop', auth, async (req, res) => {
   try {
     const shop = await dbGet('SELECT id, name, phone, address, city, state, zip, market_tier, labor_rate, parts_markup, tax_rate, lat, lng, geofence_radius, twilio_phone_number, monthly_revenue_target FROM shops WHERE id = $1', [req.user.shop_id]);
     if (!shop) return res.status(404).json({ error: 'Shop not found' });
-    res.json({ ...shop, sms_configured: isConfigured(), sms_phone: process.env.TWILIO_PHONE_NUMBER || null });
+    const smsConfig = await getTwilioConfigForShop(req.user.shop_id);
+    res.json({ ...shop, sms_configured: await isConfiguredForShop(req.user.shop_id), sms_phone: smsConfig?.phoneNumber || null });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -65,7 +66,8 @@ router.put('/shop', auth, async (req, res) => {
     await dbRun(`UPDATE shops SET ${setClauses} WHERE id = $${fields.length + 1}`, vals);
 
     const updated = await dbGet('SELECT id, name, phone, address, city, state, zip, market_tier, labor_rate, parts_markup, tax_rate, lat, lng, geofence_radius, twilio_phone_number, monthly_revenue_target FROM shops WHERE id = $1', [req.user.shop_id]);
-    res.json({ ...updated, sms_configured: isConfigured(), sms_phone: process.env.TWILIO_PHONE_NUMBER || null });
+    const smsConfig = await getTwilioConfigForShop(req.user.shop_id);
+    res.json({ ...updated, sms_configured: await isConfiguredForShop(req.user.shop_id), sms_phone: smsConfig?.phoneNumber || null });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

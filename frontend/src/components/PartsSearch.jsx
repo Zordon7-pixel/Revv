@@ -10,6 +10,13 @@ function availabilityClass(availability) {
   return 'text-slate-300 bg-slate-800 border-slate-600'
 }
 
+function fitmentClass(fitmentType) {
+  const v = String(fitmentType || '').toLowerCase()
+  if (v === 'oem') return 'text-blue-300 bg-blue-900/30 border-blue-700/50'
+  if (v === 'oem equivalent') return 'text-amber-300 bg-amber-900/30 border-amber-700/50'
+  return 'text-slate-300 bg-slate-800 border-slate-600'
+}
+
 export default function PartsSearch({ roId, initialVehicle = {}, onClose, onPartAdded }) {
   const [year, setYear] = useState(initialVehicle.year || '')
   const [make, setMake] = useState(initialVehicle.make || '')
@@ -89,8 +96,8 @@ export default function PartsSearch({ roId, initialVehicle = {}, onClose, onPart
     try {
       const { data } = await api.post(`/parts/ro/${roId}`, {
         part_name: part.description,
-        part_number: part.partNumber,
-        vendor: part.brand,
+        part_number: part.oemPartNumber || part.oemEquivalentPartNumber || part.partNumber,
+        vendor: part.supplier || part.brand,
         quantity: 1,
         unit_cost: part.price,
       })
@@ -108,7 +115,7 @@ export default function PartsSearch({ roId, initialVehicle = {}, onClose, onPart
         <div className="flex items-center justify-between mb-4">
           <div>
             <h3 className="text-white font-semibold text-base">Supplier Catalog Search</h3>
-            <p className="text-xs text-slate-400">Search by vehicle + keyword, then add parts to this RO.</p>
+            <p className="text-xs text-slate-400">Search by vehicle + keyword across common supplier references (Advance Auto Parts, AutoZone, dealership/OEM) and add parts to this RO.</p>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors">
             <X size={18} />
@@ -166,8 +173,10 @@ export default function PartsSearch({ roId, initialVehicle = {}, onClose, onPart
               <thead className="bg-[#0f1117] text-slate-400 uppercase">
                 <tr>
                   <th className="text-left px-3 py-2 font-semibold">Part #</th>
+                  <th className="text-left px-3 py-2 font-semibold">OEM Ref</th>
                   <th className="text-left px-3 py-2 font-semibold">Description</th>
-                  <th className="text-left px-3 py-2 font-semibold">Brand</th>
+                  <th className="text-left px-3 py-2 font-semibold">Supplier</th>
+                  <th className="text-left px-3 py-2 font-semibold">Fitment</th>
                   <th className="text-right px-3 py-2 font-semibold">Price</th>
                   <th className="text-left px-3 py-2 font-semibold">Availability</th>
                   <th className="text-right px-3 py-2 font-semibold">Action</th>
@@ -177,8 +186,14 @@ export default function PartsSearch({ roId, initialVehicle = {}, onClose, onPart
                 {results.map((part) => (
                   <tr key={`${part.partNumber}-${part.description}`} className="border-t border-[#2a2d3e]">
                     <td className="px-3 py-2 text-slate-300 font-mono">{part.partNumber}</td>
+                    <td className="px-3 py-2 text-slate-300 font-mono">{part.oemPartNumber || part.oemEquivalentPartNumber || '—'}</td>
                     <td className="px-3 py-2 text-white">{part.description}</td>
-                    <td className="px-3 py-2 text-slate-300">{part.brand}</td>
+                    <td className="px-3 py-2 text-slate-300">{part.supplier || part.brand}</td>
+                    <td className="px-3 py-2">
+                      <span className={`inline-flex border rounded-full px-2 py-0.5 ${fitmentClass(part.fitmentType)}`}>
+                        {part.fitmentType || 'Aftermarket'}
+                      </span>
+                    </td>
                     <td className="px-3 py-2 text-right text-white">${Number(part.price || 0).toFixed(2)}</td>
                     <td className="px-3 py-2">
                       <span className={`inline-flex border rounded-full px-2 py-0.5 ${availabilityClass(part.availability)}`}>

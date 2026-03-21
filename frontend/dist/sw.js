@@ -1,4 +1,4 @@
-const CACHE = 'revv-v1';
+const CACHE = 'revv-v3';
 const SHELL = ['/', '/index.html'];
 
 self.addEventListener('install', e => {

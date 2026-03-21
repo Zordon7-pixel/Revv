@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Users as UsersIcon, Plus, X, Shield, Wrench, Car, Trash2, Info } from 'lucide-react'
+import { Users as UsersIcon, Plus, X, Shield, Wrench, Car, Trash2, Info, Pencil } from 'lucide-react'
 import api from '../lib/api'
 
 const ROLES = ['admin', 'employee', 'staff']  // customers self-register via /register
@@ -18,6 +18,9 @@ export default function Users() {
   const [showAddAssistant, setShowAddAssistant] = useState(false)
   const [saving,    setSaving]    = useState(false)
   const [savingAssistant, setSavingAssistant] = useState(false)
+  const [editUser, setEditUser] = useState(null)
+  const [editForm, setEditForm] = useState({ name:'', email:'', phone:'', role:'employee', password:'' })
+  const [savingEdit, setSavingEdit] = useState(false)
   const empty = { name:'', email:'', password:'', role:'employee', customer_id:'' }
   const emptyAssistant = { name:'', email:'', password:'' }
   const [form, setForm] = useState(empty)
@@ -48,6 +51,21 @@ export default function Users() {
 
   function close() { setShowAdd(false); setForm(empty) }
   function closeAssistant() { setShowAddAssistant(false); setAssistantForm(emptyAssistant) }
+  function closeEdit() {
+    setEditUser(null)
+    setEditForm({ name:'', email:'', phone:'', role:'employee', password:'' })
+  }
+
+  function openEdit(u) {
+    setEditUser(u)
+    setEditForm({
+      name: u.name || '',
+      email: u.email || '',
+      phone: u.phone || '',
+      role: u.role || 'employee',
+      password: '',
+    })
+  }
 
   async function saveAssistant(e) {
     e.preventDefault()
@@ -60,6 +78,32 @@ export default function Users() {
       alert(err?.response?.data?.error || 'Error creating assistant')
     } finally {
       setSavingAssistant(false)
+    }
+  }
+
+  async function saveEdit(e) {
+    e.preventDefault()
+    if (!editUser) return
+    setSavingEdit(true)
+    try {
+      const payload = {
+        name: editForm.name,
+        email: editForm.email,
+        phone: editForm.phone || null,
+      }
+      if (editUser.role !== 'owner') {
+        payload.role = editForm.role
+      }
+      if ((editForm.password || '').trim()) {
+        payload.password = editForm.password
+      }
+      await api.put(`/users/${editUser.id}`, payload)
+      load()
+      closeEdit()
+    } catch (err) {
+      alert(err?.response?.data?.error || 'Error updating user')
+    } finally {
+      setSavingEdit(false)
     }
   }
 
@@ -93,6 +137,13 @@ export default function Users() {
                 <div className={`text-[10px] font-semibold px-2.5 py-1 rounded-full border ${meta.cls}`}>
                   {meta.label}
                 </div>
+                <button
+                  onClick={() => openEdit(u)}
+                  className="text-slate-500 hover:text-indigo-300 transition-colors ml-1"
+                  title="Edit user"
+                >
+                  <Pencil size={15} />
+                </button>
                 {u.role !== 'owner' && (
                   <button onClick={() => deleteUser(u.id, u.name)}
                     className="text-slate-600 hover:text-red-400 transition-colors ml-1">
@@ -227,6 +278,40 @@ export default function Users() {
                 <button type="button" onClick={closeAssistant} className="flex-1 bg-[#0f1117] text-slate-400 rounded-lg py-2.5 text-sm border border-[#2a2d3e]">Cancel</button>
                 <button type="submit" disabled={savingAssistant} className="flex-1 bg-yellow-400 hover:bg-yellow-300 text-[#0f1117] font-bold rounded-lg py-2.5 text-sm disabled:opacity-50">
                   {savingAssistant ? 'Creating...' : 'Create Assistant'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {editUser && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className="bg-[#1a1d2e] rounded-2xl border border-[#2a2d3e] w-full max-w-md">
+            <div className="flex items-center justify-between p-5 border-b border-[#2a2d3e]">
+              <h3 className="font-bold text-white">Edit User</h3>
+              <button onClick={closeEdit} className="text-slate-400 hover:text-white"><X size={18}/></button>
+            </div>
+            <form onSubmit={saveEdit} className="p-5 space-y-4">
+              <div><label className={lbl}>Full Name *</label><input className={inp} required value={editForm.name} onChange={e=>setEditForm(f => ({ ...f, name: e.target.value }))} /></div>
+              <div><label className={lbl}>Email *</label><input className={inp} required type="email" value={editForm.email} onChange={e=>setEditForm(f => ({ ...f, email: e.target.value }))} /></div>
+              <div><label className={lbl}>Phone</label><input className={inp} value={editForm.phone} onChange={e=>setEditForm(f => ({ ...f, phone: e.target.value }))} placeholder="(555) 000-0000" /></div>
+              {editUser.role !== 'owner' && (
+                <div>
+                  <label className={lbl}>Role *</label>
+                  <select className={inp} value={editForm.role} onChange={e=>setEditForm(f => ({ ...f, role: e.target.value }))}>
+                    {ROLES.map(r => <option key={r} value={r}>{ROLE_META[r]?.label || r}</option>)}
+                  </select>
+                </div>
+              )}
+              <div>
+                <label className={lbl}>New Password (optional)</label>
+                <input className={inp} type="password" value={editForm.password} onChange={e=>setEditForm(f => ({ ...f, password: e.target.value }))} placeholder="Leave blank to keep current password" />
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={closeEdit} className="flex-1 bg-[#0f1117] text-slate-400 rounded-lg py-2.5 text-sm border border-[#2a2d3e]">Cancel</button>
+                <button type="submit" disabled={savingEdit} className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg py-2.5 text-sm disabled:opacity-50">
+                  {savingEdit ? 'Saving...' : 'Save Changes'}
                 </button>
               </div>
             </form>

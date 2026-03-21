@@ -3,22 +3,26 @@ const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const auth = require('../middleware/auth');
 const { requireAdmin } = require('../middleware/roles');
-const { sendSMS, isConfigured, getTwilioConfig } = require('../services/sms');
+const { sendSMS, isConfiguredForShop, getTwilioConfigForShop } = require('../services/sms');
 const { dbAll, dbGet, dbRun } = require('../db');
 
 // ── Status / test ────────────────────────────────────────────────────────────
-router.get('/status', auth, requireAdmin, (req, res) => {
-  const creds = getTwilioConfig ? getTwilioConfig() : null;
-  res.json({
-    configured: isConfigured(),
-    phone: creds ? creds.phoneNumber : null,
-  });
+router.get('/status', auth, requireAdmin, async (req, res) => {
+  try {
+    const creds = await getTwilioConfigForShop(req.user.shop_id);
+    res.json({
+      configured: await isConfiguredForShop(req.user.shop_id),
+      phone: creds ? creds.phoneNumber : null,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
 });
 
 router.post('/test', auth, requireAdmin, async (req, res) => {
   const { phone, message } = req.body || {};
   if (!phone || !message) return res.status(400).json({ error: 'phone and message are required' });
-  const result = await sendSMS(phone, message);
+  const result = await sendSMS(phone, message, { shopId: req.user.shop_id });
   res.json({ ok: !!result.ok, result });
 });
 
@@ -28,7 +32,10 @@ router.get('/thread/:roId', auth, async (req, res) => {
     const { roId } = req.params;
     // Verify RO belongs to this shop
     const ro = await dbGet(
-      'SELECT id, customer_phone, customer_name FROM repair_orders WHERE id = $1 AND shop_id = $2',
+      `SELECT ro.id, c.phone AS customer_phone, c.name AS customer_name
+       FROM repair_orders ro
+       LEFT JOIN customers c ON c.id = ro.customer_id
+       WHERE ro.id = $1 AND ro.shop_id = $2`,
       [roId, req.user.shop_id]
     );
     if (!ro) return res.status(404).json({ error: 'RO not found' });
@@ -61,13 +68,13 @@ router.post('/send', auth, async (req, res) => {
       return res.status(400).json({ error: 'to_phone and message are required' });
     }
 
-    const config = getTwilioConfig();
+    const config = await getTwilioConfigForShop(req.user.shop_id);
     if (!config) {
-      return res.status(503).json({ error: 'SMS not configured. Set TWILIO_* environment variables.' });
+      return res.status(503).json({ error: 'SMS not configured. Add Twilio credentials in Shop Settings.' });
     }
 
     // Send via Twilio
-    const result = await sendSMS(to_phone, message);
+    const result = await sendSMS(to_phone, message, { shopId: req.user.shop_id, twilioConfig: config });
     if (!result.ok) {
       return res.status(502).json({ error: result.reason || 'Failed to send SMS' });
     }
@@ -80,10 +87,16 @@ router.post('/send', auth, async (req, res) => {
       [msgId, req.user.shop_id, ro_id || null, config.phoneNumber, to_phone, message, result.sid || null]
     );
 
-    // Update RO's customer_phone if not set
+    // Keep customer phone populated for this RO if customer has no phone yet.
     if (ro_id) {
       await dbRun(
-        `UPDATE repair_orders SET customer_phone = $1 WHERE id = $2 AND shop_id = $3 AND (customer_phone IS NULL OR customer_phone = '')`,
+        `UPDATE customers c
+         SET phone = $1
+         FROM repair_orders ro
+         WHERE ro.id = $2
+           AND ro.shop_id = $3
+           AND c.id = ro.customer_id
+           AND (c.phone IS NULL OR c.phone = '')`,
         [to_phone, ro_id, req.user.shop_id]
       );
     }
@@ -116,12 +129,12 @@ router.post('/send-status', auth, async (req, res) => {
 
     const body = statusMessages[status] || `Hi ${name}, your vehicle status has been updated to: ${status}. ${portal_url ? `Track it here: ${portal_url}` : ''}`;
 
-    const config = getTwilioConfig();
+    const config = await getTwilioConfigForShop(req.user.shop_id);
     if (!config) {
-      return res.status(503).json({ error: 'SMS not configured' });
+      return res.status(503).json({ error: 'SMS not configured. Add Twilio credentials in Shop Settings.' });
     }
 
-    const result = await sendSMS(customer_phone, body);
+    const result = await sendSMS(customer_phone, body, { shopId: req.user.shop_id, twilioConfig: config });
     if (!result.ok) {
       return res.status(502).json({ error: result.reason || 'Failed to send SMS' });
     }
@@ -159,9 +172,12 @@ router.post('/webhook', express.urlencoded({ extended: false }), async (req, res
       if (shop) {
         // Find most recent RO associated with this customer phone number
         const ro = await dbGet(
-          `SELECT id FROM repair_orders
-           WHERE shop_id = $1 AND customer_phone = $2
-           ORDER BY created_at DESC LIMIT 1`,
+          `SELECT ro.id
+           FROM repair_orders ro
+           LEFT JOIN customers c ON c.id = ro.customer_id
+           WHERE ro.shop_id = $1
+             AND regexp_replace(COALESCE(c.phone, ''), '[^0-9]', '', 'g') = regexp_replace($2, '[^0-9]', '', 'g')
+           ORDER BY ro.created_at DESC LIMIT 1`,
           [shop.id, from]
         );
 
@@ -190,9 +206,10 @@ router.get('/inbox', auth, async (req, res) => {
   try {
     const messages = await dbAll(
       `SELECT m.id, m.direction, m.from_phone, m.to_phone, m.body, m.status, m.created_at, m.ro_id,
-              ro.customer_name
+              c.name AS customer_name
        FROM sms_messages m
        LEFT JOIN repair_orders ro ON ro.id = m.ro_id
+       LEFT JOIN customers c ON c.id = ro.customer_id
        WHERE m.shop_id = $1
        ORDER BY m.created_at DESC
        LIMIT 100`,

@@ -3,7 +3,7 @@ const { dbGet, dbAll, dbRun } = require('../db');
 const auth = require('../middleware/auth');
 const { requireAdmin, requireTechnician } = require('../middleware/roles');
 const { calculateProfit } = require('../services/profit');
-const { sendSMS, isConfigured } = require('../services/sms');
+const { sendSMS, isConfiguredForShop } = require('../services/sms');
 const { sendMail } = require('../services/mailer');
 const { statusChangeEmail } = require('../services/emailTemplates');
 const { createNotification } = require('../services/notifications');
@@ -41,7 +41,7 @@ function queueStatusSMS(roId, shopId, toStatus) {
   setImmediate(async () => {
     try {
       if (!SMS_STATUSES.has(toStatus)) return;
-      if (!isConfigured()) return;
+      if (!(await isConfiguredForShop(shopId))) return;
 
       const ro = await dbGet(
         `SELECT ro.id, ro.estimate_token, v.year, v.make, v.model, c.phone AS customer_phone, s.name AS shop_name,
@@ -79,7 +79,7 @@ function queueStatusSMS(roId, shopId, toStatus) {
 
       const message = messages[toStatus];
       if (!message) return;
-      await sendSMS(ro.customer_phone, message);
+      await sendSMS(ro.customer_phone, message, { shopId });
     } catch (_) {
       // Non-blocking fire-and-forget path; ignore SMS errors.
     }
@@ -1173,7 +1173,7 @@ router.post('/', auth, requireTechnician, roLimitGuard, async (req, res) => {
     setImmediate(async () => {
       try {
         const { dbRun: run, dbGet: get } = require('../db');
-        const { sendSMS, isConfigured } = require('../services/sms');
+        const { sendSMS, isConfiguredForShop } = require('../services/sms');
         
         // Get customer and shop info
         const roContext = await get(`
@@ -1196,11 +1196,11 @@ router.post('/', auth, requireTechnician, roLimitGuard, async (req, res) => {
         `, [tokenId, roId, req.user.shop_id, token]);
         
         // Send SMS
-        if (isConfigured()) {
+        if (await isConfiguredForShop(req.user.shop_id)) {
           const baseUrl = process.env.PUBLIC_URL || 'https://revv-production-ffa9.up.railway.app';
           const trackingUrl = `${baseUrl}/track/${token}`;
           const message = `Hi ${roContext.customer_name || 'there'}! Track your vehicle repair at ${roContext.shop_name}:\n${trackingUrl}`;
-          await sendSMS(roContext.customer_phone, message);
+          await sendSMS(roContext.customer_phone, message, { shopId: req.user.shop_id });
           console.log(`[Auto-Track] Tracking link SMS sent for RO ${roNumber}`);
         }
       } catch (err) {

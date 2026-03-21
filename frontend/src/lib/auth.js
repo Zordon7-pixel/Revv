@@ -2,11 +2,19 @@ export function getToken() {
   return localStorage.getItem('sc_token')
 }
 
+function decodeJwtPayload(token) {
+  if (!token || token.split('.').length < 2) return null
+  const payloadPart = token.split('.')[1]
+  const base64 = payloadPart.replace(/-/g, '+').replace(/_/g, '/')
+  const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4)
+  return JSON.parse(atob(padded))
+}
+
 export function getTokenPayload() {
   const token = getToken()
   if (!token) return null
   try {
-    return JSON.parse(atob(token.split('.')[1]))
+    return decodeJwtPayload(token)
   } catch {
     return null
   }

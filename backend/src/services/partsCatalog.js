@@ -1,4 +1,5 @@
 const DEFAULT_NAPA_BASE_URL = 'https://api.prolink.napaonline.com/v1';
+const DEFAULT_PART_CATEGORIES = ['bumper', 'fender', 'hood', 'headlight', 'tail light', 'mirror', 'grille', 'radiator support'];
 
 const MOCK_PARTS = [
   { partNumber: 'KI1000205', description: 'Front Bumper Cover Primed', brand: 'CAPA', price: 229.95, availability: 'In Stock', category: 'bumper', years: [2018, 2024], make: 'Kia', model: 'Optima' },
@@ -25,13 +26,61 @@ const MOCK_PARTS = [
   { partNumber: 'HY1117102', description: 'Front Bumper Impact Absorber', brand: 'LKQ', price: 54.25, availability: 'In Stock', category: 'bumper', years: [2019, 2024], make: 'Hyundai', model: 'Santa Fe' },
 ];
 
+function hashString(value) {
+  let hash = 0;
+  const str = String(value || '');
+  for (let i = 0; i < str.length; i += 1) {
+    hash = ((hash << 5) - hash) + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash);
+}
+
+function supplierPool(make) {
+  const cleanMake = String(make || '').trim();
+  return [
+    'Advance Auto Parts',
+    'AutoZone Commercial',
+    cleanMake ? `${cleanMake} Dealership Parts` : 'Dealership Parts',
+  ];
+}
+
+function inferFitmentType(brand, supplier) {
+  const b = String(brand || '').toLowerCase();
+  const s = String(supplier || '').toLowerCase();
+  if (s.includes('dealership') || b.includes('oem')) return 'OEM';
+  if (['capa', 'keystone', 'lkq', 'dorman'].some((token) => b.includes(token))) return 'OEM Equivalent';
+  return 'Aftermarket';
+}
+
+function normalizeCategory(raw) {
+  const q = String(raw || '').toLowerCase();
+  for (const c of DEFAULT_PART_CATEGORIES) {
+    if (q.includes(c.replace(' ', '')) || q.includes(c)) return c;
+  }
+  if (q.includes('tail')) return 'tail light';
+  if (q.includes('lamp')) return 'headlight';
+  if (q.includes('support')) return 'radiator support';
+  return '';
+}
+
 function normalizePart(part) {
+  const partNumber = part.partNumber || part.part_number || part.sku || '';
+  const chosenSupplier = part.supplier || part.source || part.store || supplierPool(part.make)[hashString(partNumber || part.description) % 3];
+  const fitmentType = part.fitmentType || inferFitmentType(part.brand || part.manufacturer, chosenSupplier);
+  const oemPartNumber = part.oemPartNumber || part.oem_part_number || (fitmentType === 'OEM' ? partNumber : '');
+  const oemEquivalentPartNumber = part.oemEquivalentPartNumber || part.oem_equivalent_part_number || (fitmentType === 'OEM Equivalent' ? partNumber : '');
   return {
-    partNumber: part.partNumber || part.part_number || part.sku || '',
+    partNumber,
     description: part.description || part.name || part.partDescription || 'Auto Body Part',
     brand: part.brand || part.manufacturer || part.vendor || 'Aftermarket',
     price: Number(part.price || part.unitPrice || part.list_price || 0),
     availability: part.availability || part.stockStatus || 'Availability Unknown',
+    supplier: chosenSupplier,
+    fitmentType,
+    oemPartNumber,
+    oemEquivalentPartNumber,
+    category: part.category || normalizeCategory(part.description || ''),
   };
 }
 
@@ -55,18 +104,102 @@ function matchesQuery(part, query) {
   if (!q) return true;
   return (
     part.partNumber.toLowerCase().includes(q) ||
+    String(part.oemPartNumber || '').toLowerCase().includes(q) ||
+    String(part.oemEquivalentPartNumber || '').toLowerCase().includes(q) ||
     part.description.toLowerCase().includes(q) ||
     part.brand.toLowerCase().includes(q) ||
-    part.category.toLowerCase().includes(q)
+    part.category.toLowerCase().includes(q) ||
+    String(part.supplier || '').toLowerCase().includes(q)
   );
 }
 
+function scorePart(part, query, year, make, model) {
+  let score = 0;
+  const q = String(query || '').trim().toLowerCase();
+  if (!q) score += 5;
+
+  const pn = String(part.partNumber || '').toLowerCase();
+  const desc = String(part.description || '').toLowerCase();
+  const supplier = String(part.supplier || '').toLowerCase();
+
+  if (q && pn === q) score += 40;
+  else if (q && pn.includes(q)) score += 28;
+  else if (q && desc.includes(q)) score += 18;
+
+  if (String(part.make || '').toLowerCase() === String(make || '').toLowerCase()) score += 22;
+  if (String(part.model || '').toLowerCase() === String(model || '').toLowerCase()) score += 18;
+  if (Number.isFinite(Number(year))) {
+    const y = Number(year);
+    if (Array.isArray(part.years) && y >= part.years[0] && y <= part.years[1]) score += 14;
+  }
+
+  if (supplier.includes('dealership')) score += 8;
+  if (String(part.fitmentType || '').toLowerCase() === 'oem') score += 8;
+  if (String(part.availability || '').toLowerCase().includes('in stock')) score += 6;
+  if (String(part.availability || '').toLowerCase().includes('backorder')) score -= 4;
+  return score;
+}
+
+function generateSuggestedParts(query, year, make, model, needed = 8) {
+  const cleanMake = String(make || '').trim();
+  const cleanModel = String(model || '').trim();
+  if (!cleanMake && !cleanModel) return [];
+
+  const qCategory = normalizeCategory(query);
+  const categories = qCategory ? [qCategory] : DEFAULT_PART_CATEGORIES.slice(0, 4);
+  const suppliers = supplierPool(cleanMake);
+  const candidateYear = Number.isFinite(Number(year)) ? Number(year) : new Date().getFullYear();
+  const start = Math.max(2008, candidateYear - 4);
+  const end = Math.min(new Date().getFullYear() + 1, candidateYear + 4);
+  const out = [];
+
+  for (const category of categories) {
+    for (const supplier of suppliers) {
+      const baseToken = `${cleanMake}-${cleanModel}-${category}-${supplier}`;
+      const hash = hashString(baseToken);
+      const pnSeed = String(hash).slice(0, 7).padEnd(7, '0');
+      const fitmentType = supplier.includes('Dealership') ? 'OEM' : 'OEM Equivalent';
+      const partNumber = `${cleanMake.slice(0, 2).toUpperCase()}${pnSeed}`;
+      out.push(normalizePart({
+        partNumber,
+        description: `${category[0].toUpperCase()}${category.slice(1)} for ${cleanMake} ${cleanModel}`.trim(),
+        brand: fitmentType === 'OEM' ? `${cleanMake} OEM` : 'CAPA',
+        supplier,
+        fitmentType,
+        oemPartNumber: fitmentType === 'OEM' ? partNumber : `${cleanMake.slice(0, 2).toUpperCase()}-OEM-${pnSeed}`,
+        oemEquivalentPartNumber: fitmentType === 'OEM Equivalent' ? partNumber : '',
+        price: Number((65 + (hash % 480)).toFixed(2)),
+        availability: (hash % 4 === 0) ? 'Limited Stock' : 'In Stock',
+        category,
+        years: [start, end],
+        make: cleanMake,
+        model: cleanModel,
+      }));
+      if (out.length >= needed) return out;
+    }
+  }
+  return out;
+}
+
 function searchMockParts(query, year, make, model) {
-  return MOCK_PARTS
+  const normalized = MOCK_PARTS
     .filter((part) => matchesVehicle(part, year, make, model))
+    .map(normalizePart)
+    .filter((part) => matchesQuery(part, query));
+
+  const scored = normalized
+    .map((part) => ({ part, score: scorePart(part, query, year, make, model) }))
+    .sort((a, b) => b.score - a.score)
+    .map((entry) => entry.part);
+
+  const combined = scored.length >= 8
+    ? scored
+    : scored.concat(generateSuggestedParts(query, year, make, model, 8 - scored.length));
+
+  return combined
     .filter((part) => matchesQuery(part, query))
     .slice(0, 50)
-    .map(normalizePart);
+    .map((part) => normalizePart(part));
 }
 
 async function searchNapaParts(query, year, make, model) {

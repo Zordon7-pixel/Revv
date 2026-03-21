@@ -6,12 +6,15 @@ const { v4: uuidv4 } = require('uuid');
 
 router.post('/', async (req, res) => {
   try {
-    const { tester_name, category, priority, message, expected, page, routed_to } = req.body;
+    const { app, tester_name, category, priority, message, expected, page, routed_to } = req.body;
     if (!message?.trim()) return res.status(400).json({ error: 'Message required' });
+    const normalizedApp = ['revv', 'payload', 'forge', 'shopcommand'].includes(String(app || '').toLowerCase())
+      ? String(app).toLowerCase()
+      : 'revv';
     const id = uuidv4();
     await dbRun(
-      `INSERT INTO feedback (id, app, tester_name, category, priority, message, expected, page, routed_to) VALUES ($1, 'shopcommand', $2, $3, $4, $5, $6, $7, $8)`,
-      [id, tester_name || 'Anonymous', category || 'general', priority || 'medium', message.trim(), expected || null, page || null, routed_to || null]
+      `INSERT INTO feedback (id, app, tester_name, category, priority, message, expected, page, routed_to) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [id, normalizedApp, tester_name || 'Anonymous', category || 'general', priority || 'medium', message.trim(), expected || null, page || null, routed_to || null]
     );
     res.status(201).json({ ok: true, id });
   } catch (err) {

@@ -43,7 +43,7 @@ router.put('/me', auth, async (req, res) => {
 router.get('/', auth, requireAdmin, async (req, res) => {
   try {
     const users = await dbAll(`
-      SELECT u.id, u.name, u.email, u.role, u.customer_id, u.created_at,
+      SELECT u.id, u.name, u.email, u.phone, u.role, u.customer_id, u.created_at,
              c.name as customer_name
       FROM users u
       LEFT JOIN customers c ON c.id = u.customer_id
@@ -75,7 +75,7 @@ router.post('/', auth, requireAdmin, async (req, res) => {
       'INSERT INTO users (id, shop_id, name, email, password_hash, role, customer_id) VALUES ($1, $2, $3, $4, $5, $6, $7)',
       [id, req.user.shop_id, name.trim(), email.trim().toLowerCase(), bcrypt.hashSync(password, 10), role, customer_id || null]
     );
-    res.status(201).json(await dbGet('SELECT id, name, email, role, customer_id, created_at FROM users WHERE id = $1', [id]));
+    res.status(201).json(await dbGet('SELECT id, name, email, phone, role, customer_id, created_at FROM users WHERE id = $1', [id]));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -98,7 +98,7 @@ router.post('/assistant', auth, requireAdmin, async (req, res) => {
     );
 
     const assistant = await dbGet(
-      'SELECT id, name, email, role, customer_id, created_at FROM users WHERE id = $1',
+      'SELECT id, name, email, phone, role, customer_id, created_at FROM users WHERE id = $1',
       [id]
     );
     return res.status(201).json(assistant);
@@ -125,7 +125,7 @@ router.put('/:id', auth, requireAdmin, async (req, res) => {
     vals.push(req.params.id);
     const setClauses = fields.map((f, i) => `${f} = $${i + 1}`).join(', ');
     await dbRun(`UPDATE users SET ${setClauses} WHERE id = $${fields.length + 1}`, vals);
-    res.json(await dbGet('SELECT id, name, email, role, customer_id, created_at FROM users WHERE id = $1', [req.params.id]));
+    res.json(await dbGet('SELECT id, name, email, phone, role, customer_id, created_at FROM users WHERE id = $1', [req.params.id]));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

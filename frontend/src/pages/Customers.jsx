@@ -19,8 +19,10 @@ const STATUS_COLORS = {
 function CustomerDrawer({ customerId, onClose, adminUser, onEdit, onDelete }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [activeTab, setActiveTab] = useState('info')
 
   useEffect(() => {
+    setActiveTab('info')
     setLoading(true)
     api.get(`/customers/${customerId}/full`).then(r => {
       setData(r.data)
@@ -63,93 +65,117 @@ function CustomerDrawer({ customerId, onClose, adminUser, onEdit, onDelete }) {
           <div className="flex-1 flex items-center justify-center text-slate-500 text-sm">Failed to load</div>
         ) : (
           <div className="flex-1 overflow-y-auto p-5 space-y-5">
-            {/* Customer Info */}
-            <div className="bg-[#0f1117] rounded-xl p-4 space-y-2.5">
-              <div className="flex items-center gap-3 mb-3">
-                <div className="w-10 h-10 rounded-full bg-indigo-600/30 flex items-center justify-center flex-shrink-0">
-                  <User size={18} className="text-indigo-400" />
-                </div>
-                <div>
-                  <div className="font-bold text-white">{data.customer.name}</div>
-                  <div className="text-xs text-slate-500">Customer ID #{data.customer.id?.slice(-6)}</div>
-                </div>
-              </div>
-              {data.customer.phone && (
-                <div className="flex items-center gap-2 text-xs text-slate-300">
-                  <Phone size={12} className="text-slate-500 flex-shrink-0"/>
-                  <a href={`tel:${data.customer.phone}`} className="hover:text-indigo-400">{data.customer.phone}</a>
-                </div>
-              )}
-              {data.customer.email && (
-                <div className="flex items-center gap-2 text-xs text-slate-300">
-                  <Mail size={12} className="text-slate-500 flex-shrink-0"/>
-                  <a href={`mailto:${data.customer.email}`} className="hover:text-indigo-400 truncate">{data.customer.email}</a>
-                </div>
-              )}
-              {data.customer.address && (
-                <div className="flex items-center gap-2 text-xs text-slate-300">
-                  <MapPin size={12} className="text-slate-500 flex-shrink-0"/>
-                  {data.customer.address}
-                </div>
-              )}
-              {data.customer.insurance_company && (
-                <div className="flex items-center gap-2 text-xs text-slate-300">
-                  <Shield size={12} className="text-slate-500 flex-shrink-0"/>
-                  {data.customer.insurance_company} {data.customer.policy_number ? `· ${data.customer.policy_number}` : ''}
-                </div>
-              )}
+            <div className="flex items-center gap-1 rounded-lg bg-[#0f1117] p-1 border border-[#2a2d3e]">
+              <button
+                onClick={() => setActiveTab('info')}
+                className={`flex-1 rounded-md px-2.5 py-1.5 text-xs font-semibold transition-colors ${activeTab === 'info' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}
+              >
+                Info
+              </button>
+              <button
+                onClick={() => setActiveTab('vehicles')}
+                className={`flex-1 rounded-md px-2.5 py-1.5 text-xs font-semibold transition-colors ${activeTab === 'vehicles' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}
+              >
+                Vehicles ({data.vehicles.length})
+              </button>
+              <button
+                onClick={() => setActiveTab('ros')}
+                className={`flex-1 rounded-md px-2.5 py-1.5 text-xs font-semibold transition-colors ${activeTab === 'ros' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}
+              >
+                Repair Orders ({data.ros.length})
+              </button>
             </div>
 
-            {/* Vehicles */}
-            <div>
-              <div className="flex items-center gap-2 mb-2">
-                <Car size={14} className="text-indigo-400"/>
-                <span className="text-xs font-bold text-white uppercase tracking-wide">Vehicles ({data.vehicles.length})</span>
-              </div>
-              {data.vehicles.length === 0 ? (
-                <div className="text-xs text-slate-500 bg-[#0f1117] rounded-xl p-3">No vehicles on file</div>
-              ) : (
-                <div className="space-y-2">
-                  {data.vehicles.map(v => (
-                    <div key={v.id} className="bg-[#0f1117] rounded-xl p-3">
-                      <div className="text-sm font-semibold text-white">{v.year} {v.make} {v.model}</div>
-                      <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
-                        {v.color && <span className="text-[10px] text-slate-500">{v.color}</span>}
-                        {v.plate && <span className="text-[10px] text-slate-400 font-mono">{v.plate}</span>}
-                        {v.vin && <span className="text-[10px] text-slate-600 font-mono truncate">{v.vin}</span>}
-                      </div>
-                    </div>
-                  ))}
+            {activeTab === 'info' && (
+              <div className="bg-[#0f1117] rounded-xl p-4 space-y-2.5">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-10 h-10 rounded-full bg-indigo-600/30 flex items-center justify-center flex-shrink-0">
+                    <User size={18} className="text-indigo-400" />
+                  </div>
+                  <div>
+                    <div className="font-bold text-white">{data.customer.name}</div>
+                    <div className="text-xs text-slate-500">Customer ID #{data.customer.id?.slice(-6)}</div>
+                  </div>
                 </div>
-              )}
-            </div>
+                {data.customer.phone && (
+                  <div className="flex items-center gap-2 text-xs text-slate-300">
+                    <Phone size={12} className="text-slate-500 flex-shrink-0"/>
+                    <a href={`tel:${data.customer.phone}`} className="hover:text-indigo-400">{data.customer.phone}</a>
+                  </div>
+                )}
+                {data.customer.email && (
+                  <div className="flex items-center gap-2 text-xs text-slate-300">
+                    <Mail size={12} className="text-slate-500 flex-shrink-0"/>
+                    <a href={`mailto:${data.customer.email}`} className="hover:text-indigo-400 truncate">{data.customer.email}</a>
+                  </div>
+                )}
+                {data.customer.address && (
+                  <div className="flex items-center gap-2 text-xs text-slate-300">
+                    <MapPin size={12} className="text-slate-500 flex-shrink-0"/>
+                    {data.customer.address}
+                  </div>
+                )}
+                {data.customer.insurance_company && (
+                  <div className="flex items-center gap-2 text-xs text-slate-300">
+                    <Shield size={12} className="text-slate-500 flex-shrink-0"/>
+                    {data.customer.insurance_company} {data.customer.policy_number ? `· ${data.customer.policy_number}` : ''}
+                  </div>
+                )}
+              </div>
+            )}
 
-            {/* RO History */}
-            <div>
-              <div className="flex items-center gap-2 mb-2">
-                <FileText size={14} className="text-indigo-400"/>
-                <span className="text-xs font-bold text-white uppercase tracking-wide">Repair Orders ({data.ros.length})</span>
-              </div>
-              {data.ros.length === 0 ? (
-                <div className="text-xs text-slate-500 bg-[#0f1117] rounded-xl p-3">No repair orders</div>
-              ) : (
-                <div className="space-y-2">
-                  {data.ros.map(ro => (
-                    <div key={ro.id} className="bg-[#0f1117] rounded-xl p-3">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-xs font-semibold text-white">{ro.ro_number}</span>
-                        <span className={`text-[10px] font-semibold capitalize ${STATUS_COLORS[ro.status] || 'text-slate-400'}`}>{ro.status}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] text-slate-500 capitalize">{ro.job_type} · {new Date(ro.created_at).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' })}</span>
-                        {ro.total > 0 && <span className="text-[10px] font-semibold text-emerald-400">${Number(ro.total).toLocaleString()}</span>}
-                      </div>
-                      {ro.notes && <div className="text-[10px] text-slate-600 mt-1 truncate">{ro.notes}</div>}
-                    </div>
-                  ))}
+            {activeTab === 'vehicles' && (
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <Car size={14} className="text-indigo-400"/>
+                  <span className="text-xs font-bold text-white uppercase tracking-wide">Vehicles ({data.vehicles.length})</span>
                 </div>
-              )}
-            </div>
+                {data.vehicles.length === 0 ? (
+                  <div className="text-xs text-slate-500 bg-[#0f1117] rounded-xl p-3">No vehicles on file</div>
+                ) : (
+                  <div className="space-y-2">
+                    {data.vehicles.map(v => (
+                      <div key={v.id} className="bg-[#0f1117] rounded-xl p-3">
+                        <div className="text-sm font-semibold text-white">{v.year} {v.make} {v.model}</div>
+                        <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
+                          {v.color && <span className="text-[10px] text-slate-500">{v.color}</span>}
+                          {v.plate && <span className="text-[10px] text-slate-400 font-mono">{v.plate}</span>}
+                          {v.vin && <span className="text-[10px] text-slate-600 font-mono truncate">{v.vin}</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeTab === 'ros' && (
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <FileText size={14} className="text-indigo-400"/>
+                  <span className="text-xs font-bold text-white uppercase tracking-wide">Repair Orders ({data.ros.length})</span>
+                </div>
+                {data.ros.length === 0 ? (
+                  <div className="text-xs text-slate-500 bg-[#0f1117] rounded-xl p-3">No repair orders</div>
+                ) : (
+                  <div className="space-y-2">
+                    {data.ros.map(ro => (
+                      <div key={ro.id} className="bg-[#0f1117] rounded-xl p-3">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-xs font-semibold text-white">{ro.ro_number}</span>
+                          <span className={`text-[10px] font-semibold capitalize ${STATUS_COLORS[ro.status] || 'text-slate-400'}`}>{ro.status}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] text-slate-500 capitalize">{ro.job_type} · {new Date(ro.created_at).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' })}</span>
+                          {ro.total > 0 && <span className="text-[10px] font-semibold text-emerald-400">${Number(ro.total).toLocaleString()}</span>}
+                        </div>
+                        {ro.notes && <div className="text-[10px] text-slate-600 mt-1 truncate">{ro.notes}</div>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>
