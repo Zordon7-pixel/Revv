@@ -288,25 +288,48 @@ async function initDb() {
     );
   `);
 
-  // vehicle_diagnostic_scans — separate query; FK may fail on legacy TEXT-id local DBs
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS vehicle_diagnostic_scans (
-      id SERIAL PRIMARY KEY,
-      shop_id UUID REFERENCES shops(id),
-      ro_id UUID REFERENCES repair_orders(id),
-      vehicle_id UUID REFERENCES vehicles(id),
-      vin TEXT,
-      scan_date TIMESTAMPTZ DEFAULT NOW(),
-      scanned_by TEXT,
-      scanner_tool TEXT,
-      pre_repair BOOLEAN DEFAULT FALSE,
-      post_repair BOOLEAN DEFAULT FALSE,
-      dtc_codes JSONB DEFAULT '[]',
-      adas_systems JSONB DEFAULT '[]',
-      notes TEXT,
-      created_at TIMESTAMPTZ DEFAULT NOW()
-    )
-  `).catch(e => console.warn('[DB] vehicle_diagnostic_scans skipped (schema drift):', e.message));
+  // vehicle_diagnostic_scans — prefer FK-backed schema, but auto-fallback to a
+  // compatibility table when legacy schema drift prevents FK creation.
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS vehicle_diagnostic_scans (
+        id SERIAL PRIMARY KEY,
+        shop_id UUID REFERENCES shops(id),
+        ro_id UUID REFERENCES repair_orders(id),
+        vehicle_id UUID REFERENCES vehicles(id),
+        vin TEXT,
+        scan_date TIMESTAMPTZ DEFAULT NOW(),
+        scanned_by TEXT,
+        scanner_tool TEXT,
+        pre_repair BOOLEAN DEFAULT FALSE,
+        post_repair BOOLEAN DEFAULT FALSE,
+        dtc_codes JSONB DEFAULT '[]',
+        adas_systems JSONB DEFAULT '[]',
+        notes TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+  } catch (e) {
+    console.warn('[DB] vehicle_diagnostic_scans FK create failed, using compatibility schema:', e.message);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS vehicle_diagnostic_scans (
+        id SERIAL PRIMARY KEY,
+        shop_id TEXT NOT NULL,
+        ro_id TEXT,
+        vehicle_id TEXT,
+        vin TEXT,
+        scan_date TIMESTAMPTZ DEFAULT NOW(),
+        scanned_by TEXT,
+        scanner_tool TEXT,
+        pre_repair BOOLEAN DEFAULT FALSE,
+        post_repair BOOLEAN DEFAULT FALSE,
+        dtc_codes JSONB DEFAULT '[]',
+        adas_systems JSONB DEFAULT '[]',
+        notes TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+  }
 
   console.log('[DB] Tables initialized');
 

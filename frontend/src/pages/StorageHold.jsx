@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Package, Receipt, CircleDollarSign } from 'lucide-react'
+import { Package, Receipt, CircleDollarSign, PlusCircle } from 'lucide-react'
 import api from '../lib/api'
 
 function formatCurrency(value) {
@@ -149,9 +149,10 @@ export default function StorageHold() {
                 <div className="flex flex-wrap gap-2">
                   <button
                     onClick={() => openBillModal(ro)}
-                    className="text-xs bg-amber-400 hover:bg-amber-300 text-[#0f1117] font-semibold px-3 py-1.5 rounded-lg"
+                    className="text-xs bg-amber-400 hover:bg-amber-300 text-[#0f1117] font-semibold px-3 py-1.5 rounded-lg inline-flex items-center gap-1.5"
                   >
-                    Bill Storage
+                    <PlusCircle size={12} />
+                    Manual Add
                   </button>
                   <button
                     onClick={async () => {

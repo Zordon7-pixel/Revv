@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const multer = require('multer');
 const OpenAI = require('openai');
+const pdfParse = require('pdf-parse');
 const fs = require('fs/promises');
 const os = require('os');
 const path = require('path');
@@ -35,6 +36,16 @@ Classify each item: labor operations = "labor", parts/materials = "parts", suble
 Return only the JSON object, no markdown fences, no extra text.`;
 
 async function extractPdfText(buffer) {
+  // Primary parser for hosted environments (Railway) where poppler binaries
+  // may not be present.
+  try {
+    const parsed = await pdfParse(buffer);
+    const text = String(parsed?.text || '').replace(/\u0000/g, '').trim();
+    if (text) return text;
+  } catch (err) {
+    console.warn('[InsuranceOCR] pdf-parse failed, falling back to pdftotext:', err?.message || err);
+  }
+
   const tmpPath = path.join(os.tmpdir(), `revv-estimate-${crypto.randomBytes(8).toString('hex')}.pdf`);
   try {
     await fs.writeFile(tmpPath, buffer);

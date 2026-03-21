@@ -12,6 +12,7 @@
     "inventory": "Inventory",
     "payments": "Payments",
     "storage": "Storage",
+    "leads": "Leads",
     "adas": "ADAS",
     "vehicleDiagnostics": "Vehicle Diagnostics",
     "team": "Team",
