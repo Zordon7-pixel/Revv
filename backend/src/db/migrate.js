@@ -365,6 +365,7 @@ async function runMigrations() {
       )`,
       `CREATE INDEX IF NOT EXISTS idx_estimate_line_items_ro ON estimate_line_items(ro_id)`,
       `CREATE INDEX IF NOT EXISTS idx_estimate_line_items_shop ON estimate_line_items(shop_id)`,
+      `ALTER TABLE estimate_line_items ALTER COLUMN ro_id TYPE TEXT USING ro_id::TEXT`,
     ];
 
     // Fix job_status_log FK to use ON DELETE CASCADE
