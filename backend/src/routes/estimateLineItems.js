@@ -137,7 +137,7 @@ router.post('/:roId', auth, async (req, res) => {
     return res.status(201).json({ success: true, item: inserted, summary });
   } catch (err) {
     console.error('[Estimate Items] create error:', err);
-    return res.status(500).json({ error: 'Internal server error' });
+    return res.status(500).json({ error: err.message || 'Internal server error' });
   }
 });
 
