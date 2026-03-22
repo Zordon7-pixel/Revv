@@ -93,7 +93,7 @@ function queueStatusSMS(roId, shopId, toStatus) {
       const shopName = ro.shop_name || 'the shop';
       const trackingLine = trackingToken ? `\nTrack it here: https://revvshop.app/track/${trackingToken}` : '';
       let paymentLine = '';
-      if (toStatus === 'delivery' && normalizedPaymentStatus(ro.payment_status, ro.payment_received) !== 'succeeded') {
+      if (toStatus === 'ready' && normalizedPaymentStatus(ro.payment_status, ro.payment_received) !== 'succeeded') {
         const linkResult = await createPaymentCheckoutLinkForRo({
           roId: ro.id,
           shopId,
@@ -110,7 +110,7 @@ function queueStatusSMS(roId, shopId, toStatus) {
         'repair':      `Hi! Your ${vehicle} is now in progress at ${shopName}. We'll keep you updated.${trackingLine}`,
         'in-progress': `Hi! Your ${vehicle} is now in progress at ${shopName}. We'll keep you updated.${trackingLine}`,
         'ready':       `Great news! Your ${vehicle} is ready for pickup at ${shopName}. See you soon! 🎉${paymentLine}`,
-        'delivery':    `Great news! Your ${vehicle} is ready for pickup at ${shopName}. See you soon! 🎉${paymentLine}`,
+        'delivery':    `Hi! Your ${vehicle} has been delivered. Thank you for choosing ${shopName}! 🎉`,
       };
 
       const message = messages[toStatus];
@@ -162,7 +162,7 @@ function queueStatusEmail(roId, shopId, toStatus) {
       });
 
       let finalHtml = html;
-      if (toStatus === 'delivery' && normalizedPaymentStatus(emailContext.payment_status, emailContext.payment_received) !== 'succeeded') {
+      if (toStatus === 'ready' && normalizedPaymentStatus(emailContext.payment_status, emailContext.payment_received) !== 'succeeded') {
         const linkResult = await createPaymentCheckoutLinkForRo({
           roId,
           shopId,
