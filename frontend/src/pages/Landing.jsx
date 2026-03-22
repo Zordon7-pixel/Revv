@@ -205,58 +205,75 @@ export default function Landing() {
       {/* ── Pricing ─────────────────────────────────────────────────────── */}
       <section id="pricing" className="px-6 pb-20 md:px-16 lg:px-24">
         <div className="mx-auto max-w-6xl">
-          <h2 className="text-3xl font-bold text-white md:text-4xl">Pricing that scales with your shop</h2>
-          <p className="mt-4 text-slate-400">Start free, upgrade when your volume grows.</p>
-          <div className="mt-10 grid gap-6 md:grid-cols-3">
-            <article className="rounded-xl border border-[#2a2d3e] bg-[#1a1d2e] p-6">
-              <h3 className="text-xl font-semibold text-white">Starter</h3>
-              <p className="mt-2 text-3xl font-bold text-indigo-400">Free</p>
-              <p className="mt-4 text-sm text-slate-400">
-                Up to 25 ROs/month, 1 location, customer updates, basic reports
-              </p>
+          <h2 className="text-3xl font-bold text-white md:text-4xl">Simple, honest pricing</h2>
+          <p className="mt-4 text-slate-400">Try it free. No credit card required.</p>
+          <div className="mt-10 grid gap-6 md:grid-cols-2">
+            {/* Left: Trial card */}
+            <article className="rounded-xl border border-[#2a2d3e] bg-[#1a1d2e] p-8 flex flex-col justify-between">
+              <div>
+                <h3 className="text-xl font-semibold text-white">14-Day Free Trial</h3>
+                <p className="mt-2 text-3xl font-bold text-indigo-400">$0</p>
+                <ul className="mt-6 space-y-3">
+                  {[
+                    'No credit card required',
+                    'Full access during trial',
+                    'Cancel anytime',
+                  ].map((item) => (
+                    <li key={item} className="flex items-center gap-3 text-sm text-slate-300">
+                      <CheckCircle size={16} className="shrink-0 text-indigo-400" />
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </div>
               <Link
                 to="/shop-register"
-                className="mt-6 inline-flex w-full justify-center rounded-lg bg-indigo-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-indigo-500"
-              >
-                Get Started Free
-              </Link>
-            </article>
-
-            <article className="relative rounded-xl border border-indigo-500 bg-[#1a1d2e] p-6 shadow-[0_0_80px_-45px_rgba(99,102,241,0.95)]">
-              <span className="absolute -top-3 left-6 rounded-full bg-indigo-600 px-3 py-1 text-xs font-semibold text-white">
-                Most Popular
-              </span>
-              <h3 className="text-xl font-semibold text-white">Pro</h3>
-              <p className="mt-2 text-3xl font-bold text-indigo-400">$79/mo</p>
-              <p className="mt-4 text-sm text-slate-400">
-                Unlimited ROs, SMS notifications, job costing, insurance tools, turnaround
-                estimator, priority support
-              </p>
-              <Link
-                to="/shop-register"
-                className="mt-6 inline-flex w-full justify-center rounded-lg bg-indigo-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-indigo-500"
+                className="mt-8 inline-flex w-full justify-center rounded-lg border border-indigo-500 px-4 py-3 text-sm font-semibold text-indigo-300 transition hover:bg-indigo-500/10"
               >
                 Start Free Trial
               </Link>
             </article>
 
-            <article className="rounded-xl border border-[#2a2d3e] bg-[#1a1d2e] p-6">
-              <h3 className="text-xl font-semibold text-white">Agency</h3>
-              <p className="mt-2 text-3xl font-bold text-indigo-400">$199/mo</p>
-              <p className="mt-4 text-sm text-slate-400">
-                Everything in Pro + multiple locations, white-label messaging, API access, dedicated
-                onboarding
-              </p>
-              <a
-                href="mailto:revvshopapp@gmail.com"
-                className="mt-6 inline-flex w-full justify-center rounded-lg border border-indigo-500 px-4 py-3 text-sm font-semibold text-indigo-300 transition hover:bg-indigo-500/10"
+            {/* Right: Pro plan card */}
+            <article className="relative rounded-xl border border-indigo-500 bg-[#1a1d2e] p-8 shadow-[0_0_80px_-45px_rgba(99,102,241,0.95)] flex flex-col justify-between">
+              <span className="absolute -top-3 left-6 rounded-full bg-indigo-600 px-3 py-1 text-xs font-semibold text-white">
+                Pro Plan
+              </span>
+              <div>
+                <h3 className="text-xl font-semibold text-white">Everything You Need</h3>
+                <p className="mt-2 text-3xl font-bold text-indigo-400">$199<span className="text-lg font-normal text-slate-400">/mo</span></p>
+                <ul className="mt-6 space-y-3">
+                  {[
+                    'Unlimited repair orders',
+                    'SMS notifications to customers',
+                    'Insurance estimate tools + OCR import',
+                    'Job costing & profitability dashboard',
+                    'Multi-user (owner, admin, tech roles)',
+                    'Customer approval portal',
+                    'Parts & inventory tracking',
+                    'Scheduling & time clock',
+                    'Dedicated support',
+                  ].map((item) => (
+                    <li key={item} className="flex items-center gap-3 text-sm text-slate-300">
+                      <CheckCircle size={16} className="shrink-0 text-indigo-400" />
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <Link
+                to="/shop-register"
+                className="mt-8 inline-flex w-full justify-center rounded-lg bg-indigo-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-indigo-500"
               >
-                Contact Us
-              </a>
+                Start Free Trial
+              </Link>
             </article>
           </div>
-          <p className="mt-6 text-sm text-slate-400">
-            All plans include a 14-day free trial. No credit card required to start.
+          <p className="mt-8 text-sm text-slate-400">
+            Multi-location or enterprise?{' '}
+            <a href="mailto:revvshopapp@gmail.com" className="text-indigo-400 hover:underline">
+              Contact us at revvshopapp@gmail.com
+            </a>
           </p>
         </div>
       </section>

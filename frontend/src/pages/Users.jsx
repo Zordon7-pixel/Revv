@@ -206,13 +206,6 @@ export default function Users() {
       <Section title="Admins" list={admins} />
       <Section title="Employees" list={employees} />
       <Section title="Assistants" list={assistants} />
-      <div className="bg-emerald-900/10 border border-emerald-700/30 rounded-xl p-4 flex items-start gap-3">
-        <Info size={16} className="text-emerald-400 flex-shrink-0 mt-0.5" />
-        <div className="text-xs text-slate-300 leading-relaxed space-y-1">
-          <p><strong className="text-white">Customer logins are retired.</strong></p>
-          <p className="text-slate-400">Customers now receive status updates and secure tracking/payment links by SMS or email.</p>
-        </div>
-      </div>
 
       {users.length === 0 && (
         <div className="bg-[#1a1d2e] rounded-xl p-8 text-center border border-[#2a2d3e]">

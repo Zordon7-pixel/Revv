@@ -75,6 +75,57 @@ router.get('/:id/history', auth, async (req, res) => {
   }
 });
 
+router.get('/:id/autofill', auth, async (req, res) => {
+  try {
+    const customer = await dbGet(
+      'SELECT id, name, phone, email, insurance_company, policy_number FROM customers WHERE id = $1 AND shop_id = $2',
+      [req.params.id, req.user.shop_id]
+    );
+    if (!customer) return res.status(404).json({ error: 'Not found' });
+
+    const vehicles = await dbAll(
+      'SELECT * FROM vehicles WHERE customer_id = $1 AND shop_id = $2 ORDER BY created_at DESC',
+      [customer.id, req.user.shop_id]
+    );
+
+    const latestInsurance = await dbGet(
+      `
+        SELECT
+          payment_type,
+          insurer,
+          insurance_company,
+          claim_number,
+          insurance_claim_number,
+          adjuster_name,
+          adjuster_phone,
+          adjuster_email,
+          deductible,
+          policy_number,
+          created_at
+        FROM repair_orders
+        WHERE customer_id = $1
+          AND shop_id = $2
+          AND (
+            payment_type = 'insurance'
+            OR COALESCE(insurance_company, insurer, adjuster_name, adjuster_phone, adjuster_email, insurance_claim_number, claim_number) IS NOT NULL
+          )
+        ORDER BY created_at DESC
+        LIMIT 1
+      `,
+      [customer.id, req.user.shop_id]
+    );
+
+    return res.json({
+      customer,
+      vehicles,
+      latest_vehicle: vehicles[0] || null,
+      latest_insurance: latestInsurance || null,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/:id', auth, async (req, res) => {
   try {
     const customer = await dbGet('SELECT * FROM customers WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);

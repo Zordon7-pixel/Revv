@@ -57,6 +57,12 @@ const SUPP_STATUS_META = {
   Denied:   { cls: 'text-red-400 bg-red-900/30 border-red-700/40' },
 }
 
+const AUDIT_PRIORITY_META = {
+  HIGH: { emoji: '🔴', cls: 'text-red-300 border-red-700/40 bg-red-900/20' },
+  MEDIUM: { emoji: '🟡', cls: 'text-amber-300 border-amber-700/40 bg-amber-900/20' },
+  LOW: { emoji: '🟢', cls: 'text-emerald-300 border-emerald-700/40 bg-emerald-900/20' },
+}
+
 const STAGES = ['intake','estimate','approval','parts','repair','paint','qc','delivery','closed']
 
 export default function RODetail() {
@@ -125,6 +131,20 @@ export default function RODetail() {
   const [savingSupp, setSavingSupp] = useState(false)
   const [updatingSupp, setUpdatingSupp] = useState(null)
   const [activeTab, setActiveTab] = useState('overview')
+  const [overviewTab, setOverviewTab] = useState('core')
+  const [customerForm, setCustomerForm] = useState({
+    name: '',
+    phone: '',
+    email: '',
+    address: '',
+    insurance_company: '',
+    policy_number: '',
+  })
+  const [savingCustomer, setSavingCustomer] = useState(false)
+  const [estimateImport, setEstimateImport] = useState({ items: [], summary: null, loading: false })
+  const [supplementAudit, setSupplementAudit] = useState({ loading: false, error: '', data: null, copiedKey: '' })
+  const [quickNoteText, setQuickNoteText] = useState('')
+  const [savingQuickNote, setSavingQuickNote] = useState(false)
   const [storageForm, setStorageForm] = useState({
     storage_hold: false,
     storage_rate_per_day: '',
@@ -193,6 +213,12 @@ export default function RODetail() {
   const loadInspections = () => api.get(`/inspections/ro/${id}`).then(r => setInspectionSummary(r.data.inspections || [])).catch(() => setInspectionSummary([]))
   const loadSupplements = () => api.get(`/ros/${id}/supplements`).then(r => { setSupplements(r.data.supplements || []); setTotalApproved(r.data.totalApproved || 0) }).catch(() => {})
   const loadStorageCharges = () => api.get(`/storage/${id}/charges`).then(r => setStorageCharges(r.data.charges || [])).catch(() => setStorageCharges([]))
+  const loadEstimateImport = () => {
+    setEstimateImport((prev) => ({ ...prev, loading: true }))
+    api.get(`/estimate-items/${id}`)
+      .then((r) => setEstimateImport({ items: r.data.items || [], summary: r.data.summary || null, loading: false }))
+      .catch(() => setEstimateImport({ items: [], summary: null, loading: false }))
+  }
 
   useEffect(() => { load() }, [id])
   useEffect(() => {
@@ -214,6 +240,7 @@ export default function RODetail() {
   useEffect(() => { loadInspections() }, [id])
   useEffect(() => { loadSupplements() }, [id])
   useEffect(() => { loadStorageCharges() }, [id])
+  useEffect(() => { loadEstimateImport() }, [id])
   useEffect(() => { loadSmsThread() }, [id])
   useEffect(() => {
     if (!vehicleHistoryExpanded || !ro?.customer?.id) return
@@ -242,6 +269,25 @@ export default function RODetail() {
       cancelled = true
     }
   }, [vehicleHistoryExpanded, ro?.customer?.id, id])
+
+  useEffect(() => {
+    setCustomerForm({
+      name: ro?.customer?.name || '',
+      phone: ro?.customer?.phone || '',
+      email: ro?.customer?.email || '',
+      address: ro?.customer?.address || '',
+      insurance_company: ro?.customer?.insurance_company || '',
+      policy_number: ro?.customer?.policy_number || '',
+    })
+  }, [
+    ro?.customer?.id,
+    ro?.customer?.name,
+    ro?.customer?.phone,
+    ro?.customer?.email,
+    ro?.customer?.address,
+    ro?.customer?.insurance_company,
+    ro?.customer?.policy_number,
+  ])
 
   async function addPart(e) {
     e.preventDefault(); setSavingPart(true)
@@ -389,6 +435,37 @@ export default function RODetail() {
       await api.patch(`/ros/${id}`, { tech_notes: techNotes })
     } finally {
       setSavingNotes(false)
+    }
+  }
+
+  async function saveCustomerInfo() {
+    if (!ro?.customer?.id) {
+      alert('No customer linked to this RO.')
+      return
+    }
+    if (!customerForm.name.trim()) {
+      alert('Customer name is required.')
+      return
+    }
+
+    setSavingCustomer(true)
+    try {
+      const payload = {
+        name: customerForm.name.trim(),
+        phone: customerForm.phone?.trim() || '',
+        email: customerForm.email?.trim() || '',
+        address: customerForm.address?.trim() || '',
+        insurance_company: customerForm.insurance_company?.trim() || '',
+        policy_number: customerForm.policy_number?.trim() || '',
+      }
+      const { data } = await api.put(`/customers/${ro.customer.id}`, payload)
+      setRo((prev) => (prev ? { ...prev, customer: { ...(prev.customer || {}), ...data } } : prev))
+      setSmsCustomerPhone(data?.phone || '')
+      alert('Customer updated.')
+    } catch (err) {
+      alert(err?.response?.data?.error || 'Could not update customer')
+    } finally {
+      setSavingCustomer(false)
     }
   }
 
@@ -686,10 +763,46 @@ export default function RODetail() {
   const storageUnpaidTotal = storageCharges
     .filter((charge) => !charge.paid)
     .reduce((sum, charge) => sum + Number(charge.total_amount || 0), 0)
+  const importedItemsCount = estimateImport.items.length
+  const importedLastAt = estimateImport.items.reduce((latest, item) => {
+    const stamp = new Date(item?.updated_at || item?.created_at || 0).getTime()
+    return Number.isFinite(stamp) && stamp > latest ? stamp : latest
+  }, 0)
+  const noteItems = String(ro?.notes || '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
   const inp = 'w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500'
   // damagedPanels useMemo moved above the if(!ro) early return to avoid hook violation
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+
+  async function persistQuickNotes(nextItems) {
+    setSavingQuickNote(true)
+    try {
+      const nextNotes = nextItems.join('\n')
+      const { data } = await api.patch(`/ros/${id}`, { notes: nextNotes || null })
+      setRo(data)
+      setForm((prev) => ({ ...prev, notes: data?.notes || '' }))
+    } catch (err) {
+      alert(err?.response?.data?.error || 'Could not update notes')
+    } finally {
+      setSavingQuickNote(false)
+    }
+  }
+
+  async function addQuickNote() {
+    const next = quickNoteText.trim()
+    if (!next || userIsAssistant) return
+    await persistQuickNotes([...noteItems, next])
+    setQuickNoteText('')
+  }
+
+  async function removeQuickNote(idx) {
+    if (userIsAssistant) return
+    const next = noteItems.filter((_, i) => i !== idx)
+    await persistQuickNotes(next)
+  }
 
   return (
     <div className="max-w-4xl mx-auto space-y-4">
@@ -930,10 +1043,72 @@ export default function RODetail() {
 
       {activeTab === 'overview' && (
         <>
+      <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-1 flex items-center gap-1 w-fit">
+        <button
+          onClick={() => setOverviewTab('core')}
+          className={`text-xs px-3 py-1.5 rounded-lg font-medium whitespace-nowrap ${overviewTab === 'core' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-[#2a2d3e]'}`}
+        >
+          Core
+        </button>
+        <button
+          onClick={() => setOverviewTab('insurance')}
+          className={`text-xs px-3 py-1.5 rounded-lg font-medium whitespace-nowrap ${overviewTab === 'insurance' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-[#2a2d3e]'}`}
+        >
+          Insurance
+        </button>
+        <button
+          onClick={() => setOverviewTab('customer')}
+          className={`text-xs px-3 py-1.5 rounded-lg font-medium whitespace-nowrap ${overviewTab === 'customer' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-[#2a2d3e]'}`}
+        >
+          Customer
+        </button>
+        <button
+          onClick={() => setOverviewTab('technician')}
+          className={`text-xs px-3 py-1.5 rounded-lg font-medium whitespace-nowrap ${overviewTab === 'technician' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-[#2a2d3e]'}`}
+        >
+          Technician
+        </button>
+        <button
+          onClick={() => setOverviewTab('parts')}
+          className={`text-xs px-3 py-1.5 rounded-lg font-medium whitespace-nowrap ${overviewTab === 'parts' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-[#2a2d3e]'}`}
+        >
+          Parts
+        </button>
+        <button
+          onClick={() => setOverviewTab('communication')}
+          className={`text-xs px-3 py-1.5 rounded-lg font-medium whitespace-nowrap ${overviewTab === 'communication' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-[#2a2d3e]'}`}
+        >
+          Communication
+        </button>
+      </div>
+
+      {overviewTab === 'core' && (
+        <>
       {approvalLink && (
         <div className="bg-yellow-900/20 border border-yellow-700/40 rounded-xl p-3 text-xs text-yellow-200">
           Approval link ready: <span className="font-mono break-all">{approvalLink}</span>
         </div>
+      )}
+
+      {/* Progress */}
+      <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
+        <div className="flex gap-1 mb-2">
+          {STAGES.slice(0,-1).map((s, i) => (
+            <div key={s} className="flex-1 h-2 rounded-full" style={{background: i <= currentIdx ? STATUS_COLORS[s] : '#2a2d3e'}} />
+          ))}
+        </div>
+        <div className="flex justify-between text-[10px] text-slate-600">
+          <span>Intake</span><span>Delivery</span>
+        </div>
+      </div>
+
+      {showStripePanel && (
+        <PaymentPanel
+          roId={id}
+          totalAmount={paymentAmount}
+          onSuccess={load}
+          onMarkManual={() => setShowMarkPaidModal(true)}
+        />
       )}
 
       <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 flex items-center justify-between gap-3 flex-wrap">
@@ -969,25 +1144,68 @@ export default function RODetail() {
         </div>
       </div>
 
-      {/* Progress */}
-      <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
-        <div className="flex gap-1 mb-2">
-          {STAGES.slice(0,-1).map((s, i) => (
-            <div key={s} className="flex-1 h-2 rounded-full" style={{background: i <= currentIdx ? STATUS_COLORS[s] : '#2a2d3e'}} />
-          ))}
-        </div>
-        <div className="flex justify-between text-[10px] text-slate-600">
-          <span>Intake</span><span>Delivery</span>
-        </div>
-      </div>
+      {userIsEmployee && (
+        <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
+          <button
+            type="button"
+            onClick={() => setPreDropoffExpanded((v) => !v)}
+            className="w-full flex items-center justify-between"
+          >
+            <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
+              <Camera size={12} /> Pre-Dropoff Condition
+            </h2>
+            <span className="text-slate-500">
+              {preDropoffExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </span>
+          </button>
+          <p className="text-xs text-slate-500 mt-2">
+            These photos document vehicle condition before work begins
+          </p>
 
-      {showStripePanel && (
-        <PaymentPanel
-          roId={id}
-          totalAmount={paymentAmount}
-          onSuccess={load}
-          onMarkManual={() => setShowMarkPaidModal(true)}
-        />
+          {preDropoffExpanded && (
+            <div className="mt-3 space-y-3">
+              <label
+                className={`inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg cursor-pointer transition-colors ${
+                  preDropoffUploading
+                    ? 'bg-indigo-800 text-indigo-300 opacity-50 pointer-events-none'
+                    : 'bg-indigo-600 hover:bg-indigo-500 text-white'
+                }`}
+              >
+                <Camera size={12} /> {preDropoffUploading ? 'Uploading...' : 'Upload Pre-Dropoff Photo'}
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  disabled={preDropoffUploading}
+                  onChange={uploadPreDropoffPhoto}
+                />
+              </label>
+
+              {preDropoffPhotos.length === 0 ? (
+                <p className="text-sm text-slate-500">No pre-dropoff photos added yet.</p>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {preDropoffPhotos.map((photo) => (
+                    <a
+                      key={photo.id}
+                      href={photo.photo_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="relative group rounded-xl overflow-hidden border border-[#2a2d3e] aspect-video bg-[#0f1117]"
+                    >
+                      <img src={photo.photo_url} alt="Pre-dropoff" className="w-full h-full object-cover" />
+                      <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/80">
+                        <span className="text-[9px] px-1.5 py-0.5 rounded-full border font-semibold text-cyan-300 bg-cyan-900/30 border-cyan-700/40">
+                          Pre-Dropoff
+                        </span>
+                      </div>
+                    </a>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       )}
 
       <div className="grid md:grid-cols-2 gap-4">
@@ -1113,57 +1331,8 @@ export default function RODetail() {
           </div>
         </div>
 
-        {/* Claim Status — insurance jobs only */}
-        {ro.payment_type === 'insurance' && (
-          <ClaimStatusCard ro={ro} onUpdate={setRo} isAdmin={isAdmin()} />
-        )}
-
-        {(ro.payment_type === 'insurance' || ro.claim_number || ro.insurance_claim_number) && (
-          <InsurancePanel roId={id} ro={ro} onUpdated={load} />
-        )}
-
-        {/* Insurance Adjustor Panel */}
-        <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-5 space-y-4">
-          <h3 className="font-semibold text-white text-sm flex items-center gap-2">
-            Insurance Adjustor
-          </h3>
-          {!claimLink ? (
-            <div>
-              <p className="text-xs text-slate-500 mb-3">Generate a secure link to share with the insurance adjustor. They can view the RO details and submit their assessment without creating an account.</p>
-              <button onClick={generateClaimLink} disabled={generatingLink} className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium px-4 py-2 rounded-lg transition-colors disabled:opacity-50">
-                {generatingLink ? 'Generating...' : 'Generate Adjustor Link'}
-              </button>
-            </div>
-          ) : claimLink.submitted_at ? (
-            <div className="space-y-3">
-              <div className="flex items-center gap-2 text-green-400 text-xs font-medium"><CheckCircle size={14} /> Assessment Received</div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                <div><span className="text-slate-500">Adjustor</span><p className="text-white">{claimLink.adjustor_name} — {claimLink.adjustor_company}</p></div>
-                <div><span className="text-slate-500">Submitted</span><p className="text-white">{new Date(claimLink.submitted_at).toLocaleDateString()}</p></div>
-                <div><span className="text-slate-500">Approved Labor</span><p className="text-white">${(claimLink.approved_labor||0).toLocaleString()}</p></div>
-                <div><span className="text-slate-500">Approved Parts</span><p className="text-white">${(claimLink.approved_parts||0).toLocaleString()}</p></div>
-                {claimLink.supplement_amount > 0 && <div><span className="text-slate-500">Supplement</span><p className="text-emerald-400 font-medium">${claimLink.supplement_amount.toLocaleString()}</p></div>}
-                {claimLink.adjustor_notes && <div className="col-span-2"><span className="text-slate-500">Notes</span><p className="text-white">{claimLink.adjustor_notes}</p></div>}
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <p className="text-xs text-slate-500">Link sent — waiting for adjustor assessment.</p>
-              <div className="flex gap-2">
-                <button onClick={copyClaimLink} className="bg-[#0f1117] border border-[#2a2d3e] text-white text-xs px-3 py-2 rounded-lg hover:border-indigo-500 transition-colors flex items-center gap-1.5">
-                  <Copy size={13} />
-                  {linkCopied ? 'Copied!' : 'Copy Link'}
-                </button>
-                <button onClick={generateClaimLink} className="text-slate-500 text-xs px-3 py-2 rounded-lg hover:text-white transition-colors">
-                  Regenerate
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-
         {/* Profit Breakdown */}
-        <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
+        <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4 col-span-full">
           <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3 flex items-center gap-1.5"><DollarSign size={12} /> Profit (NY Market)</h2>
           {editing ? (
             <div className="space-y-2">
@@ -1204,250 +1373,249 @@ export default function RODetail() {
           )}
         </div>
 
-        {/* Timeline */}
-        <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
-          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3 flex items-center gap-1.5"><ClipboardList size={12} /> Timeline</h2>
-          <div className="space-y-2.5">
-            {ro.log?.map((entry, i) => (
-              <div key={i} className="flex items-start gap-2.5">
-                <div className="w-2 h-2 rounded-full mt-1 flex-shrink-0" style={{background: STATUS_COLORS[entry.to_status]}} />
-                <div className="flex-1">
-                  <div className="text-xs text-white font-medium">{STATUS_LABELS[entry.to_status]}</div>
-                  <div className="text-[10px] text-slate-500">{new Date(entry.created_at).toLocaleString()}</div>
-                  {entry.note && <div className="text-[10px] text-slate-400 italic">{entry.note}</div>}
-                </div>
+      </div>
+
+      {/* Timeline */}
+      <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
+        <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3 flex items-center gap-1.5"><ClipboardList size={12} /> Timeline</h2>
+        <div className="space-y-2.5">
+          {ro.log?.map((entry, i) => (
+            <div key={i} className="flex items-start gap-2.5">
+              <div className="w-2 h-2 rounded-full mt-1 flex-shrink-0" style={{background: STATUS_COLORS[entry.to_status]}} />
+              <div className="flex-1">
+                <div className="text-xs text-white font-medium">{STATUS_LABELS[entry.to_status]}</div>
+                <div className="text-[10px] text-slate-500">{new Date(entry.created_at).toLocaleString()}</div>
+                {entry.note && <div className="text-[10px] text-slate-400 italic">{entry.note}</div>}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Notes */}
+      <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide">{t('common.notes')}</h2>
+          {savingQuickNote && <span className="text-[10px] text-slate-500">Saving...</span>}
+        </div>
+
+        {noteItems.length === 0 ? (
+          <p className="text-sm text-slate-500 mb-3">No notes yet.</p>
+        ) : (
+          <div className="space-y-2 mb-3">
+            {noteItems.map((note, idx) => (
+              <div key={`${idx}-${note.slice(0, 16)}`} className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3 flex items-start justify-between gap-3">
+                <p className="text-sm text-slate-200 whitespace-pre-wrap">{note}</p>
+                {!userIsAssistant && (
+                  <button
+                    type="button"
+                    onClick={() => removeQuickNote(idx)}
+                    disabled={savingQuickNote}
+                    className="text-slate-500 hover:text-red-400 disabled:opacity-50"
+                    title="Delete note"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                )}
               </div>
             ))}
           </div>
-        </div>
+        )}
+
+        {!userIsAssistant && (
+          <div className="flex gap-2">
+            <input
+              value={quickNoteText}
+              onChange={(e) => setQuickNoteText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  addQuickNote()
+                }
+              }}
+              placeholder="Add a note..."
+              className="flex-1 bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+            />
+            <button
+              type="button"
+              onClick={addQuickNote}
+              disabled={savingQuickNote || !quickNoteText.trim()}
+              className="text-xs bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-3 py-2 rounded-lg disabled:opacity-50"
+            >
+              Add
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Supplements Tracker */}
-      <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <FileText size={14} className="text-[#EAB308]" />
-            <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide">Supplements</h2>
-            {supplements.length > 0 && (
-              <span className="text-[10px] bg-[#0f1117] border border-[#2a2d3e] text-slate-400 px-2 py-0.5 rounded-full font-semibold">
-                {supplements.length}
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-3">
-            {totalApproved > 0 && (
-              <div className="text-right">
-                <div className="text-[10px] text-slate-500">Approved Total</div>
-                <div className="text-sm font-bold text-emerald-400">${totalApproved.toFixed(2)}</div>
-              </div>
-            )}
-            {userIsAdmin && (
+      </>
+      )}
+
+      {overviewTab === 'customer' && (
+        <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4 space-y-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
+                <User size={12} /> Customer
+              </h2>
+              <p className="text-xs text-slate-500 mt-1">Edit customer details without leaving this RO.</p>
+            </div>
+            {!userIsAssistant && (
               <button
-                onClick={() => setShowSuppForm(s => !s)}
-                className="flex items-center gap-1.5 text-xs bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] font-semibold px-3 py-1.5 rounded-lg transition-colors"
+                type="button"
+                onClick={saveCustomerInfo}
+                disabled={savingCustomer}
+                className="text-xs bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-3 py-1.5 rounded-lg disabled:opacity-50"
               >
-                <Plus size={12} /> Add Supplement
+                {savingCustomer ? 'Saving...' : 'Save Customer'}
               </button>
             )}
           </div>
-        </div>
 
-        {showSuppForm && (
-          <form onSubmit={submitSupplement} className="bg-[#0f1117] rounded-xl p-4 border border-[#2a2d3e] mb-4 space-y-3">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {!ro.customer?.id ? (
+            <p className="text-sm text-amber-300">No customer is linked to this RO yet.</p>
+          ) : (
+            <div className="grid sm:grid-cols-2 gap-3">
               <div className="sm:col-span-2">
-                <label className="text-[10px] text-slate-500 block mb-1">Description *</label>
+                <label className="text-[11px] text-slate-500 block mb-1">Full Name *</label>
                 <input
                   className={inp}
-                  required
-                  value={suppForm.description}
-                  onChange={e => setSuppForm(f => ({ ...f, description: e.target.value }))}
-                  placeholder="e.g. Hidden damage — inner fender, blend hood"
+                  value={customerForm.name}
+                  onChange={(e) => setCustomerForm((prev) => ({ ...prev, name: e.target.value }))}
+                  disabled={userIsAssistant}
                 />
               </div>
               <div>
-                <label className="text-[10px] text-slate-500 block mb-1">Amount ($) *</label>
+                <label className="text-[11px] text-slate-500 block mb-1">Phone</label>
                 <input
-                  type="number"
-                  min="0"
-                  step="0.01"
                   className={inp}
-                  required
-                  value={suppForm.amount}
-                  onChange={e => setSuppForm(f => ({ ...f, amount: e.target.value }))}
-                  placeholder="0.00"
+                  value={customerForm.phone}
+                  onChange={(e) => setCustomerForm((prev) => ({ ...prev, phone: e.target.value }))}
+                  disabled={userIsAssistant}
                 />
               </div>
               <div>
-                <label className="text-[10px] text-slate-500 block mb-1">Status</label>
-                <select
-                  value={suppForm.status}
-                  onChange={e => setSuppForm(f => ({ ...f, status: e.target.value }))}
-                  className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#EAB308]"
-                >
-                  <option value="Pending">Pending</option>
-                  <option value="Approved">Approved</option>
-                  <option value="Denied">Denied</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-[10px] text-slate-500 block mb-1">Date Submitted</label>
+                <label className="text-[11px] text-slate-500 block mb-1">Email</label>
                 <input
-                  type="date"
+                  type="email"
                   className={inp}
-                  value={suppForm.submitted_date}
-                  onChange={e => setSuppForm(f => ({ ...f, submitted_date: e.target.value }))}
+                  value={customerForm.email}
+                  onChange={(e) => setCustomerForm((prev) => ({ ...prev, email: e.target.value }))}
+                  disabled={userIsAssistant}
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="text-[11px] text-slate-500 block mb-1">Address</label>
+                <input
+                  className={inp}
+                  value={customerForm.address}
+                  onChange={(e) => setCustomerForm((prev) => ({ ...prev, address: e.target.value }))}
+                  disabled={userIsAssistant}
                 />
               </div>
               <div>
-                <label className="text-[10px] text-slate-500 block mb-1">Notes</label>
+                <label className="text-[11px] text-slate-500 block mb-1">Insurance Company</label>
                 <input
                   className={inp}
-                  value={suppForm.notes}
-                  onChange={e => setSuppForm(f => ({ ...f, notes: e.target.value }))}
-                  placeholder="Adjuster contacted, waiting on approval..."
+                  value={customerForm.insurance_company}
+                  onChange={(e) => setCustomerForm((prev) => ({ ...prev, insurance_company: e.target.value }))}
+                  disabled={userIsAssistant}
                 />
               </div>
-            </div>
-            <div className="flex gap-2">
-              <button type="button" onClick={() => setShowSuppForm(false)} className="flex-1 bg-[#1a1d2e] text-slate-400 rounded-lg py-2 text-xs border border-[#2a2d3e]">Cancel</button>
-              <button type="submit" disabled={savingSupp} className="flex-1 bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] font-semibold rounded-lg py-2 text-xs disabled:opacity-50">
-                {savingSupp ? 'Adding...' : 'Add Supplement'}
-              </button>
-            </div>
-          </form>
-        )}
-
-        {supplements.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-10 border border-dashed border-[#2a2d3e] rounded-xl gap-2">
-            <FileText size={24} className="text-slate-600" />
-            <p className="text-slate-500 text-sm">No supplements tracked yet.</p>
-            <p className="text-slate-600 text-xs">Add a supplement to track insurance requests and approvals.</p>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {supplements.map(supp => {
-              const meta = SUPP_STATUS_META[supp.status] || SUPP_STATUS_META.Pending
-              return (
-                <div key={supp.id} className="bg-[#0f1117] border border-[#2a2d3e] rounded-xl p-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap mb-1">
-                        <span className="text-sm text-white font-medium">{supp.description}</span>
-                        <span className="text-sm font-bold text-[#EAB308]">${parseFloat(supp.amount || 0).toFixed(2)}</span>
-                      </div>
-                      <div className="flex items-center gap-3 text-[10px] text-slate-500 flex-wrap">
-                        <span>Submitted {supp.submitted_date ? new Date(supp.submitted_date).toLocaleDateString() : '—'}</span>
-                        {supp.notes && <span className="text-slate-400 italic">{supp.notes}</span>}
-                      </div>
-                    </div>
-                    <div className="flex-shrink-0">
-                      {userIsAdmin ? (
-                        <select
-                          value={supp.status}
-                          disabled={updatingSupp === supp.id}
-                          onChange={e => updateSuppStatus(supp.id, e.target.value)}
-                          className={`text-[10px] px-2 py-1 rounded-lg border font-semibold bg-transparent focus:outline-none cursor-pointer disabled:opacity-50 ${meta.cls}`}
-                        >
-                          <option value="Pending">Pending</option>
-                          <option value="Approved">Approved</option>
-                          <option value="Denied">Denied</option>
-                        </select>
-                      ) : (
-                        <span className={`text-[10px] px-2 py-1 rounded-full border font-semibold ${meta.cls}`}>
-                          {supp.status}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )
-            })}
-
-            {/* Summary footer */}
-            <div className="border-t border-[#2a2d3e] pt-3 mt-2 grid grid-cols-3 gap-3">
-              {['Pending', 'Approved', 'Denied'].map(status => {
-                const meta = SUPP_STATUS_META[status]
-                const items = supplements.filter(s => s.status === status)
-                const total = items.reduce((sum, s) => sum + parseFloat(s.amount || 0), 0)
-                return (
-                  <div key={status} className={`rounded-lg border px-3 py-2 text-center ${meta.cls} bg-opacity-20`}>
-                    <div className="text-[10px] font-semibold opacity-80">{status}</div>
-                    <div className="text-sm font-bold mt-0.5">${total.toFixed(2)}</div>
-                    <div className="text-[10px] opacity-60">{items.length} item{items.length !== 1 ? 's' : ''}</div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {userIsEmployee && (
-        <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
-          <button
-            type="button"
-            onClick={() => setPreDropoffExpanded((v) => !v)}
-            className="w-full flex items-center justify-between"
-          >
-            <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
-              <Camera size={12} /> Pre-Dropoff Condition
-            </h2>
-            <span className="text-slate-500">
-              {preDropoffExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-            </span>
-          </button>
-          <p className="text-xs text-slate-500 mt-2">
-            These photos document vehicle condition before work begins
-          </p>
-
-          {preDropoffExpanded && (
-            <div className="mt-3 space-y-3">
-              <label
-                className={`inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg cursor-pointer transition-colors ${
-                  preDropoffUploading
-                    ? 'bg-indigo-800 text-indigo-300 opacity-50 pointer-events-none'
-                    : 'bg-indigo-600 hover:bg-indigo-500 text-white'
-                }`}
-              >
-                <Camera size={12} /> {preDropoffUploading ? 'Uploading...' : 'Upload Pre-Dropoff Photo'}
+              <div>
+                <label className="text-[11px] text-slate-500 block mb-1">Policy Number</label>
                 <input
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  disabled={preDropoffUploading}
-                  onChange={uploadPreDropoffPhoto}
+                  className={inp}
+                  value={customerForm.policy_number}
+                  onChange={(e) => setCustomerForm((prev) => ({ ...prev, policy_number: e.target.value }))}
+                  disabled={userIsAssistant}
                 />
-              </label>
-
-              {preDropoffPhotos.length === 0 ? (
-                <p className="text-sm text-slate-500">No pre-dropoff photos added yet.</p>
-              ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {preDropoffPhotos.map((photo) => (
-                    <a
-                      key={photo.id}
-                      href={photo.photo_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="relative group rounded-xl overflow-hidden border border-[#2a2d3e] aspect-video bg-[#0f1117]"
-                    >
-                      <img src={photo.photo_url} alt="Pre-dropoff" className="w-full h-full object-cover" />
-                      <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/80">
-                        <span className="text-[9px] px-1.5 py-0.5 rounded-full border font-semibold text-cyan-300 bg-cyan-900/30 border-cyan-700/40">
-                          Pre-Dropoff
-                        </span>
-                      </div>
-                    </a>
-                  ))}
-                </div>
-              )}
+              </div>
             </div>
           )}
         </div>
       )}
 
-      {userIsAdmin && (
+      {overviewTab === 'insurance' && (
+        <>
+      <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 space-y-2">
+        <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide">Imported Estimate</h2>
+        {estimateImport.loading ? (
+          <p className="text-sm text-slate-500">Checking imported estimate data...</p>
+        ) : importedItemsCount > 0 ? (
+          <>
+            <p className="text-sm text-slate-200">
+              {importedItemsCount} line item{importedItemsCount !== 1 ? 's' : ''} imported
+              {importedLastAt > 0 ? ` · last import ${new Date(importedLastAt).toLocaleString()}` : ''}
+            </p>
+            <p className="text-xs text-slate-400">
+              Estimate total in REVV: ${Number(estimateImport.summary?.grand_total || 0).toFixed(2)}
+            </p>
+          </>
+        ) : (
+          <p className="text-sm text-slate-500">No imported estimate items found yet for this RO.</p>
+        )}
+        <p className="text-[11px] text-slate-500">
+          REVV currently stores extracted line items from the upload. The original PDF file itself is not yet saved in the RO.
+        </p>
+        <button
+          onClick={() => navigate(`/estimate-builder/${id}`)}
+          className="text-xs bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg"
+        >
+          Open Estimate Builder
+        </button>
+      </div>
+
+      {ro.payment_type === 'insurance' && (
+        <ClaimStatusCard ro={ro} onUpdate={setRo} isAdmin={isAdmin()} />
+      )}
+
+      {(ro.payment_type === 'insurance' || ro.claim_number || ro.insurance_claim_number) && (
+        <InsurancePanel roId={id} ro={ro} onUpdated={() => { load(); loadEstimateImport() }} />
+      )}
+
+      <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-5 space-y-4">
+        <h3 className="font-semibold text-white text-sm flex items-center gap-2">
+          Insurance Adjustor
+        </h3>
+        {!claimLink ? (
+          <div>
+            <p className="text-xs text-slate-500 mb-3">Generate a secure link to share with the insurance adjustor. They can view the RO details and submit their assessment without creating an account.</p>
+            <button onClick={generateClaimLink} disabled={generatingLink} className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium px-4 py-2 rounded-lg transition-colors disabled:opacity-50">
+              {generatingLink ? 'Generating...' : 'Generate Adjustor Link'}
+            </button>
+          </div>
+        ) : claimLink.submitted_at ? (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 text-green-400 text-xs font-medium"><CheckCircle size={14} /> Assessment Received</div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              <div><span className="text-slate-500">Adjustor</span><p className="text-white">{claimLink.adjustor_name} — {claimLink.adjustor_company}</p></div>
+              <div><span className="text-slate-500">Submitted</span><p className="text-white">{new Date(claimLink.submitted_at).toLocaleDateString()}</p></div>
+              <div><span className="text-slate-500">Approved Labor</span><p className="text-white">${(claimLink.approved_labor||0).toLocaleString()}</p></div>
+              <div><span className="text-slate-500">Approved Parts</span><p className="text-white">${(claimLink.approved_parts||0).toLocaleString()}</p></div>
+              {claimLink.supplement_amount > 0 && <div><span className="text-slate-500">Supplement</span><p className="text-emerald-400 font-medium">${claimLink.supplement_amount.toLocaleString()}</p></div>}
+              {claimLink.adjustor_notes && <div className="col-span-2"><span className="text-slate-500">Notes</span><p className="text-white">{claimLink.adjustor_notes}</p></div>}
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <p className="text-xs text-slate-500">Link sent — waiting for adjustor assessment.</p>
+            <div className="flex gap-2">
+              <button onClick={copyClaimLink} className="bg-[#0f1117] border border-[#2a2d3e] text-white text-xs px-3 py-2 rounded-lg hover:border-indigo-500 transition-colors flex items-center gap-1.5">
+                <Copy size={13} />
+                {linkCopied ? 'Copied!' : 'Copy Link'}
+              </button>
+              <button onClick={generateClaimLink} className="text-slate-500 text-xs px-3 py-2 rounded-lg hover:text-white transition-colors">
+                Regenerate
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+      </>
+      )}
+
+      {overviewTab === 'technician' && userIsAdmin && (
         <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
           <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">🔒 Internal Notes</h2>
           <form onSubmit={submitInternalNote} className="space-y-2 mb-3">
@@ -1499,6 +1667,7 @@ export default function RODetail() {
       )}
 
       {/* SMS Thread */}
+      {overviewTab === 'communication' && (
       <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
@@ -1575,21 +1744,13 @@ export default function RODetail() {
           </button>
         </form>
       </div>
-
-      {/* Notes */}
-      <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
-        <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-2">{t('common.notes')}</h2>
-        {editing
-          ? <textarea className={inp} rows={3} value={form.notes || ''} onChange={e => set('notes', e.target.value)} placeholder={`${t('common.notes')}...`} />
-          : <p className="text-sm text-slate-300">{ro.notes || <span className="text-slate-600 italic">No notes</span>}</p>
-        }
-      </div>
+      )}
 
       {/* Photos */}
-      <ROPhotos roId={ro.id} isAdmin={userIsAdmin} />
+      {overviewTab === 'technician' && <ROPhotos roId={ro.id} isAdmin={userIsAdmin} />}
 
       {/* Assigned Tech */}
-      {userIsEmployee && (
+      {overviewTab === 'technician' && userIsEmployee && (
         <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
           <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3 flex items-center gap-1.5">
             <User size={12} /> {t('ro.technician')}
@@ -1617,7 +1778,7 @@ export default function RODetail() {
       )}
 
       {/* Tech Notes */}
-      {userIsEmployee && (
+      {overviewTab === 'technician' && userIsEmployee && (
         <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
           <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-2 flex items-center gap-1.5">
             <ClipboardList size={12} /> {t('common.notes')}
@@ -1634,6 +1795,7 @@ export default function RODetail() {
         </div>
       )}
 
+      {overviewTab === 'communication' && (
       <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
@@ -1690,9 +1852,10 @@ export default function RODetail() {
           </div>
         )}
       </div>
+      )}
 
       {/* Parts Requests */}
-      {userIsEmployee && (
+      {overviewTab === 'parts' && userIsEmployee && (
         <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
@@ -1807,6 +1970,7 @@ export default function RODetail() {
       )}
 
       {/* Customer Updates + Links */}
+      {overviewTab === 'communication' && (
       <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4 space-y-3">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -1894,6 +2058,7 @@ export default function RODetail() {
           </div>
         )}
       </div>
+      )}
 
       {showCommForm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -2022,6 +2187,7 @@ export default function RODetail() {
       )}
 
       {/* Parts Tracking */}
+      {overviewTab === 'parts' && (
       <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
@@ -2205,6 +2371,7 @@ export default function RODetail() {
           </div>
         )}
       </div>
+      )}
       </>
       )}
 

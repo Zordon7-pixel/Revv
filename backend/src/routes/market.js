@@ -14,7 +14,7 @@ router.get('/rates', (req, res) => {
 
 router.get('/shop', auth, async (req, res) => {
   try {
-    const shop = await dbGet('SELECT id, name, phone, address, city, state, zip, market_tier, labor_rate, parts_markup, tax_rate, lat, lng, geofence_radius, twilio_phone_number, monthly_revenue_target FROM shops WHERE id = $1', [req.user.shop_id]);
+    const shop = await dbGet('SELECT id, name, phone, logo_url, address, city, state, zip, market_tier, labor_rate, parts_markup, tax_rate, lat, lng, geofence_radius, twilio_phone_number, monthly_revenue_target FROM shops WHERE id = $1', [req.user.shop_id]);
     if (!shop) return res.status(404).json({ error: 'Shop not found' });
     const smsConfig = await getTwilioConfigForShop(req.user.shop_id);
     res.json({ ...shop, sms_configured: await isConfiguredForShop(req.user.shop_id), sms_phone: smsConfig?.phoneNumber || null });
@@ -25,13 +25,29 @@ router.get('/shop', auth, async (req, res) => {
 
 router.put('/shop', auth, async (req, res) => {
   try {
-    const ALLOWED_MARKET_FIELDS = ['state','labor_rate','paint_rate','parts_markup','name','phone','twilio_account_sid','twilio_auth_token','twilio_phone_number','twilio_api_key','twilio_api_secret','address','city','zip','tax_rate','lat','lng','geofence_radius','tracking_api_key','monthly_revenue_target'];
+    const ALLOWED_MARKET_FIELDS = ['state','labor_rate','paint_rate','parts_markup','name','phone','logo_url','twilio_account_sid','twilio_auth_token','twilio_phone_number','twilio_api_key','twilio_api_secret','address','city','zip','tax_rate','lat','lng','geofence_radius','tracking_api_key','monthly_revenue_target'];
     const updates = Object.fromEntries(Object.entries(req.body).filter(([k]) => ALLOWED_MARKET_FIELDS.includes(k)));
     const {
       name, phone, address, city, state, zip, labor_rate, parts_markup, tax_rate,
       lat, lng, geofence_radius, tracking_api_key, twilio_account_sid, twilio_auth_token,
-      twilio_phone_number, twilio_api_key, twilio_api_secret, monthly_revenue_target,
+      twilio_phone_number, twilio_api_key, twilio_api_secret, monthly_revenue_target, logo_url,
     } = updates;
+    let normalizedLogo = undefined;
+    if (logo_url !== undefined) {
+      const rawLogo = String(logo_url || '').trim();
+      if (!rawLogo) {
+        normalizedLogo = null;
+      } else {
+        const isSupported = /^data:image\/(?:png|jpe?g);base64,/i.test(rawLogo);
+        if (!isSupported) {
+          return res.status(400).json({ error: 'Logo must be PNG or JPEG image data.' });
+        }
+        if (rawLogo.length > 900000) {
+          return res.status(400).json({ error: 'Logo is too large. Please upload a smaller image.' });
+        }
+        normalizedLogo = rawLogo;
+      }
+    }
 
     let market_tier = null;
     if (state) {
@@ -42,6 +58,7 @@ router.put('/shop', auth, async (req, res) => {
     const fields = []; const vals = [];
     if (name         != null) { fields.push('name');         vals.push(name); }
     if (phone        != null) { fields.push('phone');        vals.push(phone); }
+    if (logo_url !== undefined) { fields.push('logo_url'); vals.push(normalizedLogo); }
     if (address      != null) { fields.push('address');      vals.push(address); }
     if (city         != null) { fields.push('city');         vals.push(city); }
     if (state        != null) { fields.push('state');        vals.push(state.toUpperCase()); }
@@ -67,7 +84,7 @@ router.put('/shop', auth, async (req, res) => {
     const setClauses = fields.map((f, i) => `${f} = $${i + 1}`).join(', ');
     await dbRun(`UPDATE shops SET ${setClauses} WHERE id = $${fields.length + 1}`, vals);
 
-    const updated = await dbGet('SELECT id, name, phone, address, city, state, zip, market_tier, labor_rate, parts_markup, tax_rate, lat, lng, geofence_radius, twilio_phone_number, monthly_revenue_target FROM shops WHERE id = $1', [req.user.shop_id]);
+    const updated = await dbGet('SELECT id, name, phone, logo_url, address, city, state, zip, market_tier, labor_rate, parts_markup, tax_rate, lat, lng, geofence_radius, twilio_phone_number, monthly_revenue_target FROM shops WHERE id = $1', [req.user.shop_id]);
     const smsConfig = await getTwilioConfigForShop(req.user.shop_id);
     res.json({ ...updated, sms_configured: await isConfiguredForShop(req.user.shop_id), sms_phone: smsConfig?.phoneNumber || null });
   } catch (err) {

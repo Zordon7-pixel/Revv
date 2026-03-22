@@ -21,7 +21,15 @@ Return ONLY valid JSON in this exact format:
 {
   "insurance_company": "string or null",
   "claim_number": "string or null",
+  "adjuster_name": "string or null",
+  "adjuster_phone": "string or null",
+  "adjuster_email": "string or null",
+  "customer_name": "string or null",
+  "customer_phone": "string or null",
   "vehicle": "string or null",
+  "vehicle_year": "string or null",
+  "vehicle_make": "string or null",
+  "vehicle_model": "string or null",
   "line_items": [
     {
       "type": "labor|parts|sublet|other",
@@ -34,6 +42,74 @@ Return ONLY valid JSON in this exact format:
 }
 Classify each item: labor operations = "labor", parts/materials = "parts", sublet work = "sublet", everything else = "other".
 Return only the JSON object, no markdown fences, no extra text.`;
+
+function isOpenAiJsonBodyParseError(err) {
+  const msg = String(err?.message || '').toLowerCase();
+  return msg.includes('could not parse the json body');
+}
+
+function sanitizeTextForOpenAI(input, { aggressive = false } = {}) {
+  const str = String(input || '');
+  const out = [];
+
+  for (let i = 0; i < str.length; i++) {
+    const code = str.charCodeAt(i);
+
+    // Preserve valid surrogate pairs, drop orphan surrogates.
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = str.charCodeAt(i + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        out.push(str[i], str[i + 1]);
+        i += 1;
+      }
+      continue;
+    }
+    if (code >= 0xdc00 && code <= 0xdfff) continue;
+
+    // Remove unsafe control characters.
+    if (code <= 0x1f && code !== 0x09 && code !== 0x0a && code !== 0x0d) {
+      out.push(' ');
+      continue;
+    }
+
+    out.push(str[i]);
+  }
+
+  let cleaned = out.join('').replace(/\u0000/g, '').trim();
+  if (aggressive) {
+    cleaned = cleaned.replace(/[^\x09\x0A\x0D\x20-\x7E]/g, ' ');
+  }
+  return cleaned;
+}
+
+async function parseEstimateTextWithOpenAI(openai, extractedText) {
+  const callParser = async (cleanedText) => {
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      max_tokens: 4096,
+      messages: [
+        {
+          role: 'user',
+          content: `${SYSTEM_PROMPT}\n\nEstimate document text:\n${cleanedText.slice(0, PDF_TEXT_CHAR_LIMIT)}`,
+        },
+      ],
+    });
+    return response.choices?.[0]?.message?.content || '';
+  };
+
+  const cleaned = sanitizeTextForOpenAI(extractedText);
+  if (!cleaned) return '';
+
+  try {
+    return await callParser(cleaned);
+  } catch (err) {
+    if (!isOpenAiJsonBodyParseError(err)) throw err;
+    // Some PDFs contain invalid Unicode bytes that can break strict JSON parsing.
+    const aggressive = sanitizeTextForOpenAI(extractedText, { aggressive: true });
+    if (!aggressive) throw err;
+    return callParser(aggressive);
+  }
+}
 
 async function extractPdfText(buffer) {
   // Primary parser for hosted environments (Railway) where poppler binaries
@@ -130,23 +206,18 @@ router.post('/parse', auth, upload.single('estimate_image'), async (req, res) =>
       }
 
       if (extractedText) {
-        const response = await openai.chat.completions.create({
-          model: 'gpt-4o',
-          max_tokens: 4096,
-          messages: [
-            {
-              role: 'user',
-              content: [
-                {
-                  type: 'text',
-                  text: `${SYSTEM_PROMPT}\n\nEstimate document text:\n${extractedText.slice(0, PDF_TEXT_CHAR_LIMIT)}`,
-                },
-              ],
-            },
-          ],
-        });
-        raw = response.choices?.[0]?.message?.content || '';
-      } else {
+        try {
+          raw = await parseEstimateTextWithOpenAI(openai, extractedText);
+        } catch (parseErr) {
+          if (isOpenAiJsonBodyParseError(parseErr)) {
+            console.warn('[InsuranceOCR] OpenAI rejected PDF-text payload; falling back to PDF image OCR.');
+          } else {
+            throw parseErr;
+          }
+        }
+      }
+
+      if (!raw) {
         let images = [];
         try {
           images = await extractPdfPageImages(req.file.buffer, PDF_IMAGE_PAGE_LIMIT);
@@ -234,7 +305,15 @@ router.post('/parse', auth, upload.single('estimate_image'), async (req, res) =>
       parsed: {
         insurance_company: parsed.insurance_company || null,
         claim_number: parsed.claim_number || null,
+        adjuster_name: parsed.adjuster_name || null,
+        adjuster_phone: parsed.adjuster_phone || null,
+        adjuster_email: parsed.adjuster_email || null,
+        customer_name: parsed.customer_name || null,
+        customer_phone: parsed.customer_phone || null,
         vehicle: parsed.vehicle || null,
+        vehicle_year: parsed.vehicle_year || null,
+        vehicle_make: parsed.vehicle_make || null,
+        vehicle_model: parsed.vehicle_model || null,
         total_allowed: parsed.total_allowed || null,
         line_items: items,
       },

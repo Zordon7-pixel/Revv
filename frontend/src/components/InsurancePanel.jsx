@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { BadgeDollarSign, ChevronDown, ChevronUp, FileImage, Mail, Phone, ShieldCheck, Upload, X } from 'lucide-react'
 import api from '../lib/api'
+import { computeEstimateCrossCheck } from '../lib/estimateCrossCheck'
 
 const INSURANCE_COMPANIES = [
   'State Farm',
@@ -48,17 +49,25 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
   const [ocrPreview, setOcrPreview] = useState(null)
   const [ocrParsing, setOcrParsing] = useState(false)
   const [ocrItems, setOcrItems] = useState(null)     // parsed line items
+  const [ocrParsedMeta, setOcrParsedMeta] = useState(null)
+  const [ocrCrossCheck, setOcrCrossCheck] = useState(null)
   const [ocrSelected, setOcrSelected] = useState({}) // checked items
   const [ocrImporting, setOcrImporting] = useState(false)
   const [ocrError, setOcrError] = useState(null)
+  const [ocrNotice, setOcrNotice] = useState(null)
+  const [ocrImportedCount, setOcrImportedCount] = useState(0)
 
   function handleFileChange(e) {
     const file = e.target.files?.[0]
     if (!file) return
     setOcrFile(file)
     setOcrItems(null)
+    setOcrParsedMeta(null)
+    setOcrCrossCheck(null)
     setOcrSelected({})
     setOcrError(null)
+    setOcrNotice(null)
+    setOcrImportedCount(0)
     if (file.type.startsWith('image/')) {
       const reader = new FileReader()
       reader.onload = (ev) => setOcrPreview(ev.target.result)
@@ -78,12 +87,73 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
       const { data } = await api.post('/insurance-ocr/parse', form, {
         headers: { 'Content-Type': 'multipart/form-data' },
       })
-      const items = data?.parsed?.line_items || data?.items || []
+      const parsed = data?.parsed || {}
+      const items = Array.isArray(parsed?.line_items) ? parsed.line_items : (data?.items || [])
       setOcrItems(items)
+      setOcrParsedMeta(parsed)
       // Select all by default
       const sel = {}
       items.forEach((_, i) => { sel[i] = true })
       setOcrSelected(sel)
+
+      const crossCheck = computeEstimateCrossCheck(parsed, ro)
+      setOcrCrossCheck(crossCheck)
+
+      setForm((prev) => ({
+        ...prev,
+        insurance_company: parsed.insurance_company || prev.insurance_company,
+        insurance_claim_number: parsed.claim_number || prev.insurance_claim_number,
+        adjuster_name: parsed.adjuster_name || prev.adjuster_name,
+        adjuster_phone: parsed.adjuster_phone || prev.adjuster_phone,
+        adjuster_email: parsed.adjuster_email || prev.adjuster_email,
+      }))
+
+      const existingClaim = ro?.insurance_claim_number || ro?.claim_number || ''
+      const existingCarrier = ro?.insurance_company || ro?.insurer || ''
+      const existingAdjuster = ro?.adjuster_name || ''
+      const existingAdjusterPhone = ro?.adjuster_phone || ''
+      const existingAdjusterEmail = ro?.adjuster_email || ''
+      const patch = {}
+
+      if (parsed.insurance_company && (!existingCarrier || !crossCheck.insurerMismatch)) {
+        patch.insurance_company = parsed.insurance_company
+      }
+      if (parsed.claim_number && (!existingClaim || !crossCheck.claimMismatch)) {
+        patch.insurance_claim_number = parsed.claim_number
+      }
+      if (parsed.adjuster_name && (!existingAdjuster || !crossCheck.adjusterMismatch)) {
+        patch.adjuster_name = parsed.adjuster_name
+      }
+      if (parsed.adjuster_phone && !existingAdjusterPhone) {
+        patch.adjuster_phone = parsed.adjuster_phone
+      }
+      if (parsed.adjuster_email && !existingAdjusterEmail) {
+        patch.adjuster_email = parsed.adjuster_email
+      }
+
+      if (Object.keys(patch).length) {
+        try {
+          await api.patch(`/ros/${roId}/insurance`, patch)
+          onUpdated?.()
+          const appliedFields = []
+          if (patch.insurance_company) appliedFields.push('carrier')
+          if (patch.insurance_claim_number) appliedFields.push('claim #')
+          if (patch.adjuster_name) appliedFields.push('adjuster')
+          if (patch.adjuster_phone) appliedFields.push('adjuster phone')
+          if (patch.adjuster_email) appliedFields.push('adjuster email')
+          setOcrNotice(`Auto-populated ${appliedFields.join(', ')} from the estimate.`)
+        } catch {
+          setOcrNotice('Parsed metadata found, but auto-save failed. You can still import line items.')
+        }
+      } else if (crossCheck.hasMismatch) {
+        setOcrNotice('Potential mismatch found. Metadata was not auto-overwritten.')
+      } else if (items.length) {
+        setOcrNotice('Estimate parsed successfully. Select line items to import.')
+      }
+
+      if (!items.length) {
+        setOcrError('No line items were extracted. Try a clearer estimate image/PDF.')
+      }
     } catch (err) {
       setOcrError(err?.response?.data?.error || 'Could not parse the estimate. Try a clearer file.')
     } finally {
@@ -93,10 +163,17 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
 
   async function importSelected() {
     if (!ocrItems?.length) return
+    if (ocrCrossCheck?.hasMismatch) {
+      const proceed = window.confirm(
+        `Potential mismatch detected:\n- ${ocrCrossCheck.messages.join('\n- ')}\n\nImport selected line items anyway?`
+      )
+      if (!proceed) return
+    }
     const toImport = ocrItems.filter((_, i) => ocrSelected[i])
     if (!toImport.length) return
     setOcrImporting(true)
     try {
+      let imported = 0
       for (const item of toImport) {
         await api.post(`/estimate-items/${roId}`, {
           description: item.description,
@@ -104,12 +181,21 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
           quantity: item.quantity ?? 1,
           unit_price: item.unit_price ?? 0,
         })
+        imported += 1
       }
       onUpdated?.()
       setOcrFile(null)
       setOcrPreview(null)
       setOcrItems(null)
       setOcrSelected({})
+      setOcrImportedCount(imported)
+      setOcrNotice(`Imported ${imported} item${imported !== 1 ? 's' : ''} to Estimate Builder.`)
+      const openBuilder = window.confirm(
+        `Imported ${imported} item${imported !== 1 ? 's' : ''}. Open Estimate Builder now?`
+      )
+      if (openBuilder) {
+        window.location.assign(`/estimate-builder/${roId}`)
+      }
     } catch (err) {
       setOcrError(err?.response?.data?.error || 'Import failed')
     } finally {
@@ -232,7 +318,15 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
                 <FileImage size={12} /> Import Insurance Estimate
               </h3>
               {ocrFile && (
-                <button type="button" onClick={() => { setOcrFile(null); setOcrPreview(null); setOcrItems(null); setOcrError(null); }} className="text-slate-500 hover:text-red-400">
+                <button type="button" onClick={() => {
+                  setOcrFile(null)
+                  setOcrPreview(null)
+                  setOcrItems(null)
+                  setOcrParsedMeta(null)
+                  setOcrCrossCheck(null)
+                  setOcrError(null)
+                  setOcrNotice(null)
+                }} className="text-slate-500 hover:text-red-400">
                   <X size={14} />
                 </button>
               )}
@@ -240,6 +334,24 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
             <p className="text-[10px] text-slate-500 mb-3">
               Upload a photo or scan of the adjuster's estimate. AI will extract line items you can import directly into the estimate.
             </p>
+            {ocrNotice && <p className="text-xs text-emerald-300 mb-2">{ocrNotice}</p>}
+            {ocrParsedMeta && (ocrParsedMeta.insurance_company || ocrParsedMeta.claim_number || ocrParsedMeta.adjuster_name || ocrParsedMeta.vehicle) && (
+              <p className="text-[10px] text-indigo-300 mb-2">
+                Parsed: {[ocrParsedMeta.insurance_company, ocrParsedMeta.claim_number, ocrParsedMeta.adjuster_name, ocrParsedMeta.vehicle].filter(Boolean).join(' · ')}
+              </p>
+            )}
+            {ocrCrossCheck?.hasMismatch && (
+              <div className="mb-2 rounded border border-red-700/40 bg-red-950/20 p-2 space-y-1">
+                {ocrCrossCheck.messages.map((msg, idx) => (
+                  <p key={idx} className="text-[10px] text-red-300">{msg}</p>
+                ))}
+              </div>
+            )}
+            {ocrImportedCount > 0 && (
+              <a href={`/estimate-builder/${roId}`} className="inline-block mb-2 text-[11px] text-indigo-300 hover:text-indigo-200 underline">
+                Open Estimate Builder to review imported items
+              </a>
+            )}
 
             {!ocrFile && (
               <>

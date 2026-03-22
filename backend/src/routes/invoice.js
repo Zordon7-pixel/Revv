@@ -1,5 +1,7 @@
 const router = require('express').Router();
 const PDFDocument = require('pdfkit');
+const fs = require('fs');
+const path = require('path');
 const auth = require('../middleware/auth');
 const { dbGet, dbAll } = require('../db');
 
@@ -60,6 +62,17 @@ function normalizedPaymentStatus(ro) {
   return ro?.payment_received ? 'succeeded' : 'unpaid';
 }
 
+function decodeDataUrlImage(dataUrl) {
+  const raw = String(dataUrl || '');
+  const match = raw.match(/^data:(image\/(?:png|jpe?g));base64,(.+)$/i);
+  if (!match) return null;
+  try {
+    return Buffer.from(match[2], 'base64');
+  } catch {
+    return null;
+  }
+}
+
 async function loadInvoiceContext(roId, shopId) {
   const ro = await dbGet(
     'SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2',
@@ -108,11 +121,28 @@ function streamInvoicePdf(res, context) {
   const doc = new PDFDocument({ size: 'LETTER', margin: 50 });
   doc.pipe(res);
 
-  doc.font('Helvetica-Bold').fontSize(24).fillColor('#111827').text(shop?.name || 'REVV Auto Body');
+  const shopLogo = decodeDataUrlImage(shop?.logo_url);
+  const revvLogoPath = path.join(__dirname, '../../../frontend/public/icon-192.png');
+  const hasRevvLogo = fs.existsSync(revvLogoPath);
+  let headerLeft = 50;
+  if (shopLogo) {
+    try {
+      doc.image(shopLogo, 50, 45, { fit: [82, 82] });
+      headerLeft = 144;
+    } catch {
+      headerLeft = 50;
+    }
+  }
+
+  doc.font('Helvetica-Bold').fontSize(24).fillColor('#111827').text(shop?.name || 'REVV Auto Body', headerLeft, 50, { width: 240 });
   doc.font('Helvetica').fontSize(10).fillColor('#4B5563');
   const addressLine = [shop?.address, shop?.city, shop?.state, shop?.zip].filter(Boolean).join(', ');
-  if (addressLine) doc.text(addressLine);
-  if (shop?.phone) doc.text(shop.phone);
+  let contactY = 84;
+  if (addressLine) {
+    doc.text(addressLine, headerLeft, contactY, { width: 240 });
+    contactY += 14;
+  }
+  if (shop?.phone) doc.text(shop.phone, headerLeft, contactY, { width: 240 });
 
   doc.font('Helvetica-Bold').fontSize(20).fillColor('#111827').text('INVOICE', 400, 50, { align: 'right' });
   doc.font('Helvetica').fontSize(10).fillColor('#374151');
@@ -204,8 +234,18 @@ function streamInvoicePdf(res, context) {
     });
   }
 
+  const footerY = doc.page.height - 40;
   doc.font('Helvetica').fontSize(9).fillColor('#6B7280');
-  doc.text('Thank you for your business.', 50, doc.page.height - 40);
+  doc.text('Thank you for your business.', 50, footerY);
+  if (hasRevvLogo) {
+    try {
+      doc.image(revvLogoPath, 438, footerY - 2, { fit: [11, 11] });
+    } catch {
+      // Non-blocking branding asset.
+    }
+  }
+  doc.font('Helvetica-Bold').fontSize(8).fillColor('#64748B');
+  doc.text('Powered by REVV', 452, footerY + 1);
 
   doc.end();
 }

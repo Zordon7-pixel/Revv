@@ -3,6 +3,7 @@ CREATE TABLE IF NOT EXISTS shops (
   name TEXT NOT NULL,
   onboarded BOOLEAN DEFAULT FALSE,
   phone TEXT,
+  logo_url TEXT,
   address TEXT,
   city TEXT,
   state TEXT,

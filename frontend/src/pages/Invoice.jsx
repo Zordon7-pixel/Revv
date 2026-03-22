@@ -127,10 +127,17 @@ export default function Invoice() {
 
         {/* Header — shop info */}
         <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', marginBottom: '2rem', borderBottom: '2px solid #111', paddingBottom: '1.25rem' }}>
-          <div>
-            <h1 style={{ margin: 0, fontSize: '1.75rem', fontWeight: 800, letterSpacing: '-0.5px', textTransform: 'uppercase' }}>{shop?.name || 'Auto Body Shop'}</h1>
-            {shop?.address && <p style={{ margin: '0.25rem 0 0', fontSize: '0.85rem', color: '#444' }}>{shop.address}{shop.city ? `, ${shop.city}` : ''}{shop.state ? `, ${shop.state}` : ''} {shop.zip || ''}</p>}
-            {shop?.phone && <p style={{ margin: '0.1rem 0 0', fontSize: '0.85rem', color: '#444' }}>{shop.phone}</p>}
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
+            {shop?.logo_url && (
+              <div style={{ width: '84px', height: '84px', border: '1px solid #e5e7eb', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', background: '#fff' }}>
+                <img src={shop.logo_url} alt={`${shop?.name || 'Shop'} logo`} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+              </div>
+            )}
+            <div>
+              <h1 style={{ margin: 0, fontSize: '1.75rem', fontWeight: 800, letterSpacing: '-0.5px', textTransform: 'uppercase' }}>{shop?.name || 'Auto Body Shop'}</h1>
+              {shop?.address && <p style={{ margin: '0.25rem 0 0', fontSize: '0.85rem', color: '#444' }}>{shop.address}{shop.city ? `, ${shop.city}` : ''}{shop.state ? `, ${shop.state}` : ''} {shop.zip || ''}</p>}
+              {shop?.phone && <p style={{ margin: '0.1rem 0 0', fontSize: '0.85rem', color: '#444' }}>{shop.phone}</p>}
+            </div>
           </div>
           <div style={{ textAlign: 'right' }}>
             <h2 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px', color: '#111' }}>Invoice</h2>
@@ -265,9 +272,10 @@ export default function Invoice() {
           <p style={{ margin: '0.35rem 0 0', fontSize: '0.8rem', color: '#888' }}>
             {shop?.name}{shop?.phone ? ` · ${shop.phone}` : ''}
           </p>
-          <p style={{ margin: '0.2rem 0 0', fontSize: '0.75rem', color: '#aaa' }}>
-            Every repair tracked. Every dollar counted. Every customer impressed.
-          </p>
+          <div style={{ marginTop: '0.5rem', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.3rem 0.55rem', border: '1px solid #e5e7eb', borderRadius: '999px', background: '#fafafa' }}>
+            <img src="/icon-192.svg" alt="REVV logo" style={{ width: '14px', height: '14px' }} />
+            <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 600 }}>Powered by REVV</span>
+          </div>
         </div>
 
       </div>

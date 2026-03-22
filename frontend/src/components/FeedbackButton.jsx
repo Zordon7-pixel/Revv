@@ -20,7 +20,7 @@ const PRIORITIES = [
 
 const blank = () => ({ category: 'bug', priority: 'medium', message: '', expected: '' })
 
-export default function FeedbackButton() {
+export default function FeedbackButton({ placement = 'floating' }) {
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
   const [items, setItems] = useState([blank()])
@@ -65,10 +65,14 @@ export default function FeedbackButton() {
     setOpen(false); setTimeout(reset, 300)
   }
 
+  const triggerClass = placement === 'sidebar'
+    ? 'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-slate-300 hover:bg-indigo-900/30 hover:text-indigo-300 transition-all w-full'
+    : 'fixed bottom-5 right-36 z-40 flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold px-4 py-2.5 rounded-full shadow-lg shadow-indigo-900/50 transition-all hover:scale-105'
+
   return (
     <>
       <button onClick={() => setOpen(true)}
-        className="fixed bottom-5 right-36 z-40 flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold px-4 py-2.5 rounded-full shadow-lg shadow-indigo-900/50 transition-all hover:scale-105">
+        className={triggerClass}>
         <MessageSquarePlus size={16} /> Feedback
       </button>
 

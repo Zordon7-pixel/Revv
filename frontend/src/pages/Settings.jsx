@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { MapPin, Wrench, DollarSign, Save, RefreshCw, CheckCircle, ShieldCheck, Truck, Trash2, MessageSquare, ChevronDown, X, AlertTriangle, Smartphone, LogOut, CalendarDays } from 'lucide-react'
 import api from '../lib/api'
+import { optimizeImageForUpload } from '../lib/imageUpload'
 
 const TIER_COLORS = {
   1: 'text-purple-400 bg-purple-900/30 border-purple-700',
@@ -9,6 +10,15 @@ const TIER_COLORS = {
   4: 'text-slate-400 bg-slate-900/30 border-slate-700',
 }
 const TIER_LABELS = { 1:'Major Metro', 2:'Large City', 3:'Mid-Size Market', 4:'Small Market' }
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.onerror = (err) => reject(err)
+    reader.readAsDataURL(file)
+  })
+}
 
 export default function Settings() {
   const currentYearMonth = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
@@ -46,6 +56,7 @@ export default function Settings() {
   const [billing, setBilling] = useState(null)
   const [billingLoading, setBillingLoading] = useState(true)
   const [billingAction, setBillingAction] = useState('')
+  const [logoBusy, setLogoBusy] = useState(false)
 
   async function refreshSmsStatus() {
     setSmsLoading(true)
@@ -65,6 +76,7 @@ export default function Settings() {
       setForm({
         name:             r.data.name         || '',
         phone:            r.data.phone        || '',
+        logo_url:         r.data.logo_url     || '',
         address:          r.data.address      || '',
         city:             r.data.city         || '',
         state:            r.data.state        || '',
@@ -209,6 +221,7 @@ export default function Settings() {
         twilio_api_key:           (form.twilio_api_key || '').trim() || undefined,
         twilio_api_secret:        (form.twilio_api_secret || '').trim() || undefined,
         monthly_revenue_target:   parseInt(form.monthly_revenue_target, 10) || 85000,
+        logo_url:                 form.logo_url || null,
       })
       await api.patch('/settings', {
         sms_notifications_enabled: !!smsNotificationsEnabled,
@@ -218,6 +231,7 @@ export default function Settings() {
         ...f,
         name:         data.name         || f.name,
         phone:        data.phone        || f.phone,
+        logo_url:     data.logo_url     || '',
         address:      data.address      || f.address,
         city:         data.city         || f.city,
         state:        data.state        || f.state,
@@ -239,6 +253,33 @@ export default function Settings() {
       setSaveError(err?.response?.data?.error || 'Failed to save settings. Please try again.')
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function onLogoPick(e) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setLogoBusy(true)
+    try {
+      const optimized = await optimizeImageForUpload(file, {
+        maxDimension: 560,
+        targetBytes: 220 * 1024,
+      })
+      const dataUrl = await fileToDataUrl(optimized)
+      if (!dataUrl.startsWith('data:image/')) {
+        alert('Please upload an image file.')
+        return
+      }
+      if (dataUrl.length > 900000) {
+        alert('Logo is too large. Please use a smaller image.')
+        return
+      }
+      setForm((prev) => ({ ...prev, logo_url: dataUrl }))
+    } catch {
+      alert('Could not process logo image.')
+    } finally {
+      setLogoBusy(false)
     }
   }
 
@@ -350,8 +391,16 @@ export default function Settings() {
     <div className="space-y-6 max-w-2xl">
 
       {/* Header */}
-      <div>
+      <div className="flex items-center justify-between gap-3">
         <h1 className="text-xl font-bold text-white">Shop Settings</h1>
+        <button
+          type="submit"
+          form="shop-settings-form"
+          disabled={saving}
+          className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl px-4 py-2 text-sm transition-colors disabled:opacity-50"
+        >
+          {saved ? <><CheckCircle size={16} /> Saved!</> : saving ? 'Saving...' : <><Save size={16} /> Save Settings</>}
+        </button>
       </div>
 
       <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-5 space-y-3">
@@ -428,7 +477,7 @@ export default function Settings() {
         </div>
       )}
 
-      <form onSubmit={handleSave} className="space-y-6">
+      <form id="shop-settings-form" onSubmit={handleSave} className="space-y-6">
 
         {/* My Profile */}
         <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-5 space-y-4">
@@ -462,6 +511,34 @@ export default function Settings() {
             <div>
               <label className={lbl}>Phone</label>
               <input className={inp} value={form.phone || ''} onChange={e => setForm(f => ({...f, phone: e.target.value}))} placeholder="(555) 000-0000" />
+            </div>
+            <div className="col-span-2">
+              <label className={lbl}>Invoice Logo</label>
+              <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3 space-y-3">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <label className="text-xs bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-3 py-1.5 rounded-lg cursor-pointer">
+                    {logoBusy ? 'Processing...' : 'Upload Logo'}
+                    <input type="file" accept="image/*" className="hidden" onChange={onLogoPick} disabled={logoBusy} />
+                  </label>
+                  {!!form.logo_url && (
+                    <button
+                      type="button"
+                      onClick={() => setForm((f) => ({ ...f, logo_url: '' }))}
+                      className="text-xs bg-[#23273a] hover:bg-[#2a2d3e] text-slate-200 px-3 py-1.5 rounded-lg"
+                    >
+                      Remove Logo
+                    </button>
+                  )}
+                  <span className="text-[11px] text-slate-500">Shown on invoice and PDF exports.</span>
+                </div>
+                {form.logo_url ? (
+                  <div className="inline-flex bg-white rounded-lg p-2 border border-[#2a2d3e]">
+                    <img src={form.logo_url} alt="Shop logo preview" className="h-14 w-auto object-contain" />
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-slate-600">No logo uploaded yet.</p>
+                )}
+              </div>
             </div>
             <div>
               <label className={lbl}>ZIP Code</label>
@@ -900,11 +977,6 @@ export default function Settings() {
           </p>
         )}
 
-        {/* Save */}
-        <button type="submit" disabled={saving}
-          className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl px-6 py-3 text-sm transition-colors disabled:opacity-50">
-          {saved ? <><CheckCircle size={16} /> Saved!</> : saving ? 'Saving...' : <><Save size={16} /> Save Settings</>}
-        </button>
       </form>
 
       {/* Danger Zone */}

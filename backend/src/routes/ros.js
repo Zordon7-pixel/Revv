@@ -34,6 +34,30 @@ const publicTokenLimiter = rateLimit({
   message: { error: 'Too many requests. Try again in 15 minutes.' },
 });
 
+const PANEL_PATTERNS = {
+  fender: [/\bfender\b/, /\bfndr\b/],
+  front_door: [/\bfront\s+door\b/, /\bfrt\s+door\b/, /\bfr\s+door\b/, /\bdoor\s+front\b/],
+  rear_door: [/\brear\s+door\b/, /\brr\s+door\b/, /\bdoor\s+rear\b/],
+  quarter_panel: [/\bquarter\s+panel\b/, /\bqtr\s+panel\b/, /\bpanel\s+quarter\b/],
+  hood: [/\bhood\b/, /\bbonnet\b/],
+};
+
+const PANEL_DISPLAY = {
+  fender: 'fender',
+  front_door: 'front door',
+  rear_door: 'rear door',
+  quarter_panel: 'quarter panel',
+  hood: 'hood',
+};
+
+const BLEND_ADJACENCY = [
+  { painted: 'front_door', blend: 'fender' },
+  { painted: 'fender', blend: 'front_door' },
+  { painted: 'rear_door', blend: 'quarter_panel' },
+  { painted: 'quarter_panel', blend: 'rear_door' },
+  { painted: 'hood', blend: 'fender' },
+];
+
 function toBase64Url(input) {
   return Buffer.from(input)
     .toString('base64')
@@ -269,6 +293,214 @@ function toIntCents(value) {
   const n = Number(value);
   if (!Number.isFinite(n)) return null;
   return Math.round(n);
+}
+
+function normalizeLineText(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9&/\s-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function matchesAny(text, patterns) {
+  return patterns.some((pattern) => pattern.test(text));
+}
+
+function detectSide(text) {
+  if (matchesAny(text, [/\bleft\b/, /\blt\b/, /\blh\b/, /\bdriver'?s?\b/])) return 'left';
+  if (matchesAny(text, [/\bright\b/, /\brt\b/, /\brh\b/, /\bpassenger'?s?\b/])) return 'right';
+  return null;
+}
+
+function detectPanels(text) {
+  return Object.entries(PANEL_PATTERNS)
+    .filter(([, patterns]) => matchesAny(text, patterns))
+    .map(([panel]) => panel);
+}
+
+function panelLabel(panel, side) {
+  const base = PANEL_DISPLAY[panel] || panel;
+  return side ? `${side} ${base}` : base;
+}
+
+function titleCase(text) {
+  return String(text || '')
+    .split(' ')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function summarizeAudit(flags) {
+  return flags.reduce(
+    (acc, flag) => {
+      const key = String(flag.priority || '').toLowerCase();
+      if (key === 'high') acc.high += 1;
+      else if (key === 'medium') acc.medium += 1;
+      else acc.low += 1;
+      return acc;
+    },
+    { high: 0, medium: 0, low: 0 }
+  );
+}
+
+function runSupplementAudit(lineItems) {
+  const flags = [];
+  const normalizedItems = (lineItems || []).map((item) => {
+    const text = normalizeLineText(item.description);
+    const side = detectSide(text);
+    const panels = detectPanels(text);
+    const isLabor = String(item.type || '').toLowerCase() === 'labor';
+    const hours = Number(item.quantity);
+    return {
+      ...item,
+      text,
+      side,
+      panels,
+      isLabor,
+      hours: Number.isFinite(hours) ? hours : 0,
+    };
+  });
+
+  const blendTargets = new Set();
+  const paintedPanels = [];
+  const seenPaintedPanels = new Set();
+  let hasGenericBlendLine = false;
+
+  for (const item of normalizedItems) {
+    const isBlend = /\bblend\b/.test(item.text);
+    if (isBlend && item.panels.length === 0) hasGenericBlendLine = true;
+    if (isBlend) {
+      for (const panel of item.panels) {
+        blendTargets.add(`${panel}:${item.side || 'any'}`);
+      }
+    }
+
+    const isPaintedPanel =
+      item.panels.length > 0
+      && !isBlend
+      && /\b(paint|refinish|refin|prime|clear\s*coat|base\s*coat)\b/.test(item.text);
+
+    if (!isPaintedPanel) continue;
+    for (const panel of item.panels) {
+      const key = `${panel}:${item.side || 'any'}`;
+      if (seenPaintedPanels.has(key)) continue;
+      seenPaintedPanels.add(key);
+      paintedPanels.push({ panel, side: item.side, source: item.description });
+    }
+  }
+
+  const hasBlendForPanel = (panel, side) => {
+    if (blendTargets.has(`${panel}:${side || 'any'}`)) return true;
+    if (side && blendTargets.has(`${panel}:any`)) return true;
+    return hasGenericBlendLine;
+  };
+
+  const missingBlendKeys = new Set();
+  for (const painted of paintedPanels) {
+    const adjacency = BLEND_ADJACENCY.filter((pair) => pair.painted === painted.panel);
+    for (const pair of adjacency) {
+      if (hasBlendForPanel(pair.blend, painted.side)) continue;
+      const dedupeKey = `${painted.panel}:${painted.side || 'any'}->${pair.blend}`;
+      if (missingBlendKeys.has(dedupeKey)) continue;
+      missingBlendKeys.add(dedupeKey);
+      const blendPanel = titleCase(panelLabel(pair.blend, painted.side));
+      const paintedPanel = panelLabel(painted.panel, painted.side);
+      flags.push({
+        priority: 'HIGH',
+        category: 'blend',
+        description: `Missing blend on ${panelLabel(pair.blend, painted.side)} — adjacent to painted ${paintedPanel}`,
+        supplementLanguage: `Add blend operation: ${blendPanel} — 0.5hr blend per CCC guidelines.`,
+      });
+    }
+  }
+
+  const hasRI = (text) => /\br\s*&\s*i\b|\br\s+and\s+i\b|\bremove\s*(and|&)\s*install\b|\bremove\/install\b/.test(text);
+  const hasRR = (text) => /\br\s*&\s*r\b|\br\s+and\s+r\b|\bremove\s*(and|&)\s*replace\b|\bremove\/replace\b/.test(text);
+
+  for (const item of normalizedItems) {
+    if (!item.isLabor || item.hours <= 0) continue;
+
+    const addLaborFlag = (opLabel, minimum) => {
+      if (item.hours >= minimum) return;
+      flags.push({
+        priority: 'MEDIUM',
+        category: 'labor',
+        description: `${opLabel} underwritten at ${item.hours.toFixed(1)}h (minimum ${minimum.toFixed(1)}h)`,
+        supplementLanguage: `Increase labor allowance: ${opLabel} to ${minimum.toFixed(1)}h minimum per CCC/Mitchell guidelines.`,
+      });
+    };
+
+    if (hasRI(item.text) && /\bbumper\b/.test(item.text) && /\bcover\b/.test(item.text)) {
+      addLaborFlag('R&I bumper cover', 1.5);
+    }
+    if (/\bblend\b/.test(item.text) && (item.panels.length > 0 || /\badjacent\s+panel\b/.test(item.text))) {
+      addLaborFlag('Blend adjacent panel', 0.5);
+    }
+    if (hasRR(item.text) && /\bdoor\b/.test(item.text)) {
+      addLaborFlag('R&R door', 2.5);
+    }
+    if (/\bstructural\b/.test(item.text)) {
+      addLaborFlag('Structural labor', 3.0);
+    }
+  }
+
+  for (const item of normalizedItems) {
+    const hasRepair = /\brepair\b|\brpr\b/.test(item.text);
+    const hasReplace = /\breplace\b|\br\s*&\s*r\b|\br\s+and\s+r\b|\bremove\s*(and|&)\s*replace\b/.test(item.text);
+    if (!hasRepair || hasReplace) continue;
+
+    const hasPanel = item.panels.length > 0 || /\bpanel\b/.test(item.text);
+    const hasAluminum = /\balumin(?:um|ium)\b|\balu\b/.test(item.text);
+    if (hasAluminum && hasPanel) {
+      flags.push({
+        priority: 'HIGH',
+        category: 'repair_replace',
+        description: `Aluminum panel written as repair: "${item.description}"`,
+        supplementLanguage: 'Replace aluminum panel instead of repair; request OEM replacement procedure and material-specific operations.',
+      });
+    }
+
+    if (/\bsteering\s+(gear|rack)\b/.test(item.text)) {
+      flags.push({
+        priority: 'HIGH',
+        category: 'repair_replace',
+        description: `Steering gear written as repair: "${item.description}"`,
+        supplementLanguage: 'Replace steering gear assembly; repair is not acceptable for safety-critical steering components.',
+      });
+    }
+
+    if (/\bhead\s*lamp\b|\bheadlight\b|\bhead\s*light\b/.test(item.text)) {
+      flags.push({
+        priority: 'HIGH',
+        category: 'repair_replace',
+        description: `Headlamp written as repair: "${item.description}"`,
+        supplementLanguage: 'Replace headlamp assembly and include required post-install aiming/calibration operations.',
+      });
+    }
+  }
+
+  const adasFeatures = new Set();
+  let hasCalibration = false;
+  for (const item of normalizedItems) {
+    if (/\bcalibrat(?:e|ion|ions|ing)?\b/.test(item.text)) hasCalibration = true;
+    if (/\bblind\s*spot\b|\bbsm\b/.test(item.text)) adasFeatures.add('blind spot sensors');
+    if (/\blane\s+departure\b|\blane\s+keep\b|\bldw\b|\blka\b/.test(item.text)) adasFeatures.add('lane departure systems');
+    if (/\badaptive\s+cruise\b|\bacc\b|\bradar\b/.test(item.text)) adasFeatures.add('adaptive cruise systems');
+    if (/\bsurround\s+camera\b|\bsurround\s+view\b|\b360\s*camera\b|\bbird'?s?\s*eye\b/.test(item.text)) adasFeatures.add('surround cameras');
+  }
+  if (adasFeatures.size > 0 && !hasCalibration) {
+    const featureList = Array.from(adasFeatures).join(', ');
+    flags.push({
+      priority: 'HIGH',
+      category: 'adas',
+      description: `ADAS components detected (${featureList}) but no calibration line item found`,
+      supplementLanguage: `Add ADAS calibration operations for ${featureList} per OEM procedure, including required scan/calibration steps.`,
+    });
+  }
+
+  return flags;
 }
 
 async function ensureRoCommsTable() {
@@ -683,6 +915,33 @@ router.post('/bulk-status', auth, requireTechnician, bulkStatusUpdateHandler);
 
 // POST /api/ros/bulk-update — backward compatible bulk status endpoint
 router.post('/bulk-update', auth, requireTechnician, bulkStatusUpdateHandler);
+
+router.get('/:id/supplement-audit', auth, async (req, res) => {
+  try {
+    const ro = await dbGet(
+      'SELECT id FROM repair_orders WHERE id = $1 AND shop_id = $2',
+      [req.params.id, req.user.shop_id]
+    );
+    if (!ro) return res.status(404).json({ error: 'Not found' });
+
+    const lineItems = await dbAll(
+      `SELECT id, type, description, quantity, unit_price
+       FROM estimate_line_items
+       WHERE ro_id = $1 AND shop_id = $2
+       ORDER BY sort_order ASC, created_at ASC`,
+      [req.params.id, req.user.shop_id]
+    );
+
+    const flags = runSupplementAudit(lineItems);
+    return res.json({
+      roId: req.params.id,
+      flags,
+      summary: summarizeAudit(flags),
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
 
 router.get('/:id', auth, async (req, res) => {
   try {
@@ -1114,7 +1373,7 @@ router.post('/approval/:token/respond', publicTokenLimiter, async (req, res) => 
 
 router.post('/', auth, requireTechnician, roLimitGuard, async (req, res) => {
   try {
-    const { customer_id, vehicle_id, job_type, payment_type, claim_number, insurer, adjuster_name, adjuster_phone, deductible, notes, estimated_delivery, damaged_panels } = req.body;
+    const { customer_id, vehicle_id, job_type, payment_type, claim_number, insurer, adjuster_name, adjuster_phone, adjuster_email, deductible, notes, estimated_delivery, damaged_panels } = req.body;
     if (!customer_id || !vehicle_id) {
       return res.status(400).json({ error: 'customer_id and vehicle_id are required' });
     }
@@ -1185,9 +1444,9 @@ router.post('/', auth, requireTechnician, roLimitGuard, async (req, res) => {
           INSERT INTO repair_orders (
             id, shop_id, ro_number, vehicle_id, customer_id, job_type, status, payment_type,
             claim_number, insurer, insurance_claim_number, insurance_company,
-            adjuster_name, adjuster_phone, deductible, intake_date, estimated_delivery, notes, damaged_panels
+            adjuster_name, adjuster_phone, adjuster_email, deductible, intake_date, estimated_delivery, notes, damaged_panels
           )
-          VALUES ($1, $2, $3, $4, $5, $6, 'intake', $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+          VALUES ($1, $2, $3, $4, $5, $6, 'intake', $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
         `, [
           roId,
           req.user.shop_id,
@@ -1202,6 +1461,7 @@ router.post('/', auth, requireTechnician, roLimitGuard, async (req, res) => {
           insurer || null,
           adjuster_name || null,
           adjuster_phone || null,
+          adjuster_email || null,
           deductible || 0,
           today,
           estimated_delivery || null,
@@ -1284,8 +1544,43 @@ router.put('/:id', auth, requireTechnician, async (req, res) => {
   try {
     const ro = await dbGet('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
     if (!ro) return res.status(404).json({ error: 'Not found' });
-    const ALLOWED_RO_FIELDS = ['status','notes','tech_notes','assigned_to','estimate_amount','actual_amount','updated_at','insurance_company','adjuster_name','adjuster_phone','claim_number','insurance_claim_number','policy_number','is_drp','insurance_approved_amount','supplement_status','supplement_amount','supplement_notes','total_insurer_owed','deductible','auth_number','job_type','payment_type','insurer','adjuster_email','estimated_delivery','parts_cost','labor_cost','sublet_cost','tax','total','deductible_waived','referral_fee','goodwill_repair_cost','damaged_panels','claim_status'];
-    const updates = Object.fromEntries(Object.entries(req.body).filter(([k]) => ALLOWED_RO_FIELDS.includes(k)));
+
+    const body = req.body || {};
+    const vehicleFieldMap = {
+      vehicle_year: 'year',
+      vehicle_make: 'make',
+      vehicle_model: 'model',
+      vehicle_color: 'color',
+      vehicle_plate: 'plate',
+      vehicle_mileage: 'mileage',
+      vin: 'vin',
+    };
+    const vehicleUpdates = {};
+    for (const [incoming, column] of Object.entries(vehicleFieldMap)) {
+      if (!Object.prototype.hasOwnProperty.call(body, incoming)) continue;
+      let value = body[incoming];
+      if (column === 'year' || column === 'mileage') {
+        const parsed = Number.parseInt(value, 10);
+        value = Number.isFinite(parsed) ? parsed : null;
+      } else {
+        value = String(value || '').trim() || null;
+      }
+      vehicleUpdates[column] = value;
+    }
+
+    if (Object.keys(vehicleUpdates).length > 0) {
+      if (!ro.vehicle_id) return res.status(400).json({ error: 'No vehicle attached to this RO' });
+      const vehicleKeys = Object.keys(vehicleUpdates);
+      const vehicleVals = vehicleKeys.map((k) => vehicleUpdates[k]);
+      const setVehicle = vehicleKeys.map((k, i) => `${k} = $${i + 1}`).join(', ');
+      await dbRun(
+        `UPDATE vehicles SET ${setVehicle} WHERE id = $${vehicleKeys.length + 1} AND shop_id = $${vehicleKeys.length + 2}`,
+        [...vehicleVals, ro.vehicle_id, req.user.shop_id]
+      );
+    }
+
+    const ALLOWED_RO_FIELDS = ['status','notes','tech_notes','assigned_to','estimate_amount','actual_amount','updated_at','insurance_company','adjuster_name','adjuster_phone','claim_number','insurance_claim_number','policy_number','is_drp','insurance_approved_amount','supplement_status','supplement_amount','supplement_notes','total_insurer_owed','deductible','auth_number','job_type','payment_type','insurer','adjuster_email','estimated_delivery','intake_date','customer_phone','parts_cost','labor_cost','sublet_cost','tax','total','deductible_waived','referral_fee','goodwill_repair_cost','damaged_panels','claim_status'];
+    const updates = Object.fromEntries(Object.entries(body).filter(([k]) => ALLOWED_RO_FIELDS.includes(k)));
     const statusChanged = Object.prototype.hasOwnProperty.call(updates, 'status') && updates.status !== ro.status;
     if (Object.keys(updates).length > 0) {
       const profit = calculateProfit({ ...ro, ...updates });
@@ -1295,6 +1590,8 @@ router.put('/:id', auth, requireTechnician, async (req, res) => {
       const updateVals = Object.values(updates);
       const setClauses = updateKeys.map((k, i) => `${k} = $${i + 1}`).join(', ');
       await dbRun(`UPDATE repair_orders SET ${setClauses} WHERE id = $${updateKeys.length + 1}`, [...updateVals, req.params.id]);
+    } else if (Object.keys(vehicleUpdates).length === 0) {
+      return res.status(400).json({ error: 'No valid fields to update' });
     }
     if (statusChanged) {
       queueStatusEmail(req.params.id, req.user.shop_id, updates.status);

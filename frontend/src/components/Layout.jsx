@@ -112,8 +112,8 @@ export default function Layout() {
         ))}
       </nav>
       <div className="p-3 border-t border-[#2a2d3e]">
-        <div className="mb-3">
-          <LanguageToggle />
+        <div className="mb-2">
+          <FeedbackButton placement="sidebar" />
         </div>
         <button onClick={logout} className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-slate-400 hover:bg-red-900/30 hover:text-red-400 transition-all w-full">
           <LogOut size={16} /> Sign Out
@@ -125,7 +125,7 @@ export default function Layout() {
   return (
     <div className="flex h-screen bg-[#0f1117] overflow-hidden">
       {/* Desktop sidebar */}
-      <aside className="hidden md:flex flex-col w-56 bg-[#1a1d2e] border-r border-[#2a2d3e] flex-shrink-0">
+      <aside className="hidden md:flex flex-col w-56 bg-[#1a1d2e] border-r border-[#2a2d3e] flex-shrink-0 relative z-[70]">
         <SidebarContent />
       </aside>
 
@@ -245,7 +245,6 @@ export default function Layout() {
 
         <main className="flex-1 overflow-auto p-4 md:p-6">
           <Outlet />
-          <FeedbackButton />
         </main>
         <HelpPanel isOpen={helpOpen} onClose={() => setHelpOpen(false)} />
       </div>

@@ -1,6 +1,8 @@
 const router = require('express').Router();
 const { dbAll, dbGet, dbRun } = require('../db');
 const auth = require('../middleware/auth');
+const { v4: uuidv4 } = require('uuid');
+const { calculateProfit } = require('../services/profit');
 
 const ALLOWED_TYPES = new Set(['labor', 'parts', 'sublet', 'other']);
 
@@ -71,6 +73,173 @@ async function getSummary(roId, shopId) {
   };
 }
 
+async function getProfitOpportunities(roId, shopId) {
+  const [shop, ro, items, summary] = await Promise.all([
+    dbGet('SELECT labor_rate, paint_rate, parts_markup FROM shops WHERE id = $1', [shopId]),
+    dbGet(
+      `SELECT id, true_profit, deductible_waived, referral_fee, goodwill_repair_cost
+       FROM repair_orders
+       WHERE id = $1 AND shop_id = $2`,
+      [roId, shopId]
+    ),
+    dbAll(
+      `SELECT id, type, description, quantity, unit_price, total
+       FROM estimate_line_items
+       WHERE ro_id = $1 AND shop_id = $2
+       ORDER BY sort_order ASC, created_at ASC`,
+      [roId, shopId]
+    ),
+    getSummary(roId, shopId),
+  ]);
+
+  const shopLaborRate = toNumber(shop?.labor_rate, 0);
+  const flags = [];
+  let supplementTotal = 0;
+  let laborUndercutCount = 0;
+  let reviewCount = 0;
+
+  for (const item of items) {
+    const type = String(item?.type || '').toLowerCase();
+    const qty = toNumber(item?.quantity, 0);
+    const unitPrice = toNumber(item?.unit_price, 0);
+
+    if (type === 'labor' && shopLaborRate > 0 && unitPrice < shopLaborRate) {
+      const gapPerHour = shopLaborRate - unitPrice;
+      const supplementOpportunity = gapPerHour * qty;
+      supplementTotal += supplementOpportunity;
+      laborUndercutCount += 1;
+      flags.push({
+        item_id: item.id,
+        type: 'undervalue',
+        description: item.description || 'Labor line',
+        quantity: qty,
+        insurance_rate: unitPrice,
+        shop_rate: shopLaborRate,
+        gap_per_unit: gapPerHour,
+        supplement_opportunity: supplementOpportunity,
+        message: `Insurance ${unitPrice.toFixed(2)}/hr vs shop ${shopLaborRate.toFixed(2)}/hr.`,
+      });
+      continue;
+    }
+
+    if (type === 'parts' && unitPrice > 0 && unitPrice < 15) {
+      reviewCount += 1;
+      flags.push({
+        item_id: item.id,
+        type: 'review',
+        description: item.description || 'Parts line',
+        quantity: qty,
+        insurance_rate: unitPrice,
+        shop_rate: null,
+        gap_per_unit: null,
+        supplement_opportunity: 0,
+        message: `Low parts unit price (${unitPrice.toFixed(2)}). Verify markup/cost.`,
+      });
+    }
+  }
+
+  const currentProfit = toNumber(ro?.true_profit, 0);
+  const projectedProfit = currentProfit + supplementTotal;
+
+  return {
+    shop_rates: {
+      labor_rate: shopLaborRate,
+      paint_rate: toNumber(shop?.paint_rate, 0),
+      parts_markup: toNumber(shop?.parts_markup, 0),
+    },
+    summary: {
+      line_count: toInteger(summary?.line_count, 0),
+      labor_undercut_count: laborUndercutCount,
+      review_count: reviewCount,
+      total_supplement_opportunity: supplementTotal,
+      current_grand_total: toNumber(summary?.grand_total, 0),
+      projected_grand_total: toNumber(summary?.grand_total, 0) + supplementTotal,
+      current_true_profit: currentProfit,
+      projected_true_profit: projectedProfit,
+      profit_uplift: supplementTotal,
+    },
+    flags: flags.sort((a, b) => toNumber(b.supplement_opportunity, 0) - toNumber(a.supplement_opportunity, 0)),
+  };
+}
+
+async function syncRepairOrderFinancials(roId, shopId, summary) {
+  const ro = await dbGet(
+    `SELECT id, deductible_waived, referral_fee, goodwill_repair_cost
+     FROM repair_orders
+     WHERE id = $1 AND shop_id = $2`,
+    [roId, shopId]
+  );
+  if (!ro) return;
+
+  const nextValues = {
+    parts_cost: toNumber(summary?.parts_total, 0),
+    labor_cost: toNumber(summary?.labor_total, 0),
+    sublet_cost: toNumber(summary?.sublet_total, 0),
+    tax: toNumber(summary?.tax_amount, 0),
+    total: toNumber(summary?.grand_total, 0),
+  };
+  const profit = calculateProfit({ ...ro, ...nextValues });
+
+  await dbRun(
+    `UPDATE repair_orders
+     SET parts_cost = $1,
+         labor_cost = $2,
+         sublet_cost = $3,
+         tax = $4,
+         total = $5,
+         estimate_amount = $6,
+         true_profit = $7,
+         updated_at = NOW()
+     WHERE id = $8 AND shop_id = $9`,
+    [
+      nextValues.parts_cost,
+      nextValues.labor_cost,
+      nextValues.sublet_cost,
+      nextValues.tax,
+      nextValues.total,
+      nextValues.total,
+      toNumber(profit?.trueProfit, 0),
+      roId,
+      shopId,
+    ]
+  );
+}
+
+router.get('/:roId/opportunities', auth, async (req, res) => {
+  try {
+    const ro = await ensureRepairOrder(req.params.roId, req.user.shop_id);
+    if (!ro) return res.status(404).json({ error: 'Repair order not found' });
+
+    const opportunities = await getProfitOpportunities(req.params.roId, req.user.shop_id);
+    return res.json({ success: true, ...opportunities });
+  } catch (err) {
+    console.error('[Estimate Items] opportunities error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.post('/:roId/import-financials', auth, async (req, res) => {
+  try {
+    const ro = await ensureRepairOrder(req.params.roId, req.user.shop_id);
+    if (!ro) return res.status(404).json({ error: 'Repair order not found' });
+
+    const summary = await getSummary(req.params.roId, req.user.shop_id);
+    await syncRepairOrderFinancials(req.params.roId, req.user.shop_id, summary);
+
+    const financials = await dbGet(
+      `SELECT parts_cost, labor_cost, sublet_cost, tax, total, estimate_amount, true_profit
+       FROM repair_orders
+       WHERE id = $1 AND shop_id = $2`,
+      [req.params.roId, req.user.shop_id]
+    );
+
+    return res.json({ success: true, summary, financials });
+  } catch (err) {
+    console.error('[Estimate Items] import financials error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 router.get('/:roId/summary', auth, async (req, res) => {
   try {
     const ro = await ensureRepairOrder(req.params.roId, req.user.shop_id);
@@ -127,13 +296,14 @@ router.post('/:roId', auth, async (req, res) => {
       : toInteger(req.body?.sort_order, 0);
 
     const inserted = await dbGet(
-      `INSERT INTO estimate_line_items (ro_id, shop_id, type, description, quantity, unit_price, taxable, sort_order)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `INSERT INTO estimate_line_items (id, ro_id, shop_id, type, description, quantity, unit_price, taxable, sort_order)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING id, ro_id, shop_id, type, description, quantity, unit_price, total, taxable, sort_order, created_at, updated_at`,
-      [req.params.roId, req.user.shop_id, nextType, description, quantity, unitPrice, taxable, sortOrder]
+      [uuidv4(), req.params.roId, req.user.shop_id, nextType, description, quantity, unitPrice, taxable, sortOrder]
     );
 
     const summary = await getSummary(req.params.roId, req.user.shop_id);
+    await syncRepairOrderFinancials(req.params.roId, req.user.shop_id, summary);
     return res.status(201).json({ success: true, item: inserted, summary });
   } catch (err) {
     console.error('[Estimate Items] create error:', err);
@@ -187,6 +357,7 @@ router.put('/:roId/:itemId', auth, async (req, res) => {
     );
 
     const summary = await getSummary(req.params.roId, req.user.shop_id);
+    await syncRepairOrderFinancials(req.params.roId, req.user.shop_id, summary);
     return res.json({ success: true, item: updated, summary });
   } catch (err) {
     console.error('[Estimate Items] update error:', err);
@@ -209,6 +380,7 @@ router.delete('/:roId/:itemId', auth, async (req, res) => {
     if (!removed) return res.status(404).json({ error: 'Line item not found' });
 
     const summary = await getSummary(req.params.roId, req.user.shop_id);
+    await syncRepairOrderFinancials(req.params.roId, req.user.shop_id, summary);
     return res.json({ success: true, deleted_id: removed.id, summary });
   } catch (err) {
     console.error('[Estimate Items] delete error:', err);

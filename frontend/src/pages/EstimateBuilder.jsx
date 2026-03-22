@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { AlertTriangle, ArrowLeft, Camera, CheckCircle, Plus, Trash2, X } from 'lucide-react'
 import api from '../lib/api'
+import { computeEstimateCrossCheck } from '../lib/estimateCrossCheck'
 
 const ITEM_TYPES = ['labor', 'parts', 'sublet', 'other']
 
@@ -23,7 +24,7 @@ function SeverityBadge({ severity }) {
 }
 
 // ── OCR Preview Modal ─────────────────────────────────────────────────────────
-function OcrModal({ parsed, flags, analysisSummary, checked, onToggle, onImport, onCancel, importing }) {
+function OcrModal({ parsed, flags, analysisSummary, checked, crossCheck, metaNote, onToggle, onImport, onCancel, importing }) {
   const checkedCount = Object.values(checked).filter(Boolean).length
   const hasAnalysis = flags && flags.length > 0
   const supplementTotal = analysisSummary?.total_supplement_opportunity || 0
@@ -46,6 +47,19 @@ function OcrModal({ parsed, flags, analysisSummary, checked, onToggle, onImport,
         </div>
 
         {/* Phase 2: Analysis summary bar */}
+        {metaNote && (
+          <div className="px-5 py-3 bg-indigo-950/30 border-b border-indigo-800/30 text-indigo-200 text-xs">
+            {metaNote}
+          </div>
+        )}
+        {crossCheck?.hasMismatch && (
+          <div className="px-5 py-3 bg-red-950/30 border-b border-red-800/30 space-y-1">
+            {crossCheck.messages.map((msg, idx) => (
+              <p key={idx} className="text-red-300 text-xs">{msg}</p>
+            ))}
+            <p className="text-red-200 text-[11px]">Review before importing.</p>
+          </div>
+        )}
         {hasAnalysis && supplementTotal > 0 && (
           <div className="px-5 py-3 bg-amber-950/40 border-b border-amber-800/40 flex items-center gap-3 flex-wrap">
             <AlertTriangle size={15} className="text-amber-400 shrink-0" />
@@ -159,6 +173,28 @@ export default function EstimateBuilder() {
   const [ocrAnalysisSummary, setOcrAnalysisSummary] = useState(null)
   const [ocrChecked, setOcrChecked] = useState({})
   const [ocrImporting, setOcrImporting] = useState(false)
+  const [ocrCrossCheck, setOcrCrossCheck] = useState(null)
+  const [ocrMetaNote, setOcrMetaNote] = useState('')
+  const [importingFinancials, setImportingFinancials] = useState(false)
+  const [financialNotice, setFinancialNotice] = useState('')
+  const [opportunity, setOpportunity] = useState(null)
+  const [opportunityLoading, setOpportunityLoading] = useState(false)
+
+  async function loadOpportunities({ silent = false } = {}) {
+    if (!silent) setOpportunityLoading(true)
+    try {
+      const { data } = await api.get(`/estimate-items/${roId}/opportunities`)
+      setOpportunity({
+        summary: data?.summary || null,
+        flags: Array.isArray(data?.flags) ? data.flags : [],
+        shopRates: data?.shop_rates || {},
+      })
+    } catch (_) {
+      if (!silent) setOpportunity(null)
+    } finally {
+      if (!silent) setOpportunityLoading(false)
+    }
+  }
 
   useEffect(() => {
     let mounted = true
@@ -174,6 +210,7 @@ export default function EstimateBuilder() {
         setItems(itemsRes.data?.items || [])
         setSummary(itemsRes.data?.summary || null)
         setRo(roRes.data || null)
+        await loadOpportunities({ silent: true })
       } catch (err) {
         alert(err?.response?.data?.error || 'Could not load estimate builder')
       } finally {
@@ -211,6 +248,7 @@ export default function EstimateBuilder() {
       const { data } = await api.put(`/estimate-items/${roId}/${id}`, payload)
       updateItemLocal(id, data.item)
       setSummary(data.summary || null)
+      await loadOpportunities({ silent: true })
     } catch (err) {
       alert(err?.response?.data?.error || 'Could not save line item')
     } finally {
@@ -232,6 +270,7 @@ export default function EstimateBuilder() {
       })
       setItems((prev) => [...prev, data.item])
       setSummary(data.summary || null)
+      await loadOpportunities({ silent: true })
     } catch (err) {
       alert(err?.response?.data?.error || 'Could not add line item')
     } finally {
@@ -245,10 +284,29 @@ export default function EstimateBuilder() {
       const { data } = await api.delete(`/estimate-items/${roId}/${itemId}`)
       setItems((prev) => prev.filter((item) => item.id !== itemId))
       setSummary(data.summary || null)
+      await loadOpportunities({ silent: true })
     } catch (err) {
       alert(err?.response?.data?.error || 'Could not delete line item')
     } finally {
       setDeletingId(null)
+    }
+  }
+
+  async function importFinancialsToRo() {
+    setImportingFinancials(true)
+    setFinancialNotice('')
+    try {
+      const { data } = await api.post(`/estimate-items/${roId}/import-financials`)
+      if (data?.summary) setSummary(data.summary)
+      if (data?.financials) {
+        setRo((prev) => (prev ? { ...prev, ...data.financials } : prev))
+      }
+      setFinancialNotice(`Imported financials into RO · Total ${money(data?.summary?.grand_total || 0)}`)
+      await loadOpportunities({ silent: true })
+    } catch (err) {
+      alert(err?.response?.data?.error || 'Could not import financial data into RO')
+    } finally {
+      setImportingFinancials(false)
     }
   }
 
@@ -266,13 +324,65 @@ export default function EstimateBuilder() {
         headers: { 'Content-Type': 'multipart/form-data' },
       })
       if (!data.success) throw new Error(data.error || 'Parse failed')
-      const parsed = data.parsed
+      const parsed = {
+        ...(data.parsed || {}),
+        line_items: Array.isArray(data?.parsed?.line_items) ? data.parsed.line_items : [],
+      }
       const initialChecked = {}
       parsed.line_items.forEach((_, idx) => { initialChecked[idx] = true })
       setOcrParsed(parsed)
       setOcrChecked(initialChecked)
       setOcrFlags(null)
       setOcrAnalysisSummary(null)
+      const crossCheck = computeEstimateCrossCheck(parsed, ro)
+      setOcrCrossCheck(crossCheck)
+      setOcrMetaNote('')
+
+      const existingClaim = ro?.insurance_claim_number || ro?.claim_number || ''
+      const existingCarrier = ro?.insurance_company || ro?.insurer || ''
+      const existingAdjuster = ro?.adjuster_name || ''
+      const existingAdjusterPhone = ro?.adjuster_phone || ''
+      const existingAdjusterEmail = ro?.adjuster_email || ''
+      const patch = {}
+
+      if (parsed.insurance_company && (!existingCarrier || !crossCheck.insurerMismatch)) {
+        patch.insurance_company = parsed.insurance_company
+      }
+      if (parsed.claim_number && (!existingClaim || !crossCheck.claimMismatch)) {
+        patch.insurance_claim_number = parsed.claim_number
+      }
+      if (parsed.adjuster_name && (!existingAdjuster || !crossCheck.adjusterMismatch)) {
+        patch.adjuster_name = parsed.adjuster_name
+      }
+      if (parsed.adjuster_phone && !existingAdjusterPhone) {
+        patch.adjuster_phone = parsed.adjuster_phone
+      }
+      if (parsed.adjuster_email && !existingAdjusterEmail) {
+        patch.adjuster_email = parsed.adjuster_email
+      }
+
+      if (Object.keys(patch).length) {
+        try {
+          await api.patch(`/ros/${roId}/insurance`, patch)
+          setRo((prev) => (prev ? {
+            ...prev,
+            ...patch,
+            insurer: patch.insurance_company ?? prev.insurer,
+            claim_number: patch.insurance_claim_number ?? prev.claim_number,
+          } : prev))
+          const appliedFields = []
+          if (patch.insurance_company) appliedFields.push('carrier')
+          if (patch.insurance_claim_number) appliedFields.push('claim #')
+          if (patch.adjuster_name) appliedFields.push('adjuster')
+          if (patch.adjuster_phone) appliedFields.push('adjuster phone')
+          if (patch.adjuster_email) appliedFields.push('adjuster email')
+          setOcrMetaNote(`Auto-populated ${appliedFields.join(', ')} from the estimate.`)
+        } catch {
+          setOcrMetaNote('Parsed metadata found, but auto-save failed. You can still import line items.')
+        }
+      } else if (crossCheck.hasMismatch) {
+        setOcrMetaNote('Potential mismatch found. Metadata was not auto-overwritten.')
+      }
 
       // Phase 2: analyze (non-blocking — show modal immediately, update when ready)
       setOcrModalOpen(true)
@@ -301,8 +411,19 @@ export default function EstimateBuilder() {
 
   async function importOcrItems() {
     if (!ocrParsed) return
+    if (ocrCrossCheck?.hasMismatch) {
+      const proceed = window.confirm(
+        `Potential mismatch detected:\n- ${ocrCrossCheck.messages.join('\n- ')}\n\nImport selected line items anyway?`
+      )
+      if (!proceed) return
+    }
     setOcrImporting(true)
     const toImport = ocrParsed.line_items.filter((_, idx) => ocrChecked[idx])
+    if (!toImport.length) {
+      setOcrImporting(false)
+      alert('No line items selected to import.')
+      return
+    }
     let lastSummary = summary
     let imported = 0
     try {
@@ -323,7 +444,10 @@ export default function EstimateBuilder() {
       setSummary(lastSummary)
       setOcrModalOpen(false)
       setOcrParsed(null)
+      setOcrCrossCheck(null)
+      setOcrMetaNote('')
       alert(`✅ ${imported} item${imported !== 1 ? 's' : ''} imported from insurance estimate.`)
+      await loadOpportunities({ silent: true })
     } catch (err) {
       alert(err?.response?.data?.error || 'Import failed — some items may not have been added')
     } finally {
@@ -349,10 +473,19 @@ export default function EstimateBuilder() {
           parsed={ocrParsed}
           flags={ocrFlags}
           analysisSummary={ocrAnalysisSummary}
+          crossCheck={ocrCrossCheck}
+          metaNote={ocrMetaNote}
           checked={ocrChecked}
           onToggle={toggleOcrItem}
           onImport={importOcrItems}
-          onCancel={() => { setOcrModalOpen(false); setOcrParsed(null); setOcrFlags(null); setOcrAnalysisSummary(null) }}
+          onCancel={() => {
+            setOcrModalOpen(false)
+            setOcrParsed(null)
+            setOcrFlags(null)
+            setOcrAnalysisSummary(null)
+            setOcrCrossCheck(null)
+            setOcrMetaNote('')
+          }}
           importing={ocrImporting}
         />
       )}
@@ -388,6 +521,67 @@ export default function EstimateBuilder() {
         >
           <Plus size={12} /> {adding ? 'Adding...' : 'Add Row'}
         </button>
+        <button
+          onClick={importFinancialsToRo}
+          disabled={importingFinancials}
+          className="flex items-center gap-1 bg-amber-600 hover:bg-amber-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+        >
+          <CheckCircle size={12} /> {importingFinancials ? 'Importing Financials...' : 'Import Financials To RO'}
+        </button>
+      </div>
+      {financialNotice && (
+        <div className="text-xs text-emerald-300 bg-emerald-900/20 border border-emerald-800/40 rounded-lg px-3 py-2">
+          {financialNotice}
+        </div>
+      )}
+      <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 space-y-2">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <h2 className="text-sm font-semibold text-white">Profit Opportunity Review</h2>
+          <button
+            type="button"
+            onClick={() => loadOpportunities()}
+            disabled={opportunityLoading}
+            className="text-xs px-2.5 py-1.5 rounded-lg border border-[#2a2d3e] text-slate-300 hover:text-white disabled:opacity-50"
+          >
+            {opportunityLoading ? 'Refreshing...' : 'Refresh'}
+          </button>
+        </div>
+        {opportunity?.summary ? (
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 text-xs">
+              <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2">
+                <p className="text-slate-400">Undercut Labor Lines</p>
+                <p className="text-amber-300 font-semibold">{opportunity.summary.labor_undercut_count || 0}</p>
+              </div>
+              <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2">
+                <p className="text-slate-400">Supplement Opportunity</p>
+                <p className="text-emerald-300 font-semibold">{money(opportunity.summary.total_supplement_opportunity || 0)}</p>
+              </div>
+              <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2">
+                <p className="text-slate-400">Projected RO Total</p>
+                <p className="text-white font-semibold">{money(opportunity.summary.projected_grand_total || 0)}</p>
+              </div>
+              <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2">
+                <p className="text-slate-400">Projected Profit Uplift</p>
+                <p className="text-emerald-300 font-semibold">+{money(opportunity.summary.profit_uplift || 0)}</p>
+              </div>
+            </div>
+            {(opportunity.flags || []).length > 0 ? (
+              <div className="space-y-1">
+                {opportunity.flags.slice(0, 6).map((flag, idx) => (
+                  <div key={`${flag.item_id || idx}-${idx}`} className="text-xs bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 flex items-center justify-between gap-2">
+                    <p className="text-slate-300 truncate">{flag.description || 'Line item'}</p>
+                    <p className="text-amber-300 font-medium whitespace-nowrap">+{money(flag.supplement_opportunity || 0)}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-emerald-300">No labor undercut detected on current estimate items.</p>
+            )}
+          </>
+        ) : (
+          <p className="text-xs text-slate-500">No opportunity data yet.</p>
+        )}
       </div>
 
       <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl overflow-x-auto">

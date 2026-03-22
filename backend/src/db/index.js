@@ -15,6 +15,7 @@ async function initDb() {
       name TEXT NOT NULL,
       onboarded BOOLEAN DEFAULT FALSE,
       phone TEXT,
+      logo_url TEXT,
       address TEXT,
       city TEXT,
       state TEXT,
@@ -351,6 +352,7 @@ async function initDb() {
   await pool.query(`UPDATE repair_orders SET payment_status = 'succeeded' WHERE payment_status IS NULL AND payment_received = 1`);
   await pool.query(`UPDATE repair_orders SET payment_status = 'unpaid' WHERE payment_status IS NULL`);
   await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS onboarded BOOLEAN DEFAULT FALSE`);
+  await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS logo_url TEXT`);
 
   // Wave 4: lunch breaks, notifications, schedule lunch field
   await pool.query(`ALTER TABLE schedules ADD COLUMN IF NOT EXISTS lunch_break_minutes INTEGER DEFAULT 30`);
@@ -525,6 +527,26 @@ async function initDb() {
       UNIQUE(shop_id, year_month)
     )
   `);
+
+  // Estimate builder line items (kept text-typed for cross-schema compatibility)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS estimate_line_items (
+      id TEXT PRIMARY KEY,
+      ro_id TEXT NOT NULL,
+      shop_id TEXT NOT NULL,
+      type TEXT NOT NULL DEFAULT 'other' CHECK (type IN ('labor','parts','sublet','other')),
+      description TEXT NOT NULL DEFAULT '',
+      quantity NUMERIC(10,2) NOT NULL DEFAULT 1,
+      unit_price NUMERIC(10,2) NOT NULL DEFAULT 0,
+      total NUMERIC(10,2) GENERATED ALWAYS AS (quantity * unit_price) STORED,
+      taxable BOOLEAN NOT NULL DEFAULT FALSE,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_estimate_line_items_ro ON estimate_line_items(ro_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_estimate_line_items_shop ON estimate_line_items(shop_id)`);
 
   await pool.query(`
     ALTER TABLE shops

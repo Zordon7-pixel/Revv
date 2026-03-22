@@ -21,6 +21,8 @@ export default function AddROModal({ onClose, onSaved }) {
   const { t } = useLanguage()
   const navigate = useNavigate()
   const [customers, setCustomers] = useState([])
+  const [customerVehicles, setCustomerVehicles] = useState([])
+  const [autoFillLoading, setAutoFillLoading] = useState(false)
   const [step, setStep] = useState(1)
   const [loading, setLoading] = useState(false)
   const [duplicateWarning, setDuplicateWarning] = useState(null)
@@ -34,7 +36,7 @@ export default function AddROModal({ onClose, onSaved }) {
     year: '', make: '', model: '', vin: '', color: '', plate: '',
     // Job
     job_type: 'collision', payment_type: 'insurance',
-    claim_number: '', insurer: 'Progressive', adjuster_name: '', adjuster_phone: '', deductible: '',
+    claim_number: '', insurer: 'Progressive', adjuster_name: '', adjuster_phone: '', adjuster_email: '', deductible: '',
     estimated_delivery: '', notes: '', damage_type: 'front_impact', damaged_panels: []
   })
   const [suggestions, setSuggestions] = useState([])
@@ -43,6 +45,59 @@ export default function AddROModal({ onClose, onSaved }) {
   const [addedCodes, setAddedCodes] = useState([])
 
   useEffect(() => { api.get('/customers').then(r => setCustomers(r.data.customers)) }, [])
+
+  useEffect(() => {
+    if (form.new_customer || !form.customer_id) {
+      setCustomerVehicles([])
+      return
+    }
+    let canceled = false
+    setAutoFillLoading(true)
+    api.get(`/customers/${form.customer_id}/autofill`)
+      .then(({ data }) => {
+        if (canceled) return
+        const vehicles = Array.isArray(data?.vehicles) ? data.vehicles : []
+        const latestVehicle = data?.latest_vehicle || vehicles[0] || null
+        const latestInsurance = data?.latest_insurance || null
+        const customer = data?.customer || null
+        setCustomerVehicles(vehicles)
+        setForm((prev) => {
+          if (prev.new_customer || prev.customer_id !== form.customer_id) return prev
+          const next = { ...prev }
+          if (!next.customer_name && customer?.name) next.customer_name = customer.name
+          if (!next.customer_phone && customer?.phone) next.customer_phone = customer.phone
+          if (!next.customer_email && customer?.email) next.customer_email = customer.email
+          if (latestVehicle && (!next.vehicle_id || next.new_vehicle)) {
+            next.new_vehicle = false
+            next.vehicle_id = latestVehicle.id || ''
+            next.year = latestVehicle.year || ''
+            next.make = latestVehicle.make || ''
+            next.model = latestVehicle.model || ''
+            next.vin = latestVehicle.vin || ''
+            next.color = latestVehicle.color || ''
+            next.plate = latestVehicle.plate || ''
+          }
+          const insurerCandidate = latestInsurance?.insurance_company || latestInsurance?.insurer || customer?.insurance_company || ''
+          if ((!next.insurer || next.insurer === 'Progressive') && insurerCandidate) {
+            next.insurer = insurerCandidate
+          }
+          if (!next.adjuster_name && latestInsurance?.adjuster_name) next.adjuster_name = latestInsurance.adjuster_name
+          if (!next.adjuster_phone && latestInsurance?.adjuster_phone) next.adjuster_phone = latestInsurance.adjuster_phone
+          if (!next.adjuster_email && latestInsurance?.adjuster_email) next.adjuster_email = latestInsurance.adjuster_email
+          if (!next.deductible && latestInsurance?.deductible !== null && latestInsurance?.deductible !== undefined) {
+            next.deductible = String(latestInsurance.deductible)
+          }
+          return next
+        })
+      })
+      .catch(() => {
+        if (!canceled) setCustomerVehicles([])
+      })
+      .finally(() => {
+        if (!canceled) setAutoFillLoading(false)
+      })
+    return () => { canceled = true }
+  }, [form.new_customer, form.customer_id])
 
   useEffect(() => {
     if (step !== 3 || !form.year || !form.make.trim() || !form.model.trim()) return
@@ -91,6 +146,21 @@ export default function AddROModal({ onClose, onSaved }) {
     setAddedCodes((prev) => [...prev, item.code])
   }
 
+  function applyVehicleSelection(vehicleId) {
+    const selected = customerVehicles.find((v) => v.id === vehicleId)
+    setForm((prev) => ({
+      ...prev,
+      vehicle_id: vehicleId || '',
+      new_vehicle: vehicleId ? false : prev.new_vehicle,
+      year: selected?.year || '',
+      make: selected?.make || '',
+      model: selected?.model || '',
+      vin: selected?.vin || '',
+      color: selected?.color || '',
+      plate: selected?.plate || '',
+    }))
+  }
+
   async function submit() {
     // Validate before hitting the API
     if (!form.new_customer && !form.customer_id) {
@@ -101,8 +171,12 @@ export default function AddROModal({ onClose, onSaved }) {
       alert(`${t('common.name')} is required.`)
       return
     }
-    if (!form.make.trim() || !form.model.trim() || !form.year) {
+    if (form.new_vehicle && (!form.make.trim() || !form.model.trim() || !form.year)) {
       alert(`${t('common.vehicle')} ${t('common.year').toLowerCase()}, ${t('common.make').toLowerCase()}, and ${t('common.model').toLowerCase()} are required.`)
+      return
+    }
+    if (!form.new_vehicle && !form.vehicle_id) {
+      alert('Please select a saved vehicle or switch to New vehicle.')
       return
     }
 
@@ -114,15 +188,20 @@ export default function AddROModal({ onClose, onSaved }) {
         const { data } = await api.post('/customers', { name: form.customer_name, phone: form.customer_phone, email: form.customer_email })
         customer_id = data.id
       }
-      const { data: veh } = await api.post('/vehicles', {
-        customer_id, year: +form.year, make: form.make, model: form.model,
-        vin: form.vin, color: form.color, plate: form.plate
-      })
+      let vehicle_id = form.vehicle_id
+      if (form.new_vehicle || !vehicle_id) {
+        const { data: veh } = await api.post('/vehicles', {
+          customer_id, year: +form.year, make: form.make, model: form.model,
+          vin: form.vin, color: form.color, plate: form.plate
+        })
+        vehicle_id = veh.id
+      }
       const { data: ro } = await api.post('/ros', {
-        customer_id, vehicle_id: veh.id, job_type: form.job_type,
+        customer_id, vehicle_id, job_type: form.job_type,
         payment_type: form.payment_type, claim_number: form.claim_number,
         insurer: form.payment_type === 'insurance' ? form.insurer : null,
         adjuster_name: form.adjuster_name, adjuster_phone: form.adjuster_phone,
+        adjuster_email: form.adjuster_email,
         deductible: +form.deductible || 0, estimated_delivery: form.estimated_delivery, notes: form.notes,
         damaged_panels: form.damaged_panels
       })
@@ -176,12 +255,56 @@ export default function AddROModal({ onClose, onSaved }) {
             <>
               <h3 className="text-xs font-bold text-indigo-400 uppercase tracking-wide">Step 1 — Customer</h3>
               <div className="flex gap-2">
-                <button onClick={() => set('new_customer', false)} className={`flex-1 py-2 rounded-lg text-xs font-medium transition-colors ${!form.new_customer ? 'bg-indigo-600 text-white' : 'bg-[#0f1117] text-slate-400 border border-[#2a2d3e]'}`}>Existing</button>
-                <button onClick={() => set('new_customer', true)} className={`flex-1 py-2 rounded-lg text-xs font-medium transition-colors ${form.new_customer ? 'bg-indigo-600 text-white' : 'bg-[#0f1117] text-slate-400 border border-[#2a2d3e]'}`}>New</button>
+                <button
+                  onClick={() => setForm((prev) => ({ ...prev, new_customer: false }))}
+                  className={`flex-1 py-2 rounded-lg text-xs font-medium transition-colors ${!form.new_customer ? 'bg-indigo-600 text-white' : 'bg-[#0f1117] text-slate-400 border border-[#2a2d3e]'}`}
+                >
+                  Existing
+                </button>
+                <button
+                  onClick={() => {
+                    setCustomerVehicles([])
+                    setForm((prev) => ({
+                      ...prev,
+                      new_customer: true,
+                      customer_id: '',
+                      new_vehicle: true,
+                      vehicle_id: '',
+                      year: '',
+                      make: '',
+                      model: '',
+                      vin: '',
+                      color: '',
+                      plate: '',
+                    }))
+                  }}
+                  className={`flex-1 py-2 rounded-lg text-xs font-medium transition-colors ${form.new_customer ? 'bg-indigo-600 text-white' : 'bg-[#0f1117] text-slate-400 border border-[#2a2d3e]'}`}
+                >
+                  New
+                </button>
               </div>
               {!form.new_customer ? (
                 <div><label className={lbl}>Select Customer</label>
-                  <select value={form.customer_id} onChange={e => set('customer_id', e.target.value)} className={inp}>
+                  <select
+                    value={form.customer_id}
+                    onChange={e => {
+                      const nextId = e.target.value
+                      setCustomerVehicles([])
+                      setForm((prev) => ({
+                        ...prev,
+                        customer_id: nextId,
+                        vehicle_id: '',
+                        new_vehicle: true,
+                        year: '',
+                        make: '',
+                        model: '',
+                        vin: '',
+                        color: '',
+                        plate: '',
+                      }))
+                    }}
+                    className={inp}
+                  >
                     <option value="">— select —</option>
                     {customers.map(c => <option key={c.id} value={c.id}>{c.name} · {c.phone}</option>)}
                   </select></div>
@@ -197,6 +320,40 @@ export default function AddROModal({ onClose, onSaved }) {
           {step === 2 && (
             <>
               <h3 className="text-xs font-bold text-indigo-400 uppercase tracking-wide">Step 2 - {t('common.vehicle')}</h3>
+              {!form.new_customer && customerVehicles.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => set('new_vehicle', false)}
+                      className={`flex-1 py-2 rounded-lg text-xs font-medium transition-colors ${!form.new_vehicle ? 'bg-indigo-600 text-white' : 'bg-[#0f1117] text-slate-400 border border-[#2a2d3e]'}`}
+                    >
+                      Saved Vehicle
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setForm((prev) => ({ ...prev, new_vehicle: true, vehicle_id: '' }))}
+                      className={`flex-1 py-2 rounded-lg text-xs font-medium transition-colors ${form.new_vehicle ? 'bg-indigo-600 text-white' : 'bg-[#0f1117] text-slate-400 border border-[#2a2d3e]'}`}
+                    >
+                      New Vehicle
+                    </button>
+                  </div>
+                  {!form.new_vehicle && (
+                    <div>
+                      <label className={lbl}>Select Saved Vehicle</label>
+                      <select value={form.vehicle_id} onChange={(e) => applyVehicleSelection(e.target.value)} className={inp}>
+                        <option value="">— select vehicle —</option>
+                        {customerVehicles.map((v) => (
+                          <option key={v.id} value={v.id}>
+                            {[v.year, v.make, v.model].filter(Boolean).join(' ')} {v.vin ? `· ${v.vin}` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                  {autoFillLoading && <p className="text-[11px] text-slate-500">Loading customer vehicle defaults…</p>}
+                </div>
+              )}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 <div><label className={lbl}>{t('common.year')} *</label><input className={inp} value={form.year} onChange={e => set('year', e.target.value)} placeholder="2021" /></div>
                 <div><label className={lbl}>{t('common.make')} *</label><input className={inp} value={form.make} onChange={e => set('make', e.target.value)} placeholder="Toyota" /></div>
@@ -259,6 +416,7 @@ export default function AddROModal({ onClose, onSaved }) {
                     <div><label className={lbl}>Adjuster Name</label><input className={inp} value={form.adjuster_name} onChange={e => set('adjuster_name', e.target.value)} /></div>
                     <div><label className={lbl}>Adjuster Phone</label><input className={inp} value={form.adjuster_phone} onChange={e => set('adjuster_phone', e.target.value)} /></div>
                   </div>
+                  <div><label className={lbl}>Adjuster Email</label><input className={inp} type="email" value={form.adjuster_email} onChange={e => set('adjuster_email', e.target.value)} placeholder="adjuster@carrier.com" /></div>
                   <div><label className={lbl}>Deductible ($)</label><input className={inp} type="number" value={form.deductible} onChange={e => set('deductible', e.target.value)} placeholder="500" /></div>
                 </>
               )}
@@ -321,7 +479,8 @@ export default function AddROModal({ onClose, onSaved }) {
                 if (form.new_customer && !form.customer_name.trim()) { alert(`${t('common.name')} is required.`); return }
               }
               if (step === 2) {
-                if (!form.year || !form.make.trim() || !form.model.trim()) { alert(`${t('common.year')}, ${t('common.make').toLowerCase()}, and ${t('common.model').toLowerCase()} are required.`); return }
+                if (!form.new_vehicle && !form.vehicle_id) { alert('Select a saved vehicle or switch to New vehicle.'); return }
+                if (form.new_vehicle && (!form.year || !form.make.trim() || !form.model.trim())) { alert(`${t('common.year')}, ${t('common.make').toLowerCase()}, and ${t('common.model').toLowerCase()} are required.`); return }
               }
               setStep(s=>s+1)
             }} className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">Next →</button>
