@@ -56,6 +56,7 @@ async function runMigrations() {
       `ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS stripe_payment_intent_id TEXT`,
       `ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ`,
       `ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS paid_amount INTEGER`,
+      `ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS invoice_emailed_at TEXT`,
       `ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS assigned_to UUID REFERENCES users(id) ON DELETE SET NULL`,
       `ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS tech_notes TEXT`,
       `ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS estimate_status TEXT DEFAULT 'pending'`,
@@ -348,6 +349,22 @@ async function runMigrations() {
       `CREATE INDEX IF NOT EXISTS idx_sms_messages_shop_id ON sms_messages(shop_id)`,
       `CREATE INDEX IF NOT EXISTS idx_sms_messages_from_phone ON sms_messages(from_phone)`,
       `ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS customer_phone TEXT`,
+      `CREATE TABLE IF NOT EXISTS estimate_line_items (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        ro_id UUID NOT NULL REFERENCES repair_orders(id) ON DELETE CASCADE,
+        shop_id TEXT NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+        type TEXT NOT NULL DEFAULT 'other' CHECK (type IN ('labor','parts','sublet','other')),
+        description TEXT NOT NULL DEFAULT '',
+        quantity NUMERIC(10,2) NOT NULL DEFAULT 1,
+        unit_price NUMERIC(10,2) NOT NULL DEFAULT 0,
+        total NUMERIC(10,2) GENERATED ALWAYS AS (quantity * unit_price) STORED,
+        taxable BOOLEAN NOT NULL DEFAULT false,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_estimate_line_items_ro ON estimate_line_items(ro_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_estimate_line_items_shop ON estimate_line_items(shop_id)`,
     ];
 
     // Fix job_status_log FK to use ON DELETE CASCADE

@@ -71,6 +71,7 @@ CREATE TABLE IF NOT EXISTS repair_orders (
   status TEXT DEFAULT 'intake',
   payment_type TEXT DEFAULT 'insurance',
   payment_status TEXT DEFAULT 'unpaid',
+  invoice_emailed_at TIMESTAMPTZ,
   claim_number TEXT,
   insurer TEXT,
   insurance_claim_number TEXT,
@@ -285,3 +286,21 @@ CREATE INDEX IF NOT EXISTS idx_claim_links_ro_id ON claim_links(ro_id);
 CREATE INDEX IF NOT EXISTS idx_claim_links_token ON claim_links(token);
 CREATE INDEX IF NOT EXISTS idx_estimate_requests_shop_id ON estimate_requests(shop_id);
 CREATE INDEX IF NOT EXISTS idx_estimate_requests_status ON estimate_requests(status);
+
+CREATE TABLE IF NOT EXISTS estimate_line_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  ro_id UUID NOT NULL REFERENCES repair_orders(id) ON DELETE CASCADE,
+  shop_id TEXT NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+  type TEXT NOT NULL DEFAULT 'other' CHECK (type IN ('labor','parts','sublet','other')),
+  description TEXT NOT NULL DEFAULT '',
+  quantity NUMERIC(10,2) NOT NULL DEFAULT 1,
+  unit_price NUMERIC(10,2) NOT NULL DEFAULT 0,
+  total NUMERIC(10,2) GENERATED ALWAYS AS (quantity * unit_price) STORED,
+  taxable BOOLEAN NOT NULL DEFAULT false,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_estimate_line_items_ro ON estimate_line_items(ro_id);
+CREATE INDEX IF NOT EXISTS idx_estimate_line_items_shop ON estimate_line_items(shop_id);
