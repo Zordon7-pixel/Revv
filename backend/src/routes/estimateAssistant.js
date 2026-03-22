@@ -1,6 +1,165 @@
 const router = require('express').Router();
 const auth = require('../middleware/auth');
 const suggestionMatrix = require('../data/estimate-suggestions.json');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+const { v4: uuidv4 } = require('uuid');
+const Anthropic = require('@anthropic-ai/sdk');
+
+// ── Multer setup for scan-photo endpoint ──────────────────────────────────────
+const SCAN_MAX_BYTES = 10 * 1024 * 1024; // 10 MB
+const scanUploadDir = path.join(__dirname, '../../uploads/scan-tmp');
+fs.mkdirSync(scanUploadDir, { recursive: true });
+
+const scanStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, scanUploadDir),
+  filename: (req, file, cb) => cb(null, `${uuidv4()}${path.extname(file.originalname)}`),
+});
+
+const scanUpload = multer({
+  storage: scanStorage,
+  limits: { fileSize: SCAN_MAX_BYTES },
+  fileFilter: (req, file, cb) => {
+    if (!file.mimetype.startsWith('image/')) return cb(new Error('Only image files are allowed'));
+    cb(null, true);
+  },
+});
+
+// ── Claude Haiku Vision: analyse damage photo (cheapest effective option) ─────
+async function analyzeDamagePhoto(filePath) {
+  if (!process.env.ANTHROPIC_API_KEY) return null;
+  const client = new Anthropic();
+  const imageData = fs.readFileSync(filePath);
+  const base64 = imageData.toString('base64');
+  const ext = path.extname(filePath).toLowerCase().replace('.', '');
+  const mediaType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+
+  const response = await client.messages.create({
+    model: 'claude-haiku-4-5',
+    max_tokens: 256,
+    messages: [{
+      role: 'user',
+      content: [
+        {
+          type: 'image',
+          source: { type: 'base64', media_type: mediaType, data: base64 },
+        },
+        {
+          type: 'text',
+          text: 'You are an auto body damage assessor. Analyze this vehicle damage photo. Respond with JSON only, no markdown: {"severity":"minor|moderate|severe","zones":["list of affected body parts, e.g. front bumper, hood, left front fender"],"description":"one sentence summary of the damage"}',
+        },
+      ],
+    }],
+  });
+
+  const text = (response.content[0]?.text || '').trim();
+  const clean = text.replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
+  return JSON.parse(clean);
+}
+
+// ── Zone → damage type + panel id mapping ─────────────────────────────────────
+const ZONE_TO_PANEL = {
+  'front bumper': 'front_bumper',
+  'bumper': 'front_bumper',
+  'fascia': 'front_bumper',
+  'grille': 'front_bumper',
+  'valance': 'front_bumper',
+  'hood': 'hood',
+  'windshield': 'windshield',
+  'glass': 'windshield',
+  'roof': 'roof',
+  'hail': 'roof',
+  'rear bumper': 'rear_bumper',
+  'rear body': 'rear_bumper',
+  'trunk': 'trunk',
+  'decklid': 'trunk',
+  'liftgate': 'trunk',
+  'tailgate': 'trunk',
+  'rear glass': 'rear_glass',
+  'back glass': 'rear_glass',
+  'liftgate glass': 'rear_glass',
+  'left front fender': 'left_front_fender',
+  'left fender': 'left_front_fender',
+  'fender': 'left_front_fender',
+  'left front door': 'left_front_door',
+  'left rear door': 'left_rear_door',
+  'left quarter': 'left_rear_quarter',
+  'left rear quarter': 'left_rear_quarter',
+  'quarter panel': 'left_rear_quarter',
+  'rocker': 'left_rear_quarter',
+  'right front fender': 'right_front_fender',
+  'right fender': 'right_front_fender',
+  'right front door': 'right_front_door',
+  'right rear door': 'right_rear_door',
+  'right quarter': 'right_rear_quarter',
+  'right rear quarter': 'right_rear_quarter',
+};
+
+const ZONE_TO_DAMAGE_TYPE = {
+  'front bumper': 'front_impact',
+  'bumper': 'front_impact',
+  'fascia': 'front_impact',
+  'grille': 'front_impact',
+  'valance': 'front_impact',
+  'hood': 'front_impact',
+  'windshield': 'glass',
+  'glass': 'glass',
+  'rear glass': 'glass',
+  'back glass': 'glass',
+  'liftgate glass': 'glass',
+  'roof': 'hail',
+  'hail': 'hail',
+  'rear bumper': 'rear_impact',
+  'rear body': 'rear_impact',
+  'trunk': 'rear_impact',
+  'decklid': 'rear_impact',
+  'liftgate': 'rear_impact',
+  'tailgate': 'rear_impact',
+  'left front fender': 'side_damage',
+  'left fender': 'side_damage',
+  'fender': 'side_damage',
+  'left front door': 'side_damage',
+  'left rear door': 'side_damage',
+  'left quarter': 'side_damage',
+  'left rear quarter': 'side_damage',
+  'quarter panel': 'side_damage',
+  'rocker': 'side_damage',
+  'right front fender': 'side_damage',
+  'right fender': 'side_damage',
+  'right front door': 'side_damage',
+  'right rear door': 'side_damage',
+  'right quarter': 'side_damage',
+  'right rear quarter': 'side_damage',
+};
+
+function inferFromZones(zones) {
+  const damageTypeCounts = {};
+  const panelSet = new Set();
+
+  zones.forEach((zone) => {
+    const z = String(zone).toLowerCase().trim();
+    // Exact match first, then partial
+    let matchedDT = ZONE_TO_DAMAGE_TYPE[z];
+    let matchedPanel = ZONE_TO_PANEL[z];
+
+    if (!matchedDT) {
+      const key = Object.keys(ZONE_TO_DAMAGE_TYPE).find((k) => z.includes(k) || k.includes(z));
+      if (key) matchedDT = ZONE_TO_DAMAGE_TYPE[key];
+    }
+    if (!matchedPanel) {
+      const key = Object.keys(ZONE_TO_PANEL).find((k) => z.includes(k) || k.includes(z));
+      if (key) matchedPanel = ZONE_TO_PANEL[key];
+    }
+
+    if (matchedDT) damageTypeCounts[matchedDT] = (damageTypeCounts[matchedDT] || 0) + 1;
+    if (matchedPanel) panelSet.add(matchedPanel);
+  });
+
+  // Pick the most-voted damage type; fallback to front_impact
+  const inferred_damage_type = Object.entries(damageTypeCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'front_impact';
+  return { inferred_damage_type, inferred_panels: Array.from(panelSet) };
+}
 
 const DAMAGE_TYPES = ['front_impact', 'rear_impact', 'side_damage', 'hail', 'glass'];
 const TRUCK_MAKES = ['ford', 'chevrolet', 'gmc', 'ram', 'toyota', 'nissan'];
@@ -124,6 +283,79 @@ router.get('/suggestions', auth, (req, res) => {
     suggestions,
     summary,
   });
+});
+
+// ── POST /estimate-assistant/scan-photo ───────────────────────────────────────
+// Upload a damage photo → GPT-4o Vision infers damage type + panels → returns
+// AI assessment + estimate suggestions. No DB writes (scan-only).
+router.post('/scan-photo', auth, scanUpload.single('photo'), async (req, res) => {
+  const tmpPath = req.file?.path;
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No photo uploaded' });
+
+    if (!process.env.ANTHROPIC_API_KEY) {
+      return res.status(503).json({ error: 'AI scan not available' });
+    }
+
+    let ai;
+    try {
+      ai = await analyzeDamagePhoto(tmpPath);
+    } catch (err) {
+      console.error('[EstimateAssistant] GPT-4o vision error:', err.message);
+      return res.status(502).json({ error: 'AI scan failed — select damage manually' });
+    }
+
+    if (!ai || !ai.zones || !Array.isArray(ai.zones)) {
+      return res.status(502).json({ error: 'AI scan returned no usable data' });
+    }
+
+    const { inferred_damage_type, inferred_panels } = inferFromZones(ai.zones);
+    const { make, model, year } = req.body || {};
+    const vehicleType = classifyVehicleType(make, model);
+    const yearNumber = Number(year);
+    const baseSuggestions = suggestionMatrix[vehicleType]?.[inferred_damage_type] || [];
+
+    const rankedSuggestions = baseSuggestions
+      .filter((item) => shouldKeepForYear(item, yearNumber))
+      .map((item) => {
+        const panelMatch = scoreSuggestionAgainstPanels(item.description, inferred_panels);
+        return { ...item, relevance_score: panelMatch.score, matched_panels: panelMatch.hits };
+      })
+      .sort((a, b) => b.relevance_score - a.relevance_score || a.code.localeCompare(b.code));
+
+    const suggestions = inferred_panels.length
+      ? rankedSuggestions.filter((item) => item.relevance_score > 0)
+      : rankedSuggestions;
+
+    const summary = suggestions.reduce((acc, item) => {
+      acc.estimated_labor_hours += Number(item.labor_hours || 0);
+      acc.estimated_parts_cost += Number(item.parts_estimate || 0);
+      return acc;
+    }, { estimated_labor_hours: 0, estimated_parts_cost: 0 });
+
+    return res.json({
+      severity: ai.severity,
+      zones: ai.zones,
+      description: ai.description,
+      inferred_damage_type,
+      inferred_panels,
+      vehicleType,
+      suggestions,
+      summary,
+    });
+  } catch (err) {
+    console.error('[EstimateAssistant] scan-photo error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    // Always clean up temp file
+    if (tmpPath) try { fs.unlinkSync(tmpPath); } catch (_) {}
+  }
+});
+
+// Multer error handler
+router.use((err, req, res, next) => {
+  if (err.code === 'LIMIT_FILE_SIZE') return res.status(400).json({ error: 'File too large (max 10MB)' });
+  res.status(400).json({ error: err.message });
 });
 
 module.exports = router;

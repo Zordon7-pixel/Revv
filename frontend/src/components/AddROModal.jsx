@@ -25,6 +25,8 @@ export default function AddROModal({ onClose, onSaved }) {
   const [autoFillLoading, setAutoFillLoading] = useState(false)
   const [step, setStep] = useState(1)
   const [loading, setLoading] = useState(false)
+  const [scanLoading, setScanLoading] = useState(false)
+  const [scanToast, setScanToast] = useState(null) // { type: 'success'|'error', msg: string }
   const [duplicateWarning, setDuplicateWarning] = useState(null)
   const [newRoCustomerId, setNewRoCustomerId] = useState('')
   const [form, setForm] = useState({
@@ -135,6 +137,42 @@ export default function AddROModal({ onClose, onSaved }) {
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
   const inp = 'w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500'
   const lbl = 'block text-xs font-medium text-slate-400 mb-1'
+
+  function showScanToast(type, msg) {
+    setScanToast({ type, msg })
+    setTimeout(() => setScanToast(null), 4000)
+  }
+
+  async function handleScanPhoto(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (file.size > 10 * 1024 * 1024) {
+      showScanToast('error', 'Photo too large (max 10MB)')
+      return
+    }
+    setScanLoading(true)
+    try {
+      const fd = new FormData()
+      fd.append('photo', file)
+      if (form.make) fd.append('make', form.make)
+      if (form.model) fd.append('model', form.model)
+      if (form.year) fd.append('year', form.year)
+      const { data } = await api.post('/estimate-assistant/scan-photo', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      if (data.inferred_damage_type) set('damage_type', data.inferred_damage_type)
+      if (data.inferred_panels?.length) set('damaged_panels', data.inferred_panels)
+      const severityLabel = data.severity ? `${data.severity} damage` : 'damage'
+      const zonesLabel = data.zones?.slice(0, 3).join(', ') || 'unknown area'
+      showScanToast('success', `AI detected: ${severityLabel} — ${zonesLabel}`)
+    } catch (err) {
+      const msg = err?.response?.data?.error || 'AI scan unavailable — select damage manually'
+      showScanToast('error', msg)
+    } finally {
+      setScanLoading(false)
+      e.target.value = ''
+    }
+  }
 
   function addSuggestionLineItem(item) {
     if (addedCodes.includes(item.code)) return
@@ -373,7 +411,23 @@ export default function AddROModal({ onClose, onSaved }) {
                 <select className={inp} value={form.job_type} onChange={e => set('job_type', e.target.value)}>
                   {JOB_TYPES.map(j => <option key={j} value={j}>{j.replace('_',' ')}</option>)}
                 </select></div>
-              <div><label className={lbl}>Damage Type</label>
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className={lbl} style={{marginBottom:0}}>Damage Type</label>
+                  <label className={`flex items-center gap-1.5 text-[11px] font-medium cursor-pointer px-2.5 py-1 rounded-lg border transition-colors ${scanLoading ? 'opacity-50 pointer-events-none border-[#2a2d3e] text-slate-500' : 'border-indigo-500/40 text-indigo-400 hover:bg-indigo-500/10'}`}>
+                    {scanLoading ? (
+                      <><svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg> Analyzing...</>
+                    ) : (
+                      <><span>📸</span> Scan Damage</>
+                    )}
+                    <input type="file" accept="image/*" className="hidden" onChange={handleScanPhoto} disabled={scanLoading} />
+                  </label>
+                </div>
+                {scanToast && (
+                  <div className={`text-[11px] px-3 py-2 rounded-lg mb-2 ${scanToast.type === 'success' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
+                    {scanToast.msg}
+                  </div>
+                )}
                 <select className={inp} value={form.damage_type} onChange={e => set('damage_type', e.target.value)}>
                   {DAMAGE_TYPES.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
                 </select>
