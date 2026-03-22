@@ -117,7 +117,7 @@ CREATE TABLE IF NOT EXISTS job_status_log (
 CREATE TABLE IF NOT EXISTS ro_payments (
   id UUID PRIMARY KEY,
   shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
-  ro_id UUID NOT NULL REFERENCES repair_orders(id) ON DELETE CASCADE,
+  ro_id TEXT NOT NULL REFERENCES repair_orders(id) ON DELETE CASCADE,
   stripe_payment_intent_id TEXT UNIQUE,
   amount_cents INTEGER NOT NULL,
   currency TEXT DEFAULT 'usd',

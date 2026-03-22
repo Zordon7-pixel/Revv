@@ -351,7 +351,7 @@ async function runMigrations() {
       `ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS customer_phone TEXT`,
       `CREATE TABLE IF NOT EXISTS estimate_line_items (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        ro_id UUID NOT NULL REFERENCES repair_orders(id) ON DELETE CASCADE,
+        ro_id TEXT NOT NULL REFERENCES repair_orders(id) ON DELETE CASCADE,
         shop_id TEXT NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
         type TEXT NOT NULL DEFAULT 'other' CHECK (type IN ('labor','parts','sublet','other')),
         description TEXT NOT NULL DEFAULT '',
