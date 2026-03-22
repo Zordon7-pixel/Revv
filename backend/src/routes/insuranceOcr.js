@@ -132,7 +132,7 @@ router.post('/parse', auth, upload.single('estimate_image'), async (req, res) =>
       if (extractedText) {
         const response = await openai.chat.completions.create({
           model: 'gpt-4o',
-          max_tokens: 2000,
+          max_tokens: 4096,
           messages: [
             {
               role: 'user',
@@ -167,7 +167,7 @@ router.post('/parse', auth, upload.single('estimate_image'), async (req, res) =>
 
         const response = await openai.chat.completions.create({
           model: 'gpt-4o',
-          max_tokens: 2000,
+          max_tokens: 4096,
           messages: [
             {
               role: 'user',
@@ -184,7 +184,7 @@ router.post('/parse', auth, upload.single('estimate_image'), async (req, res) =>
       const base64 = req.file.buffer.toString('base64');
       const response = await openai.chat.completions.create({
         model: 'gpt-4o',
-        max_tokens: 2000,
+        max_tokens: 4096,
         messages: [
           {
             role: 'user',
@@ -203,10 +203,21 @@ router.post('/parse', auth, upload.single('estimate_image'), async (req, res) =>
 
     let parsed;
     try {
-      const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```\s*$/i, '').trim();
-      parsed = JSON.parse(cleaned);
+      // Strip markdown fences if present
+      let cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```\s*$/i, '').trim();
+      // If still not parseable, try to find the first {...} block in the response
+      try {
+        parsed = JSON.parse(cleaned);
+      } catch {
+        const match = cleaned.match(/\{[\s\S]*\}/);
+        if (match) {
+          parsed = JSON.parse(match[0]);
+        } else {
+          throw new Error('no JSON object found');
+        }
+      }
     } catch {
-      console.error('[InsuranceOCR] Failed to parse OpenAI response:', raw);
+      console.error('[InsuranceOCR] Failed to parse OpenAI response. raw length:', raw?.length, '| preview:', raw?.slice(0, 300));
       return res.status(422).json({ success: false, error: 'Could not extract estimate data from file. Try a clearer upload.' });
     }
 
