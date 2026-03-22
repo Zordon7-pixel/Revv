@@ -60,7 +60,7 @@ router.post('/ro/:roId', auth, async (req, res) => {
         parseInt(quantity)||1, parseFloat(unit_cost)||0, today, expected_date||null, notes||null,
         tracking_number||null, carrier]);
 
-    res.status(201).json(await dbGet('SELECT * FROM parts_orders WHERE id = $1', [id]));
+    res.status(201).json(await dbGet('SELECT * FROM parts_orders WHERE id = $1 AND shop_id = $2', [id, req.user.shop_id]));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -97,7 +97,7 @@ router.put('/:id', auth, async (req, res) => {
     const setClauses = updateKeys.map((k, i) => `${k} = $${i + 1}`).join(', ');
     await dbRun(`UPDATE parts_orders SET ${setClauses} WHERE id = $${updateKeys.length + 1}`, [...updateVals, req.params.id]);
 
-    res.json(await dbGet('SELECT * FROM parts_orders WHERE id = $1', [req.params.id]));
+    res.json(await dbGet('SELECT * FROM parts_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

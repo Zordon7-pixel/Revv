@@ -206,6 +206,8 @@ export default function Settings() {
         twilio_account_sid:       (form.twilio_account_sid || '').trim() || undefined,
         twilio_auth_token:        (form.twilio_auth_token || '').trim() || undefined,
         twilio_phone_number:      (form.twilio_phone_number || '').trim() || undefined,
+        twilio_api_key:           (form.twilio_api_key || '').trim() || undefined,
+        twilio_api_secret:        (form.twilio_api_secret || '').trim() || undefined,
         monthly_revenue_target:   parseInt(form.monthly_revenue_target, 10) || 85000,
       })
       await api.patch('/settings', {
@@ -226,6 +228,8 @@ export default function Settings() {
         twilio_phone_number: data.twilio_phone_number || f.twilio_phone_number || '',
         twilio_account_sid: '',
         twilio_auth_token: '',
+        twilio_api_key: '',
+        twilio_api_secret: '',
       }))
       setSaved(true)
       setTimeout(() => setSaved(false), 2500)
@@ -774,7 +778,7 @@ export default function Settings() {
           <div className="bg-[#0f1117] rounded-xl border border-[#2a2d3e] p-4 space-y-3">
             <div>
               <p className="text-sm font-semibold text-white">Twilio Credentials</p>
-              <p className="text-xs text-slate-400 mt-1">Leave SID/Auth Token blank to keep existing saved values.</p>
+              <p className="text-xs text-slate-400 mt-1">Leave fields blank to keep existing saved values. Use API Key + Secret (recommended) or Auth Token.</p>
             </div>
             <div>
               <label className={lbl}>Account SID</label>
@@ -786,8 +790,31 @@ export default function Settings() {
                 autoComplete="off"
               />
             </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className={lbl}>API Key SID <span className="text-indigo-400">(recommended)</span></label>
+                <input
+                  className={inp}
+                  value={form.twilio_api_key || ''}
+                  onChange={e => setForm(f => ({ ...f, twilio_api_key: e.target.value }))}
+                  placeholder="SKxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                  autoComplete="off"
+                />
+              </div>
+              <div>
+                <label className={lbl}>API Secret</label>
+                <input
+                  className={inp}
+                  type="password"
+                  value={form.twilio_api_secret || ''}
+                  onChange={e => setForm(f => ({ ...f, twilio_api_secret: e.target.value }))}
+                  placeholder="API Secret"
+                  autoComplete="new-password"
+                />
+              </div>
+            </div>
             <div>
-              <label className={lbl}>Auth Token</label>
+              <label className={lbl}>Auth Token <span className="text-slate-500">(or use API Key above)</span></label>
               <input
                 className={inp}
                 type="password"

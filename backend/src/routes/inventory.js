@@ -106,7 +106,7 @@ router.post('/', auth, requireTechnician, async (req, res) => {
       ]
     );
 
-    const item = await dbGet('SELECT * FROM parts_inventory WHERE id = $1', [itemId]);
+    const item = await dbGet('SELECT * FROM parts_inventory WHERE id = $1 AND shop_id = $2', [itemId, req.user.shop_id]);
     return res.status(201).json({ item });
   } catch (err) {
     if (String(err.message || '').includes('idx_parts_inventory_shop_part_number')) {
@@ -155,7 +155,7 @@ router.put('/:id', auth, requireTechnician, async (req, res) => {
       [...values, req.params.id, req.user.shop_id]
     );
 
-    const item = await dbGet('SELECT * FROM parts_inventory WHERE id = $1', [req.params.id]);
+    const item = await dbGet('SELECT * FROM parts_inventory WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
     return res.json({ item });
   } catch (err) {
     if (String(err.message || '').includes('idx_parts_inventory_shop_part_number')) {

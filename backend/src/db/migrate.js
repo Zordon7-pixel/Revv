@@ -39,6 +39,8 @@ async function runMigrations() {
       `ALTER TABLE shops ADD COLUMN IF NOT EXISTS twilio_account_sid TEXT`,
       `ALTER TABLE shops ADD COLUMN IF NOT EXISTS twilio_auth_token TEXT`,
       `ALTER TABLE shops ADD COLUMN IF NOT EXISTS twilio_phone_number TEXT`,
+      `ALTER TABLE shops ADD COLUMN IF NOT EXISTS twilio_api_key TEXT`,
+      `ALTER TABLE shops ADD COLUMN IF NOT EXISTS twilio_api_secret TEXT`,
       `ALTER TABLE shops ADD COLUMN IF NOT EXISTS monthly_revenue_target INTEGER DEFAULT 85000`,
       `ALTER TABLE shops ADD COLUMN IF NOT EXISTS plan TEXT DEFAULT 'free'`,
       `ALTER TABLE shops ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT`,

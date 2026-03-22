@@ -25,12 +25,12 @@ router.get('/shop', auth, async (req, res) => {
 
 router.put('/shop', auth, async (req, res) => {
   try {
-    const ALLOWED_MARKET_FIELDS = ['state','labor_rate','paint_rate','parts_markup','name','phone','twilio_account_sid','twilio_auth_token','twilio_phone_number','address','city','zip','tax_rate','lat','lng','geofence_radius','tracking_api_key','monthly_revenue_target'];
+    const ALLOWED_MARKET_FIELDS = ['state','labor_rate','paint_rate','parts_markup','name','phone','twilio_account_sid','twilio_auth_token','twilio_phone_number','twilio_api_key','twilio_api_secret','address','city','zip','tax_rate','lat','lng','geofence_radius','tracking_api_key','monthly_revenue_target'];
     const updates = Object.fromEntries(Object.entries(req.body).filter(([k]) => ALLOWED_MARKET_FIELDS.includes(k)));
     const {
       name, phone, address, city, state, zip, labor_rate, parts_markup, tax_rate,
       lat, lng, geofence_radius, tracking_api_key, twilio_account_sid, twilio_auth_token,
-      twilio_phone_number, monthly_revenue_target,
+      twilio_phone_number, twilio_api_key, twilio_api_secret, monthly_revenue_target,
     } = updates;
 
     let market_tier = null;
@@ -55,8 +55,10 @@ router.put('/shop', auth, async (req, res) => {
     if (geofence_radius   != null) { fields.push('geofence_radius');   vals.push(parseFloat(geofence_radius)); }
     if (tracking_api_key !== undefined) { fields.push('tracking_api_key'); vals.push(tracking_api_key || null); }
     if (twilio_account_sid !== undefined) { fields.push('twilio_account_sid'); vals.push(twilio_account_sid); }
-    if (twilio_auth_token  !== undefined) { fields.push('twilio_auth_token');  vals.push(twilio_auth_token); }
+    if (twilio_auth_token  !== undefined) { fields.push('twilio_auth_token');  vals.push(twilio_auth_token || null); }
     if (twilio_phone_number !== undefined) { fields.push('twilio_phone_number'); vals.push(twilio_phone_number); }
+    if (twilio_api_key    !== undefined) { fields.push('twilio_api_key');    vals.push(twilio_api_key || null); }
+    if (twilio_api_secret !== undefined) { fields.push('twilio_api_secret'); vals.push(twilio_api_secret || null); }
     if (monthly_revenue_target != null) { fields.push('monthly_revenue_target'); vals.push(parseInt(monthly_revenue_target, 10)); }
 
     if (!fields.length) return res.status(400).json({ error: 'Nothing to update' });

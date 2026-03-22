@@ -26,14 +26,25 @@ function getTwilioConfig() {
 async function getTwilioConfigForShop(shopId) {
   if (shopId) {
     const shop = await dbGet(
-      `SELECT twilio_account_sid, twilio_auth_token, twilio_phone_number
+      `SELECT twilio_account_sid, twilio_auth_token, twilio_phone_number, twilio_api_key, twilio_api_secret
        FROM shops
        WHERE id = $1`,
       [shopId]
     );
-    const hasDbCreds = !!(shop?.twilio_account_sid && shop?.twilio_auth_token && shop?.twilio_phone_number);
-    console.log(`[SMS] getTwilioConfigForShop(${shopId}): DB has account_sid=${!!shop?.twilio_account_sid}, auth_token=${!!shop?.twilio_auth_token}, phone=${!!shop?.twilio_phone_number} → using ${hasDbCreds ? 'DB creds' : 'env vars'}`);
-    if (hasDbCreds) {
+    const hasApiKeyCreds = !!(shop?.twilio_account_sid && shop?.twilio_api_key && shop?.twilio_api_secret && shop?.twilio_phone_number);
+    const hasAuthTokenCreds = !!(shop?.twilio_account_sid && shop?.twilio_auth_token && shop?.twilio_phone_number);
+    const hasDbCreds = hasApiKeyCreds || hasAuthTokenCreds;
+    console.log(`[SMS] getTwilioConfigForShop(${shopId}): DB has account_sid=${!!shop?.twilio_account_sid}, api_key=${!!shop?.twilio_api_key}, auth_token=${!!shop?.twilio_auth_token}, phone=${!!shop?.twilio_phone_number} → using ${hasDbCreds ? 'DB creds' : 'env vars'}`);
+    if (hasApiKeyCreds) {
+      return {
+        accountSid: shop.twilio_account_sid,
+        apiKey: shop.twilio_api_key,
+        apiSecret: shop.twilio_api_secret,
+        phoneNumber: shop.twilio_phone_number,
+        _source: 'db',
+      };
+    }
+    if (hasAuthTokenCreds) {
       return {
         accountSid: shop.twilio_account_sid,
         authToken: shop.twilio_auth_token,

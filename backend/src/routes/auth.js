@@ -110,8 +110,10 @@ router.post('/register', async (req, res) => {
       return res.status(409).json({ error: 'An account already exists with that email. Just sign in.' });
     }
 
-    const shop = await dbGet('SELECT id FROM shops LIMIT 1', []);
-    if (!shop) return res.status(500).json({ error: 'Shop not configured.' });
+    const { shop_id } = req.body;
+    if (!shop_id) return res.status(400).json({ error: 'shop_id is required.' });
+    const shop = await dbGet('SELECT id FROM shops WHERE id = $1', [shop_id]);
+    if (!shop) return res.status(404).json({ error: 'Shop not found.' });
 
     let customer = await dbGet('SELECT * FROM customers WHERE LOWER(email) = $1 AND shop_id = $2', [emailNorm, shop.id]);
 

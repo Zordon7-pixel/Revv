@@ -98,7 +98,7 @@ router.post('/', auth, requireTechnician, async (req, res) => {
       'INSERT INTO customers (id, shop_id, name, phone, email, address, insurance_company, policy_number) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
       [id, req.user.shop_id, name.trim(), phone || null, email || null, address || null, insurance_company || null, policy_number || null]
     );
-    res.status(201).json(await dbGet('SELECT * FROM customers WHERE id = $1', [id]));
+    res.status(201).json(await dbGet('SELECT * FROM customers WHERE id = $1 AND shop_id = $2', [id, req.user.shop_id]));
   } catch (err) {
     console.error('Customer save error:', err.message);
     res.status(500).json({ error: 'Error saving customer. Please try again.' });
@@ -112,7 +112,7 @@ router.put('/:id', auth, requireTechnician, async (req, res) => {
       'UPDATE customers SET name=$1, phone=$2, email=$3, address=$4, insurance_company=$5, policy_number=$6 WHERE id=$7 AND shop_id=$8',
       [name, phone, email, address, insurance_company, policy_number, req.params.id, req.user.shop_id]
     );
-    res.json(await dbGet('SELECT * FROM customers WHERE id = $1', [req.params.id]));
+    res.json(await dbGet('SELECT * FROM customers WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
