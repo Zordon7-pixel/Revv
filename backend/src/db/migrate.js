@@ -329,8 +329,6 @@ async function runMigrations() {
         note TEXT NOT NULL,
         created_at TIMESTAMPTZ DEFAULT NOW()
       )`,
-    ];
-
       // Two-way SMS message threads per RO
       `CREATE TABLE IF NOT EXISTS sms_messages (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
