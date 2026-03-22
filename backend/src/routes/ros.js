@@ -7,6 +7,11 @@ const { sendSMS, isConfiguredForShop } = require('../services/sms');
 const { sendMail } = require('../services/mailer');
 const { statusChangeEmail } = require('../services/emailTemplates');
 const { createNotification } = require('../services/notifications');
+const {
+  createPaymentCheckoutLinkForRo,
+  ensureTrackingToken,
+  sendClosedPaidInvoiceEmail,
+} = require('../services/customerBilling');
 const roLimitGuard = require('../middleware/roLimitGuard');
 const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
@@ -37,6 +42,12 @@ function toBase64Url(input) {
     .replace(/=+$/g, '');
 }
 
+function normalizedPaymentStatus(status, paymentReceived) {
+  const normalized = String(status || '').trim().toLowerCase();
+  if (normalized) return normalized;
+  return paymentReceived ? 'succeeded' : 'unpaid';
+}
+
 function queueStatusSMS(roId, shopId, toStatus) {
   setImmediate(async () => {
     try {
@@ -53,7 +64,10 @@ function queueStatusSMS(roId, shopId, toStatus) {
       }
 
       const ro = await dbGet(
-        `SELECT ro.id, ro.estimate_token, v.year, v.make, v.model, c.phone AS customer_phone, s.name AS shop_name,
+        `SELECT ro.id, ro.ro_number, ro.payment_status, ro.payment_received,
+                v.year, v.make, v.model,
+                c.phone AS customer_phone, c.email AS customer_email, c.name AS customer_name,
+                s.name AS shop_name,
                 COALESCE(s.sms_notifications_enabled, TRUE) AS sms_notifications_enabled
          FROM repair_orders ro
          LEFT JOIN vehicles v ON v.id = ro.vehicle_id
@@ -73,28 +87,30 @@ function queueStatusSMS(roId, shopId, toStatus) {
         return;
       }
 
-      // Try to get a tracking token for the portal link — optional, send without it if missing
-      let trackingToken = ro.estimate_token;
-      if (!trackingToken) {
-        const tokenRow = await dbGet(
-          'SELECT token FROM portal_tokens WHERE ro_id = $1 ORDER BY created_at DESC LIMIT 1',
-          [roId]
-        );
-        trackingToken = tokenRow?.token || null;
-      }
-      if (!trackingToken) {
-        console.log(`${tag} no tracking token found — sending SMS without portal link`);
-      }
+      const trackingToken = await ensureTrackingToken(ro.id, shopId);
 
       const vehicle = [ro.year, ro.make, ro.model].filter(Boolean).join(' ') || 'your vehicle';
       const shopName = ro.shop_name || 'the shop';
       const trackingLine = trackingToken ? `\nTrack it here: https://revvshop.app/track/${trackingToken}` : '';
+      let paymentLine = '';
+      if (toStatus === 'delivery' && normalizedPaymentStatus(ro.payment_status, ro.payment_received) !== 'succeeded') {
+        const linkResult = await createPaymentCheckoutLinkForRo({
+          roId: ro.id,
+          shopId,
+          customerEmail: ro.customer_email || null,
+          customerName: ro.customer_name || null,
+          trackingToken,
+        });
+        if (linkResult.ok && linkResult.url) {
+          paymentLine = `\nPay securely: ${linkResult.url}`;
+        }
+      }
 
       const messages = {
         'repair':      `Hi! Your ${vehicle} is now in progress at ${shopName}. We'll keep you updated.${trackingLine}`,
         'in-progress': `Hi! Your ${vehicle} is now in progress at ${shopName}. We'll keep you updated.${trackingLine}`,
-        'ready':       `Great news! Your ${vehicle} is ready for pickup at ${shopName}. See you soon! 🎉`,
-        'delivery':    `Great news! Your ${vehicle} is ready for pickup at ${shopName}. See you soon! 🎉`,
+        'ready':       `Great news! Your ${vehicle} is ready for pickup at ${shopName}. See you soon! 🎉${paymentLine}`,
+        'delivery':    `Great news! Your ${vehicle} is ready for pickup at ${shopName}. See you soon! 🎉${paymentLine}`,
       };
 
       const message = messages[toStatus];
@@ -120,7 +136,7 @@ function queueStatusEmail(roId, shopId, toStatus) {
   setImmediate(async () => {
     try {
       const emailContext = await dbGet(
-        `SELECT ro.ro_number, ro.estimate_token, c.email AS customer_email, s.name AS shop_name,
+        `SELECT ro.ro_number, ro.payment_status, ro.payment_received, c.email AS customer_email, c.name AS customer_name, s.name AS shop_name,
                 v.year, v.make, v.model,
                 COALESCE(s.email_notifications_enabled, TRUE) AS email_notifications_enabled
          FROM repair_orders ro
@@ -133,13 +149,7 @@ function queueStatusEmail(roId, shopId, toStatus) {
       if (!emailContext?.customer_email) return;
       if (!emailContext.email_notifications_enabled) return;
 
-      let portalToken = null;
-      const tokenRow = await dbGet(
-        'SELECT token FROM portal_tokens WHERE ro_id = $1 ORDER BY created_at DESC LIMIT 1',
-        [roId]
-      );
-      portalToken = tokenRow?.token || emailContext.estimate_token || null;
-
+      const portalToken = await ensureTrackingToken(roId, shopId);
       const appUrl = process.env.APP_URL || process.env.PUBLIC_URL || 'https://revvshop.app';
       const portalUrl = portalToken ? `${appUrl}/track/${portalToken}` : null;
       const vehicle = [emailContext.year, emailContext.make, emailContext.model].filter(Boolean).join(' ') || 'Vehicle on file';
@@ -151,7 +161,27 @@ function queueStatusEmail(roId, shopId, toStatus) {
         portalUrl,
       });
 
-      sendMail(emailContext.customer_email, subject, html).catch((e) => {
+      let finalHtml = html;
+      if (toStatus === 'delivery' && normalizedPaymentStatus(emailContext.payment_status, emailContext.payment_received) !== 'succeeded') {
+        const linkResult = await createPaymentCheckoutLinkForRo({
+          roId,
+          shopId,
+          customerEmail: emailContext.customer_email,
+          customerName: emailContext.customer_name || null,
+          trackingToken: portalToken,
+        });
+        if (linkResult.ok && linkResult.url) {
+          finalHtml += `
+            <p style="margin: 18px 0 0;">
+              <a href="${linkResult.url}" style="display: inline-block; background: #1d4ed8; color: #ffffff; text-decoration: none; font-weight: 600; padding: 10px 16px; border-radius: 6px;">
+                Pay Invoice Securely
+              </a>
+            </p>
+          `;
+        }
+      }
+
+      sendMail(emailContext.customer_email, subject, finalHtml).catch((e) => {
         console.error('[Email] status notification failed:', e.message);
       });
     } catch (_) {
@@ -1202,11 +1232,8 @@ router.post('/', auth, requireTechnician, roLimitGuard, async (req, res) => {
     // Auto-generate tracking link and send SMS (non-blocking)
     setImmediate(async () => {
       try {
-        const { dbRun: run, dbGet: get } = require('../db');
-        const { sendSMS, isConfiguredForShop } = require('../services/sms');
-        
         // Get customer and shop info
-        const roContext = await get(`
+        const roContext = await dbGet(`
           SELECT ro.*, c.phone as customer_phone, c.name as customer_name,
                  s.name as shop_name, s.twilio_phone_number
           FROM repair_orders ro
@@ -1217,17 +1244,11 @@ router.post('/', auth, requireTechnician, roLimitGuard, async (req, res) => {
         
         if (!roContext?.customer_phone) return;
         
-        // Generate token
-        const token = uuidv4().replace(/-/g, '');
-        const tokenId = uuidv4();
-        await run(`
-          INSERT INTO portal_tokens (id, ro_id, shop_id, token)
-          VALUES ($1, $2, $3, $4)
-        `, [tokenId, roId, req.user.shop_id, token]);
+        const token = await ensureTrackingToken(roId, req.user.shop_id);
         
         // Send SMS
         if (await isConfiguredForShop(req.user.shop_id)) {
-          const baseUrl = process.env.PUBLIC_URL || 'https://revv-production-ffa9.up.railway.app';
+          const baseUrl = process.env.APP_URL || process.env.PUBLIC_URL || 'https://revvshop.app';
           const trackingUrl = `${baseUrl}/track/${token}`;
           const message = `Hi ${roContext.customer_name || 'there'}! Track your vehicle repair at ${roContext.shop_name}:\n${trackingUrl}`;
           await sendSMS(roContext.customer_phone, message, { shopId: req.user.shop_id });
@@ -1277,6 +1298,10 @@ router.put('/:id', auth, requireTechnician, async (req, res) => {
     }
     if (statusChanged) {
       queueStatusEmail(req.params.id, req.user.shop_id, updates.status);
+      if (updates.status === 'closed') {
+        queueClosedReviewEmail(req.params.id).catch(() => {});
+        sendClosedPaidInvoiceEmail({ roId: req.params.id, shopId: req.user.shop_id }).catch(() => {});
+      }
     }
     res.json(await enrichRO(await dbGet('SELECT * FROM repair_orders WHERE id = $1', [req.params.id])));
   } catch (err) {
@@ -1300,49 +1325,15 @@ router.put('/:id/status', auth, requireTechnician, async (req, res) => {
     await dbRun('INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by, note) VALUES ($1, $2, $3, $4, $5, $6)', [uuidv4(), req.params.id, fromStatus, status, req.user.id, note || null]);
     notifyStatusChange(req.user.shop_id, { ...ro, id: req.params.id }, status);
     queueStatusSMS(req.params.id, req.user.shop_id, status);
+    queueStatusEmail(req.params.id, req.user.shop_id, status);
 
     const updatedRO = await dbGet('SELECT * FROM repair_orders WHERE id = $1', [req.params.id]);
     res.json(await enrichRO(updatedRO));
 
-    setImmediate(async () => {
-      // Email notifications on status change
-      try {
-        const emailContext = await dbGet(`
-          SELECT ro.status, ro.ro_number, ro.vehicle_make, ro.vehicle_model, ro.vehicle_year, 
-                 c.email AS customer_email, c.name AS customer_name, s.name AS shop_name
-          FROM repair_orders ro
-          LEFT JOIN customers c ON c.id = ro.customer_id
-          LEFT JOIN shops s ON s.id = ro.shop_id
-          WHERE ro.id = $1
-        `, [req.params.id]);
-        if (!emailContext || !emailContext.customer_email) return;
-
-        const vehicle = [emailContext.vehicle_year, emailContext.vehicle_make, emailContext.vehicle_model]
-          .filter(Boolean)
-          .join(' ')
-          .trim() || 'Your vehicle';
-
-        // Generate status change email using template
-        const { subject, html } = statusChangeEmail({
-          shopName: emailContext.shop_name,
-          roNumber: emailContext.ro_number,
-          vehicle,
-          status: emailContext.status,
-          portalUrl: process.env.PORTAL_URL || null,
-        });
-
-        await sendMail(emailContext.customer_email, subject, html).catch((e) => {
-          console.error(`[Email] Status change notification failed for RO ${req.params.id} (status: ${emailContext.status}):`, e.message);
-        });
-
-        // Additional special handling for closed status (send review request)
-        if (emailContext.status === 'closed') {
-          await queueClosedReviewEmail(req.params.id);
-        }
-      } catch (err) {
-        console.error(`[Email] Status change email handler error for RO ${req.params.id}:`, err.message);
-      }
-    });
+    if (status === 'closed') {
+      queueClosedReviewEmail(req.params.id).catch(() => {});
+      sendClosedPaidInvoiceEmail({ roId: req.params.id, shopId: req.user.shop_id }).catch(() => {});
+    }
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1453,32 +1444,15 @@ router.patch('/:id', auth, requireTechnician, async (req, res) => {
     await dbRun('INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by, note) VALUES ($1, $2, $3, $4, $5, $6)', [uuidv4(), req.params.id, fromStatus, status, req.user.id, note || null]);
     notifyStatusChange(req.user.shop_id, { ...ro, id: req.params.id }, status);
     queueStatusSMS(req.params.id, req.user.shop_id, status);
+    queueStatusEmail(req.params.id, req.user.shop_id, status);
 
     const updatedRO = await dbGet('SELECT * FROM repair_orders WHERE id = $1', [req.params.id]);
     res.json(await enrichRO(updatedRO));
 
-    setImmediate(async () => {
-      // Email notifications on status change
-      try {
-        const emailContext = await dbGet(`
-          SELECT ro.status, c.email AS customer_email, ro.ro_number
-          FROM repair_orders ro
-          LEFT JOIN customers c ON c.id = ro.customer_id
-          WHERE ro.id = $1
-        `, [req.params.id]);
-        if (!emailContext) return;
-
-        if (emailContext.status === 'estimate_sent' && emailContext.customer_email) {
-          await sendMail(emailContext.customer_email, 'Your Estimate is Ready', '<p>Your vehicle repair estimate is ready for review. Log in to your portal to view it.</p>').catch(e => console.error('[Email] estimate_sent failed:', e.message));
-        } else if (emailContext.status === 'completed' && emailContext.customer_email) {
-          await sendMail(emailContext.customer_email, 'Your Vehicle is Ready for Pickup', '<p>Your vehicle repair is complete and ready for pickup. Please contact us to arrange pickup.</p>').catch(e => console.error('[Email] completed failed:', e.message));
-        } else if (emailContext.status === 'closed' && emailContext.customer_email) {
-          await queueClosedReviewEmail(req.params.id);
-        }
-      } catch (err) {
-        console.error(`[Email] Status change notification failed for RO ${req.params.id}:`, err.message);
-      }
-    });
+    if (status === 'closed') {
+      queueClosedReviewEmail(req.params.id).catch(() => {});
+      sendClosedPaidInvoiceEmail({ roId: req.params.id, shopId: req.user.shop_id }).catch(() => {});
+    }
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1546,24 +1520,9 @@ router.post('/:id/mark-paid', auth, requireTechnician, async (req, res) => {
     const updatedRO = await dbGet('SELECT * FROM repair_orders WHERE id = $1', [req.params.id]);
     res.json(await enrichRO(updatedRO));
 
-    // Send customer email
-    setImmediate(async () => {
-      try {
-        const emailContext = await dbGet(
-          'SELECT c.email, ro.ro_number FROM repair_orders ro LEFT JOIN customers c ON c.id = ro.customer_id WHERE ro.id = $1',
-          [req.params.id]
-        );
-        if (emailContext?.email) {
-          await sendMail(
-            emailContext.email,
-            'Your Vehicle is Ready for Pickup',
-            '<p>Your vehicle repair is complete and payment has been received. Your vehicle is ready for pickup!</p>'
-          ).catch(e => console.error('[Email] Payment notification failed:', e.message));
-        }
-      } catch (err) {
-        console.error(`[Email] Payment notification failed for RO ${req.params.id}:`, err.message);
-      }
-    });
+    queueStatusEmail(req.params.id, req.user.shop_id, 'closed');
+    queueClosedReviewEmail(req.params.id).catch(() => {});
+    sendClosedPaidInvoiceEmail({ roId: req.params.id, shopId: req.user.shop_id }).catch(() => {});
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

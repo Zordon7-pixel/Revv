@@ -1,15 +1,14 @@
 import { useEffect, useState } from 'react'
-import { Users as UsersIcon, Plus, X, Shield, Wrench, Car, Trash2, Info, Pencil } from 'lucide-react'
+import { Users as UsersIcon, Plus, X, Shield, Wrench, Trash2, Info, Pencil } from 'lucide-react'
 import api from '../lib/api'
 
-const ROLES = ['admin', 'employee', 'staff']  // customers self-register via /register
+const ROLES = ['admin', 'employee', 'staff']
 const ROLE_META = {
   owner:    { label: 'Owner',    icon: Shield, cls: 'text-purple-400 bg-purple-900/30 border-purple-700' },
   admin:    { label: 'Admin',    icon: Shield, cls: 'text-indigo-400 bg-indigo-900/30 border-indigo-700' },
   employee: { label: 'Employee', icon: Wrench, cls: 'text-orange-400 bg-orange-900/30 border-orange-700'  },
   staff:    { label: 'Staff',    icon: Wrench, cls: 'text-blue-400   bg-blue-900/30   border-blue-700'   },
   assistant:{ label: 'Assistant',icon: Wrench, cls: 'text-yellow-300 bg-yellow-900/30 border-yellow-700' },
-  customer: { label: 'Customer', icon: Car,    cls: 'text-emerald-400 bg-emerald-900/30 border-emerald-700' },
 }
 
 export default function Users() {
@@ -113,7 +112,6 @@ export default function Users() {
   const admins    = users.filter(u => ['owner','admin'].includes(u.role))
   const employees = users.filter(u => ['employee','staff'].includes(u.role))
   const assistants = users.filter(u => u.role === 'assistant')
-  const customerU = users.filter(u => u.role === 'customer')
 
   function Section({ title, list }) {
     if (!list.length) return null
@@ -190,7 +188,7 @@ export default function Users() {
         {[
           { role:'admin',    desc:'Full access — dashboard, reports, profit, settings, RO management' },
           { role:'employee', desc:'Work access — update RO status, add notes. No financial data visible.' },
-          { role:'customer', desc:'Portal only — customers create their own accounts from the login page using the email on file.' },
+          { role:'assistant', desc:'Read-only helper access to dashboard, repair orders, and customers.' },
         ].map(({ role, desc }) => {
           const meta = ROLE_META[role]
           const Icon = meta.icon
@@ -208,20 +206,12 @@ export default function Users() {
       <Section title="Admins" list={admins} />
       <Section title="Employees" list={employees} />
       <Section title="Assistants" list={assistants} />
-      {/* Customer Logins — self-registration info */}
-      <div className="space-y-3">
-        <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Customer Logins</h3>
-        <div className="bg-emerald-900/10 border border-emerald-700/30 rounded-xl p-4 flex items-start gap-3">
-          <Info size={16} className="text-emerald-400 flex-shrink-0 mt-0.5" />
-          <div className="text-xs text-slate-300 leading-relaxed space-y-1">
-            <p><strong className="text-white">Customers register themselves.</strong> No passwords to set — no confusion.</p>
-            <p className="text-slate-400">When a customer drops off their vehicle, just tell them:<br/>
-              <span className="font-mono text-emerald-400">Go to {window.location.origin}/register</span> and use the email you gave us to create your account.
-            </p>
-            <p className="text-slate-500">They'll be automatically linked to their vehicle and repair orders.</p>
-          </div>
+      <div className="bg-emerald-900/10 border border-emerald-700/30 rounded-xl p-4 flex items-start gap-3">
+        <Info size={16} className="text-emerald-400 flex-shrink-0 mt-0.5" />
+        <div className="text-xs text-slate-300 leading-relaxed space-y-1">
+          <p><strong className="text-white">Customer logins are retired.</strong></p>
+          <p className="text-slate-400">Customers now receive status updates and secure tracking/payment links by SMS or email.</p>
         </div>
-        {customerU.length > 0 && <Section title="" list={customerU} />}
       </div>
 
       {users.length === 0 && (
@@ -250,7 +240,7 @@ export default function Users() {
                 </select>
               </div>
               <p className="text-[10px] text-slate-500 bg-[#0f1117] rounded-lg px-3 py-2 border border-[#2a2d3e] flex items-center gap-2">
-                <Info size={12} className="flex-shrink-0 text-slate-400" /> Customers create their own accounts — just add them to the <strong className="text-slate-400">Customers</strong> list with their email and tell them to visit /register.
+                <Info size={12} className="flex-shrink-0 text-slate-400" /> Customers do not get team accounts. Add customer email in the RO and send tracking/payment links.
               </p>
               <div className="flex gap-3 pt-2">
                 <button type="button" onClick={close} className="flex-1 bg-[#0f1117] text-slate-400 rounded-lg py-2.5 text-sm border border-[#2a2d3e]">Cancel</button>

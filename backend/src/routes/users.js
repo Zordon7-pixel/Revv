@@ -60,7 +60,7 @@ router.post('/', auth, requireAdmin, async (req, res) => {
   try {
     const { name, email, password, role, customer_id } = req.body;
     if (!name?.trim() || !email?.trim() || !password) return res.status(400).json({ error: 'name, email, password required' });
-    const validRoles = ['admin', 'employee', 'staff', 'assistant', 'customer'];
+    const validRoles = ['admin', 'employee', 'staff', 'assistant'];
     if (!validRoles.includes(role)) return res.status(400).json({ error: `role must be one of: ${validRoles.join(', ')}` });
 
     const existing = await dbGet('SELECT id FROM users WHERE email = $1', [email]);
@@ -118,7 +118,14 @@ router.put('/:id', auth, requireAdmin, async (req, res) => {
     if (updates.name)     { fields.push('name');          vals.push(updates.name.trim()); }
     if (updates.email)    { fields.push('email');         vals.push(updates.email.trim().toLowerCase()); }
     if (updates.password) { fields.push('password_hash'); vals.push(bcrypt.hashSync(updates.password, 10)); }
-    if (updates.role)     { fields.push('role');          vals.push(updates.role); }
+    if (updates.role) {
+      const validRoles = ['admin', 'employee', 'staff', 'assistant'];
+      if (!validRoles.includes(updates.role)) {
+        return res.status(400).json({ error: `role must be one of: ${validRoles.join(', ')}` });
+      }
+      fields.push('role');
+      vals.push(updates.role);
+    }
     if (updates.phone !== undefined) { fields.push('phone'); vals.push(updates.phone || null); }
 
     if (!fields.length) return res.status(400).json({ error: 'No valid fields to update' });
@@ -132,32 +139,9 @@ router.put('/:id', auth, requireAdmin, async (req, res) => {
 });
 
 router.post('/portal-access', auth, requireAdmin, async (req, res) => {
-  try {
-    const { customer_id } = req.body;
-    if (!customer_id) return res.status(400).json({ error: 'customer_id required' });
-
-    const customer = await dbGet('SELECT * FROM customers WHERE id = $1 AND shop_id = $2', [customer_id, req.user.shop_id]);
-    if (!customer) return res.status(404).json({ error: 'Customer not found' });
-    if (!customer.email) return res.status(400).json({ error: 'No email on file for this customer. Add their email first.' });
-
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
-    const password = Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
-
-    const existing = await dbGet('SELECT id FROM users WHERE shop_id = $1 AND customer_id = $2', [req.user.shop_id, customer_id]);
-    if (existing) {
-      await dbRun('UPDATE users SET password_hash = $1 WHERE id = $2', [bcrypt.hashSync(password, 10), existing.id]);
-      res.json({ email: customer.email, password, reset: true });
-    } else {
-      const id = uuidv4();
-      await dbRun(
-        'INSERT INTO users (id, shop_id, name, email, password_hash, role, customer_id) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-        [id, req.user.shop_id, customer.name, customer.email.toLowerCase(), bcrypt.hashSync(password, 10), 'customer', customer_id]
-      );
-      res.json({ email: customer.email, password, reset: false });
-    }
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  return res.status(410).json({
+    error: 'Customer portal accounts are retired. Send tracking and payment links instead.',
+  });
 });
 
 router.delete('/:id', auth, requireAdmin, async (req, res) => {

@@ -7,6 +7,7 @@ const { createNotification } = require('../services/notifications');
 const { createPaymentIntent, constructWebhookEvent } = require('../services/stripe');
 const { sendMail } = require('../services/mailer');
 const { paymentConfirmationEmail } = require('../services/emailTemplates');
+const { createPaymentCheckoutLinkForRo, sendClosedPaidInvoiceEmail } = require('../services/customerBilling');
 
 const router = express.Router();
 
@@ -117,6 +118,42 @@ router.post('/create-intent', auth, requireTechnician, async (req, res) => {
   return handleCreateIntent(req, res);
 });
 
+router.post('/link/:roId', auth, requireTechnician, async (req, res) => {
+  try {
+    const ro = await dbGet(
+      `SELECT ro.id, ro.shop_id, ro.ro_number, c.email AS customer_email, c.name AS customer_name
+       FROM repair_orders ro
+       LEFT JOIN customers c ON c.id = ro.customer_id
+       WHERE ro.id = $1 AND ro.shop_id = $2`,
+      [req.params.roId, req.user.shop_id]
+    );
+    if (!ro) return res.status(404).json({ error: 'Repair order not found' });
+
+    const result = await createPaymentCheckoutLinkForRo({
+      roId: ro.id,
+      shopId: ro.shop_id,
+      customerEmail: ro.customer_email || null,
+      customerName: ro.customer_name || null,
+    });
+    if (!result.ok) {
+      const status = result.error === 'Repair order not found' ? 404
+        : result.error === 'Repair order is already paid' ? 400
+          : result.error === 'Stripe is not configured' ? 503
+            : 400;
+      return res.status(status).json({ error: result.error });
+    }
+
+    return res.json({
+      checkoutUrl: result.url,
+      amountCents: result.amountCents,
+      expiresAt: result.expiresAt,
+      trackingToken: result.trackingToken,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || 'Could not create payment link' });
+  }
+});
+
 router.post('/webhook', async (req, res) => {
   try {
     await ensurePaymentsTable();
@@ -211,6 +248,9 @@ router.post('/webhook', async (req, res) => {
                 console.error(`[Email] Payment confirmation failed for RO ${roId}:`, e.message);
               });
             }
+            await sendClosedPaidInvoiceEmail({ roId, shopId }).catch((e) => {
+              console.error(`[Email] Closed+paid invoice email failed for RO ${roId}:`, e.message);
+            });
           } catch (err) {
             console.error(`[Email] Payment confirmation email handler error for RO ${roId}:`, err.message);
           }

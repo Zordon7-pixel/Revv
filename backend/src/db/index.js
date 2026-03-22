@@ -340,6 +340,7 @@ async function initDb() {
   await pool.query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS payment_received_at TEXT`);
   await pool.query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS payment_method TEXT`);
   await pool.query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS payment_status TEXT DEFAULT 'unpaid'`);
+  await pool.query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS invoice_emailed_at TEXT`);
   await pool.query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS billing_month VARCHAR(7)`);
   await pool.query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS revenue_period VARCHAR(8) DEFAULT 'current'`);
   await pool.query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS carried_over BOOLEAN DEFAULT FALSE`);

@@ -75,12 +75,13 @@ export default function RODetail() {
   const [savingPart, setSavingPart] = useState(false)
   const [refreshingPart, setRefreshingPart] = useState(null)  // partId being refreshed
 
-  const [portalCreds, setPortalCreds]         = useState(null)
-  const [generatingAccess, setGeneratingAccess] = useState(false)
   const [claimLink, setClaimLink] = useState(null)
   const [linkCopied, setLinkCopied] = useState(false)
   const [generatingLink, setGeneratingLink] = useState(false)
+  const [sendingCustomerLinks, setSendingCustomerLinks] = useState(false)
+  const [generatingPaymentLink, setGeneratingPaymentLink] = useState(false)
   const [trackingLink, setTrackingLink] = useState('')
+  const [paymentLink, setPaymentLink] = useState('')
 
   const [shopUsers, setShopUsers] = useState([])
   const [techNotes, setTechNotes] = useState('')
@@ -290,17 +291,6 @@ export default function RODetail() {
     setParts((prev) => [...prev, part])
   }
 
-  async function generatePortalAccess() {
-    setGeneratingAccess(true)
-    try {
-      const { data } = await api.post('/users/portal-access', { customer_id: ro.customer?.id })
-      setPortalCreds(data)
-      load() // refresh has_portal_access flag
-    } catch(e) {
-      alert(e?.response?.data?.error || 'Could not generate access')
-    } finally { setGeneratingAccess(false) }
-  }
-
   async function generateClaimLink() {
     setGeneratingLink(true)
     try {
@@ -324,18 +314,34 @@ export default function RODetail() {
     setTimeout(() => setLinkCopied(false), 3000)
   }
 
-  async function generateTrackingLink() {
-    setGeneratingLink(true)
+  async function generateCustomerLinks() {
+    setSendingCustomerLinks(true)
     try {
       const { data } = await api.post(`/portal/magic-link/${id}`)
       setTrackingLink(data.trackingUrl)
+      setPaymentLink(data.paymentUrl || '')
       await navigator.clipboard.writeText(data.trackingUrl)
       setLinkCopied(true)
       setTimeout(() => setLinkCopied(false), 3000)
     } catch (e) {
       alert(e?.response?.data?.error || 'Could not generate tracking link')
     } finally {
-      setGeneratingLink(false)
+      setSendingCustomerLinks(false)
+    }
+  }
+
+  async function generatePaymentLinkOnly() {
+    setGeneratingPaymentLink(true)
+    try {
+      const { data } = await api.post(`/payments/link/${id}`)
+      setPaymentLink(data.checkoutUrl)
+      await navigator.clipboard.writeText(data.checkoutUrl)
+      setLinkCopied(true)
+      setTimeout(() => setLinkCopied(false), 3000)
+    } catch (e) {
+      alert(e?.response?.data?.error || 'Could not generate payment link')
+    } finally {
+      setGeneratingPaymentLink(false)
     }
   }
 
@@ -1800,101 +1806,91 @@ export default function RODetail() {
         </div>
       )}
 
-      {/* Customer Portal Access */}
-      <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+      {/* Customer Updates + Links */}
+      <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4 space-y-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1.5"><Smartphone size={12} /> Customer Portal</h2>
+            <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
+              <Smartphone size={12} /> Customer Updates
+            </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              {ro.customer?.has_portal_access
-                ? <span className="flex items-center gap-1"><CheckCircle size={12} className="text-emerald-400" /> Customer has portal access</span>
-                : 'Customer cannot track their vehicle yet'}
+              No customer portal account needed. Send direct tracking and payment links.
             </p>
           </div>
-          <button onClick={generatePortalAccess}
-            disabled={generatingAccess || !ro.customer?.email}
-            className="text-xs bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
-            {generatingAccess ? 'Generating…'
-              : ro.customer?.has_portal_access ? 'Reset Password'
-              : 'Generate Login'}
-          </button>
-        </div>
-
-        {!ro.customer?.email && (
-          <p className="text-xs text-amber-400 mt-2 flex items-center gap-1.5"><AlertTriangle size={12} /> No email on file — add it to the customer record first.</p>
-        )}
-
-        {portalCreds && (
-          <div className="mt-4 bg-emerald-900/20 border border-emerald-700/40 rounded-xl p-4 space-y-3">
-            <p className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
-              {portalCreds.reset ? <><RefreshCw size={14} /> Password reset</> : <><CheckCircle size={14} /> Portal access created</>}
-            </p>
-            <div className="bg-[#0f1117] rounded-lg p-3 space-y-2 font-mono">
-              <div className="flex justify-between items-center">
-                <span className="text-slate-500 text-xs">Link</span>
-                <span className="text-indigo-400 text-xs">{window.location.origin}/portal</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-slate-500 text-xs">Email</span>
-                <span className="text-white text-xs">{portalCreds.email}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-slate-500 text-xs">Password</span>
-                <span className="text-emerald-400 text-sm font-bold tracking-wider">{portalCreds.password}</span>
-              </div>
-            </div>
-            <button onClick={() => {
-              const msg = `Hi! You can track your vehicle repair here:\n${window.location.origin}/portal\n\nEmail: ${portalCreds.email}\nPassword: ${portalCreds.password}\n\nLog in to see your repair status, expected delivery, and parts updates.`
-              navigator.clipboard.writeText(msg).then(() => alert('Copied! Paste it into a text message.'))
-            }} className="w-full text-xs bg-emerald-700 hover:bg-emerald-600 text-white font-semibold rounded-lg py-2 transition-colors flex items-center justify-center gap-1.5">
-              <Copy size={13} /> Copy Message to Send Customer
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={generateCustomerLinks}
+              disabled={sendingCustomerLinks}
+              className="flex items-center gap-1.5 bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+            >
+              {sendingCustomerLinks ? 'Sending...' : 'Send Tracking Link'}
+            </button>
+            <button
+              onClick={generatePaymentLinkOnly}
+              disabled={generatingPaymentLink}
+              className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+            >
+              {generatingPaymentLink ? 'Generating...' : 'Generate Payment Link'}
             </button>
           </div>
+        </div>
+
+        {!ro.customer?.phone && (
+          <p className="text-xs text-amber-400 flex items-center gap-1.5">
+            <AlertTriangle size={12} /> No customer phone on file. Add a phone number to send SMS links.
+          </p>
+        )}
+        {!ro.customer?.email && (
+          <p className="text-xs text-amber-400 flex items-center gap-1.5">
+            <AlertTriangle size={12} /> No customer email on file. Auto invoice emails require customer email.
+          </p>
         )}
 
-        {/* Tracking Link Section */}
-        {ro.customer?.phone && (
-          <div className="mt-4 bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
-              <div>
-                <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
-                  <Smartphone size={12} /> Send Tracking Link
-                </h2>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Send customer a link to track their vehicle
-                </p>
-              </div>
+        {trackingLink && (
+          <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3">
+            <p className="text-[11px] text-slate-500 mb-2">Tracking Link</p>
+            <div className="flex items-center justify-between gap-2">
+              <input
+                type="text"
+                readOnly
+                value={trackingLink}
+                className="flex-1 bg-transparent text-xs text-slate-300 font-mono truncate"
+              />
               <button
-                onClick={generateTrackingLink}
-                disabled={generatingLink}
-                className="flex items-center gap-1.5 bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+                onClick={() => {
+                  navigator.clipboard.writeText(trackingLink)
+                  setLinkCopied(true)
+                  setTimeout(() => setLinkCopied(false), 3000)
+                }}
+                className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
               >
-                {generatingLink ? 'Sending...' : 'Send SMS'}
+                {linkCopied ? <><CheckCircle size={12} /> Copied!</> : <><Copy size={12} /> Copy</>}
               </button>
             </div>
+          </div>
+        )}
 
-            {trackingLink && (
-              <div className="mt-3 bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <input
-                    type="text"
-                    readOnly
-                    value={trackingLink}
-                    className="flex-1 bg-transparent text-xs text-slate-300 font-mono truncate"
-                  />
-                  <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(trackingLink)
-                      setLinkCopied(true)
-                      setTimeout(() => setLinkCopied(false), 3000)
-                    }}
-                    className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
-                  >
-                    {linkCopied ? <><CheckCircle size={12} /> Copied!</> : <><Copy size={12} /> Copy</>}
-                  </button>
-                </div>
-              </div>
-            )}
+        {paymentLink && (
+          <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3">
+            <p className="text-[11px] text-slate-500 mb-2">Payment Link</p>
+            <div className="flex items-center justify-between gap-2">
+              <input
+                type="text"
+                readOnly
+                value={paymentLink}
+                className="flex-1 bg-transparent text-xs text-slate-300 font-mono truncate"
+              />
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(paymentLink)
+                  setLinkCopied(true)
+                  setTimeout(() => setLinkCopied(false), 3000)
+                }}
+                className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
+              >
+                {linkCopied ? <><CheckCircle size={12} /> Copied!</> : <><Copy size={12} /> Copy</>}
+              </button>
+            </div>
           </div>
         )}
       </div>

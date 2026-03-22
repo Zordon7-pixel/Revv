@@ -65,14 +65,12 @@ async function runSeed() {
     { custIdx: 6, vehIdx: 6, jobType: 'paint',     status: 'delivery', payType: 'cash',      insurer: null,          claimSuffix: null,   deduct: 0,   deductWaived: 0,   refFee: 0,   parts: 400,  labor: 900,  date: '2026-02-05', delivered: '2026-02-11' },
   ];
 
-  let marcusCustId = null;
   for (let i = 0; i < ros.length; i++) {
     const r = ros[i];
     const c = customers[r.custIdx];
     const v = vehicles[r.vehIdx];
 
     const custId = uuidv4();
-    if (r.custIdx === 0) marcusCustId = custId;
 
     await query(
       `INSERT INTO customers (id, shop_id, name, phone, email, insurance_company, policy_number)
@@ -115,14 +113,6 @@ async function runSeed() {
       `INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by)
        VALUES ($1,$2,$3,$4,$5)`,
       [uuidv4(), roId, null, r.status, 'system']
-    );
-  }
-
-  if (marcusCustId) {
-    await query(
-      `INSERT INTO users (id, shop_id, name, email, password_hash, role, customer_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-      [uuidv4(), shopId, 'Marcus Johnson', 'marcus@customer.com', hash, 'customer', marcusCustId]
     );
   }
 

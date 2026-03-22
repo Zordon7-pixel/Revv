@@ -7,6 +7,7 @@ const fs = require('fs');
 const multer = require('multer');
 const rateLimit = require('express-rate-limit');
 const { createNotification } = require('../services/notifications');
+const { createPaymentCheckoutLinkForRo, ensureTrackingToken } = require('../services/customerBilling');
 
 const MAX_PORTAL_PHOTO_BYTES = 10 * 1024 * 1024;
 const MAX_PORTAL_PHOTO_MB = Math.round(MAX_PORTAL_PHOTO_BYTES / (1024 * 1024));
@@ -340,7 +341,7 @@ router.post('/track/:token/rating', async (req, res) => {
 async function createMagicLink(req, res, roId) {
   try {
     const ro = await dbGet(`
-      SELECT ro.*, c.phone as customer_phone, c.name as customer_name,
+      SELECT ro.*, c.phone as customer_phone, c.name as customer_name, c.email as customer_email,
              s.name as shop_name, s.twilio_phone_number
       FROM repair_orders ro
       LEFT JOIN customers c ON c.id = ro.customer_id
@@ -352,19 +353,19 @@ async function createMagicLink(req, res, roId) {
       return res.status(404).json({ error: 'Repair order not found' });
     }
     
-    // Generate unique token
-    const token = uuidv4().replace(/-/g, '');
-    
-    // Store token
-    const id = uuidv4();
-    await dbRun(`
-      INSERT INTO portal_tokens (id, ro_id, shop_id, token)
-      VALUES ($1, $2, $3, $4)
-    `, [id, roId, req.user.shop_id, token]);
+    const token = await ensureTrackingToken(roId, req.user.shop_id);
     
     // Build tracking URL
-    const baseUrl = req.protocol + '://' + req.get('host');
+    const baseUrl = (process.env.APP_URL || req.protocol + '://' + req.get('host')).replace(/\/+$/, '');
     const trackingUrl = `${baseUrl}/track/${token}`;
+    const paymentLink = await createPaymentCheckoutLinkForRo({
+      roId,
+      shopId: req.user.shop_id,
+      customerEmail: ro.customer_email || null,
+      customerName: ro.customer_name || null,
+      trackingToken: token,
+    });
+    const paymentUrl = paymentLink.ok ? paymentLink.url : null;
     
     // Send SMS to customer (non-blocking)
     if (ro.customer_phone) {
@@ -372,7 +373,7 @@ async function createMagicLink(req, res, roId) {
         try {
           const { sendSMS, isConfiguredForShop } = require('../services/sms');
           if (await isConfiguredForShop(req.user.shop_id)) {
-            const message = `Hi ${ro.customer_name || 'there'}! Track your vehicle repair at ${ro.shop_name}:\n${trackingUrl}`;
+            const message = `Hi ${ro.customer_name || 'there'}! Track your vehicle repair at ${ro.shop_name}:\n${trackingUrl}${paymentUrl ? `\nPay here: ${paymentUrl}` : ''}`;
             await sendSMS(ro.customer_phone, message, { shopId: req.user.shop_id });
             console.log(`[Portal] Tracking link SMS sent for RO ${ro.ro_number}`);
           }
@@ -385,7 +386,8 @@ async function createMagicLink(req, res, roId) {
     res.json({ 
       token, 
       trackingUrl,
-      message: 'Tracking link generated and SMS sent to customer'
+      paymentUrl,
+      message: `Tracking link generated${paymentUrl ? ' with payment checkout link' : ''} and SMS sent to customer`
     });
   } catch (err) {
     console.error('[Portal Magic Link] Error:', err.message);

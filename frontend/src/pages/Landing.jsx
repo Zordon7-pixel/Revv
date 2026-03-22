@@ -29,9 +29,9 @@ const features = [
   },
   {
     icon: Users,
-    title: 'Customer Portal',
+    title: 'Customer Updates',
     description:
-      'Private tracking links for every customer. They check status — you stop answering phones.',
+      'Private tracking and payment links for every customer. No account setup required.',
   },
   {
     icon: Shield,
@@ -212,7 +212,7 @@ export default function Landing() {
               <h3 className="text-xl font-semibold text-white">Starter</h3>
               <p className="mt-2 text-3xl font-bold text-indigo-400">Free</p>
               <p className="mt-4 text-sm text-slate-400">
-                Up to 25 ROs/month, 1 location, customer portal, basic reports
+                Up to 25 ROs/month, 1 location, customer updates, basic reports
               </p>
               <Link
                 to="/shop-register"
@@ -244,7 +244,7 @@ export default function Landing() {
               <h3 className="text-xl font-semibold text-white">Agency</h3>
               <p className="mt-2 text-3xl font-bold text-indigo-400">$199/mo</p>
               <p className="mt-4 text-sm text-slate-400">
-                Everything in Pro + multiple locations, white-label portal, API access, dedicated
+                Everything in Pro + multiple locations, white-label messaging, API access, dedicated
                 onboarding
               </p>
               <a
@@ -360,7 +360,7 @@ export default function Landing() {
             <a href="#features" className="transition hover:text-white">Features</a>
             <a href="#pricing" className="transition hover:text-white">Pricing</a>
             <a href="#download" className="transition hover:text-white">Download</a>
-            <Link to="/terms" className="transition hover:text-white">Terms</Link>
+            <Link to="/terms-and-conditions" className="transition hover:text-white">Terms</Link>
             <Link to="/privacy" className="transition hover:text-white">Privacy</Link>
             <Link to="/login" className="transition hover:text-white">Sign In</Link>
             <Link to="/shop-register" className="transition hover:text-white">Get Started</Link>

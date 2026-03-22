@@ -11,7 +11,6 @@ import MonthlyReport from './pages/MonthlyReport'
 import Performance from './pages/Performance'
 import Settings from './pages/Settings'
 import Users from './pages/Users'
-import Portal from './pages/Portal'
 import TimeClock from './pages/TimeClock'
 import Schedule from './pages/Schedule'
 import Register from './pages/Register'
@@ -107,10 +106,10 @@ export default function App() {
           <Route path="/shop/:shopId" element={<ShopProfile />} />
           <Route path="/book" element={<BookAppointment />} />
           <Route path="/estimate-request" element={<PublicEstimateRequest />} />
-          <Route path="/terms" element={<Terms />} />
+          <Route path="/terms-and-conditions" element={<Terms />} />
+          <Route path="/terms" element={<Navigate to="/terms-and-conditions" replace />} />
           <Route path="/privacy" element={<Privacy />} />
           <Route path="/review/:token" element={<ReviewSubmit />} />
-          <Route path="/portal" element={<PrivateRoute><Portal /></PrivateRoute>} />
           <Route path="/onboarding" element={<PrivateRoute><Onboarding /></PrivateRoute>} />
           <Route path="/claim/:token" element={<ClaimPortal />} />
           <Route path="/inspection/:inspectionId" element={<InspectionPublic />} />

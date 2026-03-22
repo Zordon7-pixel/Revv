@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { Wrench, Car } from 'lucide-react'
+import { Wrench } from 'lucide-react'
 import api from '../lib/api'
 
 export default function Login() {
@@ -21,9 +21,7 @@ export default function Login() {
     try {
       const { data } = await api.post('/auth/login', { email, password })
       localStorage.setItem('sc_token', data.token)
-      if (data.user.role === 'customer') {
-        navigate('/portal')
-      } else if (data.user.role === 'owner' && !data.user.onboarded) {
+      if (data.user.role === 'owner' && !data.user.onboarded) {
         navigate('/onboarding')
       } else {
         navigate('/')
@@ -113,13 +111,6 @@ export default function Login() {
             </button>
           </form>
         )}
-
-        <div className="mt-4 text-center">
-          <Link to="/register"
-            className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors font-medium inline-flex items-center gap-1">
-            <Car size={13} /> New here? Track your vehicle →
-          </Link>
-        </div>
       </div>
     </div>
   )

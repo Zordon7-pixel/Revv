@@ -157,4 +157,35 @@ function paymentConfirmationEmail({ shopName, roNumber, amountFormatted, custome
   };
 }
 
-module.exports = { statusChangeEmail, paymentConfirmationEmail };
+function closedPaidInvoiceEmail({ shopName, roNumber, customerName, invoiceUrl, trackUrl }) {
+  const safeShopName = escapeHtml(shopName || 'Your Repair Shop');
+  const safeRoNumber = escapeHtml(roNumber || 'N/A');
+  const safeCustomerName = escapeHtml(customerName || 'Valued Customer');
+  const safeInvoiceUrl = escapeHtml(invoiceUrl || '');
+  const safeTrackUrl = escapeHtml(trackUrl || '');
+
+  return {
+    subject: `Invoice Ready — RO #${roNumber || ''}`.trim(),
+    html: `
+      <div style="font-family: Arial, sans-serif; color: #111827; line-height: 1.5;">
+        <h2 style="margin: 0 0 12px;">Your Invoice Is Ready</h2>
+        <p style="margin: 0 0 14px;">Hi ${safeCustomerName},</p>
+        <p style="margin: 0 0 16px;">
+          Your repair order <strong>#${safeRoNumber}</strong> at <strong>${safeShopName}</strong> is now closed and paid.
+        </p>
+        <p style="margin: 22px 0 0;">
+          <a href="${safeInvoiceUrl}" style="display: inline-block; background: #1d4ed8; color: #ffffff; text-decoration: none; font-weight: 600; padding: 10px 16px; border-radius: 6px;">
+            Download Invoice (PDF)
+          </a>
+        </p>
+        ${safeTrackUrl ? `
+          <p style="margin: 12px 0 0; font-size: 13px;">
+            Need a status recap? <a href="${safeTrackUrl}" style="color: #0f766e;">View your repair updates</a>.
+          </p>
+        ` : ''}
+      </div>
+    `,
+  };
+}
+
+module.exports = { statusChangeEmail, paymentConfirmationEmail, closedPaidInvoiceEmail };

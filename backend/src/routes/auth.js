@@ -32,6 +32,11 @@ router.post('/login', async (req, res) => {
     );
     if (!user || !bcrypt.compareSync(password, user.password_hash))
       return res.status(401).json({ error: 'Invalid email or password' });
+    if (user.role === 'customer') {
+      return res.status(403).json({
+        error: 'Customer portal accounts are retired. Use your tracking/payment links from email or SMS.',
+      });
+    }
 
     const payload = { id: user.id, shop_id: user.shop_id, role: user.role, jti: uuidv4() };
     if (user.customer_id) payload.customer_id = user.customer_id;
@@ -96,57 +101,10 @@ router.post('/shop-register', async (req, res) => {
   }
 });
 
-// POST /api/auth/register — open customer self-registration
 router.post('/register', async (req, res) => {
-  try {
-    const { email, password, name } = req.body;
-    if (!email?.trim() || !password) return res.status(400).json({ error: 'Email and password are required.' });
-    if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters.' });
-
-    const emailNorm = email.trim().toLowerCase();
-
-    const existingByEmail = await dbGet('SELECT id FROM users WHERE LOWER(email) = $1', [emailNorm]);
-    if (existingByEmail) {
-      return res.status(409).json({ error: 'An account already exists with that email. Just sign in.' });
-    }
-
-    const { shop_id } = req.body;
-    if (!shop_id) return res.status(400).json({ error: 'shop_id is required.' });
-    const shop = await dbGet('SELECT id FROM shops WHERE id = $1', [shop_id]);
-    if (!shop) return res.status(404).json({ error: 'Shop not found.' });
-
-    let customer = await dbGet('SELECT * FROM customers WHERE LOWER(email) = $1 AND shop_id = $2', [emailNorm, shop.id]);
-
-    if (!customer) {
-      const custId = uuidv4();
-      const displayName = name?.trim() || emailNorm.split('@')[0];
-      await dbRun('INSERT INTO customers (id, shop_id, name, email) VALUES ($1, $2, $3, $4)', [custId, shop.id, displayName, emailNorm]);
-      customer = await dbGet('SELECT * FROM customers WHERE id = $1', [custId]);
-    }
-
-    const existingByCust = await dbGet('SELECT id, email FROM users WHERE customer_id = $1', [customer.id]);
-    if (existingByCust) {
-      return res.status(409).json({
-        error: `An account already exists for this customer. Sign in with ${existingByCust.email}.`
-      });
-    }
-
-    const id = uuidv4();
-    await dbRun(
-      `INSERT INTO users (id, shop_id, name, email, password_hash, role, customer_id) VALUES ($1, $2, $3, $4, $5, 'customer', $6)`,
-      [id, shop.id, customer.name, emailNorm, bcrypt.hashSync(password, 10), customer.id]
-    );
-
-    const payload = { id, shop_id: shop.id, role: 'customer', customer_id: customer.id, jti: uuidv4() };
-    const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '7d' });
-    res.status(201).json({
-      token,
-      user: { id, name: customer.name, email: emailNorm, role: 'customer', shop_id: shop.id, customer_id: customer.id },
-    });
-  } catch (err) {
-    console.error('Register error:', err.message);
-    res.status(500).json({ error: 'Registration failed' });
-  }
+  return res.status(410).json({
+    error: 'Customer account registration is no longer available. Customers should use tracking/payment links sent by the shop.',
+  });
 });
 
 router.post('/forgot-password', forgotPasswordLimiter, async (req, res) => {

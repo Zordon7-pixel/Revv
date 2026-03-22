@@ -399,10 +399,13 @@ export default function Settings() {
               disabled={billingAction === 'portal'}
               className="bg-slate-700 hover:bg-slate-600 disabled:opacity-60 text-white text-xs font-medium px-4 py-2 rounded-lg transition-colors"
             >
-              {billingAction === 'portal' ? 'Opening...' : 'Manage Billing'}
+              {billingAction === 'portal' ? 'Opening...' : 'Manage Billing (Change Tier)'}
             </button>
           )}
         </div>
+        <p className="text-[11px] text-slate-500">
+          Choose the tier you want at checkout. If you are already on a paid plan, use billing portal to switch tiers.
+        </p>
       </div>
 
       {/* Market Tier Banner */}
@@ -853,7 +856,7 @@ export default function Settings() {
           </div>
           <p className="text-xs text-slate-400 leading-relaxed">
             Add your free <strong className="text-white">17track API key</strong> to automatically sync UPS, FedEx, USPS, and DHL tracking numbers.
-            When a part is delivered, REVV marks it received automatically - and your customer portal updates instantly.
+            When a part is delivered, REVV marks it received automatically - and customer tracking links reflect the update instantly.
           </p>
           <div>
             <label className={lbl}>17track API Key</label>

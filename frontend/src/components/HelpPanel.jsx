@@ -84,13 +84,13 @@ const sections = [
   },
   {
     id: 'customer-portal',
-    title: 'Customer Portal',
+    title: 'Customer Links',
     icon: Link2,
     content: (
       <ul className="space-y-2 text-sm text-slate-300">
-        <li>Each RO has a shareable tracking link.</li>
-        <li>Customers can track status, approve estimates, and view invoices.</li>
-        <li>Open RO → <span className="text-indigo-400 font-medium">Share Portal Link</span> → copy and text to customer.</li>
+        <li>Customers do not create REVV accounts.</li>
+        <li>Open RO → send tracking link and payment link directly by SMS/email.</li>
+        <li>After RO is closed and paid, invoice email sends automatically when customer email is on file.</li>
       </ul>
     )
   },

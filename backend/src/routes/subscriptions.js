@@ -12,6 +12,13 @@ const PLAN_BY_PRICE_ID = {
   [process.env.STRIPE_PRICE_ID_AGENCY]: 'agency',
 };
 
+function normalizeRequestedPlan(input) {
+  const value = String(input || '').trim().toLowerCase();
+  if (value === 'pro' || value === 'tier2' || value === '2') return 'pro';
+  if (value === 'agency' || value === 'tier3' || value === '3') return 'agency';
+  return null;
+}
+
 function getCheckoutUrls() {
   const appUrl = process.env.APP_URL || DEFAULT_APP_URL;
   return {
@@ -73,6 +80,7 @@ router.get('/status', auth, requireOwner, async (req, res) => {
       trial_ends_at: shop.trial_ends_at,
       plan_expires_at: shop.plan_expires_at,
       stripe_subscription_id: shop.stripe_subscription_id,
+      available_plans: ['free', 'pro', 'agency'],
     });
   } catch (err) {
     return res.status(500).json({ error: err.message });
@@ -81,9 +89,20 @@ router.get('/status', auth, requireOwner, async (req, res) => {
 
 router.post('/checkout', auth, requireOwner, async (req, res) => {
   try {
-    const plan = req.body?.plan;
-    if (!['pro', 'agency'].includes(plan)) {
+    const plan = normalizeRequestedPlan(req.body?.plan || req.body?.tier);
+    if (!plan) {
       return res.status(400).json({ error: 'Invalid plan' });
+    }
+
+    const currentShop = await dbGet(
+      'SELECT plan, stripe_subscription_id FROM shops WHERE id = $1',
+      [req.user.shop_id]
+    );
+    if (!currentShop) return res.status(404).json({ error: 'Shop not found' });
+    if ((currentShop.plan || 'free') === plan && currentShop.stripe_subscription_id) {
+      return res.status(409).json({
+        error: `You are already on the ${plan} tier. Use Manage Billing to update payment details.`,
+      });
     }
 
     const priceId =
