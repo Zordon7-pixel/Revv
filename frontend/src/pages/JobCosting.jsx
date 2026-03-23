@@ -6,9 +6,14 @@ import api from '../lib/api'
 function fmt(n) { return `$${parseFloat(n || 0).toFixed(2)}` }
 function pct(n) { return `${parseFloat(n || 0).toFixed(1)}%` }
 
-function StatCard({ icon: Icon, label, value, color }) {
+function StatCard({ icon: Icon, label, value, color, onClick }) {
+  const interactive = typeof onClick === 'function'
   return (
-    <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-5 flex items-center gap-4">
+    <button
+      type="button"
+      onClick={onClick}
+      className={`w-full text-left bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-5 flex items-center gap-4 ${interactive ? 'hover:border-indigo-400/60 hover:bg-[#20253a] transition-colors cursor-pointer' : ''}`}
+    >
       <div className={`p-3 rounded-lg ${color}`}>
         <Icon size={20} className="text-white" />
       </div>
@@ -16,7 +21,7 @@ function StatCard({ icon: Icon, label, value, color }) {
         <p className="text-xs text-slate-400 mb-1">{label}</p>
         <p className="text-xl font-bold text-white">{value}</p>
       </div>
-    </div>
+    </button>
   )
 }
 
@@ -91,29 +96,56 @@ export default function JobCosting() {
         {/* Summary Cards */}
         {data && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-            <StatCard icon={DollarSign} label="Total Revenue" value={fmt(data.totalRevenue)} color="bg-indigo-600" />
-            <StatCard icon={List} label="Total Cost" value={fmt(data.totalCost)} color="bg-slate-600" />
+            <StatCard
+              icon={DollarSign}
+              label="Total Revenue"
+              value={fmt(data.totalRevenue)}
+              color="bg-indigo-600"
+              onClick={() => navigate('/ros')}
+            />
+            <StatCard
+              icon={List}
+              label="Total Cost"
+              value={fmt(data.totalCost)}
+              color="bg-slate-600"
+              onClick={() => navigate('/ros')}
+            />
             <StatCard
               icon={data.grossProfit >= 0 ? TrendingUp : TrendingDown}
               label="Gross Profit"
               value={fmt(data.grossProfit)}
               color={data.grossProfit >= 0 ? 'bg-emerald-600' : 'bg-red-600'}
+              onClick={() => navigate('/ros')}
             />
-            <StatCard icon={Percent} label="Avg Margin" value={pct(data.avgMargin)} color="bg-violet-600" />
+            <StatCard
+              icon={Percent}
+              label="Avg Margin"
+              value={pct(data.avgMargin)}
+              color="bg-violet-600"
+              onClick={() => navigate('/ros')}
+            />
           </div>
         )}
 
         {/* Sub-stats */}
         {data && (
           <div className="grid grid-cols-2 gap-4 mb-6">
-            <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 text-center">
+            <button
+              type="button"
+              onClick={() => navigate('/ros')}
+              className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 text-center hover:border-indigo-400/60 hover:bg-[#20253a] transition-colors"
+            >
               <p className="text-3xl font-bold text-white">{total}</p>
               <p className="text-slate-400 text-sm mt-1">Total Jobs</p>
-            </div>
-            <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 text-center">
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate('/ros')}
+              className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 text-center hover:border-indigo-400/60 hover:bg-[#20253a] transition-colors"
+            >
               <p className="text-3xl font-bold text-emerald-400">{total > 0 ? Math.round((profitable / total) * 100) : 0}%</p>
               <p className="text-slate-400 text-sm mt-1">Jobs Profitable</p>
-            </div>
+            </button>
           </div>
         )}
 

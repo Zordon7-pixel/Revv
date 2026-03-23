@@ -1,7 +1,7 @@
 const router = require('express').Router();
 const { dbGet, dbRun } = require('../db');
 const auth = require('../middleware/auth');
-const { requireOwner, requireTechnician } = require('../middleware/roles');
+const { requireAdmin, requireTechnician } = require('../middleware/roles');
 
 const SECTIONS = new Set(['ros', 'customers', 'vehicles', 'timeclock', 'all']);
 
@@ -108,7 +108,7 @@ router.patch('/', auth, requireTechnician, async (req, res) => {
   }
 });
 
-router.post('/reset/:section', auth, requireOwner, async (req, res) => {
+router.post('/reset/:section', auth, requireAdmin, async (req, res) => {
   try {
     const { section } = req.params;
     if (!SECTIONS.has(section)) {

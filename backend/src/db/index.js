@@ -31,6 +31,16 @@ async function initDb() {
       twilio_account_sid TEXT,
       twilio_auth_token TEXT,
       twilio_phone_number TEXT,
+      quickbooks_company_id TEXT,
+      quickbooks_realm_id TEXT,
+      quickbooks_access_token TEXT,
+      quickbooks_refresh_token TEXT,
+      quickbooks_token_expires_at TIMESTAMP WITH TIME ZONE,
+      quickbooks_refresh_expires_at TIMESTAMP WITH TIME ZONE,
+      quickbooks_connected_at TIMESTAMP WITH TIME ZONE,
+      quickbooks_last_sync_at TIMESTAMP WITH TIME ZONE,
+      quickbooks_sync_enabled BOOLEAN DEFAULT FALSE,
+      quickbooks_environment TEXT DEFAULT 'production',
       sms_notifications_enabled BOOLEAN DEFAULT TRUE,
       email_notifications_enabled BOOLEAN DEFAULT TRUE,
       monthly_revenue_target INTEGER DEFAULT 85000,
@@ -214,6 +224,8 @@ async function initDb() {
       scheduled_start TEXT,
       is_late SMALLINT DEFAULT 0,
       late_minutes INTEGER DEFAULT 0,
+      unscheduled_approved_by TEXT,
+      unscheduled_approved_at TEXT,
       total_hours REAL,
       adjusted_by TEXT,
       admin_note TEXT,
@@ -353,6 +365,18 @@ async function initDb() {
   await pool.query(`UPDATE repair_orders SET payment_status = 'unpaid' WHERE payment_status IS NULL`);
   await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS onboarded BOOLEAN DEFAULT FALSE`);
   await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS logo_url TEXT`);
+  await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS quickbooks_company_id TEXT`);
+  await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS quickbooks_realm_id TEXT`);
+  await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS quickbooks_access_token TEXT`);
+  await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS quickbooks_refresh_token TEXT`);
+  await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS quickbooks_token_expires_at TIMESTAMP WITH TIME ZONE`);
+  await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS quickbooks_refresh_expires_at TIMESTAMP WITH TIME ZONE`);
+  await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS quickbooks_connected_at TIMESTAMP WITH TIME ZONE`);
+  await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS quickbooks_last_sync_at TIMESTAMP WITH TIME ZONE`);
+  await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS quickbooks_sync_enabled BOOLEAN DEFAULT FALSE`);
+  await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS quickbooks_environment TEXT DEFAULT 'production'`);
+  await pool.query(`ALTER TABLE time_entries ADD COLUMN IF NOT EXISTS unscheduled_approved_by TEXT`).catch(() => {});
+  await pool.query(`ALTER TABLE time_entries ADD COLUMN IF NOT EXISTS unscheduled_approved_at TIMESTAMP WITH TIME ZONE`).catch(() => {});
 
   // Wave 4: lunch breaks, notifications, schedule lunch field
   await pool.query(`ALTER TABLE schedules ADD COLUMN IF NOT EXISTS lunch_break_minutes INTEGER DEFAULT 30`);

@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ClipboardList, DollarSign, CheckCircle, TrendingUp, Hand, AlertCircle, CalendarDays, ChevronRight, Radar, ArrowUpRight, ArrowDownRight, Minus } from 'lucide-react'
 import api from '../lib/api'
-import { isAdmin } from '../lib/auth'
+import { getRole, getTokenPayload, isAdmin } from '../lib/auth'
 import { STATUS_COLORS, STATUS_LABELS } from './RepairOrders'
 import StatusBadge from '../components/StatusBadge'
 import CarryoverModal from '../components/CarryoverModal'
@@ -27,6 +27,7 @@ function useCountUp(target, duration = 1000) {
 
 export default function Dashboard() {
   const [data, setData] = useState(null)
+  const [techData, setTechData] = useState(null)
   const [weekly, setWeekly] = useState(null)
   const [goal, setGoal] = useState(null)
   const [pendingCarryover, setPendingCarryover] = useState([])
@@ -34,9 +35,14 @@ export default function Dashboard() {
   const [adasQueue, setAdasQueue] = useState([])
   const [showCarryoverModal, setShowCarryoverModal] = useState(false)
   const [loadError, setLoadError] = useState(false)
+  const [techLoadError, setTechLoadError] = useState(false)
   const weeklyChartRef = useRef(null)
   const weeklyChartInstanceRef = useRef(null)
   const navigate = useNavigate()
+  const admin = isAdmin()
+  const role = getRole()
+  const currentUser = getTokenPayload()
+  const isTechAccount = !admin && ['employee', 'staff', 'technician'].includes(role || '')
 
   const yearMonth = (() => {
     const now = new Date()
@@ -60,14 +66,57 @@ export default function Dashboard() {
     setWeekly(weeklyRes.data || null)
   }
 
+  async function loadTechDashboard() {
+    const today = new Date().toISOString().slice(0, 10)
+    const [rosRes, shiftRes, clockStatusRes] = await Promise.all([
+      api.get('/repair-orders'),
+      api.get('/schedule/today').catch(() => ({ data: { shift: null } })),
+      api.get('/timeclock/status').catch(() => ({ data: { clocked_in: false, entry: null } })),
+    ])
+
+    const allRos = rosRes?.data?.ros || []
+    const myId = currentUser?.id
+    const assigned = myId ? allRos.filter((ro) => ro.assigned_to === myId) : []
+    const activeAssigned = assigned.filter((ro) => !['delivery', 'closed'].includes(String(ro.status || '').toLowerCase()))
+    const completedAssigned = assigned.filter((ro) => ['delivery', 'closed'].includes(String(ro.status || '').toLowerCase()))
+    const dueToday = activeAssigned.filter((ro) => String(ro.estimated_delivery || '') === today)
+    const highPriority = activeAssigned.filter((ro) => ['repair', 'paint', 'qc'].includes(String(ro.status || '').toLowerCase()))
+    const recentAssigned = [...assigned]
+      .sort((a, b) => new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime())
+      .slice(0, 6)
+
+    const byStage = ['intake', 'estimate', 'approval', 'parts', 'repair', 'paint', 'qc', 'delivery'].map((status) => ({
+      status,
+      count: activeAssigned.filter((ro) => String(ro.status || '').toLowerCase() === status).length,
+    }))
+
+    setTechData({
+      totalAssigned: assigned.length,
+      activeAssigned: activeAssigned.length,
+      completedAssigned: completedAssigned.length,
+      dueToday: dueToday.length,
+      highPriority: highPriority.length,
+      recentAssigned,
+      byStage,
+      todayShift: shiftRes?.data?.shift || null,
+      timeClock: clockStatusRes?.data || { clocked_in: false, entry: null },
+    })
+  }
+
   useEffect(() => {
+    if (isTechAccount) {
+      loadTechDashboard().catch(err => {
+        console.error('Failed to load tech dashboard:', err)
+        setTechLoadError(true)
+      })
+      return
+    }
     loadDashboardData().catch(err => {
       console.error('Failed to load dashboard:', err)
       setLoadError(true)
     })
-  }, [])
+  }, [isTechAccount])
 
-  const admin = isAdmin()
   const hour = new Date().getHours()
   const nowLabel = new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
   const greetingText = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
@@ -84,7 +133,7 @@ export default function Dashboard() {
   const weeklyTrendPercent = Number(weekly?.ro_opened?.trend_percent || 0)
 
   useEffect(() => {
-    if (!weekly?.chart || !weeklyChartRef.current) return undefined
+    if (isTechAccount || !weekly?.chart || !weeklyChartRef.current) return undefined
     
     let destroyed = false
     
@@ -141,7 +190,104 @@ export default function Dashboard() {
         weeklyChartInstanceRef.current = null
       }
     }
-  }, [weekly])
+  }, [isTechAccount, weekly])
+
+  if (isTechAccount) {
+    if (techLoadError) return <div className="flex items-center justify-center h-64 text-red-400 text-sm">Failed to load tech dashboard. Please refresh the page.</div>
+    if (!techData) return <div className="flex items-center justify-center h-64 text-slate-500">Loading your assigned repair orders...</div>
+
+    return (
+      <div className="space-y-6">
+        <div>
+          <p className="text-slate-400 text-sm font-medium mb-1 flex items-center gap-1.5">{greetingText} <Hand size={14} /></p>
+          <h1 className="text-xl font-bold text-white">Tech Dashboard</h1>
+          <p className="text-xs text-slate-500 mt-1">Your assigned repair orders and work queue.</p>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          <button type="button" onClick={() => navigate('/ros')} className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-3 text-left hover:border-indigo-500/50">
+            <div className="text-[11px] text-slate-500">Assigned</div>
+            <div className="text-2xl font-bold text-white">{techData.totalAssigned}</div>
+          </button>
+          <button type="button" onClick={() => navigate('/ros?status=open')} className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-3 text-left hover:border-indigo-500/50">
+            <div className="text-[11px] text-slate-500">Active</div>
+            <div className="text-2xl font-bold text-indigo-300">{techData.activeAssigned}</div>
+          </button>
+          <button type="button" onClick={() => navigate('/ros?status=completed')} className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-3 text-left hover:border-indigo-500/50">
+            <div className="text-[11px] text-slate-500">Completed</div>
+            <div className="text-2xl font-bold text-emerald-300">{techData.completedAssigned}</div>
+          </button>
+          <button type="button" onClick={() => navigate('/ros')} className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-3 text-left hover:border-indigo-500/50">
+            <div className="text-[11px] text-slate-500">Due Today</div>
+            <div className="text-2xl font-bold text-amber-300">{techData.dueToday}</div>
+          </button>
+          <button type="button" onClick={() => navigate('/timeclock')} className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-3 text-left hover:border-indigo-500/50">
+            <div className="text-[11px] text-slate-500">Clock Status</div>
+            <div className={`text-sm font-semibold mt-1 ${techData.timeClock?.clocked_in ? 'text-emerald-300' : 'text-slate-300'}`}>
+              {techData.timeClock?.clocked_in ? 'Clocked In' : 'Clocked Out'}
+            </div>
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
+            <h2 className="font-semibold text-sm text-white mb-3">My Jobs by Stage</h2>
+            <div className="space-y-2">
+              {techData.byStage.map((row) => (
+                <button
+                  key={row.status}
+                  type="button"
+                  onClick={() => navigate(`/ros?status=${row.status}`)}
+                  className="w-full flex items-center gap-3 hover:bg-[#2a2d3e] rounded px-1 transition-colors"
+                >
+                  <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: STATUS_COLORS[row.status] }} />
+                  <span className="text-xs text-slate-400 w-20 text-left capitalize">{STATUS_LABELS[row.status]}</span>
+                  <div className="flex-1 bg-[#0f1117] rounded-full h-1.5">
+                    <div
+                      className="h-1.5 rounded-full transition-all"
+                      style={{
+                        width: `${Math.min((row.count / Math.max(techData.activeAssigned || 1, 1)) * 100, 100)}%`,
+                        background: STATUS_COLORS[row.status],
+                      }}
+                    />
+                  </div>
+                  <span className="text-xs text-slate-300 w-4 text-right">{row.count}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-semibold text-sm text-white">Recent Assigned Jobs</h2>
+              <button type="button" onClick={() => navigate('/ros')} className="text-xs text-indigo-300 hover:text-indigo-200">View All</button>
+            </div>
+            {techData.recentAssigned.length === 0 ? (
+              <p className="text-sm text-slate-500">No jobs assigned yet.</p>
+            ) : (
+              <div className="space-y-2">
+                {techData.recentAssigned.map((ro) => (
+                  <button
+                    key={ro.id}
+                    type="button"
+                    onClick={() => navigate(`/ros/${ro.id}`)}
+                    className="w-full text-left flex items-center gap-3 p-2 rounded-lg hover:bg-[#2a2d3e] transition-colors"
+                  >
+                    <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: STATUS_COLORS[ro.status] }} />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-medium text-white truncate">{ro.ro_number} — {ro.year} {ro.make} {ro.model}</div>
+                      <div className="text-[10px] text-slate-500">{ro.customer_name || 'No customer'}{ro.estimated_delivery ? ` · Due ${ro.estimated_delivery}` : ''}</div>
+                    </div>
+                    <StatusBadge status={ro.status} />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   const stats = [
     {

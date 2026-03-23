@@ -138,7 +138,7 @@ export default function Onboarding() {
               Invite Your Team
             </div>
             <p className="text-sm text-slate-300">
-              Add employees so they can clock in and manage repairs.
+              Add techs so they can clock in and manage repairs.
             </p>
             <div className="flex flex-wrap gap-3">
               <button

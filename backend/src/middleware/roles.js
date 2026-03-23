@@ -1,10 +1,10 @@
 const ROLE_RANK = {
   owner: 4,
   admin: 3,
+  assistant: 3,
   technician: 2,
   employee: 2,
   staff: 2,
-  assistant: 1,
   customer: 0,
 };
 

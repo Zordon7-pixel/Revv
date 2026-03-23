@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { MapPin, Wrench, DollarSign, Save, RefreshCw, CheckCircle, ShieldCheck, Truck, Trash2, MessageSquare, ChevronDown, X, AlertTriangle, Smartphone, LogOut, CalendarDays } from 'lucide-react'
+import { MapPin, Wrench, DollarSign, Save, RefreshCw, CheckCircle, ShieldCheck, Truck, Trash2, ChevronDown, X, AlertTriangle, Smartphone, LogOut, CalendarDays } from 'lucide-react'
 import api from '../lib/api'
 import { optimizeImageForUpload } from '../lib/imageUpload'
+import { isAdmin } from '../lib/auth'
 
 const TIER_COLORS = {
   1: 'text-purple-400 bg-purple-900/30 border-purple-700',
@@ -57,6 +58,18 @@ export default function Settings() {
   const [billingLoading, setBillingLoading] = useState(true)
   const [billingAction, setBillingAction] = useState('')
   const [logoBusy, setLogoBusy] = useState(false)
+  const [quickbooksStatus, setQuickbooksStatus] = useState({
+    configured: false,
+    connected: false,
+    sync_enabled: false,
+    environment: 'production',
+    connected_at: null,
+    last_sync_at: null,
+  })
+  const [quickbooksBusy, setQuickbooksBusy] = useState('')
+  const [quickbooksMessage, setQuickbooksMessage] = useState('')
+  const [activeSettingsTab, setActiveSettingsTab] = useState('core')
+  const userIsAdmin = isAdmin()
 
   async function refreshSmsStatus() {
     setSmsLoading(true)
@@ -67,6 +80,29 @@ export default function Settings() {
       setSmsStatus({ configured: false, sms_phone: null })
     } finally {
       setSmsLoading(false)
+    }
+  }
+
+  async function refreshQuickBooksStatus() {
+    try {
+      const { data } = await api.get('/accounting/quickbooks/status')
+      setQuickbooksStatus({
+        configured: !!data?.configured,
+        connected: !!data?.connected,
+        sync_enabled: !!data?.sync_enabled,
+        environment: data?.environment || 'production',
+        connected_at: data?.connected_at || null,
+        last_sync_at: data?.last_sync_at || null,
+      })
+    } catch {
+      setQuickbooksStatus({
+        configured: false,
+        connected: false,
+        sync_enabled: false,
+        environment: 'production',
+        connected_at: null,
+        last_sync_at: null,
+      })
     }
   }
 
@@ -105,6 +141,18 @@ export default function Settings() {
       .then(r => setBilling(r.data))
       .catch(() => setBilling(null))
       .finally(() => setBillingLoading(false))
+    refreshQuickBooksStatus()
+
+    const params = new URLSearchParams(window.location.search)
+    const qbState = params.get('qb')
+    const qbReason = params.get('reason')
+    if (qbState === 'connected') {
+      setQuickbooksMessage('QuickBooks connected successfully.')
+      window.history.replaceState({}, '', window.location.pathname)
+    } else if (qbState === 'error') {
+      setQuickbooksMessage(`QuickBooks connection failed${qbReason ? `: ${qbReason}` : '.'}`)
+      window.history.replaceState({}, '', window.location.pathname)
+    }
   }, [])
 
   useEffect(() => {
@@ -348,6 +396,71 @@ export default function Settings() {
     } finally { setClearing(false) }
   }
 
+  async function connectQuickBooks() {
+    if (!userIsAdmin) return
+    setQuickbooksBusy('connect')
+    setQuickbooksMessage('')
+    try {
+      const { data } = await api.get('/accounting/quickbooks/connect-url')
+      if (data?.url) {
+        window.location.href = data.url
+        return
+      }
+      setQuickbooksMessage('Could not start QuickBooks connection.')
+      setQuickbooksBusy('')
+    } catch (err) {
+      setQuickbooksMessage(err?.response?.data?.error || 'Could not start QuickBooks connection.')
+      setQuickbooksBusy('')
+    }
+  }
+
+  async function disconnectQuickBooks() {
+    if (!userIsAdmin) return
+    if (!window.confirm('Disconnect QuickBooks for this shop?')) return
+    setQuickbooksBusy('disconnect')
+    setQuickbooksMessage('')
+    try {
+      await api.post('/accounting/quickbooks/disconnect')
+      await refreshQuickBooksStatus()
+      setQuickbooksMessage('QuickBooks disconnected.')
+    } catch (err) {
+      setQuickbooksMessage(err?.response?.data?.error || 'Could not disconnect QuickBooks.')
+    } finally {
+      setQuickbooksBusy('')
+    }
+  }
+
+  async function toggleQuickBooksSyncEnabled() {
+    if (!userIsAdmin || !quickbooksStatus.connected) return
+    setQuickbooksBusy('toggle')
+    setQuickbooksMessage('')
+    try {
+      const nextEnabled = !quickbooksStatus.sync_enabled
+      await api.patch('/accounting/quickbooks/sync-enabled', { enabled: nextEnabled })
+      await refreshQuickBooksStatus()
+      setQuickbooksMessage(`Auto-sync ${nextEnabled ? 'enabled' : 'disabled'}.`)
+    } catch (err) {
+      setQuickbooksMessage(err?.response?.data?.error || 'Could not update auto-sync.')
+    } finally {
+      setQuickbooksBusy('')
+    }
+  }
+
+  async function syncQuickBooksBatch() {
+    if (!userIsAdmin || !quickbooksStatus.connected) return
+    setQuickbooksBusy('sync')
+    setQuickbooksMessage('')
+    try {
+      const { data } = await api.post('/accounting/quickbooks/sync/batch', { limit: 150 })
+      setQuickbooksMessage(`Sync complete: ${data?.synced_count || 0} synced, ${data?.failed_count || 0} failed.`)
+      await refreshQuickBooksStatus()
+    } catch (err) {
+      setQuickbooksMessage(err?.response?.data?.error || 'QuickBooks sync failed.')
+    } finally {
+      setQuickbooksBusy('')
+    }
+  }
+
   async function startCheckout(plan) {
     setBillingAction('checkout')
     try {
@@ -384,6 +497,15 @@ export default function Settings() {
 
   const inp = 'w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition-colors'
   const lbl = 'block text-xs font-medium text-slate-400 mb-1.5'
+  const settingsTabs = [
+    { id: 'core', label: 'Core' },
+    { id: 'financial', label: 'Financial' },
+    { id: 'messaging', label: 'Messaging' },
+    { id: 'operations', label: 'Operations' },
+    { id: 'accounting', label: 'Accounting' },
+    { id: 'security', label: 'Security' },
+    { id: 'danger', label: 'Danger Zone' },
+  ]
 
   if (!shop) return <div className="flex items-center justify-center h-64 text-slate-500">Loading...</div>
 
@@ -403,169 +525,204 @@ export default function Settings() {
         </button>
       </div>
 
-      <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-5 space-y-3">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <h2 className="font-semibold text-white text-sm">Billing</h2>
-          {billingLoading ? (
-            <span className="text-xs text-slate-500">Loading plan...</span>
-          ) : (
-            <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${planBadgeClass}`}>{planLabel}</span>
-          )}
+      <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-3">
+        <div className="flex items-center justify-between gap-3 flex-wrap mb-3 px-1">
+          <p className="text-xs text-slate-300">Settings Sub-Tabs</p>
+          <p className="text-[11px] text-slate-500">Core, Financial, and Messaging are the primary tabs.</p>
         </div>
-
-        {trialActive && (
-          <div className="text-xs text-amber-300 bg-amber-900/20 border border-amber-700/50 rounded-lg px-3 py-2">
-            Free trial active until {trialEndsAt.toLocaleDateString()}.
-          </div>
-        )}
-
-        <div className="flex items-center gap-2 flex-wrap">
-          {currentPlan === 'free' && (
-            <>
+        <div className="flex flex-wrap gap-2">
+          {settingsTabs.map((tab) => {
+            const isActive = activeSettingsTab === tab.id
+            return (
               <button
+                key={tab.id}
                 type="button"
-                onClick={() => startCheckout('pro')}
-                disabled={billingAction === 'checkout'}
-                className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white text-xs font-medium px-4 py-2 rounded-lg transition-colors"
+                onClick={() => setActiveSettingsTab(tab.id)}
+                className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+                  isActive
+                    ? 'bg-indigo-600/20 border-indigo-500/50 text-indigo-200'
+                    : 'bg-[#0f1117] border-[#2a2d3e] text-slate-400 hover:text-slate-200'
+                }`}
               >
-                {billingAction === 'checkout' ? 'Redirecting...' : 'Upgrade to Pro ($79/mo)'}
+                <span>{tab.label}</span>
               </button>
-              <button
-                type="button"
-                onClick={() => startCheckout('agency')}
-                disabled={billingAction === 'checkout'}
-                className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white text-xs font-medium px-4 py-2 rounded-lg transition-colors"
-              >
-                {billingAction === 'checkout' ? 'Redirecting...' : 'Upgrade to Agency ($199/mo)'}
-              </button>
-            </>
-          )}
-
-          {(currentPlan === 'pro' || currentPlan === 'agency') && (
-            <button
-              type="button"
-              onClick={openBillingPortal}
-              disabled={billingAction === 'portal'}
-              className="bg-slate-700 hover:bg-slate-600 disabled:opacity-60 text-white text-xs font-medium px-4 py-2 rounded-lg transition-colors"
-            >
-              {billingAction === 'portal' ? 'Opening...' : 'Manage Billing (Change Tier)'}
-            </button>
-          )}
+            )
+          })}
         </div>
-        <p className="text-[11px] text-slate-500">
-          Choose the tier you want at checkout. If you are already on a paid plan, use billing portal to switch tiers.
-        </p>
       </div>
 
-      {/* Market Tier Banner */}
-      {mkt && (
-        <div className={`rounded-xl p-4 border flex items-start gap-4 ${TIER_COLORS[mkt.tier]}`}>
-          <MapPin size={20} className="mt-0.5 flex-shrink-0" />
-          <div className="flex-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-bold text-sm">{mkt.stateName} - {mkt.tierLabel}</span>
-              <span className="text-[10px] font-bold uppercase tracking-widest opacity-70">Tier {mkt.tier}</span>
+      {activeSettingsTab === 'financial' && (
+        <>
+          <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-5 space-y-3">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <h2 className="font-semibold text-white text-sm">Billing</h2>
+              {billingLoading ? (
+                <span className="text-xs text-slate-500">Loading plan...</span>
+              ) : (
+                <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${planBadgeClass}`}>{planLabel}</span>
+              )}
             </div>
-            <p className="text-xs opacity-80 mt-1">
-              Market rates for this region: <strong>${mkt.laborRate}/hr labor</strong> · <strong>{(mkt.partsMarkup*100).toFixed(0)}% parts markup</strong> · <strong>{(mkt.taxRate*100).toFixed(2)}% tax</strong>
+
+            {trialActive && (
+              <div className="text-xs text-amber-300 bg-amber-900/20 border border-amber-700/50 rounded-lg px-3 py-2">
+                Free trial active until {trialEndsAt.toLocaleDateString()}.
+              </div>
+            )}
+
+            <div className="flex items-center gap-2 flex-wrap">
+              {currentPlan === 'free' && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => startCheckout('pro')}
+                    disabled={billingAction === 'checkout'}
+                    className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white text-xs font-medium px-4 py-2 rounded-lg transition-colors"
+                  >
+                    {billingAction === 'checkout' ? 'Redirecting...' : 'Upgrade to Pro ($79/mo)'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => startCheckout('agency')}
+                    disabled={billingAction === 'checkout'}
+                    className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white text-xs font-medium px-4 py-2 rounded-lg transition-colors"
+                  >
+                    {billingAction === 'checkout' ? 'Redirecting...' : 'Upgrade to Agency ($199/mo)'}
+                  </button>
+                </>
+              )}
+
+              {(currentPlan === 'pro' || currentPlan === 'agency') && (
+                <button
+                  type="button"
+                  onClick={openBillingPortal}
+                  disabled={billingAction === 'portal'}
+                  className="bg-slate-700 hover:bg-slate-600 disabled:opacity-60 text-white text-xs font-medium px-4 py-2 rounded-lg transition-colors"
+                >
+                  {billingAction === 'portal' ? 'Opening...' : 'Manage Billing (Change Tier)'}
+                </button>
+              )}
+            </div>
+            <p className="text-[11px] text-slate-500">
+              Choose the tier you want at checkout. If you are already on a paid plan, use billing portal to switch tiers.
             </p>
           </div>
-          <button onClick={applyMarketRates}
-            className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap">
-            <RefreshCw size={12} /> Apply Rates
-          </button>
-        </div>
+
+          {/* Market Tier Banner */}
+          {mkt && (
+            <div className={`rounded-xl p-4 border flex items-start gap-4 ${TIER_COLORS[mkt.tier]}`}>
+              <MapPin size={20} className="mt-0.5 flex-shrink-0" />
+              <div className="flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-bold text-sm">{mkt.stateName} - {mkt.tierLabel}</span>
+                  <span className="text-[10px] font-bold uppercase tracking-widest opacity-70">Tier {mkt.tier}</span>
+                </div>
+                <p className="text-xs opacity-80 mt-1">
+                  Market rates for this region: <strong>${mkt.laborRate}/hr labor</strong> · <strong>{(mkt.partsMarkup*100).toFixed(0)}% parts markup</strong> · <strong>{(mkt.taxRate*100).toFixed(2)}% tax</strong>
+                </p>
+              </div>
+              <button onClick={applyMarketRates}
+                className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap">
+                <RefreshCw size={12} /> Apply Rates
+              </button>
+            </div>
+          )}
+        </>
       )}
 
       <form id="shop-settings-form" onSubmit={handleSave} className="space-y-6">
 
-        {/* My Profile */}
-        <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-5 space-y-4">
-          <h2 className="font-semibold text-white text-sm">My Profile</h2>
-          <p className="text-xs text-slate-500">Your name and the phone number where REVV will send you notifications (late clock-ins, alerts).</p>
-          <div>
-            <label className={lbl}>Full Name</label>
-            <input className={inp} value={profile.name} onChange={e => setProfile(p => ({...p, name: e.target.value}))} placeholder="Your name" />
-          </div>
-          <div>
-            <label className={lbl}>Your Notification Phone</label>
-            <input className={inp} value={profile.phone} onChange={e => setProfile(p => ({...p, phone: e.target.value}))} placeholder="(212) 555-0100" />
-            <p className="text-xs text-slate-600 mt-1">REVV sends late clock-in alerts and other notifications here.</p>
-          </div>
-          <button onClick={saveProfile} type="button" disabled={profileSaving} className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-medium px-4 py-2 rounded-lg transition-colors">
-            {profileSaved ? <span className="inline-flex items-center gap-1"><CheckCircle size={12} /> Saved</span> : profileSaving ? 'Saving...' : 'Save Profile'}
-          </button>
-          {profileError && <p className="text-xs text-red-400">{profileError}</p>}
-        </div>
+        {activeSettingsTab === 'core' && (
+          <>
+            {/* My Profile */}
+            <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-5 space-y-4">
+              <h2 className="font-semibold text-white text-sm">My Profile</h2>
+              <p className="text-xs text-slate-500">Your name and the phone number where REVV will send you notifications (late clock-ins, alerts).</p>
+              <div>
+                <label className={lbl}>Full Name</label>
+                <input className={inp} value={profile.name} onChange={e => setProfile(p => ({...p, name: e.target.value}))} placeholder="Your name" />
+              </div>
+              <div>
+                <label className={lbl}>Your Notification Phone</label>
+                <input className={inp} value={profile.phone} onChange={e => setProfile(p => ({...p, phone: e.target.value}))} placeholder="(212) 555-0100" />
+                <p className="text-xs text-slate-600 mt-1">REVV sends late clock-in alerts and other notifications here.</p>
+              </div>
+              <button onClick={saveProfile} type="button" disabled={profileSaving} className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-medium px-4 py-2 rounded-lg transition-colors">
+                {profileSaved ? <span className="inline-flex items-center gap-1"><CheckCircle size={12} /> Saved</span> : profileSaving ? 'Saving...' : 'Save Profile'}
+              </button>
+              {profileError && <p className="text-xs text-red-400">{profileError}</p>}
+            </div>
 
-        {/* Shop Info */}
-        <div className="bg-[#1a1d2e] rounded-2xl p-5 border border-[#2a2d3e] space-y-4">
-          <div className="flex items-center gap-2 text-white font-semibold text-sm mb-1">
-            <Wrench size={15} className="text-indigo-400" /> Shop Information
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="col-span-2">
-              <label className={lbl}>Shop Name</label>
-              <input className={inp} value={form.name || ''} onChange={e => setForm(f => ({...f, name: e.target.value}))} placeholder="Premier Auto Body" />
-            </div>
-            <div>
-              <label className={lbl}>Phone</label>
-              <input className={inp} value={form.phone || ''} onChange={e => setForm(f => ({...f, phone: e.target.value}))} placeholder="(555) 000-0000" />
-            </div>
-            <div className="col-span-2">
-              <label className={lbl}>Invoice Logo</label>
-              <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3 space-y-3">
-                <div className="flex items-center gap-3 flex-wrap">
-                  <label className="text-xs bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-3 py-1.5 rounded-lg cursor-pointer">
-                    {logoBusy ? 'Processing...' : 'Upload Logo'}
-                    <input type="file" accept="image/*" className="hidden" onChange={onLogoPick} disabled={logoBusy} />
-                  </label>
-                  {!!form.logo_url && (
-                    <button
-                      type="button"
-                      onClick={() => setForm((f) => ({ ...f, logo_url: '' }))}
-                      className="text-xs bg-[#23273a] hover:bg-[#2a2d3e] text-slate-200 px-3 py-1.5 rounded-lg"
-                    >
-                      Remove Logo
-                    </button>
-                  )}
-                  <span className="text-[11px] text-slate-500">Shown on invoice and PDF exports.</span>
+            {/* Shop Info */}
+            <div className="bg-[#1a1d2e] rounded-2xl p-5 border border-[#2a2d3e] space-y-4">
+              <div className="flex items-center gap-2 text-white font-semibold text-sm mb-1">
+                <Wrench size={15} className="text-indigo-400" /> Shop Information
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="col-span-2">
+                  <label className={lbl}>Shop Name</label>
+                  <input className={inp} value={form.name || ''} onChange={e => setForm(f => ({...f, name: e.target.value}))} placeholder="Premier Auto Body" />
                 </div>
-                {form.logo_url ? (
-                  <div className="inline-flex bg-white rounded-lg p-2 border border-[#2a2d3e]">
-                    <img src={form.logo_url} alt="Shop logo preview" className="h-14 w-auto object-contain" />
+                <div>
+                  <label className={lbl}>Phone</label>
+                  <input className={inp} value={form.phone || ''} onChange={e => setForm(f => ({...f, phone: e.target.value}))} placeholder="(555) 000-0000" />
+                </div>
+                <div className="col-span-2">
+                  <label className={lbl}>Invoice Logo</label>
+                  <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3 space-y-3">
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <label className="text-xs bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-3 py-1.5 rounded-lg cursor-pointer">
+                        {logoBusy ? 'Processing...' : 'Upload Logo'}
+                        <input type="file" accept="image/*" className="hidden" onChange={onLogoPick} disabled={logoBusy} />
+                      </label>
+                      {!!form.logo_url && (
+                        <button
+                          type="button"
+                          onClick={() => setForm((f) => ({ ...f, logo_url: '' }))}
+                          className="text-xs bg-[#23273a] hover:bg-[#2a2d3e] text-slate-200 px-3 py-1.5 rounded-lg"
+                        >
+                          Remove Logo
+                        </button>
+                      )}
+                      <span className="text-[11px] text-slate-500">Shown on invoice and PDF exports.</span>
+                    </div>
+                    {form.logo_url ? (
+                      <div className="inline-flex bg-white rounded-lg p-2 border border-[#2a2d3e]">
+                        <img src={form.logo_url} alt="Shop logo preview" className="h-14 w-auto object-contain" />
+                      </div>
+                    ) : (
+                      <p className="text-[11px] text-slate-600">No logo uploaded yet.</p>
+                    )}
                   </div>
-                ) : (
-                  <p className="text-[11px] text-slate-600">No logo uploaded yet.</p>
-                )}
+                </div>
+                <div>
+                  <label className={lbl}>ZIP Code</label>
+                  <input className={inp} value={form.zip || ''} onChange={e => setForm(f => ({...f, zip: e.target.value}))} placeholder="10001" maxLength={10} />
+                </div>
+                <div>
+                  <label className={lbl}>City</label>
+                  <input className={inp} value={form.city || ''} onChange={e => setForm(f => ({...f, city: e.target.value}))} placeholder="New York" />
+                </div>
+                <div>
+                  <label className={lbl}>State</label>
+                  <select className={inp} value={form.state || ''} onChange={handleStateChange}>
+                    <option value="">- Select state -</option>
+                    {states.map(s => (
+                      <option key={s.code} value={s.code}>{s.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="col-span-2">
+                  <label className={lbl}>Street Address</label>
+                  <input className={inp} value={form.address || ''} onChange={e => setForm(f => ({...f, address: e.target.value}))} placeholder="123 Main Street" />
+                </div>
               </div>
             </div>
-            <div>
-              <label className={lbl}>ZIP Code</label>
-              <input className={inp} value={form.zip || ''} onChange={e => setForm(f => ({...f, zip: e.target.value}))} placeholder="10001" maxLength={10} />
-            </div>
-            <div>
-              <label className={lbl}>City</label>
-              <input className={inp} value={form.city || ''} onChange={e => setForm(f => ({...f, city: e.target.value}))} placeholder="New York" />
-            </div>
-            <div>
-              <label className={lbl}>State</label>
-              <select className={inp} value={form.state || ''} onChange={handleStateChange}>
-                <option value="">- Select state -</option>
-                {states.map(s => (
-                  <option key={s.code} value={s.code}>{s.name}</option>
-                ))}
-              </select>
-            </div>
-            <div className="col-span-2">
-              <label className={lbl}>Street Address</label>
-              <input className={inp} value={form.address || ''} onChange={e => setForm(f => ({...f, address: e.target.value}))} placeholder="123 Main Street" />
-            </div>
-          </div>
-        </div>
+          </>
+        )}
 
-        {/* Rate Settings */}
-        <div className="bg-[#1a1d2e] rounded-2xl p-5 border border-[#2a2d3e] space-y-4">
+        {activeSettingsTab === 'financial' && (
+          <div className="bg-[#1a1d2e] rounded-2xl p-5 border border-[#2a2d3e] space-y-4">
+            {/* Rate Settings */}
           <div className="flex items-center justify-between mb-1">
             <div className="flex items-center gap-2 text-white font-semibold text-sm">
               <DollarSign size={15} className="text-indigo-400" /> Rate Configuration
@@ -689,66 +846,93 @@ export default function Settings() {
             <p>• <strong className="text-slate-400">Parts Markup</strong> - gross margin above your cost on all parts</p>
             <p>• <strong className="text-slate-400">Tax Rate</strong> - sales tax applied to parts (labor is typically exempt)</p>
           </div>
-        </div>
-
-        {/* Time Clock Geofencing */}
-        <div className="bg-[#1a1d2e] rounded-2xl p-5 border border-[#2a2d3e] space-y-4">
-          <div className="flex items-center gap-2 text-white font-semibold text-sm mb-1">
-            <ShieldCheck size={15} className="text-indigo-400" /> Time Clock Geofencing
           </div>
-          <p className="text-xs text-slate-400">
-            Employees can only clock in or out when they are within this distance of the shop.
-            Set your shop's location first, then choose the radius.
-          </p>
+        )}
 
-          <div className="flex items-center gap-3 flex-wrap">
-            <button type="button" onClick={geocodeFromAddress} disabled={geocoding || locating}
-              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold px-4 py-2 rounded-lg transition-colors disabled:opacity-50">
-              <MapPin size={13}/> {geocoding ? 'Looking up…' : 'Set from Address'}
-            </button>
-            <button type="button" onClick={detectLocation} disabled={locating || geocoding}
-              className="flex items-center gap-2 bg-indigo-900/40 hover:bg-indigo-900/70 border border-indigo-700/40 text-indigo-300 text-xs font-semibold px-4 py-2 rounded-lg transition-colors disabled:opacity-50">
-              <MapPin size={13}/> {locating ? 'Detecting GPS…' : 'Use GPS'}
-            </button>
-            {form.lat && form.lng && (
-              <span className="text-[10px] text-slate-500 font-mono">
-                📍 {parseFloat(form.lat).toFixed(4)}, {parseFloat(form.lng).toFixed(4)}
-              </span>
-            )}
-          </div>
+        {activeSettingsTab === 'operations' && (
+          <>
+            {/* Time Clock Geofencing */}
+            <div className="bg-[#1a1d2e] rounded-2xl p-5 border border-[#2a2d3e] space-y-4">
+              <div className="flex items-center gap-2 text-white font-semibold text-sm mb-1">
+                <ShieldCheck size={15} className="text-indigo-400" /> Time Clock Geofencing
+              </div>
+              <p className="text-xs text-slate-400">
+                Techs can only clock in or out when they are within this distance of the shop.
+                Set your shop's location first, then choose the radius.
+              </p>
 
-          {locMsg && (
-            <p className={`text-xs flex items-center gap-1 ${locMsg.startsWith('✓') ? 'text-emerald-400' : 'text-amber-400'}`}>
-              {locMsg.startsWith('✓') && <CheckCircle size={12} />}
-              {locMsg.startsWith('✓') ? locMsg.slice(2) : locMsg}
-            </p>
-          )}
+              <div className="flex items-center gap-3 flex-wrap">
+                <button type="button" onClick={geocodeFromAddress} disabled={geocoding || locating}
+                  className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold px-4 py-2 rounded-lg transition-colors disabled:opacity-50">
+                  <MapPin size={13}/> {geocoding ? 'Looking up…' : 'Set from Address'}
+                </button>
+                <button type="button" onClick={detectLocation} disabled={locating || geocoding}
+                  className="flex items-center gap-2 bg-indigo-900/40 hover:bg-indigo-900/70 border border-indigo-700/40 text-indigo-300 text-xs font-semibold px-4 py-2 rounded-lg transition-colors disabled:opacity-50">
+                  <MapPin size={13}/> {locating ? 'Detecting GPS…' : 'Use GPS'}
+                </button>
+                {form.lat && form.lng && (
+                  <span className="text-[10px] text-slate-500 font-mono">
+                    📍 {parseFloat(form.lat).toFixed(4)}, {parseFloat(form.lng).toFixed(4)}
+                  </span>
+                )}
+              </div>
 
-          {!form.lat && (
-            <div className="bg-amber-900/20 border border-amber-700/40 rounded-lg p-3 text-xs text-amber-300 flex items-center gap-2">
-              <AlertTriangle size={13} className="flex-shrink-0" /> No shop location set - geofencing is disabled. Employees can clock in from anywhere.
+              {locMsg && (
+                <p className={`text-xs flex items-center gap-1 ${locMsg.startsWith('✓') ? 'text-emerald-400' : 'text-amber-400'}`}>
+                  {locMsg.startsWith('✓') && <CheckCircle size={12} />}
+                  {locMsg.startsWith('✓') ? locMsg.slice(2) : locMsg}
+                </p>
+              )}
+
+              {!form.lat && (
+                <div className="bg-amber-900/20 border border-amber-700/40 rounded-lg p-3 text-xs text-amber-300 flex items-center gap-2">
+                  <AlertTriangle size={13} className="flex-shrink-0" /> No shop location set - geofencing is disabled. Techs can clock in from anywhere.
+                </div>
+              )}
+
+              <div>
+                <label className={lbl}>Geofence Radius (feet)</label>
+                <div className="flex items-center gap-4">
+                  <input type="range" min="100" max="2640" step="50"
+                    value={form.geofence_radius || 500}
+                    onChange={e => setForm(f => ({...f, geofence_radius: +e.target.value}))}
+                    className="flex-1 accent-indigo-500" />
+                  <span className="text-sm font-bold text-indigo-400 min-w-[70px] text-right">
+                    {(form.geofence_radius || 500).toLocaleString()} ft
+                  </span>
+                </div>
+                <p className="text-[10px] text-slate-500 mt-1">
+                  ≈ {((form.geofence_radius || 500) / 5280).toFixed(2)} miles · Default: 500 ft
+                </p>
+              </div>
             </div>
-          )}
 
-          <div>
-            <label className={lbl}>Geofence Radius (feet)</label>
-            <div className="flex items-center gap-4">
-              <input type="range" min="100" max="2640" step="50"
-                value={form.geofence_radius || 500}
-                onChange={e => setForm(f => ({...f, geofence_radius: +e.target.value}))}
-                className="flex-1 accent-indigo-500" />
-              <span className="text-sm font-bold text-indigo-400 min-w-[70px] text-right">
-                {(form.geofence_radius || 500).toLocaleString()} ft
-              </span>
+            {/* Parts Tracking */}
+            <div className="bg-[#1a1d2e] rounded-2xl p-5 border border-[#2a2d3e] space-y-4">
+              <div className="flex items-center gap-2 text-white font-semibold text-sm mb-1">
+                <Truck size={15} className="text-indigo-400" /> Parts Tracking (Auto-Sync)
+              </div>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Add your free <strong className="text-white">17track API key</strong> to automatically sync UPS, FedEx, USPS, and DHL tracking numbers.
+                When a part is delivered, REVV marks it received automatically - and customer tracking links reflect the update instantly.
+              </p>
+              <div>
+                <label className={lbl}>17track API Key</label>
+                <input className={inp} type="password" value={form.tracking_api_key || ''} onChange={e => setForm(f => ({...f, tracking_api_key: e.target.value}))} placeholder="Paste your 17track API key here" />
+              </div>
+              <div className="bg-[#0f1117] rounded-xl p-3 text-xs text-slate-500 space-y-1">
+                <p>1. Go to <strong className="text-indigo-400">17track.net</strong> → sign up for free → Developer → API Key</p>
+                <p>2. Free tier: 40 trackings/day - plenty for a shop</p>
+                <p>3. Supports UPS, FedEx, USPS, DHL, and 2,000+ other carriers</p>
+                <p className="text-slate-600">Without a key: tracking numbers still show as clickable links to the carrier website.</p>
+              </div>
             </div>
-            <p className="text-[10px] text-slate-500 mt-1">
-              ≈ {((form.geofence_radius || 500) / 5280).toFixed(2)} miles · Default: 500 ft
-            </p>
-          </div>
-        </div>
+          </>
+        )}
 
-        {/* SMS Notifications */}
-        <div className="bg-[#1a1d2e] rounded-2xl p-5 border border-[#2a2d3e] space-y-4">
+        {activeSettingsTab === 'messaging' && (
+          <div className="bg-[#1a1d2e] rounded-2xl p-5 border border-[#2a2d3e] space-y-4">
+            {/* SMS Notifications */}
           <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-xl p-4 flex items-start justify-between gap-3">
             <div>
               <p className="text-sm font-semibold text-white">SMS Status Notifications</p>
@@ -924,31 +1108,88 @@ export default function Settings() {
               </button>
             </div>
           </div>
-        </div>
+          </div>
+        )}
 
-        {/* Parts Tracking */}
-        <div className="bg-[#1a1d2e] rounded-2xl p-5 border border-[#2a2d3e] space-y-4">
+        {activeSettingsTab === 'accounting' && (
+          <div className="bg-[#1a1d2e] rounded-2xl p-5 border border-[#2a2d3e] space-y-4">
+            {/* Accounting + QuickBooks */}
           <div className="flex items-center gap-2 text-white font-semibold text-sm mb-1">
-            <Truck size={15} className="text-indigo-400" /> Parts Tracking (Auto-Sync)
+            <DollarSign size={15} className="text-indigo-400" /> Accounting (QuickBooks)
           </div>
           <p className="text-xs text-slate-400 leading-relaxed">
-            Add your free <strong className="text-white">17track API key</strong> to automatically sync UPS, FedEx, USPS, and DHL tracking numbers.
-            When a part is delivered, REVV marks it received automatically - and customer tracking links reflect the update instantly.
+            Connect QuickBooks Online, enable auto-sync on closed paid ROs, and run manual sync when needed.
           </p>
-          <div>
-            <label className={lbl}>17track API Key</label>
-            <input className={inp} type="password" value={form.tracking_api_key || ''} onChange={e => setForm(f => ({...f, tracking_api_key: e.target.value}))} placeholder="Paste your 17track API key here" />
+          <div className="bg-[#0f1117] rounded-xl border border-[#2a2d3e] p-4 space-y-3">
+            <p className="text-sm font-semibold text-white">QuickBooks Connection</p>
+            <p className="text-xs text-slate-500">Status: {quickbooksStatus.connected ? 'Connected' : 'Not connected'} · Environment: {quickbooksStatus.environment}</p>
+            <p className="text-xs text-slate-500">Auto-sync: {quickbooksStatus.sync_enabled ? 'Enabled' : 'Disabled'}</p>
+            {quickbooksStatus.connected_at && <p className="text-xs text-slate-500">Connected: {new Date(quickbooksStatus.connected_at).toLocaleString()}</p>}
+            {quickbooksStatus.last_sync_at && <p className="text-xs text-slate-500">Last sync: {new Date(quickbooksStatus.last_sync_at).toLocaleString()}</p>}
+            {!quickbooksStatus.configured && (
+              <p className="text-[11px] text-amber-300">
+                QuickBooks app is not configured on the server yet (missing QuickBooks env vars).
+              </p>
+            )}
+            <div className="flex items-center gap-2 flex-wrap">
+              {!quickbooksStatus.connected ? (
+                <button
+                  type="button"
+                  onClick={connectQuickBooks}
+                  disabled={quickbooksBusy === 'connect' || !quickbooksStatus.configured || !userIsAdmin}
+                  className="text-xs bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60"
+                >
+                  {quickbooksBusy === 'connect' ? 'Connecting...' : 'Connect QuickBooks'}
+                </button>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={toggleQuickBooksSyncEnabled}
+                    disabled={quickbooksBusy === 'toggle' || !userIsAdmin}
+                    className="text-xs bg-emerald-700 hover:bg-emerald-600 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60"
+                  >
+                    {quickbooksBusy === 'toggle'
+                      ? 'Saving...'
+                      : quickbooksStatus.sync_enabled
+                        ? 'Disable Auto-Sync'
+                        : 'Enable Auto-Sync'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={disconnectQuickBooks}
+                    disabled={quickbooksBusy === 'disconnect' || !userIsAdmin}
+                    className="text-xs bg-[#23273a] hover:bg-[#2a2d3e] text-slate-200 px-3 py-1.5 rounded-lg disabled:opacity-60"
+                  >
+                    {quickbooksBusy === 'disconnect' ? 'Disconnecting...' : 'Disconnect'}
+                  </button>
+                </>
+              )}
+              <button
+                type="button"
+                onClick={syncQuickBooksBatch}
+                disabled={quickbooksBusy === 'sync' || !quickbooksStatus.connected || !userIsAdmin}
+                className="text-xs bg-blue-700 hover:bg-blue-600 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60"
+              >
+                {quickbooksBusy === 'sync' ? 'Syncing...' : 'Sync Closed Paid ROs'}
+              </button>
+              <button
+                type="button"
+                onClick={refreshQuickBooksStatus}
+                disabled={!userIsAdmin}
+                className="text-xs bg-[#23273a] hover:bg-[#2a2d3e] text-slate-200 px-3 py-1.5 rounded-lg disabled:opacity-60"
+              >
+                Refresh
+              </button>
+            </div>
+            {quickbooksMessage && <p className="text-xs text-indigo-200">{quickbooksMessage}</p>}
           </div>
-          <div className="bg-[#0f1117] rounded-xl p-3 text-xs text-slate-500 space-y-1">
-            <p>1. Go to <strong className="text-indigo-400">17track.net</strong> → sign up for free → Developer → API Key</p>
-            <p>2. Free tier: 40 trackings/day - plenty for a shop</p>
-            <p>3. Supports UPS, FedEx, USPS, DHL, and 2,000+ other carriers</p>
-            <p className="text-slate-600">Without a key: tracking numbers still show as clickable links to the carrier website.</p>
           </div>
-        </div>
+        )}
 
-        {/* Security */}
-        <div className="bg-[#1a1d2e] rounded-2xl p-5 border border-[#2a2d3e] space-y-4">
+        {activeSettingsTab === 'security' && (
+          <div className="bg-[#1a1d2e] rounded-2xl p-5 border border-[#2a2d3e] space-y-4">
+            {/* Security */}
           <div className="flex items-center gap-2 text-white font-semibold text-sm mb-1">
             <LogOut size={15} className="text-indigo-400" /> Security
           </div>
@@ -969,7 +1210,8 @@ export default function Settings() {
               <CheckCircle size={12} /> All sessions revoked. Redirecting to login…
             </p>
           )}
-        </div>
+          </div>
+        )}
 
         {saveError && (
           <p className='text-xs text-red-400 flex items-center gap-1'>
@@ -979,20 +1221,22 @@ export default function Settings() {
 
       </form>
 
-      {/* Danger Zone */}
-      <div className="bg-[#1a1d2e] rounded-2xl p-5 border border-red-900/40 space-y-3">
-        <div className="flex items-center gap-2 text-red-400 font-semibold text-sm">
-          <Trash2 size={15} /> Danger Zone
+      {activeSettingsTab === 'danger' && (
+        <div className="bg-[#1a1d2e] rounded-2xl p-5 border border-red-900/40 space-y-3">
+          {/* Danger Zone */}
+          <div className="flex items-center gap-2 text-red-400 font-semibold text-sm">
+            <Trash2 size={15} /> Danger Zone
+          </div>
+          <p className="text-xs text-slate-400 leading-relaxed">
+            Starting fresh? This clears all sample repair orders, customers, and vehicles -
+            so you can begin entering real jobs. <strong className="text-white">Your shop info, staff accounts, and rate settings are not affected.</strong>
+          </p>
+          <button onClick={clearDemoData} disabled={clearing}
+            className="flex items-center gap-2 bg-red-900/40 hover:bg-red-900/70 border border-red-700/40 text-red-400 font-semibold text-sm px-4 py-2.5 rounded-xl transition-colors disabled:opacity-50">
+            <Trash2 size={14} /> {clearing ? 'Clearing…' : 'Clear All Demo Data'}
+          </button>
         </div>
-        <p className="text-xs text-slate-400 leading-relaxed">
-          Starting fresh? This clears all sample repair orders, customers, and vehicles -
-          so you can begin entering real jobs. <strong className="text-white">Your shop info, staff accounts, and rate settings are not affected.</strong>
-        </p>
-        <button onClick={clearDemoData} disabled={clearing}
-          className="flex items-center gap-2 bg-red-900/40 hover:bg-red-900/70 border border-red-700/40 text-red-400 font-semibold text-sm px-4 py-2.5 rounded-xl transition-colors disabled:opacity-50">
-          <Trash2 size={14} /> {clearing ? 'Clearing…' : 'Clear All Demo Data'}
-        </button>
-      </div>
+      )}
 
       {showTestSmsModal && (
         <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">

@@ -56,7 +56,7 @@ export default function Performance() {
           <h1 className="text-xl sm:text-2xl font-bold text-white flex items-center gap-2">
             <BarChart2 size={24} /> Performance Dashboard
           </h1>
-          <p className="text-slate-500 text-sm mt-1">Employee productivity & revenue metrics</p>
+          <p className="text-slate-500 text-sm mt-1">Tech productivity & revenue metrics</p>
         </div>
       </div>
 
@@ -96,7 +96,7 @@ export default function Performance() {
         <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-12 text-center">
           <BarChart2 size={32} className="mx-auto mb-4 text-slate-600" />
           <p className="text-slate-400">No performance data available for {monthLabel}</p>
-          <p className="text-slate-600 text-sm mt-1">Employees with completed repair orders will appear here.</p>
+          <p className="text-slate-600 text-sm mt-1">Techs with completed repair orders will appear here.</p>
         </div>
       ) : (
         <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4 overflow-x-auto">

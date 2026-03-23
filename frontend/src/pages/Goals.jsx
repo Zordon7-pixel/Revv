@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Target, TrendingUp, ClipboardList } from 'lucide-react'
 import api from '../lib/api'
-import { isAdmin, isOwner } from '../lib/auth'
+import { isAdmin, isAssistant, isOwner } from '../lib/auth'
 
 function toYearMonth(date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
@@ -94,8 +94,9 @@ function MonthCard({ title, monthData }) {
 }
 
 export default function Goals() {
+  const assistant = isAssistant()
   const canView = isOwner() || isAdmin()
-  const canEdit = isOwner()
+  const canEdit = (isOwner() || isAdmin()) && !assistant
   const months = useMemo(() => getCurrentAndPrevious(), [])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -172,7 +173,7 @@ export default function Goals() {
   }
 
   if (!canView) {
-    return <div className="text-slate-400 text-sm">Owner access required.</div>
+    return <div className="text-slate-400 text-sm">Admin access required.</div>
   }
 
   return (
@@ -224,7 +225,7 @@ export default function Goals() {
             </div>
             <div className="flex items-center justify-between">
               <div className="text-xs text-slate-500">
-                {canEdit ? 'Only owner can update monthly goals.' : 'Read-only: only owner can update goals.'}
+                {canEdit ? 'Admins can update monthly goals.' : 'Read-only access.'}
               </div>
               <button
                 type="submit"

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Package, Receipt, CircleDollarSign, PlusCircle } from 'lucide-react'
 import api from '../lib/api'
+import { isAdmin, isAssistant } from '../lib/auth'
 
 function formatCurrency(value) {
   return `$${Number(value || 0).toFixed(2)}`
@@ -23,6 +24,19 @@ export default function StorageHold() {
   const [showBillModal, setShowBillModal] = useState(false)
   const [billing, setBilling] = useState({ roId: '', days: 0, rate_per_day: 0, billed_to: '', notes: '' })
   const [submitting, setSubmitting] = useState(false)
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [editingHold, setEditingHold] = useState({
+    roId: '',
+    storage_hold: true,
+    storage_company: '',
+    storage_contact: '',
+    storage_rate_per_day: '',
+    storage_start_date: '',
+    storage_notes: '',
+  })
+  const [savingHold, setSavingHold] = useState(false)
+  const canViewFinancialTotals = isAdmin()
+  const canEditStorageHold = isAdmin() || isAssistant()
 
   async function load() {
     setLoading(true)
@@ -57,6 +71,19 @@ export default function StorageHold() {
     setShowBillModal(true)
   }
 
+  function openEditModal(ro) {
+    setEditingHold({
+      roId: ro.id,
+      storage_hold: !!ro.storage_hold,
+      storage_company: ro.storage_company || '',
+      storage_contact: ro.storage_contact || '',
+      storage_rate_per_day: ro.storage_rate_per_day ?? '',
+      storage_start_date: ro.storage_start_date || '',
+      storage_notes: ro.storage_notes || '',
+    })
+    setShowEditModal(true)
+  }
+
   async function submitCharge(e) {
     e.preventDefault()
     setSubmitting(true)
@@ -87,6 +114,27 @@ export default function StorageHold() {
     }
   }
 
+  async function saveStorageHold(e) {
+    e.preventDefault()
+    setSavingHold(true)
+    try {
+      await api.patch(`/storage/${editingHold.roId}`, {
+        storage_hold: !!editingHold.storage_hold,
+        storage_company: editingHold.storage_company,
+        storage_contact: editingHold.storage_contact,
+        storage_rate_per_day: editingHold.storage_rate_per_day,
+        storage_start_date: editingHold.storage_start_date,
+        storage_notes: editingHold.storage_notes,
+      })
+      await load()
+      setShowEditModal(false)
+    } catch (err) {
+      alert(err?.response?.data?.error || 'Could not update storage hold')
+    } finally {
+      setSavingHold(false)
+    }
+  }
+
   const totalVehicles = rows.length
   const totalAccrued = useMemo(
     () => rows.reduce((sum, ro) => sum + (daysStored(ro.storage_start_date) * Number(ro.storage_rate_per_day || 0)), 0),
@@ -100,19 +148,23 @@ export default function StorageHold() {
         <h1 className="text-xl font-bold text-white">Storage Hold</h1>
       </div>
 
-      <div className="grid sm:grid-cols-3 gap-3">
+      <div className={`grid gap-3 ${canViewFinancialTotals ? 'sm:grid-cols-3' : 'sm:grid-cols-1'}`}>
         <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4">
           <div className="text-xs text-slate-500">Vehicles in Storage</div>
           <div className="text-2xl font-bold text-white mt-1">{totalVehicles}</div>
         </div>
-        <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4">
-          <div className="text-xs text-slate-500">Total Unpaid Charges</div>
-          <div className="text-2xl font-bold text-amber-300 mt-1">{formatCurrency(summary.unpaid_total)}</div>
-        </div>
-        <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4">
-          <div className="text-xs text-slate-500">Total Accrued</div>
-          <div className="text-2xl font-bold text-emerald-300 mt-1">{formatCurrency(totalAccrued)}</div>
-        </div>
+        {canViewFinancialTotals && (
+          <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4">
+            <div className="text-xs text-slate-500">Total Unpaid Charges</div>
+            <div className="text-2xl font-bold text-amber-300 mt-1">{formatCurrency(summary.unpaid_total)}</div>
+          </div>
+        )}
+        {canViewFinancialTotals && (
+          <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4">
+            <div className="text-xs text-slate-500">Total Accrued</div>
+            <div className="text-2xl font-bold text-emerald-300 mt-1">{formatCurrency(totalAccrued)}</div>
+          </div>
+        )}
       </div>
 
       {loading ? (
@@ -139,14 +191,26 @@ export default function StorageHold() {
                     <div className="text-slate-400">Start: {ro.storage_start_date || '—'}</div>
                     <div className="text-slate-400">Days: {days}</div>
                     <div className="text-slate-400">Rate: {formatCurrency(ro.storage_rate_per_day || 0)}/day</div>
-                    <div className="text-emerald-300 font-semibold">Accrued: {formatCurrency(accrued)}</div>
-                    <div className={Number(ro.unpaid_total || 0) > 0 ? 'text-amber-300 font-semibold' : 'text-slate-500'}>
-                      Unpaid: {formatCurrency(ro.unpaid_total || 0)}
-                    </div>
+                    {canViewFinancialTotals && (
+                      <div className="text-emerald-300 font-semibold">Accrued: {formatCurrency(accrued)}</div>
+                    )}
+                    {canViewFinancialTotals && (
+                      <div className={Number(ro.unpaid_total || 0) > 0 ? 'text-amber-300 font-semibold' : 'text-slate-500'}>
+                        Unpaid: {formatCurrency(ro.unpaid_total || 0)}
+                      </div>
+                    )}
                   </div>
                 </div>
 
                 <div className="flex flex-wrap gap-2">
+                  {canEditStorageHold && (
+                    <button
+                      onClick={() => openEditModal(ro)}
+                      className="text-xs bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-3 py-1.5 rounded-lg"
+                    >
+                      Edit Hold
+                    </button>
+                  )}
                   <button
                     onClick={() => openBillModal(ro)}
                     className="text-xs bg-amber-400 hover:bg-amber-300 text-[#0f1117] font-semibold px-3 py-1.5 rounded-lg inline-flex items-center gap-1.5"
@@ -274,6 +338,78 @@ export default function StorageHold() {
               </button>
               <button type="submit" disabled={submitting} className="flex-1 bg-amber-400 hover:bg-amber-300 text-[#0f1117] py-2 rounded-lg text-sm font-semibold disabled:opacity-50">
                 {submitting ? 'Saving...' : 'Create Charge'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {showEditModal && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <form onSubmit={saveStorageHold} className="w-full max-w-md bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-5 space-y-3">
+            <div className="text-white font-semibold">Edit Storage Hold</div>
+            <label className="flex items-center gap-2 text-xs text-slate-300">
+              <input
+                type="checkbox"
+                checked={!!editingHold.storage_hold}
+                onChange={(e) => setEditingHold((prev) => ({ ...prev, storage_hold: e.target.checked }))}
+                className="accent-amber-400"
+              />
+              Storage hold active
+            </label>
+            <div>
+              <label className="text-xs text-slate-400 block mb-1">Rental Company</label>
+              <input
+                value={editingHold.storage_company}
+                onChange={(e) => setEditingHold((prev) => ({ ...prev, storage_company: e.target.value }))}
+                className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded px-3 py-2 text-sm text-white"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-slate-400 block mb-1">Contact</label>
+              <input
+                value={editingHold.storage_contact}
+                onChange={(e) => setEditingHold((prev) => ({ ...prev, storage_contact: e.target.value }))}
+                className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded px-3 py-2 text-sm text-white"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Rate / Day</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={editingHold.storage_rate_per_day}
+                  onChange={(e) => setEditingHold((prev) => ({ ...prev, storage_rate_per_day: e.target.value }))}
+                  className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded px-3 py-2 text-sm text-white"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Start Date</label>
+                <input
+                  type="date"
+                  value={editingHold.storage_start_date}
+                  onChange={(e) => setEditingHold((prev) => ({ ...prev, storage_start_date: e.target.value }))}
+                  className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded px-3 py-2 text-sm text-white"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="text-xs text-slate-400 block mb-1">Notes</label>
+              <textarea
+                rows={3}
+                value={editingHold.storage_notes}
+                onChange={(e) => setEditingHold((prev) => ({ ...prev, storage_notes: e.target.value }))}
+                className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded px-3 py-2 text-sm text-white"
+              />
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button type="button" onClick={() => setShowEditModal(false)} className="flex-1 bg-[#0f1117] border border-[#2a2d3e] text-slate-300 py-2 rounded-lg text-sm">
+                Cancel
+              </button>
+              <button type="submit" disabled={savingHold} className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white py-2 rounded-lg text-sm font-semibold disabled:opacity-50">
+                {savingHold ? 'Saving...' : 'Save Hold'}
               </button>
             </div>
           </form>

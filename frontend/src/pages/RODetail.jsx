@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Pencil, Save, X, Package, PackageCheck, PackageX, Plus, CheckCircle, AlertCircle, Clock, Truck, RefreshCw, ExternalLink, Car, DollarSign, ClipboardList, Smartphone, AlertTriangle, Copy, Printer, User, Phone, MessageSquare, Mail, Users, CreditCard, Search, FileText, Camera, Trash2, ChevronDown, ChevronUp } from 'lucide-react'
+import { ArrowLeft, Pencil, Save, X, Package, PackageCheck, PackageX, Plus, CheckCircle, AlertCircle, Clock, Truck, RefreshCw, ExternalLink, Car, DollarSign, ClipboardList, Smartphone, AlertTriangle, Copy, Printer, User, Phone, MessageSquare, Mail, Users, CreditCard, Search, Camera, Trash2, ChevronDown, ChevronUp } from 'lucide-react'
 import api from '../lib/api'
 import { STATUS_COLORS, STATUS_LABELS } from './RepairOrders'
 import StatusBadge from '../components/StatusBadge'
@@ -12,7 +12,7 @@ import TurnaroundEstimator from '../components/TurnaroundEstimator'
 import PartsSearch from '../components/PartsSearch'
 import { searchInsurers } from '../data/insurers'
 import { searchVendors } from '../data/vendors'
-import { isAdmin, isAssistant, isEmployee } from '../lib/auth'
+import { getTokenPayload, isAdmin, isAssistant, isEmployee } from '../lib/auth'
 import { useLanguage } from '../contexts/LanguageContext'
 import VehicleDiagram from '../components/VehicleDiagram'
 import ClaimStatusCard from '../components/ClaimStatusCard'
@@ -102,7 +102,6 @@ export default function RODetail() {
   const [showMarkPaidModal, setShowMarkPaidModal] = useState(false)
   const [paymentMethod, setPaymentMethod] = useState('cash')
   const [markingPaid, setMarkingPaid] = useState(false)
-  const [downloadingInvoice, setDownloadingInvoice] = useState(false)
   const [comms, setComms] = useState([])
   const [showCommForm, setShowCommForm] = useState(false)
   const [commForm, setCommForm] = useState({ channel: 'call', direction: 'outbound', summary: '' })
@@ -166,6 +165,11 @@ export default function RODetail() {
   const userIsAdmin = isAdmin()
   const userIsEmployee = isEmployee()
   const userIsAssistant = isAssistant()
+  const canEditRo = userIsEmployee || userIsAssistant
+  const currentUser = getTokenPayload()
+  const currentUserId = currentUser?.id || null
+  const currentUserRole = String(currentUser?.role || '').toLowerCase()
+  const currentUserIsTechRole = ['technician', 'employee', 'staff'].includes(currentUserRole)
 
   // useMemo must be before any early return — moved here from line 635
   const damagedPanels = useMemo(() => {
@@ -176,11 +180,24 @@ export default function RODetail() {
     }
   }, [ro?.damaged_panels])
 
+  function buildFormFromRo(roData) {
+    return {
+      ...roData,
+      vin: roData?.vehicle?.vin || '',
+      vehicle_year: roData?.vehicle?.year ?? '',
+      vehicle_make: roData?.vehicle?.make || '',
+      vehicle_model: roData?.vehicle?.model || '',
+      vehicle_color: roData?.vehicle?.color || '',
+      vehicle_plate: roData?.vehicle?.plate || '',
+      vehicle_mileage: roData?.vehicle?.mileage ?? '',
+    }
+  }
+
   const load = async () => {
     try {
       const r = await api.get(`/ros/${id}`)
       setRo(r.data)
-      setForm({ ...r.data, vin: r.data.vehicle?.vin || '' })
+      setForm(buildFormFromRo(r.data))
       setParts(r.data.parts || [])
       setTechNotes(r.data.tech_notes || '')
       setStorageForm({
@@ -412,17 +429,33 @@ export default function RODetail() {
         estimated_delivery: form.estimated_delivery,
         notes: form.notes,
         vin: form.vin,
+        vehicle_year: form.vehicle_year,
+        vehicle_make: form.vehicle_make,
+        vehicle_model: form.vehicle_model,
+        vehicle_color: form.vehicle_color,
+        vehicle_plate: form.vehicle_plate,
+        vehicle_mileage: form.vehicle_mileage,
       }
       const { data } = await api.put(`/ros/${id}`, roPayload)
       setRo(data)
-      setForm({ ...data, vin: data.vehicle?.vin || '' })
+      setForm(buildFormFromRo(data))
       setEditing(false)
     } finally { setSaving(false) }
   }
 
   async function assignTech(userId) {
     try {
-      await api.patch(`/ros/${id}/assign`, { user_id: userId || null })
+      const nextUserId = userId || null
+      const assignedToSomeoneElse = currentUserIsTechRole && !!ro?.assigned_to && ro.assigned_to !== currentUserId
+      if (assignedToSomeoneElse) {
+        const currentlyAssignedName = ro?.assigned_tech?.name || 'another tech'
+        const proceed = window.confirm(
+          `This RO is assigned to ${currentlyAssignedName}, not you. Continue anyway? Admin will be notified.`
+        )
+        if (!proceed) return
+      }
+
+      await api.patch(`/ros/${id}/assign`, { user_id: nextUserId })
       load()
     } catch (err) {
       alert(err?.response?.data?.error || 'Could not assign technician')
@@ -513,25 +546,6 @@ export default function RODetail() {
       alert(err?.response?.data?.error || 'Could not generate approval link')
     } finally {
       setSendingForApproval(false)
-    }
-  }
-
-  async function downloadInvoicePdf() {
-    setDownloadingInvoice(true)
-    try {
-      const response = await api.get(`/invoice/${id}`, { responseType: 'blob' })
-      const blobUrl = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }))
-      const a = document.createElement('a')
-      a.href = blobUrl
-      a.download = `invoice-${ro?.ro_number || id}.pdf`
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-      window.URL.revokeObjectURL(blobUrl)
-    } catch (e) {
-      alert(e?.response?.data?.error || 'Could not download invoice PDF')
-    } finally {
-      setDownloadingInvoice(false)
     }
   }
 
@@ -739,10 +753,12 @@ export default function RODetail() {
 
   if (!ro) return <div className="flex items-center justify-center h-64 text-slate-500">{t('common.loading')}</div>
 
-  const p = ro.profit || {}
   const currentIdx = STAGES.indexOf(ro.status)
   const paymentStatus = normalizePaymentStatus(ro.payment_status, ro.payment_received)
   const paymentAmount = Number(ro.total || ro.parts_cost || 0)
+  const canMarkPaymentFromRo = userIsAdmin && !userIsAssistant
+  const hideHeaderFinancialForTech = currentUserIsTechRole
+  const techAssignmentMismatch = currentUserIsTechRole && !!ro.assigned_to && ro.assigned_to !== currentUserId
   const latestInspection = inspectionSummary[0] || null
   const inspectionStatusMeta = latestInspection
     ? latestInspection.status === 'viewed'
@@ -807,69 +823,73 @@ export default function RODetail() {
   return (
     <div className="max-w-4xl mx-auto space-y-4">
       {/* Header */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <button onClick={() => navigate('/ros')} className="text-slate-400 hover:text-white transition-colors"><ArrowLeft size={20} /></button>
-        <div className="flex-1 min-w-0">
-          <h1 className="text-xl font-bold text-white">{ro.ro_number}</h1>
-          <p className="text-slate-500 text-sm truncate">{ro.vehicle?.year} {ro.vehicle?.make} {ro.vehicle?.model} · {ro.customer?.name}</p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
-          <span className={`text-xs font-bold ${daysColor}`}>{daysIn}d in shop</span>
-          <StatusBadge status={ro.status} />
-          <PaymentStatusBadge status={paymentStatus} paymentReceived={ro.payment_received} />
-          {ro.payment_received === 1 && (
-            <span className="flex items-center gap-1 text-emerald-400 text-xs font-medium bg-emerald-900/30 border border-emerald-700/40 px-3 py-1.5 rounded-lg">
-              <CheckCircle size={12} /> Paid {ro.payment_received_at && `· ${new Date(ro.payment_received_at).toLocaleDateString()}`}
-            </span>
-          )}
-          {ro.status === 'estimate_sent' && !ro.estimate_approved_at && !userIsAssistant && (
-            <button onClick={approveEstimate} disabled={approvingEstimate} className="w-full sm:w-auto flex items-center justify-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
-              <CheckCircle size={12} /> {approvingEstimate ? 'Approving...' : `${t('portal.approveBtn')} ${t('ro.estimate')}`}
-            </button>
-          )}
-          {ro.status === 'estimate' && !userIsAssistant && (
+      <div className="relative overflow-hidden rounded-2xl border border-[#2a2d3e] bg-[#161a2b] p-4 sm:p-5 shadow-[0_12px_40px_rgba(2,6,23,0.35)]">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_14%_20%,rgba(59,130,246,0.16),transparent_40%),radial-gradient(circle_at_86%_78%,rgba(16,185,129,0.12),transparent_46%)]" />
+        <div className="relative flex flex-col gap-4">
+          <div className="flex items-start gap-3">
             <button
-              onClick={sendForApproval}
-              disabled={sendingForApproval}
-              className="w-full sm:w-auto flex items-center justify-center gap-1 bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+              onClick={() => navigate('/ros')}
+              className="mt-0.5 inline-flex h-9 w-9 items-center justify-center rounded-lg border border-[#2f344a] bg-[#111526] text-slate-300 transition-colors hover:border-indigo-400/60 hover:text-white"
             >
-              <Mail size={12} /> {sendingForApproval ? 'Generating Link...' : 'Send for Approval'}
+              <ArrowLeft size={18} />
             </button>
-          )}
-          {ro.status !== 'closed' && !ro.payment_received && !userIsAssistant && (
-            <button onClick={() => setShowMarkPaidModal(true)} className="w-full sm:w-auto flex items-center justify-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
-              <DollarSign size={12} /> {t('ro.paymentReceived')}
-            </button>
-          )}
-          {currentIdx < STAGES.length - 1 && !userIsAssistant && (
-            <button onClick={advance} className="w-full sm:w-auto flex items-center justify-center gap-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
-              → {STATUS_LABELS[STAGES[currentIdx+1]]}
-            </button>
-          )}
-          <button onClick={() => window.open(`/invoice/${id}`, '_blank')}
-            className="w-full sm:w-auto flex items-center justify-center gap-1 bg-[#2a2d3e] hover:bg-[#3a3d4e] text-slate-300 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
-            <Printer size={12} /> {t('ro.invoice')}
-          </button>
-          <button
-            onClick={downloadInvoicePdf}
-            disabled={downloadingInvoice}
-            className="w-full sm:w-auto flex items-center justify-center gap-1 bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
-          >
-            <FileText size={12} /> {downloadingInvoice ? 'Downloading...' : 'Download Invoice'}
-          </button>
-          {!userIsAssistant && (!editing
-            ? <button onClick={() => setEditing(true)} className="w-full sm:w-auto flex items-center justify-center gap-1 bg-[#2a2d3e] hover:bg-[#3a3d4e] text-slate-300 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
-                <Pencil size={12} /> {t('common.edit')}
+            <div className="min-w-0 flex-1">
+              <p className="text-[10px] uppercase tracking-[0.14em] text-slate-500">Repair Order</p>
+              <h1 className="text-xl font-bold text-white">{ro.ro_number}</h1>
+              <p className="text-sm text-slate-400 truncate">{ro.vehicle?.year} {ro.vehicle?.make} {ro.vehicle?.model} · {ro.customer?.name}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className={`text-xs font-bold px-2.5 py-1 rounded-lg border border-[#334155] bg-[#0f1322] ${daysColor}`}>{daysIn}d in shop</span>
+            {!hideHeaderFinancialForTech && <StatusBadge status={ro.status} />}
+            {!hideHeaderFinancialForTech && <PaymentStatusBadge status={paymentStatus} paymentReceived={ro.payment_received} />}
+            {ro.payment_received === 1 && (
+              <span className="flex items-center gap-1 text-emerald-400 text-xs font-medium bg-emerald-900/30 border border-emerald-700/40 px-3 py-1.5 rounded-lg">
+                <CheckCircle size={12} /> Paid {ro.payment_received_at && `· ${new Date(ro.payment_received_at).toLocaleDateString()}`}
+              </span>
+            )}
+            {ro.status === 'estimate_sent' && !ro.estimate_approved_at && !userIsAssistant && (
+              <button onClick={approveEstimate} disabled={approvingEstimate} className="w-full sm:w-auto flex items-center justify-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+                <CheckCircle size={12} /> {approvingEstimate ? 'Approving...' : `${t('portal.approveBtn')} ${t('ro.estimate')}`}
               </button>
-            : <div className="flex gap-1 w-full sm:w-auto">
-                <button onClick={save} disabled={saving} className="flex-1 sm:flex-none w-full sm:w-auto flex items-center justify-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
-                  <Save size={12} /> {saving ? 'Saving...' : t('common.save')}
+            )}
+            {ro.status === 'estimate' && !userIsAssistant && (
+              <button
+                onClick={sendForApproval}
+                disabled={sendingForApproval}
+                className="w-full sm:w-auto flex items-center justify-center gap-1 bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+              >
+                <Mail size={12} /> {sendingForApproval ? 'Generating Link...' : 'Send for Approval'}
+              </button>
+            )}
+            {ro.status !== 'closed' && !ro.payment_received && canMarkPaymentFromRo && (
+              <button onClick={() => setShowMarkPaidModal(true)} className="w-full sm:w-auto flex items-center justify-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
+                <DollarSign size={12} /> {t('ro.paymentReceived')}
+              </button>
+            )}
+            {currentIdx < STAGES.length - 1 && !userIsAssistant && (
+              <button onClick={advance} className="w-full sm:w-auto flex items-center justify-center gap-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
+                → {STATUS_LABELS[STAGES[currentIdx+1]]}
+              </button>
+            )}
+            <button onClick={() => window.open(`/invoice/${id}`, '_blank')}
+              className="w-full sm:w-auto flex items-center justify-center gap-1 bg-[#2a2d3e] hover:bg-[#3a3d4e] text-slate-300 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
+              <Printer size={12} /> {t('ro.invoice')}
+            </button>
+            {canEditRo && (!editing
+              ? <button onClick={() => setEditing(true)} className="w-full sm:w-auto flex items-center justify-center gap-1 bg-[#2a2d3e] hover:bg-[#3a3d4e] text-slate-300 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
+                  <Pencil size={12} /> {t('common.edit')}
                 </button>
-                <button onClick={() => { setEditing(false); setForm({ ...ro, vin: ro?.vehicle?.vin || '' }) }} className="flex-1 sm:flex-none w-full sm:w-auto flex items-center justify-center gap-1 bg-[#2a2d3e] text-slate-400 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
-                  <X size={12} />
-                </button>
-              </div>
-          )}
+              : <div className="flex gap-1 w-full sm:w-auto">
+                  <button onClick={save} disabled={saving} className="flex-1 sm:flex-none w-full sm:w-auto flex items-center justify-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
+                    <Save size={12} /> {saving ? 'Saving...' : t('common.save')}
+                  </button>
+                  <button onClick={() => { setEditing(false); setForm(buildFormFromRo(ro)) }} className="flex-1 sm:flex-none w-full sm:w-auto flex items-center justify-center gap-1 bg-[#2a2d3e] text-slate-400 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
+                    <X size={12} />
+                  </button>
+                </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -1092,13 +1112,24 @@ export default function RODetail() {
 
       {/* Progress */}
       <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
-        <div className="flex gap-1 mb-2">
-          {STAGES.slice(0,-1).map((s, i) => (
-            <div key={s} className="flex-1 h-2 rounded-full" style={{background: i <= currentIdx ? STATUS_COLORS[s] : '#2a2d3e'}} />
-          ))}
-        </div>
-        <div className="flex justify-between text-[10px] text-slate-600">
-          <span>Intake</span><span>Delivery</span>
+        <div className="overflow-x-auto pb-1">
+          <div className="min-w-[640px]">
+            <div className="grid grid-cols-8 gap-1 mb-2">
+              {STAGES.slice(0, -1).map((s, i) => (
+                <div key={s} className="h-2 rounded-full" style={{ background: i <= currentIdx ? STATUS_COLORS[s] : '#2a2d3e' }} />
+              ))}
+            </div>
+            <div className="grid grid-cols-8 gap-1">
+              {STAGES.slice(0, -1).map((s, i) => (
+                <span
+                  key={`${s}-label`}
+                  className={`text-[10px] text-center ${i <= currentIdx ? 'text-slate-300' : 'text-slate-600'}`}
+                >
+                  {STATUS_LABELS[s] || s}
+                </span>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1107,7 +1138,7 @@ export default function RODetail() {
           roId={id}
           totalAmount={paymentAmount}
           onSuccess={load}
-          onMarkManual={() => setShowMarkPaidModal(true)}
+          onMarkManual={canMarkPaymentFromRo ? () => setShowMarkPaidModal(true) : null}
         />
       )}
 
@@ -1213,24 +1244,68 @@ export default function RODetail() {
         <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
           <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3 flex items-center gap-1.5"><Car size={12} /> {t('common.vehicle')}</h2>
           <div className="space-y-2">
-            {[
-              [`${t('common.year')}/${t('common.make')}/${t('common.model')}`, `${ro.vehicle?.year} ${ro.vehicle?.make} ${ro.vehicle?.model}`],
-              ['Color', ro.vehicle?.color],
-              ['Plate', ro.vehicle?.plate],
-              ['Job Type', ro.job_type],
-              ['Intake Date', ro.intake_date],
-            ].map(([k,v]) => (
-              <div key={k} className="flex justify-between text-xs">
-                <span className="text-slate-500">{k}</span>
-                <span className="text-white font-medium capitalize">{v || '—'}</span>
-              </div>
-            ))}
+            <div className="flex justify-between items-start gap-3 text-xs">
+              <span className="text-slate-500">{t('common.year')}/{t('common.make')}/{t('common.model')}</span>
+              {editing ? (
+                <div className="grid grid-cols-3 gap-1.5 w-[320px] max-w-full">
+                  <input
+                    value={form.vehicle_year ?? ''}
+                    onChange={e => set('vehicle_year', e.target.value)}
+                    className="bg-[#0f1117] border border-[#2a2d3e] rounded px-2 py-0.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+                    placeholder="Year"
+                  />
+                  <input
+                    value={form.vehicle_make ?? ''}
+                    onChange={e => set('vehicle_make', e.target.value)}
+                    className="bg-[#0f1117] border border-[#2a2d3e] rounded px-2 py-0.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+                    placeholder="Make"
+                  />
+                  <input
+                    value={form.vehicle_model ?? ''}
+                    onChange={e => set('vehicle_model', e.target.value)}
+                    className="bg-[#0f1117] border border-[#2a2d3e] rounded px-2 py-0.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+                    placeholder="Model"
+                  />
+                </div>
+              ) : (
+                <span className="text-white font-medium capitalize">{[ro.vehicle?.year, ro.vehicle?.make, ro.vehicle?.model].filter(Boolean).join(' ') || '—'}</span>
+              )}
+            </div>
+            <div className="flex justify-between text-xs gap-3">
+              <span className="text-slate-500">Color</span>
+              {editing
+                ? <input value={form.vehicle_color || ''} onChange={e => set('vehicle_color', e.target.value)} className="bg-[#0f1117] border border-[#2a2d3e] rounded px-2 py-0.5 text-xs text-white focus:outline-none focus:border-indigo-500 w-52 max-w-full" placeholder="Color" />
+                : <span className="text-white font-medium capitalize">{ro.vehicle?.color || '—'}</span>
+              }
+            </div>
+            <div className="flex justify-between text-xs gap-3">
+              <span className="text-slate-500">Plate</span>
+              {editing
+                ? <input value={form.vehicle_plate || ''} onChange={e => set('vehicle_plate', e.target.value)} className="bg-[#0f1117] border border-[#2a2d3e] rounded px-2 py-0.5 text-xs text-white focus:outline-none focus:border-indigo-500 w-52 max-w-full" placeholder="Plate" />
+                : <span className="text-white font-medium">{ro.vehicle?.plate || '—'}</span>
+              }
+            </div>
+            <div className="flex justify-between text-xs gap-3">
+              <span className="text-slate-500">Mileage</span>
+              {editing
+                ? <input type="number" min="0" value={form.vehicle_mileage ?? ''} onChange={e => set('vehicle_mileage', e.target.value)} className="bg-[#0f1117] border border-[#2a2d3e] rounded px-2 py-0.5 text-xs text-white focus:outline-none focus:border-indigo-500 w-40 max-w-full" placeholder="Mileage" />
+                : <span className="text-white font-medium">{ro.vehicle?.mileage ? Number(ro.vehicle.mileage).toLocaleString() : '—'}</span>
+              }
+            </div>
             <div className="flex justify-between text-xs">
               <span className="text-slate-500">{t('common.vin')}</span>
               {editing
                 ? <input value={form.vin || ''} onChange={e => set('vin', e.target.value)} className="bg-[#0f1117] border border-[#2a2d3e] rounded px-2 py-0.5 text-xs text-white focus:outline-none focus:border-indigo-500 w-52 max-w-full" placeholder="VIN" />
                 : <span className="text-white font-medium">{ro.vehicle?.vin || '—'}</span>
               }
+            </div>
+            <div className="flex justify-between text-xs">
+              <span className="text-slate-500">Job Type</span>
+              <span className="text-white font-medium capitalize">{ro.job_type || '—'}</span>
+            </div>
+            <div className="flex justify-between text-xs">
+              <span className="text-slate-500">Intake Date</span>
+              <span className="text-white font-medium capitalize">{ro.intake_date || '—'}</span>
             </div>
             <div className="flex justify-between text-xs">
               <span className="text-slate-500">{t('portal.estimatedCompletion')}</span>
@@ -1332,46 +1407,48 @@ export default function RODetail() {
         </div>
 
         {/* Profit Breakdown */}
-        <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4 col-span-full">
-          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3 flex items-center gap-1.5"><DollarSign size={12} /> Profit (NY Market)</h2>
-          {editing ? (
-            <div className="space-y-2">
-              {[
-                ['Parts Cost ($)', 'parts_cost'],
-                ['Labor Cost ($)', 'labor_cost'],
-                ['Sublet Cost ($)', 'sublet_cost'],
-                ['Deductible Waived ($)', 'deductible_waived'],
-                ['Referral Fee ($)', 'referral_fee'],
-                ['Goodwill Repair ($)', 'goodwill_repair_cost'],
-              ].map(([label, key]) => (
-                <div key={key}>
-                  <label className="text-[10px] text-slate-500">{label}</label>
-                  <input type="number" className={inp + ' mt-0.5'} value={form[key] || ''} onChange={e => set(key, e.target.value)} placeholder="0" />
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {[
-                ['Parts Cost', `$${parseFloat(ro.parts_cost||0).toFixed(2)}`],
-                [t('ro.labor'), `$${parseFloat(ro.labor_cost||0).toFixed(2)}`],
-                ['Sublet', `$${parseFloat(ro.sublet_cost||0).toFixed(2)}`],
-                ['Total Billed', `$${parseFloat(ro.total||0).toFixed(2)}`],
-              ].map(([k,v]) => (
-                <div key={k} className="flex justify-between text-xs">
-                  <span className="text-slate-500">{k}</span><span className="text-white">{v}</span>
-                </div>
-              ))}
-              {ro.deductible_waived > 0 && <div className="flex justify-between text-xs"><span className="text-red-400">Deductible Waived</span><span className="text-red-400">-${ro.deductible_waived}</span></div>}
-              {ro.referral_fee > 0 && <div className="flex justify-between text-xs"><span className="text-red-400">Referral Fee</span><span className="text-red-400">-${ro.referral_fee}</span></div>}
-              {ro.goodwill_repair_cost > 0 && <div className="flex justify-between text-xs"><span className="text-red-400">Goodwill Repair</span><span className="text-red-400">-${ro.goodwill_repair_cost}</span></div>}
-              <div className="border-t border-[#2a2d3e] pt-2 flex justify-between text-sm font-bold">
-                <span className="text-emerald-400">True Profit</span>
-                <span className="text-emerald-400">${parseFloat(ro.true_profit||0).toFixed(2)}</span>
+        {userIsAdmin && (
+          <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4 col-span-full">
+            <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3 flex items-center gap-1.5"><DollarSign size={12} /> Profit (NY Market)</h2>
+            {editing ? (
+              <div className="space-y-2">
+                {[
+                  ['Parts Cost ($)', 'parts_cost'],
+                  ['Labor Cost ($)', 'labor_cost'],
+                  ['Sublet Cost ($)', 'sublet_cost'],
+                  ['Deductible Waived ($)', 'deductible_waived'],
+                  ['Referral Fee ($)', 'referral_fee'],
+                  ['Goodwill Repair ($)', 'goodwill_repair_cost'],
+                ].map(([label, key]) => (
+                  <div key={key}>
+                    <label className="text-[10px] text-slate-500">{label}</label>
+                    <input type="number" className={inp + ' mt-0.5'} value={form[key] || ''} onChange={e => set(key, e.target.value)} placeholder="0" />
+                  </div>
+                ))}
               </div>
-            </div>
-          )}
-        </div>
+            ) : (
+              <div className="space-y-2">
+                {[
+                  ['Parts Cost', `$${parseFloat(ro.parts_cost||0).toFixed(2)}`],
+                  [t('ro.labor'), `$${parseFloat(ro.labor_cost||0).toFixed(2)}`],
+                  ['Sublet', `$${parseFloat(ro.sublet_cost||0).toFixed(2)}`],
+                  ['Total Billed', `$${parseFloat(ro.total||0).toFixed(2)}`],
+                ].map(([k,v]) => (
+                  <div key={k} className="flex justify-between text-xs">
+                    <span className="text-slate-500">{k}</span><span className="text-white">{v}</span>
+                  </div>
+                ))}
+                {ro.deductible_waived > 0 && <div className="flex justify-between text-xs"><span className="text-red-400">Deductible Waived</span><span className="text-red-400">-${ro.deductible_waived}</span></div>}
+                {ro.referral_fee > 0 && <div className="flex justify-between text-xs"><span className="text-red-400">Referral Fee</span><span className="text-red-400">-${ro.referral_fee}</span></div>}
+                {ro.goodwill_repair_cost > 0 && <div className="flex justify-between text-xs"><span className="text-red-400">Goodwill Repair</span><span className="text-red-400">-${ro.goodwill_repair_cost}</span></div>}
+                <div className="border-t border-[#2a2d3e] pt-2 flex justify-between text-sm font-bold">
+                  <span className="text-emerald-400">True Profit</span>
+                  <span className="text-emerald-400">${parseFloat(ro.true_profit||0).toFixed(2)}</span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
       </div>
 
@@ -1755,11 +1832,16 @@ export default function RODetail() {
           <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3 flex items-center gap-1.5">
             <User size={12} /> {t('ro.technician')}
           </h2>
+          {techAssignmentMismatch && (
+            <div className="mb-3 text-xs text-amber-200 bg-amber-900/20 border border-amber-700/40 rounded-lg px-3 py-2">
+              You are not the currently assigned tech on this RO. You can still update assignment, and admin will be notified.
+            </div>
+          )}
           <div className="flex items-center gap-3 flex-wrap">
             <span className="text-sm text-white font-medium">
               {ro.assigned_tech ? ro.assigned_tech.name : <span className="text-slate-500 italic">Unassigned</span>}
             </span>
-            {userIsAdmin && (
+            {!userIsAssistant && (
               <select
                 value={ro.assigned_to || ''}
                 onChange={e => assignTech(e.target.value)}
@@ -1767,7 +1849,7 @@ export default function RODetail() {
               >
                 <option value="">Unassigned</option>
                 {shopUsers
-                  .filter(u => ['owner', 'admin', 'employee', 'staff'].includes(u.role))
+                  .filter(u => ['owner', 'admin', 'technician', 'employee', 'staff'].includes(u.role))
                   .map(u => (
                     <option key={u.id} value={u.id}>{u.name}</option>
                   ))}

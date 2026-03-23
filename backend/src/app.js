@@ -73,6 +73,7 @@ app.use('/api/schedule',  require('./routes/schedule'));
 app.use('/api/tracking',  require('./routes/tracking'));
 app.use('/api/sms', require('./routes/sms'));
 app.use('/api/export', require('./routes/export'));
+app.use('/api/accounting', require('./routes/accounting'));
 app.use('/api/diagnostics', require('./routes/diagnostics'));
 app.use('/api/vehicle-diagnostics', require('./routes/vehicleDiagnostics'));
 app.use('/api/claim-links', require('./routes/claimLinks'));

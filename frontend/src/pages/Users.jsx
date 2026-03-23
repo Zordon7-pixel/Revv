@@ -6,7 +6,7 @@ const ROLES = ['admin', 'employee', 'staff']
 const ROLE_META = {
   owner:    { label: 'Owner',    icon: Shield, cls: 'text-purple-400 bg-purple-900/30 border-purple-700' },
   admin:    { label: 'Admin',    icon: Shield, cls: 'text-indigo-400 bg-indigo-900/30 border-indigo-700' },
-  employee: { label: 'Employee', icon: Wrench, cls: 'text-orange-400 bg-orange-900/30 border-orange-700'  },
+  employee: { label: 'Tech',     icon: Wrench, cls: 'text-orange-400 bg-orange-900/30 border-orange-700'  },
   staff:    { label: 'Staff',    icon: Wrench, cls: 'text-blue-400   bg-blue-900/30   border-blue-700'   },
   assistant:{ label: 'Assistant',icon: Wrench, cls: 'text-yellow-300 bg-yellow-900/30 border-yellow-700' },
 }
@@ -187,7 +187,7 @@ export default function Users() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         {[
           { role:'admin',    desc:'Full access — dashboard, reports, profit, settings, RO management' },
-          { role:'employee', desc:'Work access — update RO status, add notes. No financial data visible.' },
+          { role:'employee', desc:'Tech access — update RO status, add notes. No financial data visible.' },
           { role:'assistant', desc:'Read-only helper access to dashboard, repair orders, and customers.' },
         ].map(({ role, desc }) => {
           const meta = ROLE_META[role]
@@ -204,7 +204,7 @@ export default function Users() {
       </div>
 
       <Section title="Admins" list={admins} />
-      <Section title="Employees" list={employees} />
+      <Section title="Techs" list={employees} />
       <Section title="Assistants" list={assistants} />
 
       {users.length === 0 && (

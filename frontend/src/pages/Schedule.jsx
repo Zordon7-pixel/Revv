@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ChevronLeft, ChevronRight, Plus, Trash2, X, Save, CheckCircle } from 'lucide-react'
 import api from '../lib/api'
-import { isAdmin } from '../lib/auth'
+import { isAdmin, isAssistant } from '../lib/auth'
 
 const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']
 const MONTH_DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
@@ -23,52 +23,125 @@ function fmtHeader(d) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
-function AddShiftModal({ employees, prefill, onClose, onSaved }) {
+function parseTimeToMinutes(value) {
+  const text = String(value || '')
+  const match = text.match(/^([01]\d|2[0-3]):([0-5]\d)(?::[0-5]\d)?$/)
+  if (!match) return null
+  return Number(match[1]) * 60 + Number(match[2])
+}
+
+function shiftCrossesNextDay(shift) {
+  const start = parseTimeToMinutes(shift?.start_time)
+  const end = parseTimeToMinutes(shift?.end_time)
+  if (start == null || end == null) return false
+  return end < start
+}
+
+function shiftDurationHours(shift) {
+  const start = parseTimeToMinutes(shift?.start_time)
+  const end = parseTimeToMinutes(shift?.end_time)
+  if (start == null || end == null) return 0
+  let minutes = end - start
+  if (minutes < 0) minutes += 24 * 60
+  return Math.max(0, minutes / 60)
+}
+
+function shiftTimeLabel(shift) {
+  if (!shift) return ''
+  return `${shift.start_time} – ${shift.end_time}${shiftCrossesNextDay(shift) ? ' (+1d)' : ''}`
+}
+
+function addDaysToIso(iso, days) {
+  const [y, m, d] = String(iso || '').split('-').map(Number)
+  if (!y || !m || !d) return iso
+  const date = new Date(y, m - 1, d)
+  date.setDate(date.getDate() + days)
+  return date.toISOString().slice(0, 10)
+}
+
+function shiftMatchesDate(shift, iso) {
+  if (!shift || !iso) return false
+  if (shift.shift_date === iso) return true
+  if (!shiftCrossesNextDay(shift)) return false
+  return shift.shift_date === addDaysToIso(iso, -1)
+}
+
+function ShiftModal({ employees, prefill, shift, onClose, onSaved, onDeleted }) {
+  const isEdit = !!shift
   const [form, setForm] = useState({
-    user_id: prefill?.user_id || (employees[0]?.id || ''),
-    shift_date: prefill?.date || '',
-    start_time: '08:00',
-    end_time: '17:00',
-    lunch_break_minutes: 30,
-    notes: ''
+    user_id: shift?.user_id || prefill?.user_id || (employees[0]?.id || ''),
+    shift_date: shift?.shift_date || prefill?.date || '',
+    start_time: shift?.start_time || '08:00',
+    end_time: shift?.end_time || '17:00',
+    lunch_break_minutes: shift?.lunch_break_minutes ?? 30,
+    notes: shift?.notes || '',
   })
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
+  const [deleting, setDeleting] = useState(false)
   const inp = 'w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500'
   const lbl = 'block text-xs font-medium text-slate-400 mb-1'
 
   async function save() {
-    if (!form.user_id || !form.shift_date) { setErr('Select employee and date.'); return }
+    if (!form.user_id || !form.shift_date) { setErr('Select tech and date.'); return }
+    if (form.start_time === form.end_time) { setErr('Start and end time cannot be the same.'); return }
     setSaving(true); setErr('')
     try {
-      await api.post('/schedule', form)
+      if (isEdit) {
+        await api.put(`/schedule/${shift.id}`, {
+          start_time: form.start_time,
+          end_time: form.end_time,
+          lunch_break_minutes: form.lunch_break_minutes,
+          notes: form.notes,
+        })
+      } else {
+        await api.post('/schedule', form)
+      }
       onSaved()
     } catch (e) {
       setErr(e?.response?.data?.error || 'Error saving shift')
     } finally { setSaving(false) }
   }
 
+  async function deleteShift() {
+    if (!shift?.id) return
+    if (!confirm('Remove this shift?')) return
+    setDeleting(true)
+    setErr('')
+    try {
+      await api.delete(`/schedule/${shift.id}`)
+      onDeleted?.()
+    } catch (e) {
+      setErr(e?.response?.data?.error || 'Error deleting shift')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
       <div className="bg-[#1a1d2e] rounded-2xl border border-[#2a2d3e] w-full max-w-sm p-5 space-y-4">
         <div className="flex items-center justify-between">
-          <h3 className="font-bold text-white text-sm">Add Shift</h3>
+          <h3 className="font-bold text-white text-sm">{isEdit ? 'Edit Shift' : 'Add Shift'}</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={16}/></button>
         </div>
         <div className="space-y-3">
-          <div><label className={lbl}>Employee</label>
+          <div><label className={lbl}>Tech</label>
             <select className={inp} value={form.user_id} onChange={e => setForm(f=>({...f,user_id:e.target.value}))}>
               <option value="">— select —</option>
               {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
             </select></div>
           <div><label className={lbl}>Date</label>
-            <input className={inp} type="date" value={form.shift_date} onChange={e => setForm(f=>({...f,shift_date:e.target.value}))} /></div>
+            <input className={inp} type="date" value={form.shift_date} onChange={e => setForm(f=>({...f,shift_date:e.target.value}))} disabled={isEdit} /></div>
           <div className="grid grid-cols-2 gap-3">
             <div><label className={lbl}>Start Time</label>
               <input className={inp} type="time" value={form.start_time} onChange={e => setForm(f=>({...f,start_time:e.target.value}))} /></div>
             <div><label className={lbl}>End Time</label>
               <input className={inp} type="time" value={form.end_time} onChange={e => setForm(f=>({...f,end_time:e.target.value}))} /></div>
           </div>
+          <p className="text-[10px] text-slate-500 -mt-1">
+            If end time is earlier than start time, REVV treats the shift as ending the next day.
+          </p>
           <div><label className={lbl}>Lunch (min)</label>
             <input className={inp} type="number" min="0" max="120" value={form.lunch_break_minutes} onChange={e => setForm(f=>({...f,lunch_break_minutes:parseInt(e.target.value)||30}))} /></div>
           <div><label className={lbl}>Notes (optional)</label>
@@ -76,9 +149,15 @@ function AddShiftModal({ employees, prefill, onClose, onSaved }) {
         </div>
         {err && <p className="text-xs text-red-400">{err}</p>}
         <div className="flex justify-between pt-2">
-          <button onClick={onClose} className="text-slate-400 text-sm hover:text-white">Cancel</button>
+          {isEdit ? (
+            <button onClick={deleteShift} disabled={deleting || saving} className="text-red-300 text-sm hover:text-red-200 disabled:opacity-60">
+              {deleting ? 'Removing…' : 'Delete Shift'}
+            </button>
+          ) : (
+            <button onClick={onClose} className="text-slate-400 text-sm hover:text-white">Cancel</button>
+          )}
           <button onClick={save} disabled={saving} className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold px-4 py-2 rounded-lg transition-colors disabled:opacity-50">
-            <Save size={14}/> {saving ? 'Saving…' : 'Add Shift'}
+            <Save size={14}/> {saving ? 'Saving…' : (isEdit ? 'Save Changes' : 'Add Shift')}
           </button>
         </div>
       </div>
@@ -143,9 +222,11 @@ export default function Schedule() {
   const [employees, setEmployees] = useState([])
   const [showAdd, setShowAdd] = useState(false)
   const [prefill, setPrefill] = useState(null)
+  const [editingShift, setEditingShift] = useState(null)
   const [authModalEmployee, setAuthModalEmployee] = useState(null)
   const [authorizedToday, setAuthorizedToday] = useState({})
-  const admin = isAdmin()
+  const canManage = isAdmin() || isAssistant()
+  const canAuthorizeEarly = isAdmin()
 
   const weekDates = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(monday)
@@ -201,8 +282,12 @@ export default function Schedule() {
     const month = currentMonth.getMonth()
     const from = new Date(year, month, 1).toISOString().slice(0, 10)
     const to = new Date(year, month + 1, 0).toISOString().slice(0, 10)
-    const s = await api.get(`/schedule?from=${from}&to=${to}`)
+    const [s, e] = await Promise.all([
+      api.get(`/schedule?from=${from}&to=${to}`),
+      canManage ? api.get('/schedule/employees') : Promise.resolve({ data: { employees: [] } }),
+    ])
     setShifts(s.data.shifts || [])
+    if (canManage) setEmployees(e.data.employees || [])
   }
 
   useEffect(() => {
@@ -218,7 +303,7 @@ export default function Schedule() {
     }
     const [s, e] = await Promise.all([
       api.get(`/schedule?week=${isoDate(monday)}`),
-      admin ? api.get('/schedule/employees') : Promise.resolve({ data: { employees: [] } })
+      canManage ? api.get('/schedule/employees') : Promise.resolve({ data: { employees: [] } })
     ])
     setShifts(s.data.shifts || [])
     setEmployees(e.data.employees || [])
@@ -227,7 +312,7 @@ export default function Schedule() {
 
   useEffect(() => {
     async function loadAuthStatus() {
-      if (!admin) return
+      if (!canAuthorizeEarly) return
       const todayIso = isoDate(new Date())
       const isCurrentWeek = weekDates.some(d => isoDate(d) === todayIso)
       if (!isCurrentWeek || employees.length === 0) return
@@ -244,7 +329,7 @@ export default function Schedule() {
       setAuthorizedToday(statuses)
     }
     loadAuthStatus()
-  }, [admin, employees, monday])
+  }, [canAuthorizeEarly, employees, monday])
 
   function prevWeek() { 
     const d = new Date(monday); 
@@ -264,7 +349,7 @@ export default function Schedule() {
 
   function shiftsFor(date) {
     const iso = isoDate(date)
-    return shifts.filter(s => s.shift_date === iso)
+    return shifts.filter((s) => shiftMatchesDate(s, iso))
   }
 
   async function deleteShift(id) {
@@ -278,7 +363,23 @@ export default function Schedule() {
     setShowAdd(true)
   }
 
+  function openEdit(shift) {
+    if (!canManage) return
+    setEditingShift(shift)
+  }
+
   const today = isoDate(new Date())
+  const periodDates = viewMode === 'week'
+    ? weekDates
+    : getMonthDays().filter((d) => d.getMonth() === currentMonth.getMonth())
+  const uniqueScheduledEmployees = new Set(shifts.map((s) => s.user_id).filter(Boolean)).size
+  const totalScheduledHours = shifts.reduce((sum, s) => sum + shiftDurationHours(s), 0)
+  const staffedDays = periodDates.reduce((count, d) => (shiftsFor(d).length > 0 ? count + 1 : count), 0)
+  const maxStaffedDay = periodDates.reduce((best, d) => {
+    const count = shiftsFor(d).length
+    if (count > best.count) return { date: d, count }
+    return best
+  }, { date: null, count: 0 })
 
   return (
     <div className="space-y-5">
@@ -312,7 +413,7 @@ export default function Schedule() {
           <button onClick={() => viewMode === 'month' ? prevMonth() : prevWeek()} className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-[#2a2d3e] transition-colors"><ChevronLeft size={16}/></button>
           <button onClick={thisWeek} className="px-3 py-1.5 rounded-lg text-xs text-slate-300 hover:bg-[#2a2d3e] border border-[#2a2d3e] transition-colors">This Week</button>
           <button onClick={() => viewMode === 'month' ? nextMonth() : nextWeek()} className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-[#2a2d3e] transition-colors"><ChevronRight size={16}/></button>
-          {admin && (
+          {canManage && (
             <button onClick={() => openAdd()} className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-colors">
               <Plus size={14}/> Add Shift
             </button>
@@ -326,6 +427,30 @@ export default function Schedule() {
           : currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
         }
       </div>
+
+      {canManage && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+          <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-3">
+            <p className="text-[10px] text-slate-500 uppercase tracking-wide">Scheduled Shifts</p>
+            <p className="text-lg font-bold text-white mt-1">{shifts.length}</p>
+          </div>
+          <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-3">
+            <p className="text-[10px] text-slate-500 uppercase tracking-wide">Staff Scheduled</p>
+            <p className="text-lg font-bold text-white mt-1">{uniqueScheduledEmployees}</p>
+          </div>
+          <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-3">
+            <p className="text-[10px] text-slate-500 uppercase tracking-wide">Scheduled Hours</p>
+            <p className="text-lg font-bold text-indigo-300 mt-1">{totalScheduledHours.toFixed(1)}h</p>
+          </div>
+          <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-3">
+            <p className="text-[10px] text-slate-500 uppercase tracking-wide">Coverage</p>
+            <p className="text-sm font-semibold text-white mt-1">{staffedDays}/{periodDates.length} days staffed</p>
+            <p className="text-[10px] text-slate-500 mt-1">
+              Peak: {maxStaffedDay.date ? `${fmtHeader(maxStaffedDay.date)} (${maxStaffedDay.count})` : '—'}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Month navigation - only show in month view */}
       {viewMode === 'month' && (
@@ -347,8 +472,9 @@ export default function Schedule() {
         <div className="overflow-x-auto">
         <div className="grid grid-cols-7 gap-1.5 min-w-[560px]">
         {weekDates.map((date, i) => {
+          const dayIso = isoDate(date)
           const dayShifts = shiftsFor(date)
-          const isToday = isoDate(date) === today
+          const isToday = dayIso === today
           return (
             <div key={i} className={`bg-[#1a1d2e] rounded-xl border ${isToday ? 'border-indigo-600/60' : 'border-[#2a2d3e]'} p-2 min-h-[120px] flex flex-col`}>
               <div className={`text-[10px] font-bold uppercase tracking-wide mb-2 ${isToday ? 'text-indigo-400' : 'text-slate-500'}`}>
@@ -357,12 +483,19 @@ export default function Schedule() {
               </div>
               <div className="flex-1 space-y-1">
                 {dayShifts.map(s => (
-                  <div key={s.id} className="bg-indigo-900/30 border border-indigo-700/40 rounded-lg px-2 py-1.5 group relative">
+                  <div
+                    key={`${s.id}-${dayIso}`}
+                    onClick={() => openEdit(s)}
+                    className={`w-full text-left bg-indigo-900/30 border border-indigo-700/40 rounded-lg px-2 py-1.5 group relative ${canManage ? 'cursor-pointer hover:border-indigo-400/70 hover:bg-indigo-900/40 transition-colors' : ''}`}
+                  >
                     <div className="text-[10px] font-semibold text-indigo-300 truncate">{s.user?.name?.split(' ')[0]}</div>
-                    <div className="text-[9px] text-slate-400">{s.start_time} – {s.end_time}</div>
+                    <div className="text-[9px] text-slate-400">{shiftTimeLabel(s)}</div>
+                    {s.shift_date !== dayIso && (
+                      <div className="text-[9px] text-cyan-300">Carryover from previous day</div>
+                    )}
                     {s.notes && <div className="text-[9px] text-slate-500 truncate mt-0.5">{s.notes}</div>}
-                    {admin && (
-                      <button onClick={() => deleteShift(s.id)}
+                    {canManage && (
+                      <button onClick={(e) => { e.stopPropagation(); deleteShift(s.id) }}
                         className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 p-0.5 rounded text-slate-500 hover:text-red-400 transition-all">
                         <Trash2 size={10}/>
                       </button>
@@ -370,7 +503,7 @@ export default function Schedule() {
                   </div>
                 ))}
               </div>
-              {admin && (
+              {canManage && (
                 <button onClick={() => openAdd(date)}
                   className="mt-1 w-full text-[9px] text-slate-600 hover:text-indigo-400 hover:bg-indigo-900/20 rounded py-1 transition-colors flex items-center justify-center gap-1">
                   <Plus size={9}/> Add
@@ -415,9 +548,18 @@ export default function Schedule() {
                 </div>
                 <div className="space-y-0.5">
                   {dayShifts.slice(0, 2).map(s => (
-                    <div key={s.id} className="bg-indigo-900/30 border border-indigo-700/40 rounded px-1.5 py-0.5">
+                    <button
+                      key={`${s.id}-${isoDate(date)}`}
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        openEdit(s)
+                      }}
+                      title={shiftTimeLabel(s)}
+                      className={`w-full text-left bg-indigo-900/30 border border-indigo-700/40 rounded px-1.5 py-0.5 ${canManage ? 'hover:border-indigo-400/70 hover:bg-indigo-900/40 transition-colors' : ''}`}
+                    >
                       <div className="text-[8px] font-semibold text-indigo-300 truncate">{s.user?.name?.split(' ')[0]}</div>
-                    </div>
+                    </button>
                   ))}
                   {dayShifts.length > 2 && (
                     <div className="text-[8px] text-slate-500 text-center">+{dayShifts.length - 2} more</div>
@@ -430,19 +572,20 @@ export default function Schedule() {
         </div>
       )}
 
-      {/* Employee summary (admin only) */}
-      {admin && shifts.length > 0 && (
+      {/* Tech summary */}
+      {canManage && (
         <div className="bg-[#1a1d2e] rounded-2xl border border-[#2a2d3e] p-4">
-          <h2 className="text-xs font-bold text-white uppercase tracking-wide mb-3">This Week — Staffing Summary</h2>
+          <h2 className="text-xs font-bold text-white uppercase tracking-wide mb-3">
+            {viewMode === 'week' ? 'This Week — Team Schedule' : 'This Month — Team Schedule'}
+          </h2>
+          {shifts.length === 0 ? (
+            <p className="text-xs text-slate-500">No shifts scheduled in this view yet.</p>
+          ) : (
           <div className="space-y-2">
             {employees.map(emp => {
               const empShifts = shifts.filter(s => s.user_id === emp.id)
               if (empShifts.length === 0) return null
-              const totalHours = empShifts.reduce((sum, s) => {
-                const [sh, sm] = s.start_time.split(':').map(Number)
-                const [eh, em] = s.end_time.split(':').map(Number)
-                return sum + (eh + em/60) - (sh + sm/60)
-              }, 0)
+              const totalHours = empShifts.reduce((sum, s) => sum + shiftDurationHours(s), 0)
               const hasShiftToday = empShifts.some(s => s.shift_date === today)
 
               return (
@@ -451,7 +594,7 @@ export default function Schedule() {
                   <div className="flex items-center gap-3 flex-wrap justify-end">
                     <span className="text-slate-500">{empShifts.length} shift{empShifts.length!==1?'s':''}</span>
                     <span className="text-indigo-400 font-semibold">{totalHours.toFixed(1)}h scheduled</span>
-                    {hasShiftToday && (
+                    {hasShiftToday && canAuthorizeEarly && (
                       authorizedToday[emp.id] ? (
                         <span className="text-[10px] bg-emerald-900/40 text-emerald-400 px-2 py-1 rounded-full font-semibold inline-flex items-center gap-1"><CheckCircle size={10} /> Authorized for today</span>
                       ) : (
@@ -468,15 +611,26 @@ export default function Schedule() {
               )
             })}
           </div>
+          )}
         </div>
       )}
 
       {showAdd && (
-        <AddShiftModal
+        <ShiftModal
           employees={employees}
           prefill={prefill}
           onClose={() => setShowAdd(false)}
           onSaved={() => { setShowAdd(false); load() }}
+        />
+      )}
+
+      {editingShift && (
+        <ShiftModal
+          employees={employees}
+          shift={editingShift}
+          onClose={() => setEditingShift(null)}
+          onSaved={() => { setEditingShift(null); load() }}
+          onDeleted={() => { setEditingShift(null); load() }}
         />
       )}
 

@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Search, Radar, Wrench } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import api from '../lib/api'
 
 const DEFAULT_LOOKUP = { year: '', make: '', model: '' }
 
 export default function ADASCalibration() {
+  const navigate = useNavigate()
   const [form, setForm] = useState(DEFAULT_LOOKUP)
   const [loadingLookup, setLoadingLookup] = useState(false)
   const [lookup, setLookup] = useState(null)
@@ -116,18 +118,24 @@ export default function ADASCalibration() {
           <p className="text-sm text-slate-500">No active vehicles currently flagged for ADAS calibration.</p>
         ) : (
           <div className="space-y-2">
-            {queue.map((item) => (
-              <div key={item.ro_id} className="bg-[#0f1117] border border-[#2a2d3e] rounded-xl p-3">
+            {queue.map((item, idx) => (
+              <button
+                key={item.ro_id || `${item.ro_number || 'ro'}-${idx}`}
+                type="button"
+                onClick={() => item.ro_id && navigate(`/ros/${item.ro_id}`)}
+                className="w-full text-left bg-[#0f1117] border border-[#2a2d3e] rounded-xl p-3 transition-colors hover:border-indigo-500/70 hover:bg-[#141a2e]"
+              >
                 <div className="flex items-center justify-between gap-2">
                   <div>
                     <p className="text-sm font-semibold text-white">{item.ro_number} · {item.vehicle}</p>
                     <p className="text-xs text-slate-500">{item.customer_name || 'Unknown customer'} · Stage: {item.status}</p>
+                    <p className="mt-1 text-[11px] text-indigo-300">Click to open RO</p>
                   </div>
                   <span className="inline-flex items-center gap-1 text-xs bg-cyan-900/30 text-cyan-300 border border-cyan-700/40 px-2 py-1 rounded-full">
                     <Wrench size={12} /> {item.systems_count} systems
                   </span>
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         )}

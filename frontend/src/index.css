@@ -15,6 +15,30 @@ body {
   padding-right: env(safe-area-inset-right);
 }
 
+html.theme-light {
+  color-scheme: light;
+}
+
+html.theme-light body {
+  background: #f4f7fb;
+  color: #0f172a;
+}
+
+/* Light-mode compatibility layer:
+   the app currently uses dark-tailwind utility tokens heavily.
+   This transform gives a clean light version immediately across all accounts. */
+html.theme-light #root {
+  filter: invert(1) hue-rotate(180deg) saturate(0.92) brightness(1.04);
+}
+
+/* Keep media content natural after root inversion. */
+html.theme-light img,
+html.theme-light video,
+html.theme-light canvas,
+html.theme-light iframe {
+  filter: invert(1) hue-rotate(180deg) saturate(1.08);
+}
+
 /* Scrollable table wrapper — use on any wide table */
 .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .table-scroll::-webkit-scrollbar { height: 5px; }

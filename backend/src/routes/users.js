@@ -5,6 +5,13 @@ const auth    = require('../middleware/auth');
 const { requireAdmin } = require('../middleware/roles');
 const { v4: uuidv4 }   = require('uuid');
 
+function disallowAssistant(req, res, next) {
+  if (req.user?.role === 'assistant') {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+  return next();
+}
+
 router.get('/me', auth, async (req, res) => {
   try {
     const user = await dbGet('SELECT id, name, email, phone, role FROM users WHERE id = $1', [req.user.id]);
@@ -40,7 +47,7 @@ router.put('/me', auth, async (req, res) => {
   }
 });
 
-router.get('/', auth, requireAdmin, async (req, res) => {
+router.get('/', auth, requireAdmin, disallowAssistant, async (req, res) => {
   try {
     const users = await dbAll(`
       SELECT u.id, u.name, u.email, u.phone, u.role, u.customer_id, u.created_at,
@@ -56,7 +63,7 @@ router.get('/', auth, requireAdmin, async (req, res) => {
   }
 });
 
-router.post('/', auth, requireAdmin, async (req, res) => {
+router.post('/', auth, requireAdmin, disallowAssistant, async (req, res) => {
   try {
     const { name, email, password, role, customer_id } = req.body;
     if (!name?.trim() || !email?.trim() || !password) return res.status(400).json({ error: 'name, email, password required' });
@@ -81,7 +88,7 @@ router.post('/', auth, requireAdmin, async (req, res) => {
   }
 });
 
-router.post('/assistant', auth, requireAdmin, async (req, res) => {
+router.post('/assistant', auth, requireAdmin, disallowAssistant, async (req, res) => {
   try {
     const { name, email, password } = req.body || {};
     if (!name?.trim() || !email?.trim() || !password) {
@@ -107,7 +114,7 @@ router.post('/assistant', auth, requireAdmin, async (req, res) => {
   }
 });
 
-router.put('/:id', auth, requireAdmin, async (req, res) => {
+router.put('/:id', auth, requireAdmin, disallowAssistant, async (req, res) => {
   try {
     const user = await dbGet('SELECT id FROM users WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
     if (!user) return res.status(404).json({ error: 'Not found' });
@@ -138,13 +145,13 @@ router.put('/:id', auth, requireAdmin, async (req, res) => {
   }
 });
 
-router.post('/portal-access', auth, requireAdmin, async (req, res) => {
+router.post('/portal-access', auth, requireAdmin, disallowAssistant, async (req, res) => {
   return res.status(410).json({
     error: 'Customer portal accounts are retired. Send tracking and payment links instead.',
   });
 });
 
-router.delete('/:id', auth, requireAdmin, async (req, res) => {
+router.delete('/:id', auth, requireAdmin, disallowAssistant, async (req, res) => {
   try {
     if (req.params.id === req.user.id) return res.status(400).json({ error: 'Cannot delete your own account' });
     const user = await dbGet('SELECT role FROM users WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);

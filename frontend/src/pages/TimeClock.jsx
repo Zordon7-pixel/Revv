@@ -22,6 +22,20 @@ function fmtHours(h) {
   return hrs > 0 ? `${hrs}h ${min}m` : `${min}m`
 }
 
+function parseTimeToMinutes(value) {
+  const text = String(value || '')
+  const match = text.match(/^([01]\d|2[0-3]):([0-5]\d)(?::[0-5]\d)?$/)
+  if (!match) return null
+  return Number(match[1]) * 60 + Number(match[2])
+}
+
+function shiftCrossesNextDay(shift) {
+  const start = parseTimeToMinutes(shift?.start_time)
+  const end = parseTimeToMinutes(shift?.end_time)
+  if (start == null || end == null) return false
+  return end < start
+}
+
 function LiveTimer({ clockIn }) {
   const [elapsed, setElapsed] = useState('')
   useEffect(() => {
@@ -256,7 +270,12 @@ export default function TimeClock() {
         <div className="bg-indigo-900/20 border border-indigo-700/40 rounded-xl p-4 flex items-center gap-3">
           <Clock size={18} className="text-indigo-400 flex-shrink-0" />
           <div>
-            <div className="text-sm font-semibold text-white">Today's Shift: {todayShift.start_time} — {todayShift.end_time}</div>
+            <div className="text-sm font-semibold text-white">
+              Today's Shift: {todayShift.start_time} — {todayShift.end_time}{shiftCrossesNextDay(todayShift) ? ' (+1d)' : ''}
+            </div>
+            {todayShift.shift_date && todayShift.shift_date !== new Date().toISOString().slice(0, 10) && (
+              <div className="text-[11px] text-cyan-300 mt-0.5">Carryover from previous day</div>
+            )}
             {todayShift.notes && <div className="text-xs text-slate-400 mt-0.5">{todayShift.notes}</div>}
           </div>
         </div>
@@ -344,7 +363,11 @@ export default function TimeClock() {
         {entries.length === 0 && <p className="text-xs text-slate-500 py-4 text-center">No entries yet.</p>}
         <div className="space-y-2">
           {entries.map(e => (
-            <div key={e.id} className="bg-[#0f1117] rounded-xl p-3 flex items-start gap-3">
+            <div
+              key={e.id}
+              onClick={admin ? () => setAdjustEntry(e) : undefined}
+              className={`bg-[#0f1117] rounded-xl p-3 flex items-start gap-3 ${admin ? 'cursor-pointer hover:ring-1 hover:ring-indigo-500/40 transition' : ''}`}
+            >
               <div className="flex-1 min-w-0">
                 {admin && <div className="text-xs font-semibold text-indigo-400 mb-0.5">{e.user?.name}</div>}
                 <div className="text-xs text-white">
@@ -376,10 +399,10 @@ export default function TimeClock() {
               </div>
               {admin && (
                 <div className="flex gap-1 flex-shrink-0">
-                  <button onClick={() => setAdjustEntry(e)} className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-400 hover:bg-indigo-900/20 transition-colors">
+                  <button onClick={(evt) => { evt.stopPropagation(); setAdjustEntry(e) }} className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-400 hover:bg-indigo-900/20 transition-colors">
                     <Edit2 size={14}/>
                   </button>
-                  <button onClick={() => deleteEntry(e.id)} className="p-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-900/20 transition-colors">
+                  <button onClick={(evt) => { evt.stopPropagation(); deleteEntry(e.id) }} className="p-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-900/20 transition-colors">
                     <Trash2 size={14}/>
                   </button>
                 </div>

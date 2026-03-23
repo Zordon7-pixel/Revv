@@ -1,7 +1,7 @@
 const router = require('express').Router();
 const { dbGet, dbAll, dbRun } = require('../db');
 const auth   = require('../middleware/auth');
-const { requireAdmin } = require('../middleware/roles');
+const { requireAssistant } = require('../middleware/roles');
 const { v4: uuidv4 } = require('uuid');
 
 const STATUSES = ['ordered', 'backordered', 'received', 'cancelled'];
@@ -18,7 +18,7 @@ router.get('/ro/:roId', auth, async (req, res) => {
   }
 });
 
-router.get('/all-pending', auth, requireAdmin, async (req, res) => {
+router.get('/all-pending', auth, requireAssistant, async (req, res) => {
   try {
     const parts = await dbAll(`
       SELECT

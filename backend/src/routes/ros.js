@@ -12,6 +12,7 @@ const {
   ensureTrackingToken,
   sendClosedPaidInvoiceEmail,
 } = require('../services/customerBilling');
+const { syncInvoiceForRo } = require('../services/quickbooks');
 const roLimitGuard = require('../middleware/roLimitGuard');
 const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
@@ -152,6 +153,27 @@ function queueStatusSMS(roId, shopId, toStatus) {
       }
     } catch (err) {
       console.error(`[SMS] RO ${roId} → ${toStatus}: unexpected error —`, err.message);
+    }
+  });
+}
+
+function queueQuickBooksSync(roId, shopId) {
+  setImmediate(async () => {
+    try {
+      const qb = await dbGet(
+        `SELECT
+           COALESCE(quickbooks_sync_enabled, FALSE) AS quickbooks_sync_enabled,
+           quickbooks_realm_id,
+           quickbooks_refresh_token
+         FROM shops
+         WHERE id = $1`,
+        [shopId]
+      );
+      if (!qb?.quickbooks_sync_enabled) return;
+      if (!qb.quickbooks_realm_id || !qb.quickbooks_refresh_token) return;
+      await syncInvoiceForRo(shopId, roId);
+    } catch (err) {
+      console.error(`[QuickBooks] Auto-sync failed for RO ${roId}:`, err.message);
     }
   });
 }
@@ -1598,6 +1620,7 @@ router.put('/:id', auth, requireTechnician, async (req, res) => {
       if (updates.status === 'closed') {
         queueClosedReviewEmail(req.params.id).catch(() => {});
         sendClosedPaidInvoiceEmail({ roId: req.params.id, shopId: req.user.shop_id }).catch(() => {});
+        queueQuickBooksSync(req.params.id, req.user.shop_id);
       }
     }
     res.json(await enrichRO(await dbGet('SELECT * FROM repair_orders WHERE id = $1', [req.params.id])));
@@ -1630,23 +1653,51 @@ router.put('/:id/status', auth, requireTechnician, async (req, res) => {
     if (status === 'closed') {
       queueClosedReviewEmail(req.params.id).catch(() => {});
       sendClosedPaidInvoiceEmail({ roId: req.params.id, shopId: req.user.shop_id }).catch(() => {});
+      queueQuickBooksSync(req.params.id, req.user.shop_id);
     }
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-router.patch('/:id/assign', auth, requireAdmin, async (req, res) => {
+router.patch('/:id/assign', auth, requireTechnician, async (req, res) => {
   try {
     const { user_id } = req.body;
     const ro = await dbGet('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
     if (!ro) return res.status(404).json({ error: 'Not found' });
-    if (user_id) {
-      const assigned = await dbGet('SELECT id FROM users WHERE id = $1 AND shop_id = $2', [user_id, req.user.shop_id]);
-      if (!assigned) return res.status(400).json({ error: 'Invalid user_id for this shop' });
+    const nextAssignedTo = String(user_id || '').trim() || null;
+
+    let nextAssignee = null;
+    if (nextAssignedTo) {
+      nextAssignee = await dbGet('SELECT id, name FROM users WHERE id = $1 AND shop_id = $2', [nextAssignedTo, req.user.shop_id]);
+      if (!nextAssignee) return res.status(400).json({ error: 'Invalid user_id for this shop' });
     }
-    await dbRun('UPDATE repair_orders SET assigned_to = $1, updated_at = $2 WHERE id = $3', [user_id || null, new Date().toISOString(), req.params.id]);
-    res.json(await enrichRO(await dbGet('SELECT * FROM repair_orders WHERE id = $1', [req.params.id])));
+
+    const actorRole = String(req.user.role || '').toLowerCase();
+    const actorIsTechRole = ['technician', 'employee', 'staff'].includes(actorRole);
+    const mismatchOverride = actorIsTechRole && !!ro.assigned_to && ro.assigned_to !== req.user.id;
+
+    await dbRun('UPDATE repair_orders SET assigned_to = $1, updated_at = $2 WHERE id = $3', [nextAssignedTo, new Date().toISOString(), req.params.id]);
+    const updated = await dbGet('SELECT * FROM repair_orders WHERE id = $1', [req.params.id]);
+
+    if (mismatchOverride) {
+      try {
+        const [actor, previousAssignee] = await Promise.all([
+          dbGet('SELECT name FROM users WHERE id = $1', [req.user.id]),
+          dbGet('SELECT name FROM users WHERE id = $1', [ro.assigned_to]),
+        ]);
+        const actorName = actor?.name || 'Tech';
+        const previousName = previousAssignee?.name || 'another tech';
+        const nextName = nextAssignee?.name || 'Unassigned';
+        const title = 'Assigned Tech Override Alert';
+        const body = `${actorName} updated technician assignment on RO #${ro.ro_number || 'N/A'} while not being the assigned tech (${previousName}). New assignment: ${nextName}.`;
+        await notifyUsersByRole(req.user.shop_id, ['owner', 'admin'], 'assignment_override', title, body, req.params.id);
+      } catch (notifyErr) {
+        console.error('[Notification] assignment override alert failed:', notifyErr.message);
+      }
+    }
+
+    res.json(await enrichRO(updated));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1749,6 +1800,7 @@ router.patch('/:id', auth, requireTechnician, async (req, res) => {
     if (status === 'closed') {
       queueClosedReviewEmail(req.params.id).catch(() => {});
       sendClosedPaidInvoiceEmail({ roId: req.params.id, shopId: req.user.shop_id }).catch(() => {});
+      queueQuickBooksSync(req.params.id, req.user.shop_id);
     }
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1820,6 +1872,7 @@ router.post('/:id/mark-paid', auth, requireTechnician, async (req, res) => {
     queueStatusEmail(req.params.id, req.user.shop_id, 'closed');
     queueClosedReviewEmail(req.params.id).catch(() => {});
     sendClosedPaidInvoiceEmail({ roId: req.params.id, shopId: req.user.shop_id }).catch(() => {});
+    queueQuickBooksSync(req.params.id, req.user.shop_id);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

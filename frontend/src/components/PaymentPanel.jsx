@@ -140,12 +140,14 @@ export default function PaymentPanel({ roId, totalAmount, onSuccess, onMarkManua
 
           {error && <div className="text-xs text-red-300">{error}</div>}
 
-          <button
-            onClick={onMarkManual}
-            className="w-full sm:w-auto inline-flex items-center justify-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-3 py-2 rounded-lg transition-colors"
-          >
-            Mark as Cash/Check
-          </button>
+          {typeof onMarkManual === 'function' && (
+            <button
+              onClick={onMarkManual}
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-3 py-2 rounded-lg transition-colors"
+            >
+              Mark as Cash/Check
+            </button>
+          )}
         </>
       )}
     </div>

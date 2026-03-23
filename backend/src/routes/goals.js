@@ -3,9 +3,9 @@ const { v4: uuidv4 } = require('uuid');
 const { dbGet, dbRun } = require('../db');
 const auth = require('../middleware/auth');
 
-function requireOwner(req, res, next) {
+function requireAdmin(req, res, next) {
   if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
-  if (req.user.role !== 'owner') return res.status(403).json({ error: 'Owner access required' });
+  if (!['owner', 'admin'].includes(req.user.role)) return res.status(403).json({ error: 'Admin access required' });
   return next();
 }
 
@@ -92,7 +92,7 @@ router.get('/:yearMonth', auth, async (req, res) => {
   }
 });
 
-router.put('/:yearMonth', auth, requireOwner, async (req, res) => {
+router.put('/:yearMonth', auth, requireAdmin, async (req, res) => {
   try {
     const { yearMonth } = req.params;
     const { revenue_goal, ro_goal } = req.body || {};

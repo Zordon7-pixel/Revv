@@ -1,7 +1,7 @@
 const router = require('express').Router();
 const { dbGet, dbAll } = require('../db');
 const auth = require('../middleware/auth');
-const { requireAdmin, requireOwner, requireTechnician } = require('../middleware/roles');
+const { requireAdmin, requireTechnician } = require('../middleware/roles');
 
 function toCsvValue(value) {
   if (value === null || value === undefined) return '';
@@ -96,7 +96,7 @@ router.get('/summary', auth, requireTechnician, requireAdmin, async (req, res) =
   }
 });
 
-router.get('/monthly/:yearMonth', auth, requireTechnician, requireOwner, async (req, res) => {
+router.get('/monthly/:yearMonth', auth, requireTechnician, requireAdmin, async (req, res) => {
   try {
     const { yearMonth } = req.params;
     if (!/^\d{4}-\d{2}$/.test(yearMonth)) {
@@ -155,7 +155,7 @@ router.get('/monthly/:yearMonth', auth, requireTechnician, requireOwner, async (
   }
 });
 
-router.get('/monthly/:yearMonth/csv', auth, requireTechnician, requireOwner, async (req, res) => {
+router.get('/monthly/:yearMonth/csv', auth, requireTechnician, requireAdmin, async (req, res) => {
   try {
     const { yearMonth } = req.params;
     if (!/^\d{4}-\d{2}$/.test(yearMonth)) {

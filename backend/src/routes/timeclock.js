@@ -1,10 +1,17 @@
 const router = require('express').Router();
 const { dbGet, dbAll, dbRun } = require('../db');
 const auth = require('../middleware/auth');
-const { requireAdmin } = require('../middleware/roles');
 const bcrypt = require('bcryptjs');
 const sms = require('../services/sms');
 const { randomUUID } = require('crypto');
+
+function requireOwnerAdminOnly(req, res, next) {
+  if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+  if (!['owner', 'admin'].includes(req.user.role)) {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+  return next();
+}
 
 // Haversine distance in km between two lat/lng points
 function distanceKm(lat1, lon1, lat2, lon2) {
@@ -87,6 +94,29 @@ function awaitPromiseSafe(p) {
   p.catch((err) => {
     console.error('[timeclock] async sms send failed:', err?.message || err);
   });
+}
+
+async function createNotification(shopId, userId, type, title, body, roId = null) {
+  await dbRun(
+    'INSERT INTO notifications (id, shop_id, user_id, type, title, body, ro_id) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+    [randomUUID(), shopId, userId || null, type, title, body || null, roId]
+  );
+}
+
+async function ensureDailyNotification(shopId, userId, type, title, body, dateIso) {
+  const existing = await dbGet(
+    `SELECT id
+     FROM notifications
+     WHERE shop_id = $1
+       AND user_id = $2
+       AND type = $3
+       AND DATE(created_at) = $4
+     LIMIT 1`,
+    [shopId, userId, type, dateIso]
+  );
+  if (existing?.id) return false;
+  await createNotification(shopId, userId, type, title, body);
+  return true;
 }
 
 async function handleClockIn(req, res) {
@@ -195,7 +225,7 @@ router.get('/status', auth, async (req, res) => {
 router.post('/in', auth, handleClockIn);
 router.post('/clock-in', auth, handleClockIn);
 
-router.post('/authorize-early', auth, async (req, res) => {
+router.post('/authorize-early', auth, requireOwnerAdminOnly, async (req, res) => {
   try {
     const { employee_id, admin_password } = req.body || {};
     if (!employee_id || !admin_password) {
@@ -316,7 +346,7 @@ router.get('/entries', auth, async (req, res) => {
   }
 });
 
-router.put('/:id', auth, requireAdmin, async (req, res) => {
+router.put('/:id', auth, requireOwnerAdminOnly, async (req, res) => {
   try {
     const entry = await dbGet('SELECT * FROM time_entries WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
     if (!entry) return res.status(404).json({ error: 'Entry not found' });
@@ -351,7 +381,7 @@ router.put('/:id', auth, requireAdmin, async (req, res) => {
   }
 });
 
-router.delete('/:id', auth, requireAdmin, async (req, res) => {
+router.delete('/:id', auth, requireOwnerAdminOnly, async (req, res) => {
   try {
     await dbRun('DELETE FROM time_entries WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
     res.json({ ok: true });
@@ -461,7 +491,7 @@ router.post('/lunch/end', auth, async (req, res) => {
 
 // --- Notifications (admin) ---
 
-router.get('/notifications', auth, requireAdmin, async (req, res) => {
+router.get('/notifications', auth, requireOwnerAdminOnly, async (req, res) => {
   try {
     const rows = await dbAll(
       'SELECT n.*, u.name as employee_name FROM notifications n LEFT JOIN users u ON u.id = n.user_id WHERE n.shop_id = $1 ORDER BY n.created_at DESC LIMIT 50',
@@ -474,7 +504,7 @@ router.get('/notifications', auth, requireAdmin, async (req, res) => {
   }
 });
 
-router.put('/notifications/:id/read', auth, requireAdmin, async (req, res) => {
+router.put('/notifications/:id/read', auth, requireOwnerAdminOnly, async (req, res) => {
   try {
     await dbRun('UPDATE notifications SET read = TRUE WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
     res.json({ ok: true });
@@ -483,7 +513,7 @@ router.put('/notifications/:id/read', auth, requireAdmin, async (req, res) => {
   }
 });
 
-router.put('/notifications/read-all', auth, requireAdmin, async (req, res) => {
+router.put('/notifications/read-all', auth, requireOwnerAdminOnly, async (req, res) => {
   try {
     await dbRun('UPDATE notifications SET read = TRUE WHERE shop_id = $1', [req.user.shop_id]);
     res.json({ ok: true });
