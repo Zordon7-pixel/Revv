@@ -106,17 +106,13 @@ export function LanguageProvider({ children }) {
         textNode = textWalker.nextNode()
       }
 
-      const elements = root.querySelectorAll('[placeholder], [title], [aria-label], input[value], button[value]')
-      const attrs = ['placeholder', 'title', 'aria-label', 'value']
+      const elements = root.querySelectorAll('[placeholder], [title], [aria-label]')
+      const attrs = ['placeholder', 'title', 'aria-label']
       elements.forEach((el) => {
         if (el.closest('[data-no-auto-i18n="true"]')) return
         const original = originalAttrRef.current.get(el) || {}
         attrs.forEach((attr) => {
           if (!el.hasAttribute(attr)) return
-          if (attr === 'value') {
-            const tag = el.tagName
-            if (tag !== 'INPUT' && tag !== 'BUTTON') return
-          }
           if (original[attr] == null) {
             original[attr] = toEnglishLiteral(el.getAttribute(attr), lang)
           }

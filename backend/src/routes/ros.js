@@ -747,6 +747,126 @@ router.get('/carryover-pending', auth, requireAdmin, async (req, res) => {
   }
 });
 
+router.post('/from-schedule/:scheduleId', auth, requireAdmin, async (req, res) => {
+  try {
+    if (!['owner', 'admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const schedule = await dbGet(
+      `
+        SELECT
+          s.id,
+          s.user_id,
+          s.notes,
+          s.shift_date,
+          u.name AS scheduled_user_name,
+          u.phone AS scheduled_user_phone
+        FROM schedules s
+        LEFT JOIN users u
+          ON u.id = s.user_id
+         AND u.shop_id = s.shop_id
+        WHERE s.id = $1
+          AND s.shop_id = $2
+      `,
+      [req.params.scheduleId, req.user.shop_id]
+    );
+
+    if (!schedule) {
+      return res.status(404).json({ error: 'Schedule entry not found' });
+    }
+
+    const today = new Date().toISOString().split('T')[0];
+    let roId;
+    let roNumber;
+    let attempts = 0;
+
+    while (attempts < 5) {
+      const maxRow = await dbGet(
+        `
+          SELECT COALESCE(
+            MAX(
+              CASE
+                WHEN ro_number ~ '^RO-[0-9]{4}-[0-9]+$' THEN CAST(SPLIT_PART(ro_number, '-', 3) AS INTEGER)
+                ELSE NULL
+              END
+            ),
+            0
+          )::int AS n
+          FROM repair_orders
+          WHERE shop_id = $1
+        `,
+        [req.user.shop_id]
+      );
+
+      const nextNum = (maxRow?.n || 0) + 1;
+      roNumber = `RO-2026-${String(nextNum).padStart(4, '0')}`;
+      roId = uuidv4();
+
+      try {
+        await dbRun(
+          `
+            INSERT INTO repair_orders (
+              id, shop_id, ro_number, status, intake_date, notes, assigned_to
+            )
+            VALUES ($1, $2, $3, 'intake', $4, $5, $6)
+          `,
+          [
+            roId,
+            req.user.shop_id,
+            roNumber,
+            today,
+            schedule.notes || null,
+            schedule.user_id || null,
+          ]
+        );
+        break;
+      } catch (err) {
+        if (err?.code === '23505' || (err?.message && err.message.includes('duplicate key'))) {
+          attempts += 1;
+          continue;
+        }
+        throw err;
+      }
+    }
+
+    if (attempts >= 5) {
+      throw new Error('Failed to generate unique RO number after 5 attempts');
+    }
+
+    const scheduleSummary = [
+      `Created from schedule ${schedule.shift_date || ''}`.trim(),
+      schedule.scheduled_user_name ? `for ${schedule.scheduled_user_name}` : null,
+      schedule.scheduled_user_phone ? `(${schedule.scheduled_user_phone})` : null,
+    ].filter(Boolean).join(' ');
+
+    await dbRun(
+      'INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by, note) VALUES ($1, $2, $3, $4, $5, $6)',
+      [uuidv4(), roId, null, 'intake', req.user.id, scheduleSummary || 'Created from schedule']
+    );
+
+    try {
+      await createNotification(
+        req.user.shop_id,
+        null,
+        'ro_created',
+        'New Repair Order Created',
+        `RO #${roNumber} created from schedule${schedule.scheduled_user_name ? ` for ${schedule.scheduled_user_name}` : ''}`,
+        roId
+      );
+    } catch (notifyErr) {
+      console.error(`[Notification] Failed to send schedule RO notification for RO ${roId}:`, notifyErr.message);
+    }
+
+    const created = await dbGet('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2', [roId, req.user.shop_id]);
+    if (!created) return res.status(404).json({ error: 'Created RO not found' });
+
+    return res.status(201).json(await enrichRO(created));
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 router.put('/:id/revenue-period', auth, requireAdmin, async (req, res) => {
   try {
     const { revenue_period } = req.body || {};
@@ -1845,18 +1965,18 @@ router.post('/:id/mark-paid', auth, requireTechnician, async (req, res) => {
     const now = new Date().toISOString();
     const method = payment_method || 'cash';
 
-    // Update payment received and auto-close RO
+    // Mark payment received only — do NOT auto-close the RO.
+    // Admin/owner can manually close when ready.
     await dbRun(
-      'UPDATE repair_orders SET payment_received = 1, payment_received_at = $1, payment_method = $2, payment_status = $3, status = $4, updated_at = $5 WHERE id = $6',
-      [now, method, 'succeeded', 'closed', now, req.params.id]
+      'UPDATE repair_orders SET payment_received = 1, payment_received_at = $1, payment_method = $2, payment_status = $3, updated_at = $4 WHERE id = $5',
+      [now, method, 'succeeded', now, req.params.id]
     );
 
-    // Log the status change
+    // Log payment event (no status change)
     await dbRun(
       'INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by, note) VALUES ($1, $2, $3, $4, $5, $6)',
-      [uuidv4(), req.params.id, ro.status, 'closed', req.user.id, `Payment received (${method})`]
+      [uuidv4(), req.params.id, ro.status, ro.status, req.user.id, `Payment received (${method})`]
     );
-    notifyStatusChange(req.user.shop_id, { ...ro, id: req.params.id }, 'closed');
     notifyUsersByRole(
       req.user.shop_id,
       ['owner'],
@@ -1869,10 +1989,11 @@ router.post('/:id/mark-paid', auth, requireTechnician, async (req, res) => {
     const updatedRO = await dbGet('SELECT * FROM repair_orders WHERE id = $1', [req.params.id]);
     res.json(await enrichRO(updatedRO));
 
-    queueStatusEmail(req.params.id, req.user.shop_id, 'closed');
-    queueClosedReviewEmail(req.params.id).catch(() => {});
+    // Send paid invoice email immediately on payment
     sendClosedPaidInvoiceEmail({ roId: req.params.id, shopId: req.user.shop_id }).catch(() => {});
+    // QB sync on payment event
     queueQuickBooksSync(req.params.id, req.user.shop_id);
+    // Review email and closed-status email fire only when RO is actually closed (via status change)
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

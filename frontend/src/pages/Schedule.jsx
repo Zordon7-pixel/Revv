@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { ChevronLeft, ChevronRight, Plus, Trash2, X, Save, CheckCircle } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import api from '../lib/api'
 import { isAdmin, isAssistant } from '../lib/auth'
 
@@ -215,6 +216,7 @@ function EarlyAuthModal({ employee, onClose, onSuccess }) {
 }
 
 export default function Schedule() {
+  const navigate = useNavigate()
   const [viewMode, setViewMode] = useState('week') // 'week' or 'month'
   const [monday, setMonday] = useState(getMonday())
   const [currentMonth, setCurrentMonth] = useState(new Date())
@@ -225,7 +227,10 @@ export default function Schedule() {
   const [editingShift, setEditingShift] = useState(null)
   const [authModalEmployee, setAuthModalEmployee] = useState(null)
   const [authorizedToday, setAuthorizedToday] = useState({})
+  const [creatingRoShiftId, setCreatingRoShiftId] = useState('')
+  const [createRoError, setCreateRoError] = useState('')
   const canManage = isAdmin() || isAssistant()
+  const canCreateRo = isAdmin()
   const canAuthorizeEarly = isAdmin()
 
   const weekDates = Array.from({ length: 7 }, (_, i) => {
@@ -331,6 +336,12 @@ export default function Schedule() {
     loadAuthStatus()
   }, [canAuthorizeEarly, employees, monday])
 
+  useEffect(() => {
+    if (!createRoError) return undefined
+    const timeout = window.setTimeout(() => setCreateRoError(''), 3500)
+    return () => window.clearTimeout(timeout)
+  }, [createRoError])
+
   function prevWeek() { 
     const d = new Date(monday); 
     d.setDate(d.getDate()-7); 
@@ -356,6 +367,21 @@ export default function Schedule() {
     if (!confirm('Remove this shift?')) return
     await api.delete(`/schedule/${id}`)
     load()
+  }
+
+  async function createRoFromShift(shiftId) {
+    if (!canCreateRo || !shiftId || creatingRoShiftId) return
+    setCreatingRoShiftId(shiftId)
+    setCreateRoError('')
+    try {
+      const { data } = await api.post(`/ros/from-schedule/${shiftId}`)
+      if (!data?.id) throw new Error('New RO id missing from response')
+      navigate(`/ros/${data.id}`)
+    } catch (e) {
+      setCreateRoError(e?.response?.data?.error || 'Could not create RO from schedule')
+    } finally {
+      setCreatingRoShiftId('')
+    }
   }
 
   function openAdd(date = null, user_id = null) {
@@ -428,6 +454,12 @@ export default function Schedule() {
         }
       </div>
 
+      {createRoError && (
+        <div className="fixed right-4 top-4 z-[90] max-w-xs rounded-lg border border-red-500/40 bg-red-900/85 px-3 py-2 text-xs text-red-100 shadow-lg">
+          {createRoError}
+        </div>
+      )}
+
       {canManage && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
           <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-3">
@@ -494,6 +526,19 @@ export default function Schedule() {
                       <div className="text-[9px] text-cyan-300">Carryover from previous day</div>
                     )}
                     {s.notes && <div className="text-[9px] text-slate-500 truncate mt-0.5">{s.notes}</div>}
+                    {canCreateRo && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          createRoFromShift(s.id)
+                        }}
+                        disabled={creatingRoShiftId === s.id}
+                        className="mt-1 rounded-md border border-emerald-600/40 bg-emerald-900/25 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-300 hover:bg-emerald-900/40 disabled:opacity-60"
+                      >
+                        {creatingRoShiftId === s.id ? 'Creating…' : 'Create RO'}
+                      </button>
+                    )}
                     {canManage && (
                       <button onClick={(e) => { e.stopPropagation(); deleteShift(s.id) }}
                         className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 p-0.5 rounded text-slate-500 hover:text-red-400 transition-all">
@@ -548,18 +593,35 @@ export default function Schedule() {
                 </div>
                 <div className="space-y-0.5">
                   {dayShifts.slice(0, 2).map(s => (
-                    <button
+                    <div
                       key={`${s.id}-${isoDate(date)}`}
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        openEdit(s)
-                      }}
-                      title={shiftTimeLabel(s)}
-                      className={`w-full text-left bg-indigo-900/30 border border-indigo-700/40 rounded px-1.5 py-0.5 ${canManage ? 'hover:border-indigo-400/70 hover:bg-indigo-900/40 transition-colors' : ''}`}
+                      className="w-full rounded border border-indigo-700/40 bg-indigo-900/30 px-1.5 py-0.5"
                     >
-                      <div className="text-[8px] font-semibold text-indigo-300 truncate">{s.user?.name?.split(' ')[0]}</div>
-                    </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          openEdit(s)
+                        }}
+                        title={shiftTimeLabel(s)}
+                        className={`w-full text-left ${canManage ? 'hover:text-indigo-100 transition-colors' : ''}`}
+                      >
+                        <div className="text-[8px] font-semibold text-indigo-300 truncate">{s.user?.name?.split(' ')[0]}</div>
+                      </button>
+                      {canCreateRo && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            createRoFromShift(s.id)
+                          }}
+                          disabled={creatingRoShiftId === s.id}
+                          className="mt-0.5 text-[8px] font-semibold text-emerald-300 hover:text-emerald-200 disabled:opacity-60"
+                        >
+                          {creatingRoShiftId === s.id ? 'Creating…' : 'Create RO'}
+                        </button>
+                      )}
+                    </div>
                   ))}
                   {dayShifts.length > 2 && (
                     <div className="text-[8px] text-slate-500 text-center">+{dayShifts.length - 2} more</div>

@@ -5,6 +5,13 @@ const { requireAdmin, requireTechnician } = require('../middleware/roles');
 
 const SECTIONS = new Set(['ros', 'customers', 'vehicles', 'timeclock', 'all']);
 
+function disallowAssistant(req, res, next) {
+  if (req.user?.role === 'assistant') {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+  return next();
+}
+
 async function resetRos(shopId) {
   await dbRun(
     `DELETE FROM ro_photos
@@ -108,7 +115,7 @@ router.patch('/', auth, requireTechnician, async (req, res) => {
   }
 });
 
-router.post('/reset/:section', auth, requireAdmin, async (req, res) => {
+router.post('/reset/:section', auth, requireAdmin, disallowAssistant, async (req, res) => {
   try {
     const { section } = req.params;
     if (!SECTIONS.has(section)) {

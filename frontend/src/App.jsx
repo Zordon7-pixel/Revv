@@ -154,7 +154,7 @@ export default function App() {
               <Route path="team" element={<AdminRoute><Users /></AdminRoute>} />
               <Route path="users" element={<AdminRoute><Users /></AdminRoute>} />
               <Route path="settings" element={<OwnerRoute><Settings /></OwnerRoute>} />
-              <Route path="adas" element={<ADASCalibration />} />
+              <Route path="adas" element={<ManagementRoute><ADASCalibration /></ManagementRoute>} />
               <Route path="vehicle-diagnostics" element={<VehicleDiagnostics />} />
               <Route path="estimate-requests" element={<ManagementRoute><EstimateRequests /></ManagementRoute>} />
               <Route path="job-costing" element={<ManagementRoute><JobCosting /></ManagementRoute>} />

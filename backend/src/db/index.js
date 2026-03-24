@@ -225,7 +225,7 @@ async function initDb() {
       is_late SMALLINT DEFAULT 0,
       late_minutes INTEGER DEFAULT 0,
       unscheduled_approved_by TEXT,
-      unscheduled_approved_at TEXT,
+      unscheduled_approved_at TIMESTAMPTZ,
       total_hours REAL,
       adjusted_by TEXT,
       admin_note TEXT,

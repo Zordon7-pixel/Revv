@@ -165,7 +165,8 @@ export default function RODetail() {
   const userIsAdmin = isAdmin()
   const userIsEmployee = isEmployee()
   const userIsAssistant = isAssistant()
-  const canEditRo = userIsEmployee || userIsAssistant
+  // Admin and assistant can always edit (including closed ROs). Employees can edit open ROs only.
+  const canEditRo = userIsAdmin || userIsAssistant || userIsEmployee
   const currentUser = getTokenPayload()
   const currentUserId = currentUser?.id || null
   const currentUserRole = String(currentUser?.role || '').toLowerCase()
@@ -862,7 +863,7 @@ export default function RODetail() {
                 <Mail size={12} /> {sendingForApproval ? 'Generating Link...' : 'Send for Approval'}
               </button>
             )}
-            {ro.status !== 'closed' && !ro.payment_received && canMarkPaymentFromRo && (
+            {!ro.payment_received && canMarkPaymentFromRo && (
               <button onClick={() => setShowMarkPaidModal(true)} className="w-full sm:w-auto flex items-center justify-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
                 <DollarSign size={12} /> {t('ro.paymentReceived')}
               </button>

@@ -12,6 +12,13 @@ const PLAN_BY_PRICE_ID = {
   [process.env.STRIPE_PRICE_ID_AGENCY]: 'agency',
 };
 
+function disallowAssistant(req, res, next) {
+  if (req.user?.role === 'assistant') {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+  return next();
+}
+
 function normalizeRequestedPlan(input) {
   const value = String(input || '').trim().toLowerCase();
   if (value === 'pro' || value === 'tier2' || value === '2') return 'pro';
@@ -87,7 +94,7 @@ router.get('/status', auth, requireAdmin, async (req, res) => {
   }
 });
 
-router.post('/checkout', auth, requireAdmin, async (req, res) => {
+router.post('/checkout', auth, requireAdmin, disallowAssistant, async (req, res) => {
   try {
     const plan = normalizeRequestedPlan(req.body?.plan || req.body?.tier);
     if (!plan) {
@@ -143,7 +150,7 @@ router.post('/checkout', auth, requireAdmin, async (req, res) => {
   }
 });
 
-router.post('/portal', auth, requireAdmin, async (req, res) => {
+router.post('/portal', auth, requireAdmin, disallowAssistant, async (req, res) => {
   try {
     const stripe = getStripeClient();
     if (!stripe) return res.status(503).json({ error: 'Stripe is not configured' });
