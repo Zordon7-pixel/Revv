@@ -1826,7 +1826,7 @@ router.patch('/:id', auth, requireTechnician, async (req, res) => {
     if (!status) {
       const hasVinUpdate = Object.prototype.hasOwnProperty.call(otherFields, 'vin');
       const { vin, ...nonVinFields } = otherFields;
-      const ALLOWED_PATCH_FIELDS = ['tech_notes','damaged_panels','claim_status','parts_cost','labor_cost','sublet_cost','tax','total','notes','estimated_delivery'];
+      const ALLOWED_PATCH_FIELDS = ['tech_notes','damaged_panels','claim_status','parts_cost','labor_cost','sublet_cost','tax','total','notes','estimated_delivery','actual_delivery','pickup_type'];
       const updates = Object.fromEntries(Object.entries(nonVinFields).filter(([k]) => ALLOWED_PATCH_FIELDS.includes(k)));
       if (!hasVinUpdate && Object.keys(updates).length === 0) return res.status(400).json({ error: 'No valid fields to update' });
 

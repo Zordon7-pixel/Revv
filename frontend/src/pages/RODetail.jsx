@@ -1202,6 +1202,57 @@ export default function RODetail() {
         />
       )}
 
+      {(ro.status === 'delivery' || ro.status === 'closed') && (
+        <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
+          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">Delivery Info</h2>
+          <div className="flex flex-col sm:flex-row gap-4">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-slate-500">Date Delivered</label>
+              {canEditRo ? (
+                <input
+                  type="date"
+                  value={ro.actual_delivery || ''}
+                  onChange={async (e) => {
+                    await api.patch(`/ros/${id}`, { actual_delivery: e.target.value || null })
+                    load()
+                  }}
+                  className="bg-[#0f1322] border border-[#2a2d3e] text-slate-200 text-xs rounded-lg px-3 py-1.5 focus:outline-none focus:border-indigo-500"
+                />
+              ) : (
+                <span className="text-sm text-slate-200">{ro.actual_delivery ? new Date(ro.actual_delivery + 'T12:00:00').toLocaleDateString() : '—'}</span>
+              )}
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-slate-500">Picked Up By</label>
+              <div className="flex gap-1">
+                <button
+                  disabled={!canEditRo}
+                  onClick={async () => {
+                    if (!canEditRo) return
+                    await api.patch(`/ros/${id}`, { pickup_type: 'customer' })
+                    load()
+                  }}
+                  className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors ${(ro.pickup_type || 'customer') === 'customer' ? 'bg-indigo-600 text-white' : 'bg-[#2a2d3e] text-slate-400 hover:bg-[#3a3d4e]'} ${!canEditRo ? 'cursor-default' : ''}`}
+                >
+                  Customer
+                </button>
+                <button
+                  disabled={!canEditRo}
+                  onClick={async () => {
+                    if (!canEditRo) return
+                    await api.patch(`/ros/${id}`, { pickup_type: 'insurance' })
+                    load()
+                  }}
+                  className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors ${ro.pickup_type === 'insurance' ? 'bg-blue-600 text-white' : 'bg-[#2a2d3e] text-slate-400 hover:bg-[#3a3d4e]'} ${!canEditRo ? 'cursor-default' : ''}`}
+                >
+                  Insurance
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide">Digital Inspection</h2>

@@ -114,6 +114,7 @@ async function initDb() {
       intake_date TEXT,
       estimated_delivery TEXT,
       actual_delivery TEXT,
+      pickup_type TEXT DEFAULT 'customer',
       parts_cost REAL DEFAULT 0,
       labor_cost REAL DEFAULT 0,
       sublet_cost REAL DEFAULT 0,
@@ -358,6 +359,7 @@ async function initDb() {
   await pool.query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS revenue_period VARCHAR(8) DEFAULT 'current'`);
   await pool.query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS carried_over BOOLEAN DEFAULT FALSE`);
   await pool.query(`ALTER TABLE repair_orders ALTER COLUMN billing_month SET DEFAULT TO_CHAR(NOW(), 'YYYY-MM')`);
+  await pool.query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS pickup_type TEXT DEFAULT 'customer'`);
   await pool.query(`ALTER TABLE repair_orders ALTER COLUMN revenue_period SET DEFAULT 'current'`);
   await pool.query(`ALTER TABLE repair_orders ALTER COLUMN carried_over SET DEFAULT FALSE`);
   await pool.query(`UPDATE repair_orders SET billing_month = TO_CHAR(created_at, 'YYYY-MM') WHERE billing_month IS NULL`);
