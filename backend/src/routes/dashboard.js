@@ -40,8 +40,8 @@ router.get('/weekly', auth, requireTechnician, async (req, res) => {
        FROM ro_payments
        WHERE shop_id = $1
          AND status = 'succeeded'
-         AND paid_at >= DATE_TRUNC('week', NOW())
-         AND paid_at < DATE_TRUNC('week', NOW()) + INTERVAL '7 days'`,
+         AND paid_at::timestamptz >= DATE_TRUNC('week', NOW())
+         AND paid_at::timestamptz < DATE_TRUNC('week', NOW()) + INTERVAL '7 days'`,
       [shopId]
     );
 
