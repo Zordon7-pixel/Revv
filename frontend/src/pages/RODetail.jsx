@@ -161,6 +161,7 @@ export default function RODetail() {
   const [vehicleHistory, setVehicleHistory] = useState([])
   const [vehicleHistoryLoading, setVehicleHistoryLoading] = useState(false)
   const [vehicleHistoryError, setVehicleHistoryError] = useState('')
+  const [inlineEdit, setInlineEdit] = useState({ field: null, value: '' })
 
   const userIsAdmin = isAdmin()
   const userIsEmployee = isEmployee()
@@ -764,9 +765,10 @@ export default function RODetail() {
   if (!ro) return <div className="flex items-center justify-center h-64 text-slate-500">{t('common.loading')}</div>
 
   const currentIdx = STAGES.indexOf(ro.status)
-  const isTerminalStatus = ['closed', 'total_loss', 'siu_hold'].includes(ro.status)
+  const closedRoAdminOverride = userIsAdmin && ro.status === 'closed'
+  const isTerminalStatus = ['total_loss', 'siu_hold'].includes(ro.status) || (ro.status === 'closed' && !userIsAdmin)
   const canStepBack = currentIdx > 0 && !isTerminalStatus
-  const canAdvance = currentIdx >= 0 && currentIdx < STAGES.length - 1 && !userIsAssistant
+  const canAdvance = currentIdx >= 0 && currentIdx < STAGES.indexOf('delivery') && !userIsAssistant && !(ro.status === 'closed' && !userIsAdmin)
   const paymentStatus = normalizePaymentStatus(ro.payment_status, ro.payment_received)
   const paymentAmount = Number(ro.total || ro.parts_cost || 0)
   const canMarkPaymentFromRo = userIsAdmin && !userIsAssistant
@@ -827,6 +829,16 @@ export default function RODetail() {
     setQuickNoteText('')
   }
 
+  async function saveInlineField(fieldKey, value) {
+    try {
+      const { data } = await api.patch(`/ros/${id}`, { [fieldKey]: value })
+      setRo(data)
+    } catch (err) {
+      console.error('[RODetail] Inline field save failed:', err.message)
+    }
+    setInlineEdit({ field: null, value: '' })
+  }
+
   async function removeQuickNote(idx) {
     if (userIsAssistant) return
     const next = noteItems.filter((_, i) => i !== idx)
@@ -854,6 +866,9 @@ export default function RODetail() {
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <span className={`text-xs font-bold px-2.5 py-1 rounded-lg border border-[#334155] bg-[#0f1322] ${daysColor}`}>{daysIn}d in shop</span>
+            {ro.status === 'closed' && (
+              <span className="flex items-center gap-1.5 text-slate-300 text-xs font-bold bg-slate-700/60 border border-slate-600 px-3 py-1.5 rounded-lg tracking-wide">TICKET CLOSED</span>
+            )}
             {!hideHeaderFinancialForTech && <StatusBadge status={ro.status} />}
             {!hideHeaderFinancialForTech && <PaymentStatusBadge status={paymentStatus} paymentReceived={ro.payment_received} />}
             {ro.payment_received === 1 && (
@@ -888,6 +903,18 @@ export default function RODetail() {
             {canAdvance && (
               <button onClick={advance} className="w-full sm:w-auto flex items-center justify-center gap-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
                 → {STATUS_LABELS[STAGES[currentIdx+1]]}
+              </button>
+            )}
+            {ro.status === 'delivery' && !userIsAssistant && (
+              <button
+                onClick={async () => {
+                  if (!window.confirm('Close this ticket and mark vehicle as delivered?')) return
+                  await api.put(`/ros/${id}/status`, { status: 'closed' })
+                  load()
+                }}
+                className="w-full sm:w-auto flex items-center justify-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
+              >
+                <CheckCircle size={12} /> Mark Delivered &amp; Close Ticket
               </button>
             )}
             <button onClick={() => window.open(`/invoice/${id}`, '_blank')}
@@ -1131,22 +1158,37 @@ export default function RODetail() {
       {/* Progress */}
       <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
         <div className="overflow-x-auto pb-1">
-          <div className="min-w-[640px]">
-            <div className="grid grid-cols-8 gap-1 mb-2">
-              {STAGES.slice(0, -1).map((s, i) => (
-                <div key={s} className="h-2 rounded-full" style={{ background: i <= currentIdx ? STATUS_COLORS[s] : '#2a2d3e' }} />
-              ))}
-            </div>
-            <div className="grid grid-cols-8 gap-1">
-              {STAGES.slice(0, -1).map((s, i) => (
-                <span
-                  key={`${s}-label`}
-                  className={`text-[10px] text-center ${i <= currentIdx ? 'text-slate-300' : 'text-slate-600'}`}
+          <div className="min-w-[640px] flex items-start justify-between gap-1">
+            {STAGES.slice(0, -1).map((s, i) => {
+              const isActive = i === currentIdx
+              const isComplete = i < currentIdx
+              const isFuture = i > currentIdx
+              const canClick = !userIsAssistant && s !== ro.status && !(ro.status === 'closed' && !userIsAdmin)
+              return (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => {
+                    if (!canClick) return
+                    api.put(`/ros/${id}/status`, { status: s }).then(() => load())
+                  }}
+                  disabled={!canClick}
+                  className={`flex flex-col items-center gap-1.5 flex-1 min-w-0 group ${canClick ? 'cursor-pointer' : 'cursor-default'}`}
                 >
-                  {STATUS_LABELS[s] || s}
-                </span>
-              ))}
-            </div>
+                  <div
+                    className="w-5 h-5 rounded-full flex-shrink-0 transition-all"
+                    style={{
+                      background: isActive || isComplete ? STATUS_COLORS[s] : '#2a2d3e',
+                      boxShadow: isActive ? `0 0 0 2px white` : undefined,
+                    }}
+                  />
+                  <span className={`text-[9px] text-center leading-tight ${isActive ? 'text-white font-semibold' : isFuture ? 'text-slate-600' : 'text-slate-400'}`}>
+                    {STATUS_LABELS[s] || s}
+                  </span>
+                  {isActive && <span className="text-[8px] text-slate-500 text-center leading-tight">You are here</span>}
+                </button>
+              )
+            })}
           </div>
         </div>
       </div>
@@ -1285,36 +1327,89 @@ export default function RODetail() {
                     placeholder="Model"
                   />
                 </div>
+              ) : inlineEdit.field === 'vehicle_ymm' ? (
+                <div className="flex items-center gap-1">
+                  <input autoFocus value={inlineEdit.value} onChange={e => setInlineEdit(v => ({ ...v, value: e.target.value }))} onKeyDown={e => { if (e.key === 'Enter') { const parts = inlineEdit.value.trim().split(/\s+/); api.patch(`/ros/${id}`, { vehicle_year: parts[0]||'', vehicle_make: parts[1]||'', vehicle_model: parts.slice(2).join(' ')||'' }).then(r => { setRo(r.data); setInlineEdit({ field: null, value: '' }) }).catch(err => { console.error('[RODetail] inline save:', err.message); setInlineEdit({ field: null, value: '' }) }) } else if (e.key === 'Escape') setInlineEdit({ field: null, value: '' }) }} className="bg-[#0f1117] border border-[#2a2d3e] rounded px-2 py-0.5 text-xs text-white focus:outline-none focus:border-indigo-500 w-48" placeholder="Year Make Model" />
+                  <button type="button" onClick={() => { const parts = inlineEdit.value.trim().split(/\s+/); api.patch(`/ros/${id}`, { vehicle_year: parts[0]||'', vehicle_make: parts[1]||'', vehicle_model: parts.slice(2).join(' ')||'' }).then(r => { setRo(r.data); setInlineEdit({ field: null, value: '' }) }).catch(err => { console.error('[RODetail] inline save:', err.message); setInlineEdit({ field: null, value: '' }) }) }} className="text-emerald-400 hover:text-emerald-300"><CheckCircle size={13} /></button>
+                  <button type="button" onClick={() => setInlineEdit({ field: null, value: '' })} className="text-slate-500 hover:text-red-400"><X size={13} /></button>
+                </div>
               ) : (
-                <span className="text-white font-medium capitalize">{[ro.vehicle?.year, ro.vehicle?.make, ro.vehicle?.model].filter(Boolean).join(' ') || '—'}</span>
+                <span className="text-white font-medium capitalize flex items-center gap-1.5">
+                  {[ro.vehicle?.year, ro.vehicle?.make, ro.vehicle?.model].filter(Boolean).join(' ') || '—'}
+                  {canEditRo && !editing && <button type="button" onClick={() => setInlineEdit({ field: 'vehicle_ymm', value: [ro.vehicle?.year, ro.vehicle?.make, ro.vehicle?.model].filter(Boolean).join(' ') })} className="text-slate-600 hover:text-slate-300 ml-0.5"><Pencil size={10} /></button>}
+                </span>
               )}
             </div>
             <div className="flex justify-between text-xs gap-3">
               <span className="text-slate-500">Color</span>
               {editing
                 ? <input value={form.vehicle_color || ''} onChange={e => set('vehicle_color', e.target.value)} className="bg-[#0f1117] border border-[#2a2d3e] rounded px-2 py-0.5 text-xs text-white focus:outline-none focus:border-indigo-500 w-52 max-w-full" placeholder="Color" />
-                : <span className="text-white font-medium capitalize">{ro.vehicle?.color || '—'}</span>
+                : inlineEdit.field === 'vehicle_color' ? (
+                  <div className="flex items-center gap-1">
+                    <input autoFocus value={inlineEdit.value} onChange={e => setInlineEdit(v => ({ ...v, value: e.target.value }))} onKeyDown={e => { if (e.key === 'Enter') saveInlineField('vehicle_color', inlineEdit.value); else if (e.key === 'Escape') setInlineEdit({ field: null, value: '' }) }} className="bg-[#0f1117] border border-[#2a2d3e] rounded px-2 py-0.5 text-xs text-white focus:outline-none focus:border-indigo-500 w-40" placeholder="Color" />
+                    <button type="button" onClick={() => saveInlineField('vehicle_color', inlineEdit.value)} className="text-emerald-400 hover:text-emerald-300"><CheckCircle size={13} /></button>
+                    <button type="button" onClick={() => setInlineEdit({ field: null, value: '' })} className="text-slate-500 hover:text-red-400"><X size={13} /></button>
+                  </div>
+                ) : (
+                  <span className="text-white font-medium capitalize flex items-center gap-1.5">
+                    {ro.vehicle?.color || '—'}
+                    {canEditRo && !editing && <button type="button" onClick={() => setInlineEdit({ field: 'vehicle_color', value: ro.vehicle?.color || '' })} className="text-slate-600 hover:text-slate-300 ml-0.5"><Pencil size={10} /></button>}
+                  </span>
+                )
               }
             </div>
             <div className="flex justify-between text-xs gap-3">
               <span className="text-slate-500">Plate</span>
               {editing
                 ? <input value={form.vehicle_plate || ''} onChange={e => set('vehicle_plate', e.target.value)} className="bg-[#0f1117] border border-[#2a2d3e] rounded px-2 py-0.5 text-xs text-white focus:outline-none focus:border-indigo-500 w-52 max-w-full" placeholder="Plate" />
-                : <span className="text-white font-medium">{ro.vehicle?.plate || '—'}</span>
+                : inlineEdit.field === 'vehicle_plate' ? (
+                  <div className="flex items-center gap-1">
+                    <input autoFocus value={inlineEdit.value} onChange={e => setInlineEdit(v => ({ ...v, value: e.target.value }))} onKeyDown={e => { if (e.key === 'Enter') saveInlineField('vehicle_plate', inlineEdit.value); else if (e.key === 'Escape') setInlineEdit({ field: null, value: '' }) }} className="bg-[#0f1117] border border-[#2a2d3e] rounded px-2 py-0.5 text-xs text-white focus:outline-none focus:border-indigo-500 w-40" placeholder="Plate" />
+                    <button type="button" onClick={() => saveInlineField('vehicle_plate', inlineEdit.value)} className="text-emerald-400 hover:text-emerald-300"><CheckCircle size={13} /></button>
+                    <button type="button" onClick={() => setInlineEdit({ field: null, value: '' })} className="text-slate-500 hover:text-red-400"><X size={13} /></button>
+                  </div>
+                ) : (
+                  <span className="text-white font-medium flex items-center gap-1.5">
+                    {ro.vehicle?.plate || '—'}
+                    {canEditRo && !editing && <button type="button" onClick={() => setInlineEdit({ field: 'vehicle_plate', value: ro.vehicle?.plate || '' })} className="text-slate-600 hover:text-slate-300 ml-0.5"><Pencil size={10} /></button>}
+                  </span>
+                )
               }
             </div>
             <div className="flex justify-between text-xs gap-3">
               <span className="text-slate-500">Mileage</span>
               {editing
                 ? <input type="number" min="0" value={form.vehicle_mileage ?? ''} onChange={e => set('vehicle_mileage', e.target.value)} className="bg-[#0f1117] border border-[#2a2d3e] rounded px-2 py-0.5 text-xs text-white focus:outline-none focus:border-indigo-500 w-40 max-w-full" placeholder="Mileage" />
-                : <span className="text-white font-medium">{ro.vehicle?.mileage ? Number(ro.vehicle.mileage).toLocaleString() : '—'}</span>
+                : inlineEdit.field === 'vehicle_mileage' ? (
+                  <div className="flex items-center gap-1">
+                    <input autoFocus type="number" min="0" value={inlineEdit.value} onChange={e => setInlineEdit(v => ({ ...v, value: e.target.value }))} onKeyDown={e => { if (e.key === 'Enter') saveInlineField('vehicle_mileage', inlineEdit.value); else if (e.key === 'Escape') setInlineEdit({ field: null, value: '' }) }} className="bg-[#0f1117] border border-[#2a2d3e] rounded px-2 py-0.5 text-xs text-white focus:outline-none focus:border-indigo-500 w-32" placeholder="Mileage" />
+                    <button type="button" onClick={() => saveInlineField('vehicle_mileage', inlineEdit.value)} className="text-emerald-400 hover:text-emerald-300"><CheckCircle size={13} /></button>
+                    <button type="button" onClick={() => setInlineEdit({ field: null, value: '' })} className="text-slate-500 hover:text-red-400"><X size={13} /></button>
+                  </div>
+                ) : (
+                  <span className="text-white font-medium flex items-center gap-1.5">
+                    {ro.vehicle?.mileage ? Number(ro.vehicle.mileage).toLocaleString() : '—'}
+                    {canEditRo && !editing && <button type="button" onClick={() => setInlineEdit({ field: 'vehicle_mileage', value: ro.vehicle?.mileage ?? '' })} className="text-slate-600 hover:text-slate-300 ml-0.5"><Pencil size={10} /></button>}
+                  </span>
+                )
               }
             </div>
             <div className="flex justify-between text-xs">
               <span className="text-slate-500">{t('common.vin')}</span>
               {editing
                 ? <input value={form.vin || ''} onChange={e => set('vin', e.target.value)} className="bg-[#0f1117] border border-[#2a2d3e] rounded px-2 py-0.5 text-xs text-white focus:outline-none focus:border-indigo-500 w-52 max-w-full" placeholder="VIN" />
-                : <span className="text-white font-medium">{ro.vehicle?.vin || '—'}</span>
+                : inlineEdit.field === 'vehicle_vin' ? (
+                  <div className="flex items-center gap-1">
+                    <input autoFocus value={inlineEdit.value} onChange={e => setInlineEdit(v => ({ ...v, value: e.target.value }))} onKeyDown={e => { if (e.key === 'Enter') saveInlineField('vin', inlineEdit.value); else if (e.key === 'Escape') setInlineEdit({ field: null, value: '' }) }} className="bg-[#0f1117] border border-[#2a2d3e] rounded px-2 py-0.5 text-xs text-white focus:outline-none focus:border-indigo-500 w-52" placeholder="VIN" />
+                    <button type="button" onClick={() => saveInlineField('vin', inlineEdit.value)} className="text-emerald-400 hover:text-emerald-300"><CheckCircle size={13} /></button>
+                    <button type="button" onClick={() => setInlineEdit({ field: null, value: '' })} className="text-slate-500 hover:text-red-400"><X size={13} /></button>
+                  </div>
+                ) : (
+                  <span className="text-white font-medium flex items-center gap-1.5">
+                    {ro.vehicle?.vin || '—'}
+                    {canEditRo && !editing && <button type="button" onClick={() => setInlineEdit({ field: 'vehicle_vin', value: ro.vehicle?.vin || '' })} className="text-slate-600 hover:text-slate-300 ml-0.5"><Pencil size={10} /></button>}
+                  </span>
+                )
               }
             </div>
             <div className="flex justify-between text-xs">

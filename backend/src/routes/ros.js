@@ -1888,6 +1888,13 @@ router.patch('/:id', auth, requireTechnician, async (req, res) => {
       return res.status(400).json({ error: 'This vehicle is a total loss. Only closing is permitted.' });
     }
 
+    if (ro.status === 'closed' && status !== 'closed') {
+      const actorRoleCheck = String(req.user.role || '').toLowerCase();
+      if (!['owner', 'admin'].includes(actorRoleCheck)) {
+        return res.status(403).json({ error: 'Only admins can reopen a closed RO' });
+      }
+    }
+
     // Payment gate: prevent closing without payment
     if (status === 'closed') {
       const paymentCheck = await dbGet('SELECT payment_received FROM repair_orders WHERE id = $1', [req.params.id]);
