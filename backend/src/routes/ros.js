@@ -633,7 +633,7 @@ router.get('/', auth, async (req, res) => {
       payment_type = '',
     } = req.query || {};
     const params = [req.user.shop_id];
-    const where = ['ro.shop_id = $1'];
+    const where = ['ro.shop_id = $1::uuid'];
 
     const normalizedSearch = String(search || '').trim();
     const normalizedStatus = String(status || '').trim().toLowerCase();
@@ -1036,7 +1036,7 @@ async function bulkStatusUpdateHandler(req, res) {
     await dbRun(
       `UPDATE repair_orders
        SET status = $1, updated_at = NOW()
-       WHERE shop_id = $2
+       WHERE shop_id = $2::uuid
          AND id = ANY($3::uuid[])`,
       [normalizedStatus, req.user.shop_id, ids]
     );
