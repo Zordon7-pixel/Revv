@@ -417,6 +417,15 @@ export default function RODetail() {
     }
   }
 
+  async function goBack() {
+    const idx = STAGES.indexOf(ro.status)
+    if (idx > 0) {
+      if (!window.confirm(`Move back to "${STATUS_LABELS[STAGES[idx-1]]}"?`)) return
+      await api.put(`/ros/${id}/status`, { status: STAGES[idx-1] })
+      load()
+    }
+  }
+
   async function save() {
     setSaving(true)
     try {
@@ -755,6 +764,9 @@ export default function RODetail() {
   if (!ro) return <div className="flex items-center justify-center h-64 text-slate-500">{t('common.loading')}</div>
 
   const currentIdx = STAGES.indexOf(ro.status)
+  const isTerminalStatus = ['closed', 'total_loss', 'siu_hold'].includes(ro.status)
+  const canStepBack = currentIdx > 0 && !isTerminalStatus
+  const canAdvance = currentIdx >= 0 && currentIdx < STAGES.length - 1 && !userIsAssistant
   const paymentStatus = normalizePaymentStatus(ro.payment_status, ro.payment_received)
   const paymentAmount = Number(ro.total || ro.parts_cost || 0)
   const canMarkPaymentFromRo = userIsAdmin && !userIsAssistant
@@ -868,7 +880,12 @@ export default function RODetail() {
                 <DollarSign size={12} /> {t('ro.paymentReceived')}
               </button>
             )}
-            {currentIdx < STAGES.length - 1 && !userIsAssistant && (
+            {canStepBack && (
+              <button onClick={goBack} className="w-full sm:w-auto flex items-center justify-center gap-1 bg-slate-600 hover:bg-slate-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
+                <ArrowLeft size={12} /> ← Back
+              </button>
+            )}
+            {canAdvance && (
               <button onClick={advance} className="w-full sm:w-auto flex items-center justify-center gap-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
                 → {STATUS_LABELS[STAGES[currentIdx+1]]}
               </button>
