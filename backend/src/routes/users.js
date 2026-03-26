@@ -114,6 +114,33 @@ router.post('/assistant', auth, requireAdmin, disallowAssistant, async (req, res
   }
 });
 
+router.post('/:userId/reset-password', auth, requireAdmin, disallowAssistant, async (req, res) => {
+  try {
+    const { password } = req.body || {};
+    if (typeof password !== 'string' || password.length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters' });
+    }
+
+    const targetUser = await dbGet(
+      'SELECT id, role FROM users WHERE id = $1 AND shop_id = $2',
+      [req.params.userId, req.user.shop_id]
+    );
+    if (!targetUser) return res.status(404).json({ error: 'Not found' });
+    if (targetUser.role === 'superadmin') return res.status(403).json({ error: 'Cannot reset superadmin passwords' });
+    if (targetUser.role === 'owner' && targetUser.id !== req.user.id) {
+      return res.status(403).json({ error: 'Cannot reset another owner password' });
+    }
+
+    await dbRun(
+      'UPDATE users SET password_hash = $1 WHERE id = $2 AND shop_id = $3',
+      [bcrypt.hashSync(password, 10), targetUser.id, req.user.shop_id]
+    );
+    return res.json({ message: 'Password reset successfully' });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 router.put('/:id', auth, requireAdmin, disallowAssistant, async (req, res) => {
   try {
     const user = await dbGet('SELECT id FROM users WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);

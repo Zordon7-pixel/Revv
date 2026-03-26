@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Users as UsersIcon, Plus, X, Shield, Wrench, Trash2, Info, Pencil } from 'lucide-react'
+import { Users as UsersIcon, Plus, X, Shield, Wrench, Trash2, Info, Pencil, KeyRound } from 'lucide-react'
 import api from '../lib/api'
+import { getTokenPayload, isAdmin } from '../lib/auth'
 
 const ROLES = ['admin', 'employee', 'staff']
 const ROLE_META = {
@@ -24,11 +25,30 @@ export default function Users() {
   const emptyAssistant = { name:'', email:'', password:'' }
   const [form, setForm] = useState(empty)
   const [assistantForm, setAssistantForm] = useState(emptyAssistant)
+  const [resetUser, setResetUser] = useState(null)
+  const [resetPassword, setResetPassword] = useState('')
+  const [resettingPassword, setResettingPassword] = useState(false)
+  const [successToast, setSuccessToast] = useState('')
+  const [errorToast, setErrorToast] = useState('')
+  const canResetPasswords = isAdmin()
+  const currentUserId = getTokenPayload()?.id || null
 
   useEffect(() => { load() }, [])
   function load() {
     api.get('/users').then(r => setUsers(r.data.users || []))
   }
+
+  useEffect(() => {
+    if (!successToast) return undefined
+    const t = setTimeout(() => setSuccessToast(''), 3500)
+    return () => clearTimeout(t)
+  }, [successToast])
+
+  useEffect(() => {
+    if (!errorToast) return undefined
+    const t = setTimeout(() => setErrorToast(''), 3500)
+    return () => clearTimeout(t)
+  }, [errorToast])
 
   function set(k,v) { setForm(f=>({...f,[k]:v})) }
 
@@ -53,6 +73,10 @@ export default function Users() {
   function closeEdit() {
     setEditUser(null)
     setEditForm({ name:'', email:'', phone:'', role:'employee', password:'' })
+  }
+  function closeResetPassword() {
+    setResetUser(null)
+    setResetPassword('')
   }
 
   function openEdit(u) {
@@ -106,12 +130,38 @@ export default function Users() {
     }
   }
 
+  async function submitResetPassword(e) {
+    e.preventDefault()
+    if (!resetUser) return
+    if ((resetPassword || '').length < 8) {
+      setErrorToast('Password must be at least 8 characters')
+      return
+    }
+    setResettingPassword(true)
+    try {
+      const { data } = await api.post(`/users/${resetUser.id}/reset-password`, { password: resetPassword })
+      setSuccessToast(data?.message || 'Password reset successfully')
+      closeResetPassword()
+    } catch (err) {
+      setErrorToast(err?.response?.data?.error || 'Error resetting password')
+    } finally {
+      setResettingPassword(false)
+    }
+  }
+
   const inp = 'w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition-colors'
   const lbl = 'block text-xs font-medium text-slate-400 mb-1.5'
 
   const admins    = users.filter(u => ['owner','admin'].includes(u.role))
   const employees = users.filter(u => ['employee','staff'].includes(u.role))
   const assistants = users.filter(u => u.role === 'assistant')
+
+  function canResetUser(u) {
+    if (!canResetPasswords) return false
+    if (u.role === 'superadmin') return false
+    if (u.role === 'owner' && u.id !== currentUserId) return false
+    return true
+  }
 
   function Section({ title, list }) {
     if (!list.length) return null
@@ -135,6 +185,18 @@ export default function Users() {
                 <div className={`text-[10px] font-semibold px-2.5 py-1 rounded-full border ${meta.cls}`}>
                   {meta.label}
                 </div>
+                {canResetUser(u) && (
+                  <button
+                    onClick={() => setResetUser(u)}
+                    className="text-xs font-semibold px-2.5 py-1 rounded-lg border border-amber-500/40 text-amber-300 hover:bg-amber-500/10 transition-colors"
+                    title={`Reset password for ${u.name}`}
+                  >
+                    <span className="inline-flex items-center gap-1.5">
+                      <KeyRound size={12} />
+                      Reset Password
+                    </span>
+                  </button>
+                )}
                 <button
                   onClick={() => openEdit(u)}
                   className="text-slate-500 hover:text-indigo-300 transition-colors ml-1"
@@ -299,6 +361,59 @@ export default function Users() {
               </div>
             </form>
           </div>
+        </div>
+      )}
+
+      {resetUser && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className="bg-[#1a1d2e] rounded-2xl border border-[#2a2d3e] w-full max-w-sm">
+            <div className="flex items-center justify-between p-5 border-b border-[#2a2d3e]">
+              <h3 className="font-bold text-white">Reset Password</h3>
+              <button onClick={closeResetPassword} className="text-slate-400 hover:text-white" disabled={resettingPassword}><X size={18}/></button>
+            </div>
+            <form onSubmit={submitResetPassword} className="p-5 space-y-4">
+              <div>
+                <label className={lbl}>New Password</label>
+                <input
+                  className={inp}
+                  type="password"
+                  minLength={8}
+                  required
+                  value={resetPassword}
+                  onChange={(e) => setResetPassword(e.target.value)}
+                  placeholder="At least 8 characters"
+                />
+              </div>
+              <div className="flex gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={closeResetPassword}
+                  disabled={resettingPassword}
+                  className="flex-1 bg-[#0f1117] text-slate-400 rounded-lg py-2.5 text-sm border border-[#2a2d3e] disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={resettingPassword}
+                  className="flex-1 bg-amber-500 hover:bg-amber-400 text-[#0f1117] font-bold rounded-lg py-2.5 text-sm disabled:opacity-50"
+                >
+                  {resettingPassword ? 'Resetting...' : 'Reset Password'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {successToast && (
+        <div className="fixed bottom-4 right-4 z-50 bg-emerald-900/90 border border-emerald-600/60 text-emerald-100 text-sm px-4 py-2 rounded-lg shadow-lg">
+          {successToast}
+        </div>
+      )}
+      {errorToast && (
+        <div className="fixed bottom-4 right-4 z-50 bg-red-900/90 border border-red-600/60 text-red-100 text-sm px-4 py-2 rounded-lg shadow-lg">
+          {errorToast}
         </div>
       )}
     </div>
