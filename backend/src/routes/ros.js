@@ -747,11 +747,8 @@ router.get('/carryover-pending', auth, requireAdmin, async (req, res) => {
   }
 });
 
-router.post('/from-schedule/:scheduleId', auth, requireAdmin, async (req, res) => {
+router.post('/from-schedule/:scheduleId', auth, requireTechnician, async (req, res) => {
   try {
-    if (!['owner', 'admin'].includes(req.user.role)) {
-      return res.status(403).json({ error: 'Admin access required' });
-    }
 
     const schedule = await dbGet(
       `

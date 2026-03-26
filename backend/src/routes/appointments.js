@@ -2,7 +2,7 @@ const router = require('express').Router();
 const rateLimit = require('express-rate-limit');
 const { dbGet, dbAll, dbRun } = require('../db');
 const auth = require('../middleware/auth');
-const { requireAdmin } = require('../middleware/roles');
+const { requireAdmin, requireTechnician } = require('../middleware/roles');
 const { v4: uuidv4 } = require('uuid');
 const appointmentLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -77,7 +77,7 @@ router.post('/request', appointmentLimiter, async (req, res) => {
   }
 });
 
-router.get('/', auth, requireAdmin, async (req, res) => {
+router.get('/', auth, requireTechnician, async (req, res) => {
   try {
     await ensureTable();
     const requests = await dbAll(
@@ -92,7 +92,7 @@ router.get('/', auth, requireAdmin, async (req, res) => {
   }
 });
 
-router.put('/:id', auth, requireAdmin, async (req, res) => {
+router.put('/:id', auth, requireTechnician, async (req, res) => {
   try {
     await ensureTable();
     const { status } = req.body || {};

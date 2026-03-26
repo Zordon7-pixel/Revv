@@ -1,7 +1,7 @@
 const router = require('express').Router();
 const { dbGet, dbAll, dbRun } = require('../db');
 const auth = require('../middleware/auth');
-const { requireAdmin } = require('../middleware/roles');
+const { requireAdmin, requireTechnician } = require('../middleware/roles');
 const { v4: uuidv4 } = require('uuid');
 const { createNotification } = require('../services/notifications');
 
@@ -46,7 +46,7 @@ router.get('/:ro_id', auth, async (req, res) => {
   }
 });
 
-router.patch('/:id', auth, requireAdmin, async (req, res) => {
+router.patch('/:id', auth, requireTechnician, async (req, res) => {
   try {
     const { status } = req.body;
     const ALLOWED = ['pending', 'ordered', 'received', 'cancelled'];
