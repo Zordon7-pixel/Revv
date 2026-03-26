@@ -1030,23 +1030,20 @@ router.get('/turnaround-estimate', auth, async (req, res) => {
 });
 
 async function bulkStatusUpdateHandler(req, res) {
-  if (!['owner', 'admin'].includes(req.user.role)) {
-    return res.status(403).json({ error: 'Admin access required' });
-  }
   try {
     const { ids, status, new_status } = req.body || {};
     const normalizedStatus = String(new_status || status || '').trim().toLowerCase();
     if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids required' });
     if (!STATUSES.includes(normalizedStatus)) return res.status(400).json({ error: 'Invalid status' });
 
-    const result = await dbRun(
+    await dbRun(
       `UPDATE repair_orders
        SET status = $1, updated_at = NOW()
        WHERE shop_id = $2
          AND id = ANY($3::uuid[])`,
       [normalizedStatus, req.user.shop_id, ids]
     );
-    res.json({ updated: result.rowCount || 0 });
+    res.json({ updated: ids.length });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
