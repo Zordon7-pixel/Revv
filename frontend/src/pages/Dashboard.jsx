@@ -50,7 +50,8 @@ export default function Dashboard() {
   })()
 
   async function loadDashboardData() {
-    const [summaryRes, carryoverRes, appointmentsRes, goalsRes, adasRes, weeklyRes] = await Promise.all([
+    const [summaryRes, monthSummaryRes, carryoverRes, appointmentsRes, goalsRes, adasRes, weeklyRes] = await Promise.all([
+      api.get('/reports/summary?scope=all'),
       api.get('/reports/summary'),
       api.get('/ros/carryover-pending').catch(() => ({ data: { ros: [] } })),
       api.get('/appointments').catch(() => ({ data: { requests: [] } })),
@@ -58,7 +59,12 @@ export default function Dashboard() {
       api.get('/adas/queue').catch(() => ({ data: { queue: [] } })),
       api.get('/dashboard/weekly').catch(() => ({ data: null })),
     ])
-    setData(summaryRes.data)
+    setData({
+      ...summaryRes.data,
+      monthly_total: Number(monthSummaryRes.data?.total || 0),
+      monthly_revenue: Number(monthSummaryRes.data?.revenue || 0),
+      monthly_profit: Number(monthSummaryRes.data?.profit || 0),
+    })
     setPendingCarryover(carryoverRes.data?.ros || [])
     setPendingAppointments(appointmentsRes.data?.requests?.length || 0)
     setGoal(goalsRes.data?.goal || null)
@@ -118,17 +124,16 @@ export default function Dashboard() {
   }, [isTechAccount])
 
   const hour = new Date().getHours()
-  const nowLabel = new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
   const greetingText = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
 
   const displayActive = useCountUp(data?.active || 0)
   const displayCompleted = useCountUp(data?.completed || 0)
-  const displayRevenue = useCountUp(data?.revenue || 0)
-  const displayProfit = useCountUp(data?.profit || 0)
+  const displayRevenue = useCountUp(data?.monthly_revenue || 0)
+  const displayProfit = useCountUp(data?.monthly_profit || 0)
   const revenueGoal = Number(goal?.revenue_goal || 0)
   const roGoal = Number(goal?.ro_goal || 0)
-  const revenueProgress = revenueGoal > 0 ? Math.min((data?.revenue || 0) / revenueGoal, 1) * 100 : 0
-  const roProgress = roGoal > 0 ? Math.min((data?.total || 0) / roGoal, 1) * 100 : 0
+  const revenueProgress = revenueGoal > 0 ? Math.min((data?.monthly_revenue || 0) / revenueGoal, 1) * 100 : 0
+  const roProgress = roGoal > 0 ? Math.min((data?.monthly_total || 0) / roGoal, 1) * 100 : 0
   const weeklyTrendDirection = weekly?.ro_opened?.trend_direction || 'flat'
   const weeklyTrendPercent = Number(weekly?.ro_opened?.trend_percent || 0)
 
@@ -343,7 +348,7 @@ export default function Dashboard() {
       <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-3 flex items-center justify-between">
         <div className="inline-flex items-center gap-2 text-sm text-slate-300">
           <CalendarDays size={15} className="text-indigo-300" />
-          Current Period: <span className="text-white font-semibold">{nowLabel}</span>
+          Pipeline Scope: <span className="text-white font-semibold">All Repair Orders</span>
         </div>
         {admin && (
           <button
@@ -376,7 +381,7 @@ export default function Dashboard() {
 
           <div>
             <div className="text-xs text-slate-300 mb-1">
-              Revenue: ${(data?.revenue || 0).toLocaleString()} / ${revenueGoal.toLocaleString()} - {Math.round(revenueProgress)}%
+              Revenue (This Month): ${(data?.monthly_revenue || 0).toLocaleString()} / ${revenueGoal.toLocaleString()} - {Math.round(revenueProgress)}%
             </div>
             <div className="h-2 bg-[#0f1117] rounded-full overflow-hidden">
               <div className="h-full bg-emerald-500 transition-all" style={{ width: `${revenueProgress}%` }} />
@@ -385,7 +390,7 @@ export default function Dashboard() {
 
           <div>
             <div className="text-xs text-slate-300 mb-1">
-              RO Count: {(data?.total || 0).toLocaleString()} / {roGoal.toLocaleString()} - {Math.round(roProgress)}%
+              RO Count (This Month): {(data?.monthly_total || 0).toLocaleString()} / {roGoal.toLocaleString()} - {Math.round(roProgress)}%
             </div>
             <div className="h-2 bg-[#0f1117] rounded-full overflow-hidden">
               <div className="h-full bg-indigo-500 transition-all" style={{ width: `${roProgress}%` }} />

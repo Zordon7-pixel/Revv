@@ -12,19 +12,24 @@ function toCsvValue(value) {
 router.get('/summary', auth, requireTechnician, requireAdmin, async (req, res) => {
   try {
     const sid = req.user.shop_id;
-    const totalRow    = await dbGet("SELECT COUNT(*)::int as n FROM repair_orders WHERE shop_id = $1 AND billing_month = TO_CHAR(NOW(), 'YYYY-MM')", [sid]);
-    const activeRow   = await dbGet("SELECT COUNT(*)::int as n FROM repair_orders WHERE shop_id = $1 AND billing_month = TO_CHAR(NOW(), 'YYYY-MM') AND status NOT IN ('closed','delivery')", [sid]);
-    const completedRow = await dbGet("SELECT COUNT(*)::int as n FROM repair_orders WHERE shop_id = $1 AND billing_month = TO_CHAR(NOW(), 'YYYY-MM') AND status IN ('delivery','closed')", [sid]);
-    const revenueRow  = await dbGet("SELECT COALESCE(SUM(total),0) as r FROM repair_orders WHERE shop_id = $1 AND billing_month = TO_CHAR(NOW(), 'YYYY-MM')", [sid]);
-    const profitRow   = await dbGet("SELECT COALESCE(SUM(true_profit),0) as p FROM repair_orders WHERE shop_id = $1 AND billing_month = TO_CHAR(NOW(), 'YYYY-MM')", [sid]);
-    const byStatus = await dbAll("SELECT status, COUNT(*)::int as count FROM repair_orders WHERE shop_id = $1 AND billing_month = TO_CHAR(NOW(), 'YYYY-MM') GROUP BY status", [sid]);
-    const byType   = await dbAll("SELECT job_type, COUNT(*)::int as count, SUM(total) as revenue FROM repair_orders WHERE shop_id = $1 AND billing_month = TO_CHAR(NOW(), 'YYYY-MM') GROUP BY job_type", [sid]);
+    const scope = String(req.query?.scope || 'month').trim().toLowerCase();
+    const allScope = scope === 'all';
+    const monthFilter = allScope ? '' : " AND billing_month = TO_CHAR(NOW(), 'YYYY-MM')";
+    const createdAtMonthFilter = allScope ? '' : " AND DATE_TRUNC('month', created_at) = DATE_TRUNC('month', NOW())";
+
+    const totalRow    = await dbGet(`SELECT COUNT(*)::int as n FROM repair_orders WHERE shop_id = $1${monthFilter}`, [sid]);
+    const activeRow   = await dbGet(`SELECT COUNT(*)::int as n FROM repair_orders WHERE shop_id = $1${monthFilter} AND status NOT IN ('closed','delivery')`, [sid]);
+    const completedRow = await dbGet(`SELECT COUNT(*)::int as n FROM repair_orders WHERE shop_id = $1${monthFilter} AND status IN ('delivery','closed')`, [sid]);
+    const revenueRow  = await dbGet(`SELECT COALESCE(SUM(total),0) as r FROM repair_orders WHERE shop_id = $1${monthFilter}`, [sid]);
+    const profitRow   = await dbGet(`SELECT COALESCE(SUM(true_profit),0) as p FROM repair_orders WHERE shop_id = $1${monthFilter}`, [sid]);
+    const byStatus = await dbAll(`SELECT status, COUNT(*)::int as count FROM repair_orders WHERE shop_id = $1${monthFilter} GROUP BY status`, [sid]);
+    const byType   = await dbAll(`SELECT job_type, COUNT(*)::int as count, SUM(total) as revenue FROM repair_orders WHERE shop_id = $1${monthFilter} GROUP BY job_type`, [sid]);
     const recent   = await dbAll(`
       SELECT ro.*, v.year, v.make, v.model, c.name as customer_name
       FROM repair_orders ro
       LEFT JOIN vehicles v ON v.id = ro.vehicle_id
       LEFT JOIN customers c ON c.id = ro.customer_id
-      WHERE ro.shop_id = $1 AND ro.billing_month = TO_CHAR(NOW(), 'YYYY-MM')
+      WHERE ro.shop_id = $1${monthFilter}
       ORDER BY ro.updated_at DESC LIMIT 10
     `, [sid]);
 
@@ -32,7 +37,7 @@ router.get('/summary', auth, requireTechnician, requireAdmin, async (req, res) =
       `SELECT COUNT(*)::int as n
        FROM repair_orders
        WHERE shop_id = $1
-         AND DATE_TRUNC('month', created_at) = DATE_TRUNC('month', NOW())
+         ${createdAtMonthFilter}
          AND (
            insurance_claim_number IS NOT NULL OR claim_number IS NOT NULL
          )`,
@@ -44,7 +49,7 @@ router.get('/summary', auth, requireTechnician, requireAdmin, async (req, res) =
          COALESCE(SUM(total * 100), 0)::bigint AS billed_cents
        FROM repair_orders
        WHERE shop_id = $1
-         AND DATE_TRUNC('month', created_at) = DATE_TRUNC('month', NOW())
+         ${createdAtMonthFilter}
          AND (
            insurance_claim_number IS NOT NULL OR claim_number IS NOT NULL
          )`,
@@ -65,7 +70,7 @@ router.get('/summary', auth, requireTechnician, requireAdmin, async (req, res) =
          COUNT(*) FILTER (WHERE COALESCE(is_drp, FALSE) = FALSE)::int AS non_drp_count
        FROM repair_orders
        WHERE shop_id = $1
-         AND DATE_TRUNC('month', created_at) = DATE_TRUNC('month', NOW())
+         ${createdAtMonthFilter}
          AND (
            insurance_claim_number IS NOT NULL OR claim_number IS NOT NULL
          )`,
@@ -73,6 +78,7 @@ router.get('/summary', auth, requireTechnician, requireAdmin, async (req, res) =
     );
 
     res.json({
+      scope: allScope ? 'all' : 'month',
       total: totalRow.n,
       active: activeRow.n,
       completed: completedRow.n,
