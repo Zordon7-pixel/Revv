@@ -633,7 +633,7 @@ router.get('/', auth, async (req, res) => {
       payment_type = '',
     } = req.query || {};
     const params = [req.user.shop_id];
-    const where = ['ro.shop_id = $1::uuid'];
+    const where = ['ro.shop_id = $1'];
 
     const normalizedSearch = String(search || '').trim();
     const normalizedStatus = String(status || '').trim().toLowerCase();
