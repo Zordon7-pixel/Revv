@@ -20,6 +20,13 @@ export default function Login() {
     setLoading(true); setError('')
     try {
       const { data } = await api.post('/auth/login', { email, password })
+      if (data?.user?.role === 'superadmin') {
+        localStorage.removeItem('sc_token')
+        localStorage.removeItem('support_impersonation')
+        localStorage.setItem('superadmin_token', data.token)
+        navigate('/superadmin')
+        return
+      }
       localStorage.setItem('sc_token', data.token)
       if (data.user.role === 'owner' && !data.user.onboarded) {
         navigate('/onboarding')

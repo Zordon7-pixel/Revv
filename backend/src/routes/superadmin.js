@@ -20,6 +20,56 @@ function issueImpersonationToken(targetUser, requestedBySuperadminId) {
   return jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '7d' });
 }
 
+// Flat user account directory for support tooling
+router.get('/accounts', async (req, res) => {
+  try {
+    const search = String(req.query.q || '').trim().toLowerCase();
+    const searchLike = search ? `%${search}%` : '';
+    const shopId = String(req.query.shop_id || '').trim();
+
+    const accounts = await dbAll(
+      `SELECT
+         u.id,
+         u.name,
+         u.email,
+         u.role,
+         u.shop_id,
+         u.created_at,
+         s.name AS shop_name,
+         s.city AS shop_city,
+         s.state AS shop_state
+       FROM users u
+       INNER JOIN shops s ON s.id = u.shop_id
+       WHERE u.role <> 'superadmin'
+         AND ($1 = '' OR u.shop_id = $1)
+         AND (
+           $2 = ''
+           OR LOWER(COALESCE(u.name, '')) LIKE $2
+           OR LOWER(COALESCE(u.email, '')) LIKE $2
+           OR LOWER(COALESCE(u.role, '')) LIKE $2
+           OR LOWER(COALESCE(s.name, '')) LIKE $2
+         )
+       ORDER BY
+         s.name ASC,
+         CASE
+           WHEN u.role = 'owner' THEN 0
+           WHEN u.role = 'admin' THEN 1
+           WHEN u.role = 'assistant' THEN 2
+           WHEN u.role = 'staff' THEN 3
+           WHEN u.role = 'employee' THEN 4
+           WHEN u.role = 'technician' THEN 5
+           ELSE 6
+         END,
+         COALESCE(u.name, '') ASC`,
+      [shopId, searchLike]
+    );
+
+    res.json({ accounts });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/shops', async (req, res) => {
   try {
     const shops = await dbAll(`

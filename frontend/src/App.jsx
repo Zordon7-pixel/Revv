@@ -51,7 +51,11 @@ import StorageHold from './pages/StorageHold'
 import { getToken, getTokenPayload } from './lib/auth'
 
 function PrivateRoute({ children }) {
-  return getToken() ? children : <Navigate to="/login" />
+  if (!getToken()) return <Navigate to="/login" />
+  try {
+    if (getTokenPayload()?.role === 'superadmin') return <Navigate to="/superadmin" />
+  } catch {}
+  return children
 }
 
 function AdminRoute({ children }) {

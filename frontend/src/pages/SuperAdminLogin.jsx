@@ -24,6 +24,8 @@ export default function SuperAdminLogin() {
         setError('Not authorized for superadmin access.')
         return
       }
+      localStorage.removeItem('sc_token')
+      localStorage.removeItem('support_impersonation')
       localStorage.setItem('superadmin_token', data.token)
       navigate('/superadmin')
     } catch {

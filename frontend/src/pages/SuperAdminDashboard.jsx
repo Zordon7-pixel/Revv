@@ -1,15 +1,14 @@
-import { useEffect, useState } from 'react'
-import { Star, LogIn } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { LogIn, LogOut, Search, UserCog } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 export default function SuperAdminDashboard() {
-  const [stats, setStats] = useState(null)
+  const [accounts, setAccounts] = useState([])
   const [shops, setShops] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [selectedShop, setSelectedShop] = useState(null)
-  const [shopDetail, setShopDetail] = useState(null)
-  const [detailLoading, setDetailLoading] = useState(false)
+  const [search, setSearch] = useState('')
+  const [shopFilter, setShopFilter] = useState('')
   const [impersonatingKey, setImpersonatingKey] = useState('')
 
   const token = localStorage.getItem('superadmin_token')
@@ -25,57 +24,45 @@ export default function SuperAdminDashboard() {
 
   useEffect(() => {
     let active = true
-    async function load() {
+    async function loadShops() {
+      try {
+        const shopsRes = await fetchJson('/api/superadmin/shops')
+        if (!active) return
+        setShops(shopsRes.shops || [])
+      } catch {
+        if (active) setShops([])
+      }
+    }
+    loadShops()
+    return () => { active = false }
+  }, [])
+
+  useEffect(() => {
+    let active = true
+    async function loadAccounts() {
       setLoading(true)
       setError('')
       try {
-        const [statsRes, shopsRes, ratingsRes] = await Promise.all([
-          fetchJson('/api/superadmin/stats'),
-          fetchJson('/api/superadmin/shops'),
-          fetchJson('/api/superadmin/ratings')
-        ])
+        const params = new URLSearchParams()
+        if (search.trim()) params.set('q', search.trim())
+        if (shopFilter) params.set('shop_id', shopFilter)
+        const queryString = params.toString()
+        const data = await fetchJson(`/api/superadmin/accounts${queryString ? `?${queryString}` : ''}`)
         if (!active) return
-        setStats(statsRes)
-        // Merge ratings into shops
-        const shopsWithRatings = (shopsRes.shops || []).map(shop => {
-          const rating = (ratingsRes.shops || []).find(r => r.id === shop.id)
-          return {
-            ...shop,
-            avg_rating: rating?.avg_rating || null,
-            review_count: rating?.review_count || 0
-          }
-        }).sort((a, b) => {
-          // Sort by rating descending
-          const aRating = a.avg_rating || 0
-          const bRating = b.avg_rating || 0
-          return bRating - aRating
-        })
-        setShops(shopsWithRatings)
+        setAccounts(data.accounts || [])
       } catch {
-        if (active) setError('Unable to load superadmin data.')
+        if (active) setError('Unable to load user accounts.')
       } finally {
         if (active) setLoading(false)
       }
     }
-    load()
+    loadAccounts()
     return () => { active = false }
-  }, [])
+  }, [search, shopFilter])
 
-  async function selectShop(shop) {
-    setSelectedShop(shop)
-    setShopDetail(null)
-    setDetailLoading(true)
-    try {
-      const detail = await fetchJson(`/api/superadmin/shops/${shop.id}`)
-      setShopDetail(detail)
-    } catch {
-      setShopDetail(null)
-    } finally {
-      setDetailLoading(false)
-    }
-  }
+  const totalShown = useMemo(() => accounts.length, [accounts])
 
-  async function impersonate(payload, key) {
+  async function impersonate(userId, key) {
     setImpersonatingKey(key)
     setError('')
     try {
@@ -85,7 +72,7 @@ export default function SuperAdminDashboard() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify(payload)
+        body: JSON.stringify({ user_id: userId })
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data?.error || 'Impersonation failed')
@@ -106,167 +93,124 @@ export default function SuperAdminDashboard() {
     }
   }
 
+  function logoutMaster() {
+    localStorage.removeItem('superadmin_token')
+    navigate('/superadmin/login')
+  }
+
   return (
     <div className="min-h-screen bg-[#0f1117] text-white">
-      <div className="max-w-6xl mx-auto px-6 py-8">
-        <div className="flex items-center justify-between mb-6">
+      <div className="max-w-7xl mx-auto px-6 py-8">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
           <div>
-            <h1 className="text-2xl font-bold tracking-wide">Superadmin Dashboard</h1>
-            <p className="text-xs text-slate-400 mt-1">REVV platform overview</p>
+            <div className="inline-flex items-center gap-2 text-[11px] uppercase tracking-widest text-yellow-300 mb-2">
+              <UserCog size={14} />
+              Master Support Console
+            </div>
+            <h1 className="text-2xl font-bold tracking-wide">User Account Access</h1>
+            <p className="text-xs text-slate-400 mt-1">Support-only view. No shop operations dashboard modules.</p>
           </div>
-          <div className="text-xs text-yellow-300 uppercase tracking-widest">Superadmin</div>
+          <button
+            type="button"
+            onClick={logoutMaster}
+            className="inline-flex items-center justify-center gap-2 text-xs bg-[#1a1d2e] hover:bg-[#22263b] border border-[#2a2d3e] px-3 py-2 rounded-lg text-slate-200"
+          >
+            <LogOut size={14} />
+            Sign Out
+          </button>
         </div>
 
         {error && (
-          <div className="bg-[#1a1d2e] border border-[#2a2d3e] text-red-300 text-sm rounded-lg p-3 mb-6">
+          <div className="bg-[#1a1d2e] border border-[#2a2d3e] text-red-300 text-sm rounded-lg p-3 mb-4">
             {error}
           </div>
         )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          {['total_shops', 'total_users', 'total_ros', 'total_customers'].map((key, idx) => {
-            const labels = ['Total Shops', 'Total Users', 'Total ROs', 'Total Customers']
-            return (
-              <div key={key} className="bg-[#141824] border border-[#242837] rounded-xl p-4">
-                <p className="text-xs text-slate-400">{labels[idx]}</p>
-                <p className="text-2xl font-semibold text-[#EAB308] mt-2">
-                  {stats ? stats[key] : (loading ? '—' : '0')}
-                </p>
-              </div>
-            )
-          })}
+        <div className="bg-[#141824] border border-[#242837] rounded-xl p-4 mb-4">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+            <div className="lg:col-span-2 relative">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+              <input
+                type="text"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search by user, email, role, or shop..."
+                className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg pl-9 pr-3 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+              />
+            </div>
+            <select
+              value={shopFilter}
+              onChange={e => setShopFilter(e.target.value)}
+              className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
+            >
+              <option value="">All Shops</option>
+              {shops.map(shop => (
+                <option key={shop.id} value={shop.id}>{shop.name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="text-xs text-slate-500 mt-3">
+            Showing {loading ? '...' : totalShown} account{totalShown === 1 ? '' : 's'}
+          </div>
         </div>
 
         <div className="bg-[#141824] border border-[#242837] rounded-xl overflow-hidden">
-          <div className="px-5 py-3 border-b border-[#242837]">
-            <h2 className="text-sm font-semibold text-yellow-300 uppercase tracking-widest">All Shops</h2>
-          </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="text-xs text-slate-400 bg-[#10131d]">
                 <tr>
-                  <th className="text-left px-5 py-3 font-medium">Name</th>
-                  <th className="text-left px-5 py-3 font-medium">City/State</th>
-                  <th className="text-left px-5 py-3 font-medium">Rating</th>
-                  <th className="text-left px-5 py-3 font-medium">Users</th>
-                  <th className="text-left px-5 py-3 font-medium">ROs</th>
+                  <th className="text-left px-5 py-3 font-medium">User</th>
+                  <th className="text-left px-5 py-3 font-medium">Role</th>
+                  <th className="text-left px-5 py-3 font-medium">Shop</th>
+                  <th className="text-left px-5 py-3 font-medium">Location</th>
+                  <th className="text-right px-5 py-3 font-medium">Action</th>
                 </tr>
               </thead>
               <tbody>
-                {shops.map(shop => (
-                  <tr
-                    key={shop.id}
-                    onClick={() => selectShop(shop)}
-                    className={`border-t border-[#242837] hover:bg-[#1b2030] cursor-pointer ${
-                      selectedShop?.id === shop.id ? 'bg-[#1b2030]' : ''
-                    }`}
-                  >
+                {!loading && accounts.map(account => (
+                  <tr key={account.id} className="border-t border-[#242837]">
                     <td className="px-5 py-3">
-                      <div className="font-medium">{shop.name}</div>
-                      <div className="text-xs text-slate-500">{shop.phone || '—'}</div>
+                      <div className="font-medium">{account.name || 'Unnamed User'}</div>
+                      <div className="text-xs text-slate-500">{account.email || '—'}</div>
                     </td>
-                    <td className="px-5 py-3 text-slate-300">{shop.city || '—'} / {shop.state || '—'}</td>
                     <td className="px-5 py-3">
-                      {shop.avg_rating ? (
-                        <div className="flex items-center gap-1">
-                          <Star size={14} className="text-yellow-400 fill-yellow-400" />
-                          <span className="text-white font-medium">{shop.avg_rating}</span>
-                          <span className="text-slate-500 text-xs">({shop.review_count})</span>
-                        </div>
-                      ) : (
-                        <span className="text-slate-500">—</span>
-                      )}
+                      <span className="text-[11px] uppercase tracking-widest text-slate-300">
+                        {account.role || '—'}
+                      </span>
                     </td>
-                    <td className="px-5 py-3 text-slate-300">{shop.user_count ?? 0}</td>
-                    <td className="px-5 py-3 text-slate-300">{shop.ro_count ?? 0}</td>
+                    <td className="px-5 py-3 text-slate-200">{account.shop_name || '—'}</td>
+                    <td className="px-5 py-3 text-slate-400">
+                      {account.shop_city || '—'} / {account.shop_state || '—'}
+                    </td>
+                    <td className="px-5 py-3 text-right">
+                      <button
+                        type="button"
+                        onClick={() => impersonate(account.id, `user:${account.id}`)}
+                        disabled={impersonatingKey === `user:${account.id}`}
+                        className="inline-flex items-center gap-1 text-[11px] bg-[#20273a] hover:bg-[#2a334d] disabled:opacity-50 text-indigo-200 px-2.5 py-1.5 rounded-md border border-[#313957]"
+                      >
+                        <LogIn size={11} />
+                        {impersonatingKey === `user:${account.id}` ? 'Opening…' : 'Open Account'}
+                      </button>
+                    </td>
                   </tr>
                 ))}
-                {!loading && shops.length === 0 && (
+                {!loading && accounts.length === 0 && (
                   <tr>
-                    <td colSpan="4" className="px-5 py-6 text-center text-slate-500">No shops found.</td>
+                    <td colSpan="5" className="px-5 py-8 text-center text-slate-500">
+                      No accounts found for the current filters.
+                    </td>
+                  </tr>
+                )}
+                {loading && (
+                  <tr>
+                    <td colSpan="5" className="px-5 py-8 text-center text-slate-500">
+                      Loading accounts...
+                    </td>
                   </tr>
                 )}
               </tbody>
             </table>
-          </div>
-        </div>
-
-        <div className="mt-8 grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-1 bg-[#141824] border border-[#242837] rounded-xl p-5">
-            <h3 className="text-sm font-semibold text-yellow-300 uppercase tracking-widest">Shop Detail</h3>
-            {!selectedShop && <p className="text-sm text-slate-500 mt-4">Select a shop to view details.</p>}
-            {selectedShop && detailLoading && <p className="text-sm text-slate-500 mt-4">Loading details...</p>}
-            {selectedShop && shopDetail && (
-              <div className="mt-4 space-y-3 text-sm">
-                <div>
-                  <div className="text-lg font-semibold">{shopDetail.shop.name}</div>
-                  <div className="text-slate-400">{shopDetail.shop.city || '—'}, {shopDetail.shop.state || '—'}</div>
-                </div>
-                <div className="text-slate-300">Phone: {shopDetail.shop.phone || '—'}</div>
-                <div className="text-slate-300">Address: {shopDetail.shop.address || '—'}</div>
-                <div className="text-slate-300">Total ROs: {shopDetail.ro_count ?? 0}</div>
-                <button
-                  type="button"
-                  onClick={() => impersonate({ shop_id: shopDetail.shop.id }, `shop:${shopDetail.shop.id}`)}
-                  disabled={impersonatingKey === `shop:${shopDetail.shop.id}`}
-                  className="mt-1 inline-flex items-center gap-1.5 text-xs bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-semibold px-3 py-1.5 rounded-lg"
-                >
-                  <LogIn size={12} />
-                  {impersonatingKey === `shop:${shopDetail.shop.id}` ? 'Opening…' : 'Open Shop Session'}
-                </button>
-              </div>
-            )}
-          </div>
-
-          <div className="lg:col-span-2 grid grid-cols-1 gap-6">
-            <div className="bg-[#141824] border border-[#242837] rounded-xl p-5">
-              <h3 className="text-sm font-semibold text-yellow-300 uppercase tracking-widest">Users</h3>
-              {shopDetail?.users?.length ? (
-                <div className="mt-4 space-y-2 text-sm">
-                  {shopDetail.users.map(u => (
-                    <div key={u.id} className="flex items-center justify-between border-b border-[#242837] pb-2">
-                      <div>
-                        <div className="font-medium">{u.name}</div>
-                        <div className="text-xs text-slate-500">{u.email}</div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <div className="text-xs text-slate-300 uppercase tracking-widest">{u.role}</div>
-                        <button
-                          type="button"
-                          onClick={() => impersonate({ user_id: u.id }, `user:${u.id}`)}
-                          disabled={impersonatingKey === `user:${u.id}`}
-                          className="inline-flex items-center gap-1 text-[11px] bg-[#20273a] hover:bg-[#2a334d] disabled:opacity-50 text-indigo-200 px-2 py-1 rounded-md border border-[#313957]"
-                        >
-                          <LogIn size={11} />
-                          {impersonatingKey === `user:${u.id}` ? 'Opening…' : 'Open'}
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-slate-500 mt-4">No users found.</p>
-              )}
-            </div>
-
-            <div className="bg-[#141824] border border-[#242837] rounded-xl p-5">
-              <h3 className="text-sm font-semibold text-yellow-300 uppercase tracking-widest">Recent ROs</h3>
-              {shopDetail?.recent_ros?.length ? (
-                <div className="mt-4 space-y-2 text-sm">
-                  {shopDetail.recent_ros.map(ro => (
-                    <div key={ro.id} className="flex items-center justify-between border-b border-[#242837] pb-2">
-                      <div>
-                        <div className="font-medium">RO {ro.id.slice(0, 8)}</div>
-                        <div className="text-xs text-slate-500">{ro.job_type}</div>
-                      </div>
-                      <div className="text-xs text-slate-300 uppercase tracking-widest">{ro.status}</div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-slate-500 mt-4">No recent repair orders.</p>
-              )}
-            </div>
           </div>
         </div>
       </div>
