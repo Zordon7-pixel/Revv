@@ -18,8 +18,8 @@ router.get('/summary', auth, requireTechnician, requireAdmin, async (req, res) =
     const createdAtMonthFilter = allScope ? '' : " AND DATE_TRUNC('month', created_at) = DATE_TRUNC('month', NOW())";
 
     const totalRow    = await dbGet(`SELECT COUNT(*)::int as n FROM repair_orders WHERE shop_id = $1${monthFilter}`, [sid]);
-    const activeRow   = await dbGet(`SELECT COUNT(*)::int as n FROM repair_orders WHERE shop_id = $1${monthFilter} AND status NOT IN ('closed','delivery')`, [sid]);
-    const completedRow = await dbGet(`SELECT COUNT(*)::int as n FROM repair_orders WHERE shop_id = $1${monthFilter} AND status IN ('delivery','closed')`, [sid]);
+    const activeRow   = await dbGet(`SELECT COUNT(*)::int as n FROM repair_orders WHERE shop_id = $1${monthFilter} AND status <> 'closed'`, [sid]);
+    const completedRow = await dbGet(`SELECT COUNT(*)::int as n FROM repair_orders WHERE shop_id = $1${monthFilter} AND status = 'closed'`, [sid]);
     const revenueRow  = await dbGet(`SELECT COALESCE(SUM(total),0) as r FROM repair_orders WHERE shop_id = $1${monthFilter}`, [sid]);
     const profitRow   = await dbGet(`SELECT COALESCE(SUM(true_profit),0) as p FROM repair_orders WHERE shop_id = $1${monthFilter}`, [sid]);
     const byStatus = await dbAll(`SELECT status, COUNT(*)::int as count FROM repair_orders WHERE shop_id = $1${monthFilter} GROUP BY status`, [sid]);

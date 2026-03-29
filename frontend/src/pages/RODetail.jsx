@@ -113,6 +113,7 @@ export default function RODetail() {
   const [preDropoffPhotos, setPreDropoffPhotos] = useState([])
   const [preDropoffUploading, setPreDropoffUploading] = useState(false)
   const [preDropoffExpanded, setPreDropoffExpanded] = useState(true)
+  const [preDropoffLightbox, setPreDropoffLightbox] = useState(null)
   const [inspectionSummary, setInspectionSummary] = useState([])
   const [creatingInspection, setCreatingInspection] = useState(false)
 
@@ -166,6 +167,8 @@ export default function RODetail() {
   const userIsAdmin = isAdmin()
   const userIsEmployee = isEmployee()
   const userIsAssistant = isAssistant()
+  const canViewPreDropoff = userIsEmployee || userIsAdmin
+  const canUploadPreDropoff = !userIsAssistant && canViewPreDropoff
   // Admin and assistant can always edit (including closed ROs). Employees can edit open ROs only.
   const canEditRo = userIsAdmin || userIsAssistant || userIsEmployee
   const currentUser = getTokenPayload()
@@ -253,9 +256,9 @@ export default function RODetail() {
     loadInternalNotes()
   }, [id, userIsAdmin])
   useEffect(() => {
-    if (!userIsEmployee) return
+    if (!canViewPreDropoff) return
     loadPreDropoffPhotos()
-  }, [id, userIsEmployee])
+  }, [id, canViewPreDropoff])
   useEffect(() => { loadInspections() }, [id])
   useEffect(() => { loadSupplements() }, [id])
   useEffect(() => { loadStorageCharges() }, [id])
@@ -1286,7 +1289,7 @@ export default function RODetail() {
         </div>
       </div>
 
-      {userIsEmployee && (
+      {canViewPreDropoff && (
         <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
           <button
             type="button"
@@ -1318,7 +1321,7 @@ export default function RODetail() {
                   type="file"
                   accept="image/*"
                   className="hidden"
-                  disabled={preDropoffUploading}
+                  disabled={preDropoffUploading || !canUploadPreDropoff}
                   onChange={uploadPreDropoffPhoto}
                 />
               </label>
@@ -1328,11 +1331,10 @@ export default function RODetail() {
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   {preDropoffPhotos.map((photo) => (
-                    <a
+                    <button
+                      type="button"
                       key={photo.id}
-                      href={photo.photo_url}
-                      target="_blank"
-                      rel="noreferrer"
+                      onClick={() => setPreDropoffLightbox(photo)}
                       className="relative group rounded-xl overflow-hidden border border-[#2a2d3e] aspect-video bg-[#0f1117]"
                     >
                       <img src={photo.photo_url} alt="Pre-dropoff" className="w-full h-full object-cover" />
@@ -1341,12 +1343,34 @@ export default function RODetail() {
                           Pre-Dropoff
                         </span>
                       </div>
-                    </a>
+                    </button>
                   ))}
                 </div>
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {preDropoffLightbox && (
+        <div
+          className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4"
+          onClick={() => setPreDropoffLightbox(null)}
+        >
+          <div className="relative max-w-4xl max-h-full" onClick={(e) => e.stopPropagation()}>
+            <img
+              src={preDropoffLightbox.photo_url}
+              alt="Pre-dropoff full view"
+              className="max-h-[85vh] max-w-full object-contain rounded-xl"
+            />
+            <button
+              type="button"
+              onClick={() => setPreDropoffLightbox(null)}
+              className="absolute -top-3 -right-3 bg-slate-700 hover:bg-slate-600 rounded-full p-1 transition-colors"
+            >
+              <X size={16} className="text-white" />
+            </button>
+          </div>
         </div>
       )}
 

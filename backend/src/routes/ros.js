@@ -659,11 +659,11 @@ router.get('/', auth, async (req, res) => {
 
     if (normalizedStatus && normalizedStatus !== 'all') {
       if (normalizedStatus === 'open') {
-        where.push(`ro.status IN ('intake', 'estimate', 'approval', 'parts')`);
+        where.push(`ro.status <> 'closed'`);
       } else if (normalizedStatus === 'in-progress') {
         where.push(`ro.status IN ('repair', 'paint', 'qc', 'in-progress')`);
       } else if (normalizedStatus === 'completed') {
-        where.push(`ro.status IN ('delivery', 'ready')`);
+        where.push(`ro.status = 'closed'`);
       } else if (normalizedStatus === 'closed') {
         where.push(`ro.status = 'closed'`);
       } else {

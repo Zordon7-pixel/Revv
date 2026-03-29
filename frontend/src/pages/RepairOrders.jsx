@@ -213,7 +213,7 @@ export default function RepairOrders() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-white">Repair Orders</h1>
-          <p className="text-slate-500 text-sm">{ros.length} total · {ros.filter((r) => r.status !== 'delivery' && r.status !== 'closed').length} active</p>
+          <p className="text-slate-500 text-sm">{ros.length} total · {ros.filter((r) => r.status !== 'closed').length} active</p>
         </div>
         {!assistant && (
           <button onClick={() => setShowAdd(true)} className="flex items-center gap-2 bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] text-sm font-semibold px-4 py-2 rounded-lg transition-colors">

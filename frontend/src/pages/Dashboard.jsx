@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ClipboardList, DollarSign, CheckCircle, TrendingUp, Hand, AlertCircle, CalendarDays, ChevronRight, Radar, ArrowUpRight, ArrowDownRight, Minus } from 'lucide-react'
+import { ClipboardList, DollarSign, CheckCircle, TrendingUp, Hand, AlertCircle, CalendarDays, ChevronRight, Radar, ArrowUpRight, ArrowDownRight, Minus, ChevronLeft, Truck } from 'lucide-react'
 import api from '../lib/api'
 import { getRole, getTokenPayload, isAdmin } from '../lib/auth'
 import { STATUS_COLORS, STATUS_LABELS } from './RepairOrders'
@@ -25,6 +25,36 @@ function useCountUp(target, duration = 1000) {
   return count
 }
 
+const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+function toDateKey(value) {
+  if (!value) return ''
+  if (value instanceof Date) {
+    const y = value.getFullYear()
+    const m = String(value.getMonth() + 1).padStart(2, '0')
+    const d = String(value.getDate()).padStart(2, '0')
+    return `${y}-${m}-${d}`
+  }
+  const asText = String(value).trim()
+  const isoMatch = asText.match(/^(\d{4}-\d{2}-\d{2})/)
+  if (isoMatch) return isoMatch[1]
+  const parsed = new Date(asText)
+  if (Number.isNaN(parsed.getTime())) return ''
+  return toDateKey(parsed)
+}
+
+function toDateLabel(dateKey) {
+  if (!dateKey) return ''
+  const parsed = new Date(`${dateKey}T12:00:00`)
+  if (Number.isNaN(parsed.getTime())) return dateKey
+  return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+function isDeliveredStatus(status) {
+  const normalized = String(status || '').toLowerCase()
+  return normalized === 'delivery' || normalized === 'closed'
+}
+
 export default function Dashboard() {
   const [data, setData] = useState(null)
   const [techData, setTechData] = useState(null)
@@ -36,6 +66,14 @@ export default function Dashboard() {
   const [showCarryoverModal, setShowCarryoverModal] = useState(false)
   const [loadError, setLoadError] = useState(false)
   const [techLoadError, setTechLoadError] = useState(false)
+  const [calendarRos, setCalendarRos] = useState([])
+  const [calendarMonth, setCalendarMonth] = useState(() => {
+    const now = new Date()
+    return new Date(now.getFullYear(), now.getMonth(), 1)
+  })
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState(() => toDateKey(new Date()))
+  const [calendarSavingKey, setCalendarSavingKey] = useState('')
+  const [calendarError, setCalendarError] = useState('')
   const weeklyChartRef = useRef(null)
   const weeklyChartInstanceRef = useRef(null)
   const navigate = useNavigate()
@@ -50,7 +88,7 @@ export default function Dashboard() {
   })()
 
   async function loadDashboardData() {
-    const [summaryRes, monthSummaryRes, carryoverRes, appointmentsRes, goalsRes, adasRes, weeklyRes] = await Promise.all([
+    const [summaryRes, monthSummaryRes, carryoverRes, appointmentsRes, goalsRes, adasRes, weeklyRes, rosRes] = await Promise.all([
       api.get('/reports/summary?scope=all'),
       api.get('/reports/summary'),
       api.get('/ros/carryover-pending').catch(() => ({ data: { ros: [] } })),
@@ -58,6 +96,7 @@ export default function Dashboard() {
       api.get(`/goals/${yearMonth}`).catch(() => ({ data: { goal: null } })),
       api.get('/adas/queue').catch(() => ({ data: { queue: [] } })),
       api.get('/dashboard/weekly').catch(() => ({ data: null })),
+      api.get('/repair-orders').catch(() => ({ data: { ros: [] } })),
     ])
     setData({
       ...summaryRes.data,
@@ -70,6 +109,7 @@ export default function Dashboard() {
     setGoal(goalsRes.data?.goal || null)
     setAdasQueue(adasRes.data?.queue || [])
     setWeekly(weeklyRes.data || null)
+    setCalendarRos(rosRes.data?.ros || [])
   }
 
   async function loadTechDashboard() {
@@ -83,9 +123,9 @@ export default function Dashboard() {
     const allRos = rosRes?.data?.ros || []
     const myId = currentUser?.id
     const assigned = myId ? allRos.filter((ro) => ro.assigned_to === myId) : []
-    const activeAssigned = assigned.filter((ro) => !['delivery', 'closed'].includes(String(ro.status || '').toLowerCase()))
-    const completedAssigned = assigned.filter((ro) => ['delivery', 'closed'].includes(String(ro.status || '').toLowerCase()))
-    const dueToday = activeAssigned.filter((ro) => String(ro.estimated_delivery || '') === today)
+    const activeAssigned = assigned.filter((ro) => String(ro.status || '').toLowerCase() !== 'closed')
+    const completedAssigned = assigned.filter((ro) => String(ro.status || '').toLowerCase() === 'closed')
+    const dueToday = activeAssigned.filter((ro) => toDateKey(ro.estimated_delivery) === today)
     const highPriority = activeAssigned.filter((ro) => ['repair', 'paint', 'qc'].includes(String(ro.status || '').toLowerCase()))
     const recentAssigned = [...assigned]
       .sort((a, b) => new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime())
@@ -107,6 +147,7 @@ export default function Dashboard() {
       todayShift: shiftRes?.data?.shift || null,
       timeClock: clockStatusRes?.data || { clocked_in: false, entry: null },
     })
+    setCalendarRos(assigned)
   }
 
   useEffect(() => {
@@ -136,6 +177,232 @@ export default function Dashboard() {
   const roProgress = roGoal > 0 ? Math.min((data?.monthly_total || 0) / roGoal, 1) * 100 : 0
   const weeklyTrendDirection = weekly?.ro_opened?.trend_direction || 'flat'
   const weeklyTrendPercent = Number(weekly?.ro_opened?.trend_percent || 0)
+  const canEditCalendar = role !== 'assistant'
+
+  const calendarEvents = calendarRos
+    .map((ro) => {
+      const delivered = isDeliveredStatus(ro.status)
+      const actualDate = toDateKey(ro.actual_delivery)
+      const estimatedDate = toDateKey(ro.estimated_delivery)
+      const intakeDate = toDateKey(ro.intake_date)
+      const eventDate = delivered ? (actualDate || estimatedDate || intakeDate) : (estimatedDate || intakeDate)
+      const eventSource = delivered && actualDate ? 'actual_delivery' : (estimatedDate ? 'estimated_delivery' : 'intake_date')
+      return {
+        ...ro,
+        eventDate,
+        eventSource,
+      }
+    })
+    .filter((ro) => !!ro.eventDate)
+
+  const calendarEventsByDate = calendarEvents.reduce((acc, ro) => {
+    if (!acc[ro.eventDate]) acc[ro.eventDate] = []
+    acc[ro.eventDate].push(ro)
+    return acc
+  }, {})
+
+  const monthStart = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), 1)
+  const monthEnd = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 0)
+  const calendarGridStart = new Date(monthStart)
+  calendarGridStart.setDate(monthStart.getDate() - monthStart.getDay())
+  const calendarGridEnd = new Date(monthEnd)
+  calendarGridEnd.setDate(monthEnd.getDate() + (6 - monthEnd.getDay()))
+  const calendarDays = []
+  for (let day = new Date(calendarGridStart); day <= calendarGridEnd; day.setDate(day.getDate() + 1)) {
+    calendarDays.push(new Date(day))
+  }
+  const selectedDayEvents = (calendarEventsByDate[selectedCalendarDate] || [])
+    .slice()
+    .sort((a, b) => {
+      const aDelivered = isDeliveredStatus(a.status)
+      const bDelivered = isDeliveredStatus(b.status)
+      if (aDelivered !== bDelivered) return aDelivered ? 1 : -1
+      return String(a.ro_number || '').localeCompare(String(b.ro_number || ''))
+    })
+
+  function shiftCalendarMonth(offset) {
+    setCalendarMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + offset, 1))
+  }
+
+  async function updateCalendarEstimate(roId, nextDate) {
+    setCalendarError('')
+    setCalendarSavingKey(`estimate:${roId}`)
+    try {
+      await api.patch(`/ros/${roId}`, { estimated_delivery: nextDate || null })
+      if (isTechAccount) await loadTechDashboard()
+      else await loadDashboardData()
+    } catch (err) {
+      setCalendarError(err?.response?.data?.error || 'Could not update estimated date.')
+    } finally {
+      setCalendarSavingKey('')
+    }
+  }
+
+  async function markDeliveredSooner(roId) {
+    if (!window.confirm('Mark this RO as delivered now?')) return
+    setCalendarError('')
+    setCalendarSavingKey(`deliver:${roId}`)
+    try {
+      await api.put(`/ros/${roId}/status`, { status: 'delivery', note: 'Delivered sooner from dashboard calendar' })
+      if (isTechAccount) await loadTechDashboard()
+      else await loadDashboardData()
+    } catch (err) {
+      setCalendarError(err?.response?.data?.error || 'Could not mark this RO as delivered.')
+    } finally {
+      setCalendarSavingKey('')
+    }
+  }
+
+  function renderRoCalendar() {
+    const monthLabel = calendarMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+    return (
+      <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 space-y-3">
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <h2 className="font-semibold text-sm text-white">RO Calendar</h2>
+            <p className="text-xs text-slate-500">Estimated dates are editable here. Deliveries can be marked sooner anytime.</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => shiftCalendarMonth(-1)}
+              className="h-8 w-8 rounded-lg border border-[#2a2d3e] bg-[#0f1117] text-slate-300 hover:text-white"
+            >
+              <ChevronLeft size={14} />
+            </button>
+            <div className="text-xs font-semibold text-slate-200 min-w-[120px] text-center">{monthLabel}</div>
+            <button
+              type="button"
+              onClick={() => shiftCalendarMonth(1)}
+              className="h-8 w-8 rounded-lg border border-[#2a2d3e] bg-[#0f1117] text-slate-300 hover:text-white"
+            >
+              <ChevronRight size={14} />
+            </button>
+          </div>
+        </div>
+
+        {calendarError && (
+          <div className="text-xs text-rose-300 bg-rose-900/20 border border-rose-700/40 rounded-lg px-3 py-2">
+            {calendarError}
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-3">
+          <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-xl p-2">
+            <div className="grid grid-cols-7 gap-1 mb-1">
+              {WEEKDAY_LABELS.map((label) => (
+                <div key={label} className="text-[10px] text-slate-500 text-center py-1">{label}</div>
+              ))}
+            </div>
+            <div className="grid grid-cols-7 gap-1">
+              {calendarDays.map((date) => {
+                const key = toDateKey(date)
+                const inMonth = date.getMonth() === calendarMonth.getMonth()
+                const dayEvents = calendarEventsByDate[key] || []
+                const selected = key === selectedCalendarDate
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setSelectedCalendarDate(key)}
+                    className={`min-h-[86px] rounded-lg border px-1.5 py-1 text-left transition-colors ${
+                      selected
+                        ? 'border-indigo-500 bg-indigo-500/10'
+                        : 'border-[#2a2d3e] bg-[#121625] hover:border-indigo-500/50'
+                    } ${!inMonth ? 'opacity-45' : ''}`}
+                  >
+                    <div className={`text-[10px] font-semibold ${selected ? 'text-indigo-300' : 'text-slate-300'}`}>{date.getDate()}</div>
+                    <div className="mt-1 space-y-1">
+                      {dayEvents.slice(0, 2).map((ro) => (
+                        <div
+                          key={ro.id}
+                          className="text-[9px] px-1 py-0.5 rounded truncate border"
+                          style={{ borderColor: STATUS_COLORS[ro.status] || '#334155', color: '#e2e8f0' }}
+                        >
+                          {ro.ro_number}
+                        </div>
+                      ))}
+                      {dayEvents.length > 2 && (
+                        <div className="text-[9px] text-slate-400">+{dayEvents.length - 2} more</div>
+                      )}
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-xl p-3">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-xs font-semibold text-white">{toDateLabel(selectedCalendarDate)}</div>
+              <div className="text-[10px] text-slate-500">{selectedDayEvents.length} RO(s)</div>
+            </div>
+            {selectedDayEvents.length === 0 ? (
+              <p className="text-xs text-slate-500">No repair orders scheduled for this day.</p>
+            ) : (
+              <div className="space-y-2 max-h-[430px] overflow-y-auto pr-1">
+                {selectedDayEvents.map((ro) => {
+                  const estimateSaveKey = `estimate:${ro.id}`
+                  const deliverSaveKey = `deliver:${ro.id}`
+                  const status = String(ro.status || '').toLowerCase()
+                  const canDeliverSooner = canEditCalendar && !['delivery', 'closed'].includes(status)
+                  return (
+                    <div key={ro.id} className="rounded-lg border border-[#2a2d3e] bg-[#161b2c] p-2.5 space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/ros/${ro.id}`)}
+                          className="text-xs font-semibold text-indigo-300 hover:text-indigo-200 truncate"
+                        >
+                          {ro.ro_number}
+                        </button>
+                        <StatusBadge status={ro.status} />
+                      </div>
+                      <div className="text-[11px] text-slate-400 truncate">
+                        {ro.customer_name || 'No customer'} · {[ro.year, ro.make, ro.model].filter(Boolean).join(' ')}
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-slate-500 block">Estimated Delivery</label>
+                        <input
+                          type="date"
+                          value={toDateKey(ro.estimated_delivery)}
+                          onChange={(e) => updateCalendarEstimate(ro.id, e.target.value)}
+                          disabled={!canEditCalendar || calendarSavingKey === estimateSaveKey || calendarSavingKey === deliverSaveKey}
+                          className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 disabled:opacity-60"
+                        />
+                      </div>
+                      {ro.eventSource === 'actual_delivery' && (
+                        <div className="text-[10px] text-emerald-300">Delivered on {toDateLabel(toDateKey(ro.actual_delivery))}</div>
+                      )}
+                      <div className="flex items-center gap-2">
+                        {canDeliverSooner && (
+                          <button
+                            type="button"
+                            onClick={() => markDeliveredSooner(ro.id)}
+                            disabled={calendarSavingKey === deliverSaveKey || calendarSavingKey === estimateSaveKey}
+                            className="text-[10px] bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white font-semibold px-2 py-1 rounded-md inline-flex items-center gap-1"
+                          >
+                            <Truck size={11} /> {calendarSavingKey === deliverSaveKey ? 'Saving...' : 'Deliver Sooner'}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/ros/${ro.id}`)}
+                          className="text-[10px] bg-[#2a2d3e] hover:bg-[#3a3d4e] text-slate-200 px-2 py-1 rounded-md"
+                        >
+                          Open RO
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   useEffect(() => {
     if (isTechAccount || !weekly?.chart || !weeklyChartRef.current) return undefined
@@ -290,6 +557,7 @@ export default function Dashboard() {
             )}
           </div>
         </div>
+        {renderRoCalendar()}
       </div>
     )
   }
@@ -415,6 +683,8 @@ export default function Dashboard() {
           </div>
         ))}
       </div>
+
+      {renderRoCalendar()}
 
       {weekly && (
         <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 space-y-4">

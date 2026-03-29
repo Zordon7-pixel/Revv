@@ -140,7 +140,16 @@ export default function ROPhotos({ roId, isAdmin }) {
             return (
               <div
                 key={photo.id}
-                className="relative group rounded-xl overflow-hidden border border-[#2a2d3e] aspect-video bg-[#0f1117]"
+                role="button"
+                tabIndex={0}
+                onClick={() => setLightbox(photo)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    setLightbox(photo)
+                  }
+                }}
+                className="relative group rounded-xl overflow-hidden border border-[#2a2d3e] aspect-video bg-[#0f1117] cursor-zoom-in"
               >
                 <img
                   src={photo.photo_url}
@@ -156,16 +165,22 @@ export default function ROPhotos({ roId, isAdmin }) {
                   </div>
                 )}
 
-                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity flex items-center justify-center gap-2 z-10">
                   <button
-                    onClick={() => setLightbox(photo)}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setLightbox(photo)
+                    }}
                     className="p-1.5 bg-white/20 rounded-lg hover:bg-white/30 transition-colors"
                   >
                     <ZoomIn size={14} className="text-white" />
                   </button>
                   {isAdmin && (
                     <button
-                      onClick={() => deletePhoto(photo.id)}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        deletePhoto(photo.id)
+                      }}
                       className="p-1.5 bg-red-600/80 rounded-lg hover:bg-red-500 transition-colors"
                     >
                       <Trash2 size={14} className="text-white" />
