@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, LayoutDashboard, LogOut, MessageSquare, Search, UserCog, Users } from 'lucide-react'
+import { AlertTriangle, BellRing, LayoutDashboard, LogOut, MessageSquare, Search, UserCog, Users } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 function formatDate(value) {
@@ -77,6 +77,17 @@ export default function SuperAdminDashboard() {
     return Array.from(counts.entries()).map(([role, count]) => ({ role, count }))
   }, [teamUsers])
 
+  const ownerAlerts = useMemo(
+    () => ownerAccounts.filter((owner) => (owner.error_count || 0) > 0 || (owner.feedback_count || 0) > 0),
+    [ownerAccounts]
+  )
+
+  useEffect(() => {
+    if (selectedShopId || !ownerAccounts.length) return
+    const highestPriority = ownerAccounts.find((owner) => (owner.error_count || 0) > 0) || ownerAccounts[0]
+    if (highestPriority?.shop_id) setSelectedShopId(highestPriority.shop_id)
+  }, [ownerAccounts, selectedShopId])
+
   const filteredIssues = useMemo(() => {
     const query = search.trim().toLowerCase()
     return issues.filter((issue) => {
@@ -132,6 +143,29 @@ export default function SuperAdminDashboard() {
           </div>
         )}
 
+        <div className={`border rounded-xl p-3 mb-4 ${ownerAlerts.length ? 'bg-red-950/35 border-red-800/70' : 'bg-emerald-950/25 border-emerald-800/60'}`}>
+          <div className="flex items-center gap-2 text-sm font-semibold">
+            <BellRing size={14} className={ownerAlerts.length ? 'text-red-300' : 'text-emerald-300'} />
+            {ownerAlerts.length
+              ? `${ownerAlerts.length} owner account${ownerAlerts.length === 1 ? '' : 's'} need attention`
+              : 'No owner account alerts right now'}
+          </div>
+          {ownerAlerts.length > 0 && (
+            <div className="mt-2 text-xs text-slate-200 flex flex-wrap gap-2">
+              {ownerAlerts.slice(0, 6).map((owner) => (
+                <button
+                  key={`alert-${owner.owner_id}`}
+                  type="button"
+                  onClick={() => setSelectedShopId(owner.shop_id)}
+                  className="px-2.5 py-1 rounded-md border border-red-700/70 bg-red-900/35 hover:bg-red-900/55"
+                >
+                  {owner.owner_name || 'Owner'} • {owner.error_count || 0} errors • {owner.feedback_count || 0} feedback
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
           <div className="bg-[#141824] border border-[#242837] rounded-xl p-4">
             <div className="text-xs text-slate-400">Owner Accounts</div>
@@ -165,9 +199,14 @@ export default function SuperAdminDashboard() {
                   key={owner.owner_id}
                   type="button"
                   onClick={() => setSelectedShopId(owner.shop_id)}
-                  className={`w-full text-left px-4 py-3 border-b border-[#242837] hover:bg-[#1c2233] ${selectedShopId === owner.shop_id ? 'bg-[#1c2233]' : ''}`}
+                  className={`w-full text-left px-4 py-3 border-b border-[#242837] hover:bg-[#1c2233] ${selectedShopId === owner.shop_id ? 'bg-[#1c2233]' : ''} ${((owner.error_count || 0) > 0 || (owner.feedback_count || 0) > 0) ? 'bg-red-950/15' : ''}`}
                 >
-                  <div className="font-medium">{owner.owner_name || 'Owner'}</div>
+                  <div className="font-medium flex items-center gap-2">
+                    <span>{owner.owner_name || 'Owner'}</span>
+                    {((owner.error_count || 0) > 0 || (owner.feedback_count || 0) > 0) && (
+                      <span className="text-[10px] uppercase tracking-widest text-red-300 border border-red-700/70 rounded px-1.5 py-0.5">Alert</span>
+                    )}
+                  </div>
                   <div className="text-xs text-slate-400 mt-0.5">{owner.owner_email || '—'}</div>
                   <div className="text-xs text-slate-500 mt-1">{owner.shop_name || '—'} • {owner.shop_city || '—'} / {owner.shop_state || '—'}</div>
                   <div className="text-[11px] mt-1 text-slate-400">
