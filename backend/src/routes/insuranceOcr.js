@@ -385,7 +385,7 @@ router.post('/parse', auth, upload.single('estimate_image'), async (req, res) =>
     let raw = '';
     let extractedTextForTotals = '';
 
-      if (isPdf) {
+    if (isPdf) {
       let extractedText = '';
       try {
         extractedText = await extractPdfText(req.file.buffer);

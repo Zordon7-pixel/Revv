@@ -21,10 +21,10 @@ const EXTERIOR_PANELS = [
   { id: 'right_front_tire', label: 'RF Tire', type: 'ellipse', cx: 274, cy: 152, rx: 16, ry: 34, family: 'tire' },
   { id: 'left_rear_tire', label: 'LR Tire', type: 'ellipse', cx: 46, cy: 320, rx: 16, ry: 34, family: 'tire' },
   { id: 'right_rear_tire', label: 'RR Tire', type: 'ellipse', cx: 274, cy: 320, rx: 16, ry: 34, family: 'tire' },
-  { id: 'left_front_rim', label: 'LF Rim', type: 'circle', cx: 46, cy: 152, r: 10, family: 'rim' },
-  { id: 'right_front_rim', label: 'RF Rim', type: 'circle', cx: 274, cy: 152, r: 10, family: 'rim' },
-  { id: 'left_rear_rim', label: 'LR Rim', type: 'circle', cx: 46, cy: 320, r: 10, family: 'rim' },
-  { id: 'right_rear_rim', label: 'RR Rim', type: 'circle', cx: 274, cy: 320, r: 10, family: 'rim' },
+  { id: 'left_front_rim', label: 'LF Rim', type: 'circle', cx: 46, cy: 152, r: 8, family: 'rim' },
+  { id: 'right_front_rim', label: 'RF Rim', type: 'circle', cx: 274, cy: 152, r: 8, family: 'rim' },
+  { id: 'left_rear_rim', label: 'LR Rim', type: 'circle', cx: 46, cy: 320, r: 8, family: 'rim' },
+  { id: 'right_rear_rim', label: 'RR Rim', type: 'circle', cx: 274, cy: 320, r: 8, family: 'rim' },
 ]
 
 const INTERIOR_PANELS = [

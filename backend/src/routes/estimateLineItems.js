@@ -388,4 +388,75 @@ router.delete('/:roId/:itemId', auth, async (req, res) => {
   }
 });
 
+// ── Estimate Metadata — adjuster totals persistence ──────────────────────────
+
+// GET /estimate-items/metadata/:roId — fetch adjuster totals for a given RO
+router.get('/metadata/:roId', auth, async (req, res) => {
+  try {
+    const { roId } = req.params;
+    const ro = await ensureRepairOrder(roId, req.user.shop_id);
+    if (!ro) return res.status(404).json({ error: 'Repair order not found' });
+
+    const metadata = await dbGet(
+      `SELECT id, ro_id, shop_id, adjuster_totals, adjuster_raw_text, created_at, updated_at
+       FROM estimate_metadata
+       WHERE ro_id = $1 AND shop_id = $2`,
+      [roId, req.user.shop_id]
+    );
+
+    return res.json({ metadata: metadata || null });
+  } catch (err) {
+    console.error('[Estimate Metadata] GET error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /estimate-items/metadata/:roId — upsert adjuster totals for a given RO
+router.post('/metadata/:roId', auth, async (req, res) => {
+  try {
+    const { roId } = req.params;
+    const ro = await ensureRepairOrder(roId, req.user.shop_id);
+    if (!ro) return res.status(404).json({ error: 'Repair order not found' });
+
+    const adjusterTotals = req.body?.adjuster_totals ?? null;
+    const adjusterRawText = req.body?.adjuster_raw_text !== undefined
+      ? String(req.body.adjuster_raw_text || '')
+      : undefined;
+
+    const existing = await dbGet(
+      `SELECT id FROM estimate_metadata WHERE ro_id = $1 AND shop_id = $2`,
+      [roId, req.user.shop_id]
+    );
+
+    let metadata;
+    if (existing) {
+      metadata = await dbGet(
+        `UPDATE estimate_metadata
+         SET adjuster_totals = COALESCE($1, adjuster_totals),
+             adjuster_raw_text = COALESCE($2, adjuster_raw_text),
+             updated_at = NOW()
+         WHERE ro_id = $3 AND shop_id = $4
+         RETURNING id, ro_id, shop_id, adjuster_totals, adjuster_raw_text, created_at, updated_at`,
+        [adjusterTotals !== undefined ? JSON.stringify(adjusterTotals) : null,
+         adjusterRawText !== undefined ? adjusterRawText : null,
+         roId, req.user.shop_id]
+      );
+    } else {
+      metadata = await dbGet(
+        `INSERT INTO estimate_metadata (id, ro_id, shop_id, adjuster_totals, adjuster_raw_text, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+         RETURNING id, ro_id, shop_id, adjuster_totals, adjuster_raw_text, created_at, updated_at`,
+        [uuidv4(), roId, req.user.shop_id,
+         adjusterTotals !== undefined ? JSON.stringify(adjusterTotals) : null,
+         adjusterRawText !== undefined ? adjusterRawText : null]
+      );
+    }
+
+    return res.json({ success: true, metadata });
+  } catch (err) {
+    console.error('[Estimate Metadata] POST error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 module.exports = router;

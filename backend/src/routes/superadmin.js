@@ -261,6 +261,17 @@ router.post('/impersonate', async (req, res) => {
     if (!targetUser.shop_id) return res.status(400).json({ error: 'Target user is not linked to a shop' });
 
     const token = issueImpersonationToken(targetUser, req.user.id);
+
+    // Non-blocking audit log — do not fail the impersonation if log write fails
+    await dbRun(
+      `INSERT INTO audit_log (id, action, actor_id, target_user_id, target_shop_id, metadata, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+      [uuidv4(), 'impersonate', req.user.id, targetUser.id, targetUser.shop_id,
+       JSON.stringify({ role: targetUser.role, email: targetUser.email })]
+    ).catch((err) => {
+      console.error('[superadmin] Audit log insert failed:', err.message);
+    });
+
     return res.json({
       token,
       user: {

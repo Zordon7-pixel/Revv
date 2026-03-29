@@ -442,6 +442,17 @@ export default function Dashboard() {
             )}
           </div>
         </div>
+        {(() => {
+          const unscheduled = calendarRos.filter(
+            (ro) => !toDateKey(ro.estimated_delivery) && !toDateKey(ro.intake_date) && !isDeliveredStatus(ro.status)
+          ).length
+          if (unscheduled === 0) return null
+          return (
+            <p className="text-xs text-slate-500 text-center pt-1">
+              {unscheduled} active RO{unscheduled !== 1 ? 's' : ''} have no scheduled date
+            </p>
+          )
+        })()}
       </div>
     )
   }

@@ -17,6 +17,7 @@ import { useLanguage } from '../contexts/LanguageContext'
 import VehicleDiagram from '../components/VehicleDiagram'
 import ClaimStatusCard from '../components/ClaimStatusCard'
 import InsurancePanel from '../components/InsurancePanel'
+import ROOperations from '../components/ROOperations'
 import { optimizeImageForUpload } from '../lib/imageUpload'
 
 const PART_STATUS_META = {
@@ -1309,22 +1310,24 @@ export default function RODetail() {
 
           {preDropoffExpanded && (
             <div className="mt-3 space-y-3">
-              <label
-                className={`inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg cursor-pointer transition-colors ${
-                  preDropoffUploading
-                    ? 'bg-indigo-800 text-indigo-300 opacity-50 pointer-events-none'
-                    : 'bg-indigo-600 hover:bg-indigo-500 text-white'
-                }`}
-              >
-                <Camera size={12} /> {preDropoffUploading ? 'Uploading...' : 'Upload Pre-Dropoff Photo'}
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  disabled={preDropoffUploading || !canUploadPreDropoff}
-                  onChange={uploadPreDropoffPhoto}
-                />
-              </label>
+              {canUploadPreDropoff && (
+                <label
+                  className={`inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg cursor-pointer transition-colors ${
+                    preDropoffUploading
+                      ? 'bg-indigo-800 text-indigo-300 opacity-50 pointer-events-none'
+                      : 'bg-indigo-600 hover:bg-indigo-500 text-white'
+                  }`}
+                >
+                  <Camera size={12} /> {preDropoffUploading ? 'Uploading...' : 'Upload Pre-Dropoff Photo'}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    disabled={preDropoffUploading}
+                    onChange={uploadPreDropoffPhoto}
+                  />
+                </label>
+              )}
 
               {preDropoffPhotos.length === 0 ? (
                 <p className="text-sm text-slate-500">No pre-dropoff photos added yet.</p>
@@ -1626,12 +1629,66 @@ export default function RODetail() {
                     <span className="text-slate-500">{k}</span><span className="text-white">{v}</span>
                   </div>
                 ))}
-                {ro.deductible_waived > 0 && <div className="flex justify-between text-xs"><span className="text-red-400">Deductible Waived</span><span className="text-red-400">-${ro.deductible_waived}</span></div>}
-                {ro.referral_fee > 0 && <div className="flex justify-between text-xs"><span className="text-red-400">Referral Fee</span><span className="text-red-400">-${ro.referral_fee}</span></div>}
-                {ro.goodwill_repair_cost > 0 && <div className="flex justify-between text-xs"><span className="text-red-400">Goodwill Repair</span><span className="text-red-400">-${ro.goodwill_repair_cost}</span></div>}
-                <div className="border-t border-[#2a2d3e] pt-2 flex justify-between text-sm font-bold">
+                {/* Editable profit adjustment fields */}
+                {[
+                  ['Deductible Waived', 'deductible_waived', ro.deductible_waived],
+                  ['Referral Fee', 'referral_fee', ro.referral_fee],
+                  ['Goodwill Repair', 'goodwill_repair_cost', ro.goodwill_repair_cost],
+                ].map(([label, fieldKey, val]) => (
+                  parseFloat(val || 0) > 0 || inlineEdit.field === fieldKey ? (
+                    <div key={fieldKey} className="flex justify-between items-center text-xs">
+                      <span className="text-red-400">{label}</span>
+                      {inlineEdit.field === fieldKey ? (
+                        <span className="flex items-center gap-1">
+                          <input
+                            autoFocus
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={inlineEdit.value}
+                            onChange={e => setInlineEdit(v => ({ ...v, value: e.target.value }))}
+                            onKeyDown={e => { if (e.key === 'Enter') saveInlineField(fieldKey, parseFloat(inlineEdit.value) || 0); else if (e.key === 'Escape') setInlineEdit({ field: null, value: '' }) }}
+                            onBlur={() => saveInlineField(fieldKey, parseFloat(inlineEdit.value) || 0)}
+                            className="bg-[#0f1117] border border-[#2a2d3e] rounded px-2 py-0.5 text-xs text-white focus:outline-none focus:border-indigo-500 w-24"
+                          />
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1">
+                          <span className="text-red-400">-${parseFloat(val || 0).toFixed(2)}</span>
+                          {userIsAdmin && <button type="button" onClick={() => setInlineEdit({ field: fieldKey, value: String(parseFloat(val || 0)) })} className="text-slate-600 hover:text-slate-300"><Pencil size={10} /></button>}
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    userIsAdmin ? (
+                      <div key={fieldKey} className="flex justify-between items-center text-xs">
+                        <span className="text-slate-600">{label}</span>
+                        <button type="button" onClick={() => setInlineEdit({ field: fieldKey, value: '0' })} className="text-slate-600 hover:text-slate-400 text-[10px]">+ set</button>
+                      </div>
+                    ) : null
+                  )
+                ))}
+                <div className="border-t border-[#2a2d3e] pt-2 flex justify-between items-center text-sm font-bold">
                   <span className="text-emerald-400">True Profit</span>
-                  <span className="text-emerald-400">${parseFloat(ro.true_profit||0).toFixed(2)}</span>
+                  {inlineEdit.field === 'true_profit' ? (
+                    <span className="flex items-center gap-1">
+                      <input
+                        autoFocus
+                        type="number"
+                        step="0.01"
+                        value={inlineEdit.value}
+                        onChange={e => setInlineEdit(v => ({ ...v, value: e.target.value }))}
+                        onKeyDown={e => { if (e.key === 'Enter') saveInlineField('true_profit', parseFloat(inlineEdit.value) || 0); else if (e.key === 'Escape') setInlineEdit({ field: null, value: '' }) }}
+                        onBlur={() => saveInlineField('true_profit', parseFloat(inlineEdit.value) || 0)}
+                        className="bg-[#0f1117] border border-emerald-700/50 rounded px-2 py-0.5 text-sm text-emerald-300 focus:outline-none focus:border-emerald-500 w-28"
+                      />
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1">
+                      <span className="text-emerald-400">${parseFloat(ro.true_profit||0).toFixed(2)}</span>
+                      {userIsAdmin && <button type="button" onClick={() => setInlineEdit({ field: 'true_profit', value: String(parseFloat(ro.true_profit || 0)) })} className="text-slate-600 hover:text-slate-300"><Pencil size={10} /></button>}
+                    </span>
+                  )}
                 </div>
               </div>
             )}
@@ -2045,6 +2102,15 @@ export default function RODetail() {
             )}
           </div>
         </div>
+      )}
+
+      {/* Job Operations — multi-tech assignment */}
+      {overviewTab === 'technician' && userIsEmployee && (
+        <ROOperations
+          roId={ro.id}
+          technicians={shopUsers.filter(u => ['owner', 'admin', 'technician', 'employee', 'staff'].includes(u.role))}
+          readOnly={userIsAssistant}
+        />
       )}
 
       {/* Tech Notes */}

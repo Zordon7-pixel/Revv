@@ -660,7 +660,7 @@ router.get('/', auth, async (req, res) => {
 
     if (normalizedStatus && normalizedStatus !== 'all') {
       if (normalizedStatus === 'open') {
-        where.push(`${normalizedStatusExpr} NOT IN ('closed', 'completed')`);
+        where.push(`${normalizedStatusExpr} NOT IN ('closed', 'completed', 'delivery', 'ready')`);
       } else if (normalizedStatus === 'in-progress') {
         where.push(`${normalizedStatusExpr} IN ('repair', 'paint', 'qc', 'in-progress')`);
       } else if (normalizedStatus === 'completed') {
@@ -1719,12 +1719,15 @@ router.put('/:id', auth, requireTechnician, async (req, res) => {
       );
     }
 
-    const ALLOWED_RO_FIELDS = ['status','notes','tech_notes','assigned_to','estimate_amount','actual_amount','updated_at','insurance_company','adjuster_name','adjuster_phone','claim_number','insurance_claim_number','policy_number','is_drp','insurance_approved_amount','supplement_status','supplement_amount','supplement_notes','total_insurer_owed','deductible','auth_number','job_type','payment_type','insurer','adjuster_email','estimated_delivery','intake_date','customer_phone','parts_cost','labor_cost','sublet_cost','tax','total','deductible_waived','referral_fee','goodwill_repair_cost','damaged_panels','claim_status'];
+    const ALLOWED_RO_FIELDS = ['status','notes','tech_notes','assigned_to','estimate_amount','actual_amount','updated_at','insurance_company','adjuster_name','adjuster_phone','claim_number','insurance_claim_number','policy_number','is_drp','insurance_approved_amount','supplement_status','supplement_amount','supplement_notes','total_insurer_owed','deductible','auth_number','job_type','payment_type','insurer','adjuster_email','estimated_delivery','intake_date','customer_phone','parts_cost','labor_cost','sublet_cost','tax','total','deductible_waived','referral_fee','goodwill_repair_cost','damaged_panels','claim_status','true_profit'];
     const updates = Object.fromEntries(Object.entries(body).filter(([k]) => ALLOWED_RO_FIELDS.includes(k)));
     const statusChanged = Object.prototype.hasOwnProperty.call(updates, 'status') && updates.status !== ro.status;
     if (Object.keys(updates).length > 0) {
-      const profit = calculateProfit({ ...ro, ...updates });
-      updates.true_profit = profit.trueProfit;
+      // If true_profit is explicitly provided, use it as a manual override — skip auto-calculation
+      if (!Object.prototype.hasOwnProperty.call(body, 'true_profit')) {
+        const profit = calculateProfit({ ...ro, ...updates });
+        updates.true_profit = profit.trueProfit;
+      }
       updates.updated_at = new Date().toISOString();
       const updateKeys = Object.keys(updates);
       const updateVals = Object.values(updates);

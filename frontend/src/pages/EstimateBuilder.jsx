@@ -244,14 +244,18 @@ export default function EstimateBuilder() {
     async function load() {
       setLoading(true)
       try {
-        const [itemsRes, roRes] = await Promise.all([
+        const [itemsRes, roRes, metaRes] = await Promise.all([
           api.get(`/estimate-items/${roId}`),
           api.get(`/ros/${roId}`),
+          api.get(`/estimate-metadata/metadata/${roId}`).catch(() => null),
         ])
         if (!mounted) return
         setItems(itemsRes.data?.items || [])
         setSummary(itemsRes.data?.summary || null)
         setRo(roRes.data || null)
+        if (metaRes?.data?.metadata?.adjuster_totals) {
+          setAdjusterTotals(metaRes.data.metadata.adjuster_totals)
+        }
         await loadOpportunities({ silent: true })
       } catch (err) {
         alert(err?.response?.data?.error || 'Could not load estimate builder')
@@ -594,6 +598,10 @@ export default function EstimateBuilder() {
         noticeLines.push(`${partsRequestsFailed} part request${partsRequestsFailed !== 1 ? 's' : ''} could not be created.`)
       }
       alert(noticeLines.join('\n'))
+      // Persist adjuster totals if they were loaded during this session
+      if (adjusterTotals) {
+        api.post(`/estimate-metadata/metadata/${roId}`, { adjuster_totals: adjusterTotals }).catch(() => {})
+      }
       await loadOpportunities({ silent: true })
     } catch (err) {
       alert(err?.response?.data?.error || 'Import failed — some items may not have been added')

@@ -376,6 +376,48 @@ async function runMigrations() {
       `CREATE INDEX IF NOT EXISTS idx_estimate_line_items_ro ON estimate_line_items(ro_id)`,
       `CREATE INDEX IF NOT EXISTS idx_estimate_line_items_shop ON estimate_line_items(shop_id)`,
       `ALTER TABLE estimate_line_items ALTER COLUMN ro_id TYPE TEXT USING ro_id::TEXT`,
+      // Audit log for superadmin actions (impersonation, etc.)
+      `CREATE TABLE IF NOT EXISTS audit_log (
+        id TEXT PRIMARY KEY,
+        action TEXT NOT NULL,
+        actor_id TEXT,
+        target_user_id TEXT,
+        target_shop_id TEXT,
+        metadata JSONB,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )`,
+      // Estimate metadata — persists adjuster totals per RO
+      `CREATE TABLE IF NOT EXISTS estimate_metadata (
+        id TEXT PRIMARY KEY,
+        ro_id TEXT NOT NULL REFERENCES repair_orders(id) ON DELETE CASCADE,
+        shop_id TEXT NOT NULL,
+        adjuster_totals JSONB,
+        adjuster_raw_text TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_estimate_metadata_ro_shop ON estimate_metadata(ro_id, shop_id)`,
+      // RO Operations — multi-technician job operation rows
+      `CREATE TABLE IF NOT EXISTS ro_operations (
+        id TEXT PRIMARY KEY,
+        ro_id TEXT NOT NULL REFERENCES repair_orders(id) ON DELETE CASCADE,
+        shop_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        operation_type TEXT DEFAULT 'general',
+        technician_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+        status TEXT DEFAULT 'queued',
+        estimated_hours NUMERIC(6,2),
+        actual_hours NUMERIC(6,2),
+        labor_rate NUMERIC(10,2),
+        notes TEXT,
+        sort_order INTEGER DEFAULT 0,
+        started_at TIMESTAMPTZ,
+        completed_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_ro_operations_ro_id ON ro_operations(ro_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_ro_operations_shop_id ON ro_operations(shop_id)`,
     ];
 
     // Fix job_status_log FK to use ON DELETE CASCADE
