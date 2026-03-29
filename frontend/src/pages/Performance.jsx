@@ -119,7 +119,7 @@ export default function Performance() {
                       {stat.ros_completed}
                     </span>
                   </td>
-                  <td className="text-right text-slate-300 px-4 py-3">{stat.avg_hours_per_ro.toFixed(1)} hrs</td>
+                  <td className="text-right text-slate-300 px-4 py-3">{Number(stat.avg_hours_per_ro || 0).toFixed(1)} hrs</td>
                   <td className="text-right text-emerald-400 font-medium px-4 py-3">${parseFloat(stat.total_labor_revenue).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                   <td className="text-right text-slate-400 px-4 py-3">${parseFloat(stat.total_parts_cost).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                 </tr>
@@ -139,7 +139,7 @@ export default function Performance() {
               <div>
                 <p className="text-xs text-slate-500">Avg Hours/RO</p>
                 <p className="text-lg font-bold text-white mt-1">
-                  {stats.length > 0 ? (stats.reduce((sum, s) => sum + s.avg_hours_per_ro * s.ros_completed, 0) / stats.reduce((sum, s) => sum + s.ros_completed, 0)).toFixed(1) : '0.0'}
+                  {stats.length > 0 ? (stats.reduce((sum, s) => sum + Number(s.avg_hours_per_ro || 0) * s.ros_completed, 0) / stats.reduce((sum, s) => sum + s.ros_completed, 0)).toFixed(1) : '0.0'}
                 </p>
               </div>
               <div>

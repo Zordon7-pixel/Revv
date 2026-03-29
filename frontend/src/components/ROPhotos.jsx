@@ -25,7 +25,7 @@ export default function ROPhotos({ roId, isAdmin }) {
   const fileRef = useRef(null)
 
   const load = () =>
-    api.get(`/photos/${roId}`).then(r => setPhotos(r.data.photos || []))
+    api.get(`/photos/${roId}`).then(r => setPhotos(r.data.photos || [])).catch(err => console.error('[ROPhotos] Failed to load photos:', err.message))
 
   useEffect(() => { load() }, [roId])
 
@@ -60,8 +60,12 @@ export default function ROPhotos({ roId, isAdmin }) {
 
   async function deletePhoto(photoId) {
     if (!confirm('Delete this photo?')) return
-    await api.delete(`/photos/${photoId}`)
-    load()
+    try {
+      await api.delete(`/photos/${photoId}`)
+      load()
+    } catch (err) {
+      alert(err?.response?.data?.error || 'Failed to delete photo')
+    }
   }
 
   const inp = 'bg-[#0f1117] border border-[#2a2d3e] rounded-lg text-xs text-slate-300 px-2 py-1.5 focus:outline-none focus:border-indigo-500'

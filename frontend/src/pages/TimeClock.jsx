@@ -227,8 +227,12 @@ export default function TimeClock() {
 
   async function deleteEntry(id) {
     if (!confirm('Delete this time entry?')) return
-    await api.delete(`/timeclock/${id}`)
-    await refresh()
+    try {
+      await api.delete(`/timeclock/${id}`)
+      await refresh()
+    } catch (err) {
+      alert(err?.response?.data?.error || 'Failed to delete entry')
+    }
   }
 
   async function startLunch() {

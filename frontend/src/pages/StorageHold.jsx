@@ -47,6 +47,8 @@ export default function StorageHold() {
       ])
       setRows(storageRes.data.ros || [])
       setSummary(summaryRes.data || { unpaid_total: 0 })
+    } catch (err) {
+      console.error('[StorageHold] Failed to load:', err.message)
     } finally {
       setLoading(false)
     }
@@ -55,8 +57,12 @@ export default function StorageHold() {
   useEffect(() => { load() }, [])
 
   async function loadCharges(roId) {
-    const { data } = await api.get(`/storage/${roId}/charges`)
-    setChargesByRo((prev) => ({ ...prev, [roId]: data.charges || [] }))
+    try {
+      const { data } = await api.get(`/storage/${roId}/charges`)
+      setChargesByRo((prev) => ({ ...prev, [roId]: data.charges || [] }))
+    } catch (err) {
+      console.error('[StorageHold] Failed to load charges:', err.message)
+    }
   }
 
   function openBillModal(ro) {

@@ -377,10 +377,14 @@ export default function RODetail() {
   }
 
   async function copyClaimLink() {
-    const url = `${window.location.origin}/claim/${claimLink.token}`
-    await navigator.clipboard.writeText(url)
-    setLinkCopied(true)
-    setTimeout(() => setLinkCopied(false), 3000)
+    try {
+      const url = `${window.location.origin}/claim/${claimLink.token}`
+      await navigator.clipboard.writeText(url)
+      setLinkCopied(true)
+      setTimeout(() => setLinkCopied(false), 3000)
+    } catch (err) {
+      alert('Could not copy link — clipboard access denied')
+    }
   }
 
   async function generateCustomerLinks() {
@@ -417,8 +421,12 @@ export default function RODetail() {
   async function advance() {
     const idx = STAGES.indexOf(ro.status)
     if (idx < STAGES.length - 1) {
-      await api.put(`/ros/${id}/status`, { status: STAGES[idx+1] })
-      load()
+      try {
+        await api.put(`/ros/${id}/status`, { status: STAGES[idx+1] })
+        load()
+      } catch (err) {
+        alert(err?.response?.data?.error || 'Failed to advance status')
+      }
     }
   }
 
@@ -533,8 +541,12 @@ export default function RODetail() {
   }
 
   async function updatePartsReqStatus(reqId, status) {
-    await api.patch(`/parts-requests/${reqId}`, { status })
-    loadPartsRequests()
+    try {
+      await api.patch(`/parts-requests/${reqId}`, { status })
+      loadPartsRequests()
+    } catch (err) {
+      alert(err?.response?.data?.error || 'Failed to update parts request')
+    }
   }
 
   async function approveEstimate() {

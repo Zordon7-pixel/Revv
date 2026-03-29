@@ -110,7 +110,7 @@ export default function ADASCalibration() {
       <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-sm font-semibold text-white">Vehicles Needing ADAS Calibration</h2>
-          <button onClick={() => loadQueue()} className="text-xs text-indigo-300 hover:text-indigo-200">Refresh</button>
+          <button onClick={() => loadQueue().catch(() => {})} className="text-xs text-indigo-300 hover:text-indigo-200">Refresh</button>
         </div>
         {loadingQueue ? (
           <p className="text-sm text-slate-500">Loading queue...</p>

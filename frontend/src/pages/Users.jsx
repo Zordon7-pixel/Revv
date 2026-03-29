@@ -64,8 +64,12 @@ export default function Users() {
 
   async function deleteUser(id, name) {
     if (!confirm(`Remove ${name}? This cannot be undone.`)) return
-    await api.delete(`/users/${id}`)
-    load()
+    try {
+      await api.delete(`/users/${id}`)
+      load()
+    } catch (err) {
+      alert(err?.response?.data?.error || 'Failed to remove user')
+    }
   }
 
   function close() { setShowAdd(false); setForm(empty) }

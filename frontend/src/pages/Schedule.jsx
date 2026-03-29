@@ -283,16 +283,20 @@ export default function Schedule() {
   }
 
   async function loadMonthShifts() {
-    const year = currentMonth.getFullYear()
-    const month = currentMonth.getMonth()
-    const from = new Date(year, month, 1).toISOString().slice(0, 10)
-    const to = new Date(year, month + 1, 0).toISOString().slice(0, 10)
-    const [s, e] = await Promise.all([
-      api.get(`/schedule?from=${from}&to=${to}`),
-      canManage ? api.get('/schedule/employees') : Promise.resolve({ data: { employees: [] } }),
-    ])
-    setShifts(s.data.shifts || [])
-    if (canManage) setEmployees(e.data.employees || [])
+    try {
+      const year = currentMonth.getFullYear()
+      const month = currentMonth.getMonth()
+      const from = new Date(year, month, 1).toISOString().slice(0, 10)
+      const to = new Date(year, month + 1, 0).toISOString().slice(0, 10)
+      const [s, e] = await Promise.all([
+        api.get(`/schedule?from=${from}&to=${to}`),
+        canManage ? api.get('/schedule/employees') : Promise.resolve({ data: { employees: [] } }),
+      ])
+      setShifts(s.data.shifts || [])
+      if (canManage) setEmployees(e.data.employees || [])
+    } catch (err) {
+      console.error('[Schedule] Failed to load month shifts:', err.message)
+    }
   }
 
   useEffect(() => {
