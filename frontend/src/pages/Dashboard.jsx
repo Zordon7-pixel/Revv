@@ -624,6 +624,7 @@ export default function Dashboard() {
       accent: 'bg-indigo-500',
       card: 'bg-gradient-to-br from-indigo-900/40 to-[#1a1d2e]',
       to: '/ros?status=open',
+      goalProgress: roGoal > 0 ? Math.round(roProgress) : null,
     },
     {
       label: 'Completed',
@@ -633,6 +634,7 @@ export default function Dashboard() {
       accent: 'bg-emerald-500',
       card: 'bg-gradient-to-br from-slate-800/60 to-[#1a1d2e]',
       to: '/ros?status=completed',
+      goalProgress: null,
     },
     ...(admin ? [
       {
@@ -643,6 +645,7 @@ export default function Dashboard() {
         accent: 'bg-emerald-500',
         card: 'bg-gradient-to-br from-emerald-900/40 to-[#1a1d2e]',
         to: '/monthly-report',
+        goalProgress: revenueGoal > 0 ? Math.round(revenueProgress) : null,
       },
       {
         label: 'True Profit',
@@ -652,6 +655,7 @@ export default function Dashboard() {
         accent: 'bg-amber-500',
         card: 'bg-gradient-to-br from-amber-900/40 to-[#1a1d2e]',
         to: '/monthly-report',
+        goalProgress: null,
       },
     ] : []),
   ]
@@ -661,65 +665,13 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
+      {/* 1. Header */}
       <div>
         <p className="text-slate-400 text-sm font-medium mb-1 flex items-center gap-1.5">{greetingText} <Hand size={14} /></p>
         <h1 className="text-xl font-bold text-white">Dashboard</h1>
       </div>
 
-      <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-3 flex items-center justify-between">
-        <div className="inline-flex items-center gap-2 text-sm text-slate-300">
-          <CalendarDays size={15} className="text-indigo-300" />
-          Pipeline Scope: <span className="text-white font-semibold">All Repair Orders</span>
-        </div>
-        {admin && (
-          <button
-            onClick={() => navigate('/monthly-report')}
-            className="inline-flex items-center gap-1 text-xs text-indigo-300 hover:text-indigo-200 transition-colors"
-          >
-            View Report
-            <ChevronRight size={14} />
-          </button>
-        )}
-      </div>
-
-      {goal && (
-        <div
-          onClick={() => navigate('/goals')}
-          className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 space-y-3 cursor-pointer"
-        >
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-white">Monthly Goals</h2>
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                navigate('/settings')
-              }}
-              className="text-xs text-indigo-300 hover:text-indigo-200"
-            >
-              Edit Goals
-            </button>
-          </div>
-
-          <div>
-            <div className="text-xs text-slate-300 mb-1">
-              Revenue (This Month): ${(data?.monthly_revenue || 0).toLocaleString()} / ${revenueGoal.toLocaleString()} - {Math.round(revenueProgress)}%
-            </div>
-            <div className="h-2 bg-[#0f1117] rounded-full overflow-hidden">
-              <div className="h-full bg-emerald-500 transition-all" style={{ width: `${revenueProgress}%` }} />
-            </div>
-          </div>
-
-          <div>
-            <div className="text-xs text-slate-300 mb-1">
-              RO Count (This Month): {(data?.monthly_total || 0).toLocaleString()} / {roGoal.toLocaleString()} - {Math.round(roProgress)}%
-            </div>
-            <div className="h-2 bg-[#0f1117] rounded-full overflow-hidden">
-              <div className="h-full bg-indigo-500 transition-all" style={{ width: `${roProgress}%` }} />
-            </div>
-          </div>
-        </div>
-      )}
-
+      {/* 2. Stats grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
         {stats.map(s => (
           <div
@@ -733,136 +685,55 @@ export default function Dashboard() {
               <s.icon size={18} className={s.color} />
             </div>
             <div className={`text-2xl font-bold ${s.color}`}>{s.value}</div>
+            {s.goalProgress != null && (
+              <div className="mt-2">
+                <div className="h-1 bg-[#0f1117] rounded-full overflow-hidden">
+                  <div className={`h-full ${s.accent} transition-all`} style={{ width: `${Math.min(s.goalProgress, 100)}%` }} />
+                </div>
+                <div className="text-[10px] text-slate-500 mt-0.5">{s.goalProgress}% of goal</div>
+              </div>
+            )}
           </div>
         ))}
       </div>
 
+      {/* 3. Alert strip (conditional) */}
+      {(pendingCarryover.length > 0 || (admin && adasQueue.length > 0) || (admin && pendingAppointments > 0)) && (
+        <div className="flex flex-wrap gap-2">
+          {pendingCarryover.length > 0 && (
+            <button
+              onClick={() => setShowCarryoverModal(true)}
+              className="inline-flex items-center gap-2 text-xs bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-200 font-medium px-3 py-2 rounded-lg transition-colors"
+            >
+              <AlertCircle size={13} />
+              {pendingCarryover.length} carryover{pendingCarryover.length !== 1 ? 's' : ''} need revenue assignment
+            </button>
+          )}
+          {admin && adasQueue.length > 0 && (
+            <button
+              onClick={() => navigate('/adas')}
+              className="inline-flex items-center gap-2 text-xs bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-200 font-medium px-3 py-2 rounded-lg transition-colors"
+            >
+              <Radar size={13} />
+              {adasQueue.length} ADAS calibration{adasQueue.length !== 1 ? 's' : ''} pending
+            </button>
+          )}
+          {admin && pendingAppointments > 0 && (
+            <button
+              onClick={() => navigate('/book')}
+              className="inline-flex items-center gap-2 text-xs bg-yellow-500/10 hover:bg-yellow-500/20 border border-yellow-500/30 text-yellow-200 font-medium px-3 py-2 rounded-lg transition-colors"
+            >
+              <CalendarDays size={13} />
+              {pendingAppointments} appointment request{pendingAppointments !== 1 ? 's' : ''}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* 4. RO Calendar */}
       {renderRoCalendar()}
 
-      {weekly && (
-        <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-white">Weekly</h2>
-            <span className="text-xs text-slate-400">This week vs last week</span>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
-            <div
-              onClick={() => navigate('/ros')}
-              className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3 cursor-pointer hover:ring-1 hover:ring-indigo-500/40 transition"
-            >
-              <div className="text-xs text-slate-400 mb-1">ROs Opened</div>
-              <div className="text-2xl font-bold text-white">{weekly.ro_opened?.this_week || 0}</div>
-              <div className="mt-1 inline-flex items-center gap-1 text-xs">
-                {weeklyTrendDirection === 'up' && <ArrowUpRight size={14} className="text-emerald-300" />}
-                {weeklyTrendDirection === 'down' && <ArrowDownRight size={14} className="text-rose-300" />}
-                {weeklyTrendDirection === 'flat' && <Minus size={14} className="text-slate-300" />}
-                <span className={weeklyTrendDirection === 'down' ? 'text-rose-300' : weeklyTrendDirection === 'up' ? 'text-emerald-300' : 'text-slate-300'}>
-                  {weeklyTrendPercent > 0 ? '+' : ''}{weeklyTrendPercent}% vs last week ({weekly.ro_opened?.last_week || 0})
-                </span>
-              </div>
-            </div>
-            <div
-              onClick={() => navigate('/monthly-report')}
-              className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3 cursor-pointer hover:ring-1 hover:ring-indigo-500/40 transition"
-            >
-              <div className="text-xs text-slate-400 mb-1">Revenue Collected</div>
-              <div className="text-2xl font-bold text-emerald-300">
-                ${(Number(weekly.revenue_collected_this_week || 0)).toLocaleString('en-US', { maximumFractionDigits: 0 })}
-              </div>
-              <div className="text-xs text-slate-500 mt-1">Paid invoices this week</div>
-            </div>
-            <div
-              onClick={() => navigate('/performance')}
-              className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3 md:col-span-2 cursor-pointer hover:ring-1 hover:ring-indigo-500/40 transition"
-            >
-              <div className="text-xs text-slate-400 mb-2">Top Techs by Jobs Completed</div>
-              {weekly.top_techs?.length ? (
-                <div className="space-y-2">
-                  {weekly.top_techs.map((tech, idx) => (
-                    <div key={tech.tech_id} className="flex items-center justify-between text-sm">
-                      <span className="text-white">{idx + 1}. {tech.tech_name}</span>
-                      <span className="text-indigo-300 font-semibold">{tech.jobs_completed}</span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-xs text-slate-500">No completed jobs yet this week.</div>
-              )}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3">
-              <div className="flex items-center justify-between mb-2">
-                <div className="text-xs text-slate-400">RO Opened Trend</div>
-                <div className="text-xs text-slate-500">This week vs last 7 days</div>
-              </div>
-              <div className="h-48">
-                <canvas ref={weeklyChartRef} />
-              </div>
-            </div>
-            <div
-              onClick={() => navigate('/parts-on-order')}
-              className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3 cursor-pointer hover:ring-1 hover:ring-indigo-500/40 transition"
-            >
-              <div className="text-xs text-slate-400 mb-1">Pending Parts</div>
-              <div className="text-3xl font-bold text-amber-300">{weekly.pending_parts_count || 0}</div>
-              <div className="text-xs text-slate-500 mt-1">ROs with parts ordered or awaiting</div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {pendingCarryover.length > 0 && (
-        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 flex flex-wrap items-center justify-between gap-3">
-          <div className="inline-flex items-center gap-2 text-sm text-amber-200">
-            <AlertCircle size={16} />
-            {pendingCarryover.length} job(s) carried over from last month. Assign revenue period.
-          </div>
-          <button
-            onClick={() => setShowCarryoverModal(true)}
-            className="bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 text-amber-100 text-xs font-medium px-3 py-1.5 rounded-md transition-colors"
-          >
-            Review Now
-          </button>
-        </div>
-      )}
-
-      {admin && (
-        <div className="bg-cyan-500/10 border border-cyan-500/30 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-sm font-semibold text-cyan-200 inline-flex items-center gap-1.5">
-              <Radar size={14} /> ADAS Calibration Queue
-            </h2>
-            <p className="text-slate-300 text-xs mt-1">
-              {adasQueue.length} vehicle{adasQueue.length === 1 ? '' : 's'} need post-repair calibration.
-            </p>
-          </div>
-          <button
-            onClick={() => navigate('/adas')}
-            className="text-xs bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-100 border border-cyan-500/30 font-semibold px-3 py-1.5 rounded-lg"
-          >
-            Open Tracker
-          </button>
-        </div>
-      )}
-
-      {admin && (
-        <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-sm font-semibold text-white">Appointment Requests</h2>
-            <p className="text-slate-400 text-xs mt-1">{pendingAppointments} pending request{pendingAppointments === 1 ? '' : 's'}</p>
-          </div>
-          <button
-            onClick={() => navigate('/book')}
-            className="text-xs bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] font-semibold px-3 py-1.5 rounded-lg"
-          >
-            Open Booking Form
-          </button>
-        </div>
-      )}
-
+      {/* 5. Bottom grid: Jobs by Stage + Weekly */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
           <h2 className="font-semibold text-sm text-white mb-3">Jobs by Stage</h2>
@@ -888,22 +759,80 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
-          <h2 className="font-semibold text-sm text-white mb-3">Recent Activity</h2>
-          <div className="space-y-2">
-            {data.recent?.slice(0, 6).map(ro => (
-              <div key={ro.id} onClick={() => navigate(`/ros/${ro.id}`)}
-                className="flex items-center gap-3 p-2 rounded-lg hover:bg-[#2a2d3e] cursor-pointer transition-colors">
-                <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: STATUS_COLORS[ro.status] }} />
-                <div className="flex-1 min-w-0">
-                  <div className="text-xs font-medium text-white truncate">{ro.ro_number} — {ro.year} {ro.make} {ro.model}</div>
-                  <div className="text-[10px] text-slate-500">{ro.customer_name}</div>
+        {weekly && (
+          <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-white">Weekly</h2>
+              <span className="text-xs text-slate-400">This week vs last week</span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div
+                onClick={() => navigate('/ros')}
+                className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3 cursor-pointer hover:ring-1 hover:ring-indigo-500/40 transition"
+              >
+                <div className="text-xs text-slate-400 mb-1">ROs Opened</div>
+                <div className="text-2xl font-bold text-white">{weekly.ro_opened?.this_week || 0}</div>
+                <div className="mt-1 inline-flex items-center gap-1 text-xs">
+                  {weeklyTrendDirection === 'up' && <ArrowUpRight size={14} className="text-emerald-300" />}
+                  {weeklyTrendDirection === 'down' && <ArrowDownRight size={14} className="text-rose-300" />}
+                  {weeklyTrendDirection === 'flat' && <Minus size={14} className="text-slate-300" />}
+                  <span className={weeklyTrendDirection === 'down' ? 'text-rose-300' : weeklyTrendDirection === 'up' ? 'text-emerald-300' : 'text-slate-300'}>
+                    {weeklyTrendPercent > 0 ? '+' : ''}{weeklyTrendPercent}% vs last week ({weekly.ro_opened?.last_week || 0})
+                  </span>
                 </div>
-                <StatusBadge status={ro.status} />
               </div>
-            ))}
+              <div
+                onClick={() => navigate('/monthly-report')}
+                className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3 cursor-pointer hover:ring-1 hover:ring-indigo-500/40 transition"
+              >
+                <div className="text-xs text-slate-400 mb-1">Revenue Collected</div>
+                <div className="text-2xl font-bold text-emerald-300">
+                  ${(Number(weekly.revenue_collected_this_week || 0)).toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                </div>
+                <div className="text-xs text-slate-500 mt-1">Paid invoices this week</div>
+              </div>
+              <div
+                onClick={() => navigate('/performance')}
+                className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3 sm:col-span-2 cursor-pointer hover:ring-1 hover:ring-indigo-500/40 transition"
+              >
+                <div className="text-xs text-slate-400 mb-2">Top Techs by Jobs Completed</div>
+                {weekly.top_techs?.length ? (
+                  <div className="space-y-2">
+                    {weekly.top_techs.map((tech, idx) => (
+                      <div key={tech.tech_id} className="flex items-center justify-between text-sm">
+                        <span className="text-white">{idx + 1}. {tech.tech_name}</span>
+                        <span className="text-indigo-300 font-semibold">{tech.jobs_completed}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-xs text-slate-500">No completed jobs yet this week.</div>
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-xs text-slate-400">RO Opened Trend</div>
+                  <div className="text-xs text-slate-500">This week vs last 7 days</div>
+                </div>
+                <div className="h-48">
+                  <canvas ref={weeklyChartRef} />
+                </div>
+              </div>
+              <div
+                onClick={() => navigate('/parts-on-order')}
+                className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3 cursor-pointer hover:ring-1 hover:ring-indigo-500/40 transition"
+              >
+                <div className="text-xs text-slate-400 mb-1">Pending Parts</div>
+                <div className="text-3xl font-bold text-amber-300">{weekly.pending_parts_count || 0}</div>
+                <div className="text-xs text-slate-500 mt-1">ROs with parts ordered or awaiting</div>
+              </div>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {showCarryoverModal && (
