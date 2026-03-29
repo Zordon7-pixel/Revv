@@ -215,6 +215,7 @@ export default function EstimateBuilder() {
   const [ocrImporting, setOcrImporting] = useState(false)
   const [ocrCrossCheck, setOcrCrossCheck] = useState(null)
   const [ocrMetaNote, setOcrMetaNote] = useState('')
+  const [adjusterTotals, setAdjusterTotals] = useState(null)
   const [importingFinancials, setImportingFinancials] = useState(false)
   const [financialNotice, setFinancialNotice] = useState('')
   const [opportunity, setOpportunity] = useState(null)
@@ -411,6 +412,7 @@ export default function EstimateBuilder() {
       const initialChecked = {}
       parsed.line_items.forEach((_, idx) => { initialChecked[idx] = true })
       setOcrParsed(parsed)
+      setAdjusterTotals(parsed?.estimate_totals || null)
       setOcrChecked(initialChecked)
       setOcrFlags(null)
       setOcrAnalysisSummary(null)
@@ -613,6 +615,11 @@ export default function EstimateBuilder() {
   const taxableCount = orderedItems.filter((item) => !!item.taxable).length
   const allTaxableSelected = orderedItems.length > 0 && taxableCount === orderedItems.length
   const noneTaxableSelected = taxableCount === 0
+  const hasAdjusterTotals = !!adjusterTotals
+  const adjusterRepairTotal = hasAdjusterTotals ? asNumber(adjusterTotals.total_cost_of_repairs, 0) : null
+  const adjusterNetRepair = hasAdjusterTotals ? asNumber(adjusterTotals.net_cost_of_repairs, 0) : null
+  const revvTotal = asNumber(totals.grand_total, 0)
+  const revvVsAdjusterVariance = adjusterRepairTotal === null ? null : (revvTotal - adjusterRepairTotal)
 
   return (
     <div className="max-w-6xl mx-auto space-y-4">
@@ -685,6 +692,62 @@ export default function EstimateBuilder() {
           {financialNotice}
         </div>
       )}
+
+      {hasAdjusterTotals && (
+        <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 space-y-2">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <h2 className="text-sm font-semibold text-white">Adjustor Estimate Totals</h2>
+            {revvVsAdjusterVariance !== null && (
+              <div className={`text-xs font-semibold ${Math.abs(revvVsAdjusterVariance) < 0.01 ? 'text-emerald-300' : 'text-amber-300'}`}>
+                REVV vs Adjustor variance: {money(revvVsAdjusterVariance)}
+              </div>
+            )}
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 text-xs">
+            <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2">
+              <p className="text-slate-400">Parts</p>
+              <p className="text-white font-semibold">{money(adjusterTotals.parts)}</p>
+            </div>
+            <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2">
+              <p className="text-slate-400">Body Labor</p>
+              <p className="text-white font-semibold">
+                {asNumber(adjusterTotals.body_labor_hours, 0).toFixed(1)}h @ {money(adjusterTotals.body_labor_rate)} = {money(adjusterTotals.body_labor_cost)}
+              </p>
+            </div>
+            <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2">
+              <p className="text-slate-400">Paint Labor</p>
+              <p className="text-white font-semibold">
+                {asNumber(adjusterTotals.paint_labor_hours, 0).toFixed(1)}h @ {money(adjusterTotals.paint_labor_rate)} = {money(adjusterTotals.paint_labor_cost)}
+              </p>
+            </div>
+            <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2">
+              <p className="text-slate-400">Paint Supplies</p>
+              <p className="text-white font-semibold">
+                {asNumber(adjusterTotals.paint_supplies_hours, 0).toFixed(1)}h @ {money(adjusterTotals.paint_supplies_rate)} = {money(adjusterTotals.paint_supplies_cost)}
+              </p>
+            </div>
+            <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2">
+              <p className="text-slate-400">Misc + Other</p>
+              <p className="text-white font-semibold">
+                {money(asNumber(adjusterTotals.miscellaneous, 0) + asNumber(adjusterTotals.other_charges, 0))}
+              </p>
+            </div>
+            <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2">
+              <p className="text-slate-400">Subtotal</p>
+              <p className="text-white font-semibold">{money(adjusterTotals.subtotal)}</p>
+            </div>
+            <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2">
+              <p className="text-slate-400">Total Cost of Repairs</p>
+              <p className="text-white font-semibold">{money(adjusterRepairTotal)}</p>
+            </div>
+            <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2">
+              <p className="text-slate-400">Net Cost of Repairs</p>
+              <p className="text-white font-semibold">{money(adjusterNetRepair)}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 space-y-2">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <h2 className="text-sm font-semibold text-white">Profit Opportunity Review</h2>

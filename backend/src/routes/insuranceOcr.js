@@ -14,7 +14,7 @@ const { dbGet } = require('../db');
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 const execFileAsync = promisify(execFile);
 const PDF_TEXT_CHAR_LIMIT = 120000;
-const PDF_IMAGE_PAGE_LIMIT = 3;
+const PDF_IMAGE_PAGE_LIMIT = 6;
 
 const SYSTEM_PROMPT = `You are an insurance estimate parser for auto body shops. Extract all line items from this insurance estimate document.
 Return ONLY valid JSON in this exact format:
@@ -30,6 +30,34 @@ Return ONLY valid JSON in this exact format:
   "vehicle_year": "string or null",
   "vehicle_make": "string or null",
   "vehicle_model": "string or null",
+  "estimate_totals": {
+    "parts": 0,
+    "body_labor_hours": 0,
+    "body_labor_rate": 0,
+    "body_labor_cost": 0,
+    "paint_labor_hours": 0,
+    "paint_labor_rate": 0,
+    "paint_labor_cost": 0,
+    "paint_supplies_hours": 0,
+    "paint_supplies_rate": 0,
+    "paint_supplies_cost": 0,
+    "miscellaneous": 0,
+    "other_charges": 0,
+    "subtotal": 0,
+    "sales_tax_basis": 0,
+    "sales_tax_rate": 0,
+    "sales_tax_cost": 0,
+    "county_tax_basis": 0,
+    "county_tax_rate": 0,
+    "county_tax_cost": 0,
+    "other_tax_1_basis": 0,
+    "other_tax_1_rate": 0,
+    "other_tax_1_cost": 0,
+    "total_cost_of_repairs": 0,
+    "deductible": 0,
+    "total_adjustments": 0,
+    "net_cost_of_repairs": 0
+  },
   "line_items": [
     {
       "type": "labor|parts|sublet|other",
@@ -45,6 +73,7 @@ Important operation code mapping:
 - RNI / R&I / Remove and Install = labor operation (do NOT treat as parts replacement)
 - RPR = labor repair operation (do NOT treat as parts replacement)
 - REPL / R&R / Replace = parts replacement (order/replace part)
+Include all numbered estimate rows (exclude section headers) and include the estimate totals block.
 Return only the JSON object, no markdown fences, no extra text.`;
 
 function normalizeItemType(type) {
@@ -68,6 +97,137 @@ function classifyByOperationCodes(description, currentType) {
   if (hasRepairCode) return 'labor';
 
   return currentType;
+}
+
+function toNumberOrNull(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const normalized = String(value).replace(/[$,]/g, '').trim();
+  const num = Number(normalized);
+  return Number.isFinite(num) ? num : null;
+}
+
+function parseEstimateTotalsFromPdfText(text) {
+  const lines = String(text || '').split(/\r?\n/);
+  const startIdx = lines.findIndex((line) => /ESTIMATE\s+TOTALS/i.test(line));
+  if (startIdx < 0) return null;
+
+  const endIdx = lines.findIndex((line, idx) => idx > startIdx && /This is not an authorization to repair\./i.test(line));
+  const totalLines = lines
+    .slice(startIdx, endIdx > startIdx ? endIdx : startIdx + 80)
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+
+  const takeTrailingMoney = (line) => {
+    const m = line.match(/(-?\$?\s*[0-9,]+\.[0-9]{2})\s*$/);
+    return m ? toNumberOrNull(m[1]) : null;
+  };
+
+  const parseHourRateLine = (labelRegex) => {
+    const line = totalLines.find((row) => labelRegex.test(row));
+    if (!line) return { hours: null, rate: null, cost: null };
+    const m = line.match(/([0-9]+(?:\.[0-9]+)?)\s*hrs\s*@\s*\$?\s*([0-9,]+(?:\.[0-9]+)?)\s*\/hr\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
+    if (!m) return { hours: null, rate: null, cost: takeTrailingMoney(line) };
+    return {
+      hours: toNumberOrNull(m[1]),
+      rate: toNumberOrNull(m[2]),
+      cost: toNumberOrNull(m[3]),
+    };
+  };
+
+  const parseTaxLine = (labelRegex) => {
+    const line = totalLines.find((row) => labelRegex.test(row));
+    if (!line) return { basis: null, rate: null, cost: null };
+    const m = line.match(/\$\s*([0-9,]+(?:\.[0-9]+)?)\s*@\s*([0-9]+(?:\.[0-9]+)?)\s*%\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
+    if (!m) return { basis: null, rate: null, cost: takeTrailingMoney(line) };
+    return {
+      basis: toNumberOrNull(m[1]),
+      rate: toNumberOrNull(m[2]),
+      cost: toNumberOrNull(m[3]),
+    };
+  };
+
+  const bodyLabor = parseHourRateLine(/^Body Labor\b/i);
+  const paintLabor = parseHourRateLine(/^Paint Labor\b/i);
+  const paintSupplies = parseHourRateLine(/^Paint Supplies\b/i);
+  const salesTax = parseTaxLine(/^Sales Tax\b/i);
+  const countyTax = parseTaxLine(/^County Tax\b/i);
+  const otherTax1 = parseTaxLine(/^Other Tax 1\b/i);
+
+  const byLabelMoney = (labelRegex) => {
+    const line = totalLines.find((row) => labelRegex.test(row));
+    return line ? takeTrailingMoney(line) : null;
+  };
+
+  const totals = {
+    parts: byLabelMoney(/^Parts\b/i),
+    body_labor_hours: bodyLabor.hours,
+    body_labor_rate: bodyLabor.rate,
+    body_labor_cost: bodyLabor.cost,
+    paint_labor_hours: paintLabor.hours,
+    paint_labor_rate: paintLabor.rate,
+    paint_labor_cost: paintLabor.cost,
+    paint_supplies_hours: paintSupplies.hours,
+    paint_supplies_rate: paintSupplies.rate,
+    paint_supplies_cost: paintSupplies.cost,
+    miscellaneous: byLabelMoney(/^Miscellaneous\b/i),
+    other_charges: byLabelMoney(/^Other Charges\b/i),
+    subtotal: byLabelMoney(/^Subtotal\b/i),
+    sales_tax_basis: salesTax.basis,
+    sales_tax_rate: salesTax.rate,
+    sales_tax_cost: salesTax.cost,
+    county_tax_basis: countyTax.basis,
+    county_tax_rate: countyTax.rate,
+    county_tax_cost: countyTax.cost,
+    other_tax_1_basis: otherTax1.basis,
+    other_tax_1_rate: otherTax1.rate,
+    other_tax_1_cost: otherTax1.cost,
+    total_cost_of_repairs: byLabelMoney(/^Total Cost of Repairs\b/i),
+    deductible: byLabelMoney(/^Deductible\b/i),
+    total_adjustments: byLabelMoney(/^Total Adjustments\b/i),
+    net_cost_of_repairs: byLabelMoney(/^Net Cost of Repairs\b/i),
+  };
+
+  const hasAnyValue = Object.values(totals).some((value) => value !== null);
+  return hasAnyValue ? totals : null;
+}
+
+function normalizeEstimateTotals(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const fields = [
+    'parts',
+    'body_labor_hours',
+    'body_labor_rate',
+    'body_labor_cost',
+    'paint_labor_hours',
+    'paint_labor_rate',
+    'paint_labor_cost',
+    'paint_supplies_hours',
+    'paint_supplies_rate',
+    'paint_supplies_cost',
+    'miscellaneous',
+    'other_charges',
+    'subtotal',
+    'sales_tax_basis',
+    'sales_tax_rate',
+    'sales_tax_cost',
+    'county_tax_basis',
+    'county_tax_rate',
+    'county_tax_cost',
+    'other_tax_1_basis',
+    'other_tax_1_rate',
+    'other_tax_1_cost',
+    'total_cost_of_repairs',
+    'deductible',
+    'total_adjustments',
+    'net_cost_of_repairs',
+  ];
+
+  const normalized = {};
+  for (const key of fields) {
+    normalized[key] = toNumberOrNull(raw[key]);
+  }
+  const hasAny = Object.values(normalized).some((value) => value !== null);
+  return hasAny ? normalized : null;
 }
 
 function isOpenAiJsonBodyParseError(err) {
@@ -223,11 +383,13 @@ router.post('/parse', auth, upload.single('estimate_image'), async (req, res) =>
     const filename = String(req.file.originalname || '').toLowerCase();
     const isPdf = mimeType === 'application/pdf' || filename.endsWith('.pdf');
     let raw = '';
+    let extractedTextForTotals = '';
 
-    if (isPdf) {
+      if (isPdf) {
       let extractedText = '';
       try {
         extractedText = await extractPdfText(req.file.buffer);
+        extractedTextForTotals = extractedText;
       } catch (pdfErr) {
         console.error('[InsuranceOCR] PDF text extraction failed:', pdfErr);
       }
@@ -329,6 +491,10 @@ router.post('/parse', auth, upload.single('estimate_image'), async (req, res) =>
       unit_price: Number.isFinite(Number(item.unit_price)) ? Number(item.unit_price) : 0,
     }));
 
+    const modelTotals = normalizeEstimateTotals(parsed.estimate_totals);
+    const textTotals = extractedTextForTotals ? parseEstimateTotalsFromPdfText(extractedTextForTotals) : null;
+    const estimateTotals = textTotals || modelTotals || null;
+
     return res.json({
       success: true,
       parsed: {
@@ -344,6 +510,7 @@ router.post('/parse', auth, upload.single('estimate_image'), async (req, res) =>
         vehicle_make: parsed.vehicle_make || null,
         vehicle_model: parsed.vehicle_model || null,
         total_allowed: parsed.total_allowed || null,
+        estimate_totals: estimateTotals,
         line_items: items,
       },
     });
