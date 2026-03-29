@@ -16,13 +16,32 @@ router.get('/summary', auth, requireTechnician, requireAdmin, async (req, res) =
     const allScope = scope === 'all';
     const monthFilter = allScope ? '' : " AND billing_month = TO_CHAR(NOW(), 'YYYY-MM')";
     const createdAtMonthFilter = allScope ? '' : " AND DATE_TRUNC('month', created_at) = DATE_TRUNC('month', NOW())";
+    const normalizedStatusExpr = "COALESCE(NULLIF(LOWER(TRIM(status)), ''), 'intake')";
 
     const totalRow    = await dbGet(`SELECT COUNT(*)::int as n FROM repair_orders WHERE shop_id = $1${monthFilter}`, [sid]);
-    const activeRow   = await dbGet(`SELECT COUNT(*)::int as n FROM repair_orders WHERE shop_id = $1${monthFilter} AND status <> 'closed'`, [sid]);
-    const completedRow = await dbGet(`SELECT COUNT(*)::int as n FROM repair_orders WHERE shop_id = $1${monthFilter} AND status = 'closed'`, [sid]);
+    const activeRow   = await dbGet(
+      `SELECT COUNT(*)::int as n
+       FROM repair_orders
+       WHERE shop_id = $1${monthFilter}
+         AND ${normalizedStatusExpr} NOT IN ('closed', 'completed')`,
+      [sid]
+    );
+    const completedRow = await dbGet(
+      `SELECT COUNT(*)::int as n
+       FROM repair_orders
+       WHERE shop_id = $1${monthFilter}
+         AND ${normalizedStatusExpr} IN ('closed', 'completed')`,
+      [sid]
+    );
     const revenueRow  = await dbGet(`SELECT COALESCE(SUM(total),0) as r FROM repair_orders WHERE shop_id = $1${monthFilter}`, [sid]);
     const profitRow   = await dbGet(`SELECT COALESCE(SUM(true_profit),0) as p FROM repair_orders WHERE shop_id = $1${monthFilter}`, [sid]);
-    const byStatus = await dbAll(`SELECT status, COUNT(*)::int as count FROM repair_orders WHERE shop_id = $1${monthFilter} GROUP BY status`, [sid]);
+    const byStatus = await dbAll(
+      `SELECT ${normalizedStatusExpr} AS status, COUNT(*)::int as count
+       FROM repair_orders
+       WHERE shop_id = $1${monthFilter}
+       GROUP BY ${normalizedStatusExpr}`,
+      [sid]
+    );
     const byType   = await dbAll(`SELECT job_type, COUNT(*)::int as count, SUM(total) as revenue FROM repair_orders WHERE shop_id = $1${monthFilter} GROUP BY job_type`, [sid]);
     const recent   = await dbAll(`
       SELECT ro.*, v.year, v.make, v.model, c.name as customer_name

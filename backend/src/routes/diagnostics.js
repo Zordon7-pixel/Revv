@@ -41,7 +41,12 @@ router.get('/', auth, requireAdmin, async (req, res) => {
     const validStatuses = ['intake', 'estimate', 'approval', 'parts', 'repair', 'paint', 'qc', 'delivery', 'closed'];
     try {
       const placeholders = validStatuses.map((_, i) => `$${i + 1}`).join(',');
-      const badRow = await dbGet(`SELECT COUNT(*)::int as c FROM repair_orders WHERE status NOT IN (${placeholders})`, validStatuses);
+      const badRow = await dbGet(
+        `SELECT COUNT(*)::int as c
+         FROM repair_orders
+         WHERE COALESCE(NULLIF(LOWER(TRIM(status)), ''), '__missing__') NOT IN (${placeholders})`,
+        validStatuses
+      );
       checks.push({ name: 'RO Status Validity', ok: badRow.c === 0, detail: badRow.c > 0 ? `${badRow.c} invalid status(es)` : 'all valid' });
       if (badRow.c > 0) canHeal = true;
     } catch (e) {
@@ -67,7 +72,12 @@ router.post('/heal', auth, requireAdmin, async (req, res) => {
     const validStatuses = ['intake', 'estimate', 'approval', 'parts', 'repair', 'paint', 'qc', 'delivery', 'closed'];
     try {
       const placeholders = validStatuses.map((_, i) => `$${i + 1}`).join(',');
-      const result = await dbRun(`UPDATE repair_orders SET status='intake' WHERE status NOT IN (${placeholders})`, validStatuses);
+      const result = await dbRun(
+        `UPDATE repair_orders
+         SET status='intake'
+         WHERE COALESCE(NULLIF(LOWER(TRIM(status)), ''), '__missing__') NOT IN (${placeholders})`,
+        validStatuses
+      );
       if (result.rowCount > 0) actions.push(`Fixed ${result.rowCount} invalid RO status(es) → reset to intake`);
     } catch (e) {
       actions.push(`⚠️ Could not fix RO statuses: ${e.message}`);

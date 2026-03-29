@@ -51,8 +51,17 @@ function toDateLabel(dateKey) {
 }
 
 function isDeliveredStatus(status) {
-  const normalized = String(status || '').toLowerCase()
+  const normalized = String(status || '').trim().toLowerCase()
   return normalized === 'delivery' || normalized === 'closed'
+}
+
+function normalizeRoStatus(status) {
+  return String(status || '').trim().toLowerCase() || 'intake'
+}
+
+function isClosedRoStatus(status) {
+  const normalized = normalizeRoStatus(status)
+  return normalized === 'closed' || normalized === 'completed'
 }
 
 export default function Dashboard() {
@@ -98,8 +107,17 @@ export default function Dashboard() {
       api.get('/dashboard/weekly').catch(() => ({ data: null })),
       api.get('/repair-orders').catch(() => ({ data: { ros: [] } })),
     ])
+    const allRos = Array.isArray(rosRes?.data?.ros) ? rosRes.data.ros : []
+    const activeFromRos = allRos.filter((ro) => !isClosedRoStatus(ro.status)).length
+    const completedFromRos = allRos.filter((ro) => isClosedRoStatus(ro.status)).length
+    const summaryActive = Number(summaryRes?.data?.active || 0)
+    const summaryCompleted = Number(summaryRes?.data?.completed || 0)
+    const useRosCounts = allRos.length > 0
+
     setData({
       ...summaryRes.data,
+      active: useRosCounts ? activeFromRos : summaryActive,
+      completed: useRosCounts ? completedFromRos : summaryCompleted,
       monthly_total: Number(monthSummaryRes.data?.total || 0),
       monthly_revenue: Number(monthSummaryRes.data?.revenue || 0),
       monthly_profit: Number(monthSummaryRes.data?.profit || 0),
@@ -109,7 +127,7 @@ export default function Dashboard() {
     setGoal(goalsRes.data?.goal || null)
     setAdasQueue(adasRes.data?.queue || [])
     setWeekly(weeklyRes.data || null)
-    setCalendarRos(rosRes.data?.ros || [])
+    setCalendarRos(allRos)
   }
 
   async function loadTechDashboard() {
@@ -123,17 +141,17 @@ export default function Dashboard() {
     const allRos = rosRes?.data?.ros || []
     const myId = currentUser?.id
     const assigned = myId ? allRos.filter((ro) => ro.assigned_to === myId) : []
-    const activeAssigned = assigned.filter((ro) => String(ro.status || '').toLowerCase() !== 'closed')
-    const completedAssigned = assigned.filter((ro) => String(ro.status || '').toLowerCase() === 'closed')
+    const activeAssigned = assigned.filter((ro) => !isClosedRoStatus(ro.status))
+    const completedAssigned = assigned.filter((ro) => isClosedRoStatus(ro.status))
     const dueToday = activeAssigned.filter((ro) => toDateKey(ro.estimated_delivery) === today)
-    const highPriority = activeAssigned.filter((ro) => ['repair', 'paint', 'qc'].includes(String(ro.status || '').toLowerCase()))
+    const highPriority = activeAssigned.filter((ro) => ['repair', 'paint', 'qc'].includes(normalizeRoStatus(ro.status)))
     const recentAssigned = [...assigned]
       .sort((a, b) => new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime())
       .slice(0, 6)
 
     const byStage = ['intake', 'estimate', 'approval', 'parts', 'repair', 'paint', 'qc', 'delivery'].map((status) => ({
       status,
-      count: activeAssigned.filter((ro) => String(ro.status || '').toLowerCase() === status).length,
+      count: activeAssigned.filter((ro) => normalizeRoStatus(ro.status) === status).length,
     }))
 
     setTechData({

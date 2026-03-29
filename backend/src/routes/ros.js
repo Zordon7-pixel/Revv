@@ -646,6 +646,7 @@ router.get('/', auth, async (req, res) => {
     const normalizedDateTo = String(date_to || '').trim();
     const normalizedPaymentStatus = String(payment_status || '').trim().toLowerCase();
     const normalizedPaymentType = String(payment_type || '').trim().toLowerCase();
+    const normalizedStatusExpr = `COALESCE(NULLIF(LOWER(TRIM(ro.status)), ''), 'intake')`;
 
     if (normalizedSearch) {
       params.push(`%${normalizedSearch}%`);
@@ -659,16 +660,16 @@ router.get('/', auth, async (req, res) => {
 
     if (normalizedStatus && normalizedStatus !== 'all') {
       if (normalizedStatus === 'open') {
-        where.push(`ro.status <> 'closed'`);
+        where.push(`${normalizedStatusExpr} NOT IN ('closed', 'completed')`);
       } else if (normalizedStatus === 'in-progress') {
-        where.push(`ro.status IN ('repair', 'paint', 'qc', 'in-progress')`);
+        where.push(`${normalizedStatusExpr} IN ('repair', 'paint', 'qc', 'in-progress')`);
       } else if (normalizedStatus === 'completed') {
-        where.push(`ro.status = 'closed'`);
+        where.push(`${normalizedStatusExpr} IN ('closed', 'completed')`);
       } else if (normalizedStatus === 'closed') {
-        where.push(`ro.status = 'closed'`);
+        where.push(`${normalizedStatusExpr} IN ('closed', 'completed')`);
       } else {
         params.push(normalizedStatus);
-        where.push(`ro.status = $${params.length}`);
+        where.push(`${normalizedStatusExpr} = $${params.length}`);
       }
     }
 
