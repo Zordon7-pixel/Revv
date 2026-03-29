@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, Building2, LayoutDashboard, LogOut, MessageSquare, Search } from 'lucide-react'
+import { AlertTriangle, LayoutDashboard, LogOut, MessageSquare, Search, UserCog, Users } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 function formatDate(value) {
@@ -9,8 +9,14 @@ function formatDate(value) {
   return date.toLocaleString()
 }
 
+function roleLabel(role) {
+  if (!role) return 'Unknown'
+  return role.charAt(0).toUpperCase() + role.slice(1)
+}
+
 export default function SuperAdminDashboard() {
-  const [shops, setShops] = useState([])
+  const [ownerAccounts, setOwnerAccounts] = useState([])
+  const [teamUsers, setTeamUsers] = useState([])
   const [issues, setIssues] = useState([])
   const [summary, setSummary] = useState({ total_issues: 0, total_errors: 0, total_feedback: 0 })
   const [selectedShopId, setSelectedShopId] = useState('')
@@ -39,7 +45,8 @@ export default function SuperAdminDashboard() {
         const qs = selectedShopId ? `?shop_id=${encodeURIComponent(selectedShopId)}` : ''
         const data = await fetchJson(`/api/superadmin/helpdesk${qs}`)
         if (!active) return
-        setShops(data.shops || [])
+        setOwnerAccounts(data.owner_accounts || [])
+        setTeamUsers(data.team_users || [])
         setIssues(data.issues || [])
         setSummary({
           total_issues: data?.summary?.total_issues || 0,
@@ -47,7 +54,7 @@ export default function SuperAdminDashboard() {
           total_feedback: data?.summary?.total_feedback || 0,
         })
       } catch {
-        if (active) setError('Unable to load help desk data.')
+        if (active) setError('Unable to load master dashboard data.')
       } finally {
         if (active) setLoading(false)
       }
@@ -55,6 +62,20 @@ export default function SuperAdminDashboard() {
     loadHelpdesk()
     return () => { active = false }
   }, [selectedShopId])
+
+  const selectedOwner = useMemo(
+    () => ownerAccounts.find((owner) => owner.shop_id === selectedShopId) || null,
+    [ownerAccounts, selectedShopId]
+  )
+
+  const roleCounts = useMemo(() => {
+    const counts = new Map()
+    teamUsers.forEach((u) => {
+      const key = u.role || 'unknown'
+      counts.set(key, (counts.get(key) || 0) + 1)
+    })
+    return Array.from(counts.entries()).map(([role, count]) => ({ role, count }))
+  }, [teamUsers])
 
   const filteredIssues = useMemo(() => {
     const query = search.trim().toLowerCase()
@@ -113,8 +134,8 @@ export default function SuperAdminDashboard() {
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
           <div className="bg-[#141824] border border-[#242837] rounded-xl p-4">
-            <div className="text-xs text-slate-400">Registered Shops</div>
-            <div className="text-2xl font-semibold text-white mt-1">{shops.length}</div>
+            <div className="text-xs text-slate-400">Owner Accounts</div>
+            <div className="text-2xl font-semibold text-white mt-1">{ownerAccounts.length}</div>
           </div>
           <div className="bg-[#141824] border border-[#242837] rounded-xl p-4">
             <div className="text-xs text-slate-400">Issues</div>
@@ -134,100 +155,137 @@ export default function SuperAdminDashboard() {
           <section className="lg:col-span-1 bg-[#141824] border border-[#242837] rounded-xl overflow-hidden">
             <div className="px-4 py-3 border-b border-[#242837]">
               <h2 className="text-sm font-semibold text-slate-100 inline-flex items-center gap-2">
-                <Building2 size={14} />
-                Registered Shops
+                <UserCog size={14} />
+                Owner Accounts Only
               </h2>
             </div>
-            <div className="max-h-[620px] overflow-y-auto">
-              <button
-                type="button"
-                onClick={() => setSelectedShopId('')}
-                className={`w-full text-left px-4 py-3 border-b border-[#242837] hover:bg-[#1c2233] ${selectedShopId === '' ? 'bg-[#1c2233]' : ''}`}
-              >
-                <div className="font-medium">All Shops</div>
-                <div className="text-xs text-slate-500 mt-0.5">Show issues across every shop</div>
-              </button>
-              {shops.map((shop) => (
+            <div className="max-h-[700px] overflow-y-auto">
+              {ownerAccounts.map((owner) => (
                 <button
-                  key={shop.id}
+                  key={owner.owner_id}
                   type="button"
-                  onClick={() => setSelectedShopId(shop.id)}
-                  className={`w-full text-left px-4 py-3 border-b border-[#242837] hover:bg-[#1c2233] ${selectedShopId === shop.id ? 'bg-[#1c2233]' : ''}`}
+                  onClick={() => setSelectedShopId(owner.shop_id)}
+                  className={`w-full text-left px-4 py-3 border-b border-[#242837] hover:bg-[#1c2233] ${selectedShopId === owner.shop_id ? 'bg-[#1c2233]' : ''}`}
                 >
-                  <div className="font-medium">{shop.name}</div>
-                  <div className="text-xs text-slate-500 mt-0.5">{shop.city || '—'} / {shop.state || '—'}</div>
+                  <div className="font-medium">{owner.owner_name || 'Owner'}</div>
+                  <div className="text-xs text-slate-400 mt-0.5">{owner.owner_email || '—'}</div>
+                  <div className="text-xs text-slate-500 mt-1">{owner.shop_name || '—'} • {owner.shop_city || '—'} / {owner.shop_state || '—'}</div>
                   <div className="text-[11px] mt-1 text-slate-400">
-                    {shop.error_count || 0} errors • {shop.feedback_count || 0} feedback
+                    {owner.error_count || 0} errors • {owner.feedback_count || 0} feedback
                   </div>
                 </button>
               ))}
-              {!shops.length && !loading && (
-                <div className="px-4 py-5 text-sm text-slate-500">No shops found.</div>
+              {!ownerAccounts.length && !loading && (
+                <div className="px-4 py-5 text-sm text-slate-500">No owner accounts found.</div>
               )}
             </div>
           </section>
 
-          <section className="lg:col-span-2 bg-[#141824] border border-[#242837] rounded-xl overflow-hidden">
-            <div className="px-4 py-3 border-b border-[#242837]">
-              <h2 className="text-sm font-semibold text-slate-100 inline-flex items-center gap-2">
-                <AlertTriangle size={14} />
-                App Issues and Feedback
-              </h2>
-            </div>
-            <div className="p-4 border-b border-[#242837] bg-[#10131d]">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                <div className="md:col-span-2 relative">
-                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-                  <input
-                    type="text"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    placeholder="Search issue message, page, tester, or shop..."
-                    className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg pl-9 pr-3 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
-                <select
-                  value={issueFilter}
-                  onChange={(e) => setIssueFilter(e.target.value)}
-                  className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
-                >
-                  <option value="all">All Issue Types</option>
-                  <option value="error">Errors Only</option>
-                  <option value="feedback">Feedback Only</option>
-                </select>
+          <section className="lg:col-span-2 space-y-4">
+            <div className="bg-[#141824] border border-[#242837] rounded-xl overflow-hidden">
+              <div className="px-4 py-3 border-b border-[#242837]">
+                <h2 className="text-sm font-semibold text-slate-100 inline-flex items-center gap-2">
+                  <Users size={14} />
+                  Team Roles (Customers Hidden)
+                </h2>
               </div>
+              {!selectedOwner ? (
+                <div className="px-4 py-6 text-sm text-slate-500">Select an owner account to view their team roles.</div>
+              ) : (
+                <div className="p-4">
+                  <div className="text-sm text-slate-300 mb-2">
+                    {selectedOwner.owner_name || 'Owner'} • {selectedOwner.shop_name || 'Shop'}
+                  </div>
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    {roleCounts.map((entry) => (
+                      <span key={entry.role} className="text-[11px] px-2 py-1 rounded-md border border-[#313957] text-slate-300 bg-[#10131d]">
+                        {roleLabel(entry.role)}: {entry.count}
+                      </span>
+                    ))}
+                    {!roleCounts.length && (
+                      <span className="text-[11px] text-slate-500">No non-customer users found.</span>
+                    )}
+                  </div>
+                  <div className="space-y-2 max-h-[240px] overflow-y-auto pr-1">
+                    {teamUsers.map((u) => (
+                      <div key={u.id} className="flex items-center justify-between border border-[#2a2d3e] rounded-lg px-3 py-2">
+                        <div>
+                          <div className="text-sm text-slate-100">{u.name || 'Unnamed User'}</div>
+                          <div className="text-xs text-slate-500">{u.email || '—'}</div>
+                        </div>
+                        <span className="text-[11px] uppercase tracking-widest text-indigo-200">{u.role || '—'}</span>
+                      </div>
+                    ))}
+                    {!teamUsers.length && (
+                      <div className="text-sm text-slate-500">No team users to show.</div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
-            <div className="max-h-[560px] overflow-y-auto">
-              {loading && (
-                <div className="px-4 py-8 text-sm text-slate-500">Loading help desk feed...</div>
-              )}
-
-              {!loading && filteredIssues.map((issue) => (
-                <div key={issue.id} className="px-4 py-3 border-b border-[#242837]">
-                  <div className="flex flex-wrap items-center gap-2 text-xs mb-1.5">
-                    <span className={`px-2 py-0.5 rounded-full border ${issue.issue_type === 'error' ? 'text-red-300 border-red-800 bg-red-950/40' : 'text-indigo-200 border-indigo-700 bg-indigo-900/30'}`}>
-                      {issue.issue_type === 'error' ? 'Error' : 'Feedback'}
-                    </span>
-                    <span className="text-slate-300 font-medium">{issue.shop_name || 'Unknown Shop'}</span>
-                    <span className="text-slate-500">{formatDate(issue.created_at)}</span>
+            <div className="bg-[#141824] border border-[#242837] rounded-xl overflow-hidden">
+              <div className="px-4 py-3 border-b border-[#242837]">
+                <h2 className="text-sm font-semibold text-slate-100 inline-flex items-center gap-2">
+                  <AlertTriangle size={14} />
+                  App Issues and Feedback
+                </h2>
+              </div>
+              <div className="p-4 border-b border-[#242837] bg-[#10131d]">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                  <div className="md:col-span-2 relative">
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                    <input
+                      type="text"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      placeholder="Search issue message, page, tester, or shop..."
+                      className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg pl-9 pr-3 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+                    />
                   </div>
-                  <div className="text-sm text-slate-100">{issue.message || 'No message provided.'}</div>
-                  <div className="text-[11px] text-slate-500 mt-1.5 flex flex-wrap items-center gap-2">
-                    <span>Tester: {issue.tester_name || 'Anonymous'}</span>
-                    <span>Category: {issue.category || 'general'}</span>
-                    <span>Priority: {issue.priority || 'medium'}</span>
-                    {issue.page ? <span>Page: {issue.page}</span> : null}
-                  </div>
+                  <select
+                    value={issueFilter}
+                    onChange={(e) => setIssueFilter(e.target.value)}
+                    className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
+                  >
+                    <option value="all">All Issue Types</option>
+                    <option value="error">Errors Only</option>
+                    <option value="feedback">Feedback Only</option>
+                  </select>
                 </div>
-              ))}
+              </div>
 
-              {!loading && !filteredIssues.length && (
-                <div className="px-4 py-8 text-sm text-slate-500">
-                  <MessageSquare size={14} className="inline mr-1.5 -mt-0.5" />
-                  No issues found for current filters.
-                </div>
-              )}
+              <div className="max-h-[420px] overflow-y-auto">
+                {loading && (
+                  <div className="px-4 py-8 text-sm text-slate-500">Loading help desk feed...</div>
+                )}
+
+                {!loading && filteredIssues.map((issue) => (
+                  <div key={issue.id} className="px-4 py-3 border-b border-[#242837]">
+                    <div className="flex flex-wrap items-center gap-2 text-xs mb-1.5">
+                      <span className={`px-2 py-0.5 rounded-full border ${issue.issue_type === 'error' ? 'text-red-300 border-red-800 bg-red-950/40' : 'text-indigo-200 border-indigo-700 bg-indigo-900/30'}`}>
+                        {issue.issue_type === 'error' ? 'Error' : 'Feedback'}
+                      </span>
+                      <span className="text-slate-300 font-medium">{issue.shop_name || 'Unknown Shop'}</span>
+                      <span className="text-slate-500">{formatDate(issue.created_at)}</span>
+                    </div>
+                    <div className="text-sm text-slate-100">{issue.message || 'No message provided.'}</div>
+                    <div className="text-[11px] text-slate-500 mt-1.5 flex flex-wrap items-center gap-2">
+                      <span>Tester: {issue.tester_name || 'Anonymous'}</span>
+                      <span>Category: {issue.category || 'general'}</span>
+                      <span>Priority: {issue.priority || 'medium'}</span>
+                      {issue.page ? <span>Page: {issue.page}</span> : null}
+                    </div>
+                  </div>
+                ))}
+
+                {!loading && !filteredIssues.length && (
+                  <div className="px-4 py-8 text-sm text-slate-500">
+                    <MessageSquare size={14} className="inline mr-1.5 -mt-0.5" />
+                    No issues found for current filters.
+                  </div>
+                )}
+              </div>
             </div>
           </section>
         </div>

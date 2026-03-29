@@ -79,18 +79,22 @@ router.get('/helpdesk', async (req, res) => {
 
     const issueTypeSql = `(COALESCE(f.tester_name, '') = 'Auto-Reporter' OR f.message ILIKE '[AUTO]%')`;
 
-    const shops = await dbAll(
+    const ownerAccounts = await dbAll(
       `SELECT
-         s.id,
-         s.name,
-         s.city,
-         s.state,
-         s.created_at,
+         u.id AS owner_id,
+         u.name AS owner_name,
+         u.email AS owner_email,
+         u.shop_id,
+         s.name AS shop_name,
+         s.city AS shop_city,
+         s.state AS shop_state,
+         s.created_at AS shop_created_at,
          COALESCE(stats.issue_count, 0) AS issue_count,
          COALESCE(stats.error_count, 0) AS error_count,
          COALESCE(stats.feedback_count, 0) AS feedback_count,
          stats.last_issue_at
-       FROM shops s
+       FROM users u
+       INNER JOIN shops s ON s.id = u.shop_id
        LEFT JOIN (
          SELECT
            f.shop_id,
@@ -101,8 +105,9 @@ router.get('/helpdesk', async (req, res) => {
          FROM feedback f
          WHERE f.shop_id IS NOT NULL AND f.shop_id <> ''
          GROUP BY f.shop_id
-       ) stats ON stats.shop_id = s.id::text
-       ORDER BY COALESCE(stats.last_issue_at, s.created_at) DESC, s.name ASC`
+       ) stats ON stats.shop_id = u.shop_id::text
+       WHERE u.role = 'owner'
+       ORDER BY COALESCE(stats.last_issue_at, s.created_at) DESC, s.name ASC, u.name ASC`
     );
 
     const issues = await dbAll(
@@ -139,9 +144,37 @@ router.get('/helpdesk', async (req, res) => {
       [shopId]
     );
 
+    const teamUsers = shopId
+      ? await dbAll(
+          `SELECT
+             u.id,
+             u.name,
+             u.email,
+             u.role,
+             u.created_at
+           FROM users u
+           WHERE u.shop_id = $1
+             AND u.role <> 'superadmin'
+             AND u.role <> 'customer'
+           ORDER BY
+             CASE
+               WHEN u.role = 'owner' THEN 0
+               WHEN u.role = 'admin' THEN 1
+               WHEN u.role = 'assistant' THEN 2
+               WHEN u.role = 'staff' THEN 3
+               WHEN u.role = 'employee' THEN 4
+               WHEN u.role = 'technician' THEN 5
+               ELSE 6
+             END,
+             COALESCE(u.name, '') ASC`,
+          [shopId]
+        )
+      : [];
+
     return res.json({
-      shops,
+      owner_accounts: ownerAccounts,
       issues,
+      team_users: teamUsers,
       summary: {
         total_issues: summary?.total_issues || 0,
         total_errors: summary?.total_errors || 0,
