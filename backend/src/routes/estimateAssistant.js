@@ -94,6 +94,22 @@ const ZONE_TO_PANEL = {
   'right rear door': 'right_rear_door',
   'right quarter': 'right_rear_quarter',
   'right rear quarter': 'right_rear_quarter',
+  'undercarriage': 'undercarriage',
+  'underbody': 'undercarriage',
+  'subframe': 'undercarriage',
+  'frame rail': 'undercarriage',
+  'left front tire': 'left_front_tire',
+  'right front tire': 'right_front_tire',
+  'left rear tire': 'left_rear_tire',
+  'right rear tire': 'right_rear_tire',
+  'left front rim': 'left_front_rim',
+  'right front rim': 'right_front_rim',
+  'left rear rim': 'left_rear_rim',
+  'right rear rim': 'right_rear_rim',
+  'left front wheel': 'left_front_rim',
+  'right front wheel': 'right_front_rim',
+  'left rear wheel': 'left_rear_rim',
+  'right rear wheel': 'right_rear_rim',
 };
 
 const ZONE_TO_DAMAGE_TYPE = {
@@ -131,6 +147,22 @@ const ZONE_TO_DAMAGE_TYPE = {
   'right rear door': 'side_damage',
   'right quarter': 'side_damage',
   'right rear quarter': 'side_damage',
+  'undercarriage': 'side_damage',
+  'underbody': 'side_damage',
+  'subframe': 'side_damage',
+  'frame rail': 'side_damage',
+  'left front tire': 'side_damage',
+  'right front tire': 'side_damage',
+  'left rear tire': 'side_damage',
+  'right rear tire': 'side_damage',
+  'left front rim': 'side_damage',
+  'right front rim': 'side_damage',
+  'left rear rim': 'side_damage',
+  'right rear rim': 'side_damage',
+  'left front wheel': 'side_damage',
+  'right front wheel': 'side_damage',
+  'left rear wheel': 'side_damage',
+  'right rear wheel': 'side_damage',
 };
 
 function inferFromZones(zones) {
@@ -181,6 +213,15 @@ const PANEL_KEYWORDS = {
   right_front_door: ['front door', 'door shell', 'door'],
   right_rear_door: ['rear door', 'door', 'blend'],
   right_rear_quarter: ['quarter', 'rocker', 'bedside', 'cab corner'],
+  undercarriage: ['undercarriage', 'underbody', 'subframe', 'frame rail', 'splash shield'],
+  left_front_tire: ['left front tire', 'lf tire', 'front tire', 'tire'],
+  right_front_tire: ['right front tire', 'rf tire', 'front tire', 'tire'],
+  left_rear_tire: ['left rear tire', 'lr tire', 'rear tire', 'tire'],
+  right_rear_tire: ['right rear tire', 'rr tire', 'rear tire', 'tire'],
+  left_front_rim: ['left front rim', 'left front wheel', 'lf rim', 'alloy wheel'],
+  right_front_rim: ['right front rim', 'right front wheel', 'rf rim', 'alloy wheel'],
+  left_rear_rim: ['left rear rim', 'left rear wheel', 'lr rim', 'alloy wheel'],
+  right_rear_rim: ['right rear rim', 'right rear wheel', 'rr rim', 'alloy wheel'],
 };
 
 function classifyVehicleType(make, model) {
