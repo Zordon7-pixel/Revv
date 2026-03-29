@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, BellRing, LayoutDashboard, LogOut, MessageSquare, Search, UserCog, Users } from 'lucide-react'
+import { AlertTriangle, BellRing, LayoutDashboard, LogOut, MessageSquare, Search, UserCog } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 function formatDate(value) {
@@ -9,14 +9,8 @@ function formatDate(value) {
   return date.toLocaleString()
 }
 
-function roleLabel(role) {
-  if (!role) return 'Unknown'
-  return role.charAt(0).toUpperCase() + role.slice(1)
-}
-
 export default function SuperAdminDashboard() {
   const [ownerAccounts, setOwnerAccounts] = useState([])
-  const [teamUsers, setTeamUsers] = useState([])
   const [issues, setIssues] = useState([])
   const [summary, setSummary] = useState({ total_issues: 0, total_errors: 0, total_feedback: 0 })
   const [selectedShopId, setSelectedShopId] = useState('')
@@ -46,7 +40,6 @@ export default function SuperAdminDashboard() {
         const data = await fetchJson(`/api/superadmin/helpdesk${qs}`)
         if (!active) return
         setOwnerAccounts(data.owner_accounts || [])
-        setTeamUsers(data.team_users || [])
         setIssues(data.issues || [])
         setSummary({
           total_issues: data?.summary?.total_issues || 0,
@@ -62,20 +55,6 @@ export default function SuperAdminDashboard() {
     loadHelpdesk()
     return () => { active = false }
   }, [selectedShopId])
-
-  const selectedOwner = useMemo(
-    () => ownerAccounts.find((owner) => owner.shop_id === selectedShopId) || null,
-    [ownerAccounts, selectedShopId]
-  )
-
-  const roleCounts = useMemo(() => {
-    const counts = new Map()
-    teamUsers.forEach((u) => {
-      const key = u.role || 'unknown'
-      counts.set(key, (counts.get(key) || 0) + 1)
-    })
-    return Array.from(counts.entries()).map(([role, count]) => ({ role, count }))
-  }, [teamUsers])
 
   const ownerAlerts = useMemo(
     () => ownerAccounts.filter((owner) => (owner.error_count || 0) > 0 || (owner.feedback_count || 0) > 0),
@@ -221,48 +200,6 @@ export default function SuperAdminDashboard() {
           </section>
 
           <section className="lg:col-span-2 space-y-4">
-            <div className="bg-[#141824] border border-[#242837] rounded-xl overflow-hidden">
-              <div className="px-4 py-3 border-b border-[#242837]">
-                <h2 className="text-sm font-semibold text-slate-100 inline-flex items-center gap-2">
-                  <Users size={14} />
-                  Team Roles (Customers Hidden)
-                </h2>
-              </div>
-              {!selectedOwner ? (
-                <div className="px-4 py-6 text-sm text-slate-500">Select an owner account to view their team roles.</div>
-              ) : (
-                <div className="p-4">
-                  <div className="text-sm text-slate-300 mb-2">
-                    {selectedOwner.owner_name || 'Owner'} • {selectedOwner.shop_name || 'Shop'}
-                  </div>
-                  <div className="flex flex-wrap gap-2 mb-3">
-                    {roleCounts.map((entry) => (
-                      <span key={entry.role} className="text-[11px] px-2 py-1 rounded-md border border-[#313957] text-slate-300 bg-[#10131d]">
-                        {roleLabel(entry.role)}: {entry.count}
-                      </span>
-                    ))}
-                    {!roleCounts.length && (
-                      <span className="text-[11px] text-slate-500">No non-customer users found.</span>
-                    )}
-                  </div>
-                  <div className="space-y-2 max-h-[240px] overflow-y-auto pr-1">
-                    {teamUsers.map((u) => (
-                      <div key={u.id} className="flex items-center justify-between border border-[#2a2d3e] rounded-lg px-3 py-2">
-                        <div>
-                          <div className="text-sm text-slate-100">{u.name || 'Unnamed User'}</div>
-                          <div className="text-xs text-slate-500">{u.email || '—'}</div>
-                        </div>
-                        <span className="text-[11px] uppercase tracking-widest text-indigo-200">{u.role || '—'}</span>
-                      </div>
-                    ))}
-                    {!teamUsers.length && (
-                      <div className="text-sm text-slate-500">No team users to show.</div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-
             <div className="bg-[#141824] border border-[#242837] rounded-xl overflow-hidden">
               <div className="px-4 py-3 border-b border-[#242837]">
                 <h2 className="text-sm font-semibold text-slate-100 inline-flex items-center gap-2">
