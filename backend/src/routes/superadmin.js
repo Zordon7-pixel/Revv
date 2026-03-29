@@ -70,6 +70,89 @@ router.get('/accounts', async (req, res) => {
   }
 });
 
+// Help desk feed: registered shops + app issues (feedback/errors)
+router.get('/helpdesk', async (req, res) => {
+  try {
+    const shopId = String(req.query.shop_id || '').trim();
+    const parsedLimit = Number(req.query.limit);
+    const limit = Number.isFinite(parsedLimit) ? Math.max(25, Math.min(500, Math.trunc(parsedLimit))) : 200;
+
+    const issueTypeSql = `(COALESCE(f.tester_name, '') = 'Auto-Reporter' OR f.message ILIKE '[AUTO]%')`;
+
+    const shops = await dbAll(
+      `SELECT
+         s.id,
+         s.name,
+         s.city,
+         s.state,
+         s.created_at,
+         COALESCE(stats.issue_count, 0) AS issue_count,
+         COALESCE(stats.error_count, 0) AS error_count,
+         COALESCE(stats.feedback_count, 0) AS feedback_count,
+         stats.last_issue_at
+       FROM shops s
+       LEFT JOIN (
+         SELECT
+           f.shop_id,
+           COUNT(*)::int AS issue_count,
+           COUNT(*) FILTER (WHERE ${issueTypeSql})::int AS error_count,
+           COUNT(*) FILTER (WHERE NOT ${issueTypeSql})::int AS feedback_count,
+           MAX(f.created_at) AS last_issue_at
+         FROM feedback f
+         WHERE f.shop_id IS NOT NULL AND f.shop_id <> ''
+         GROUP BY f.shop_id
+       ) stats ON stats.shop_id = s.id::text
+       ORDER BY COALESCE(stats.last_issue_at, s.created_at) DESC, s.name ASC`
+    );
+
+    const issues = await dbAll(
+      `SELECT
+         f.id,
+         f.shop_id,
+         COALESCE(s.name, 'Unknown Shop') AS shop_name,
+         s.city AS shop_city,
+         s.state AS shop_state,
+         f.tester_name,
+         f.category,
+         f.priority,
+         f.status,
+         f.page,
+         f.message,
+         f.expected,
+         f.created_at,
+         CASE WHEN ${issueTypeSql} THEN 'error' ELSE 'feedback' END AS issue_type
+       FROM feedback f
+       LEFT JOIN shops s ON s.id::text = f.shop_id
+       WHERE ($1 = '' OR f.shop_id = $1)
+       ORDER BY f.created_at DESC
+       LIMIT $2`,
+      [shopId, limit]
+    );
+
+    const summary = await dbGet(
+      `SELECT
+         COUNT(*)::int AS total_issues,
+         COUNT(*) FILTER (WHERE ${issueTypeSql})::int AS total_errors,
+         COUNT(*) FILTER (WHERE NOT ${issueTypeSql})::int AS total_feedback
+       FROM feedback f
+       WHERE ($1 = '' OR f.shop_id = $1)`,
+      [shopId]
+    );
+
+    return res.json({
+      shops,
+      issues,
+      summary: {
+        total_issues: summary?.total_issues || 0,
+        total_errors: summary?.total_errors || 0,
+        total_feedback: summary?.total_feedback || 0,
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/shops', async (req, res) => {
   try {
     const shops = await dbAll(`

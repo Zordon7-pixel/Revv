@@ -29,9 +29,13 @@ export default class ErrorBoundary extends React.Component {
         }),
       };
       // Use raw fetch so we don't import api here (class component)
+      const token = window.localStorage.getItem('sc_token');
       fetch('/api/feedback', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify(payload),
       }).catch(() => {});
     } catch (_) {}

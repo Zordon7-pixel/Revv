@@ -222,6 +222,7 @@ async function runMigrations() {
         id UUID PRIMARY KEY,
         app TEXT DEFAULT 'shopcommand',
         tester_name TEXT,
+        shop_id TEXT,
         category TEXT,
         priority TEXT DEFAULT 'medium',
         message TEXT NOT NULL,
@@ -231,6 +232,9 @@ async function runMigrations() {
         routed_to TEXT,
         created_at TIMESTAMPTZ DEFAULT NOW()
       )`,
+      `ALTER TABLE feedback ADD COLUMN IF NOT EXISTS shop_id TEXT`,
+      `CREATE INDEX IF NOT EXISTS idx_feedback_shop_created_at ON feedback(shop_id, created_at DESC)`,
+      `CREATE INDEX IF NOT EXISTS idx_feedback_created_at ON feedback(created_at DESC)`,
       `CREATE TABLE IF NOT EXISTS ro_comms (
         id UUID PRIMARY KEY,
         ro_id TEXT NOT NULL REFERENCES repair_orders(id) ON DELETE CASCADE,

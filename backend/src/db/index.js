@@ -275,6 +275,7 @@ async function initDb() {
       id UUID PRIMARY KEY,
       app TEXT DEFAULT 'shopcommand',
       tester_name TEXT,
+      shop_id TEXT,
       category TEXT,
       priority TEXT DEFAULT 'medium',
       message TEXT NOT NULL,
@@ -377,6 +378,9 @@ async function initDb() {
   await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS quickbooks_last_sync_at TIMESTAMP WITH TIME ZONE`);
   await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS quickbooks_sync_enabled BOOLEAN DEFAULT FALSE`);
   await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS quickbooks_environment TEXT DEFAULT 'production'`);
+  await pool.query(`ALTER TABLE feedback ADD COLUMN IF NOT EXISTS shop_id TEXT`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_feedback_shop_created_at ON feedback(shop_id, created_at DESC)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_feedback_created_at ON feedback(created_at DESC)`);
   await pool.query(`ALTER TABLE time_entries ADD COLUMN IF NOT EXISTS unscheduled_approved_by TEXT`).catch(() => {});
   await pool.query(`ALTER TABLE time_entries ADD COLUMN IF NOT EXISTS unscheduled_approved_at TIMESTAMP WITH TIME ZONE`).catch(() => {});
 
