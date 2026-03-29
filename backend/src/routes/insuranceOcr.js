@@ -41,7 +41,34 @@ Return ONLY valid JSON in this exact format:
   "total_allowed": null
 }
 Classify each item: labor operations = "labor", parts/materials = "parts", sublet work = "sublet", everything else = "other".
+Important operation code mapping:
+- RNI / R&I / Remove and Install = labor operation (do NOT treat as parts replacement)
+- RPR = labor repair operation (do NOT treat as parts replacement)
+- REPL / R&R / Replace = parts replacement (order/replace part)
 Return only the JSON object, no markdown fences, no extra text.`;
+
+function normalizeItemType(type) {
+  const next = String(type || '').trim().toLowerCase();
+  return ['labor', 'parts', 'sublet', 'other'].includes(next) ? next : 'other';
+}
+
+function classifyByOperationCodes(description, currentType) {
+  const text = String(description || '').toLowerCase();
+
+  // Replace codes mean a part needs to be replaced/ordered.
+  const hasReplaceCode = /\b(repl|replace|r\s*&\s*r|r\/r|r\s+and\s+r|remove\s*(?:and|&|\/)?\s*replace)\b/.test(text);
+  if (hasReplaceCode) return 'parts';
+
+  // RNI / R&I / remove-install are labor operations.
+  const hasRemoveInstallCode = /\b(rni|r\s*&\s*i|r\/i|r\s+and\s+i|remove\s*(?:and|&|\/)?\s*install)\b/.test(text);
+  if (hasRemoveInstallCode) return 'labor';
+
+  // RPR / repair indicates labor repair operation.
+  const hasRepairCode = /\b(rpr|repair)\b/.test(text);
+  if (hasRepairCode) return 'labor';
+
+  return currentType;
+}
 
 function isOpenAiJsonBodyParseError(err) {
   const msg = String(err?.message || '').toLowerCase();
@@ -292,10 +319,12 @@ router.post('/parse', auth, upload.single('estimate_image'), async (req, res) =>
       return res.status(422).json({ success: false, error: 'Could not extract estimate data from file. Try a clearer upload.' });
     }
 
-    const ALLOWED_TYPES = new Set(['labor', 'parts', 'sublet', 'other']);
     const items = (parsed.line_items || []).map((item) => ({
-      type: ALLOWED_TYPES.has(String(item.type || '').toLowerCase()) ? String(item.type).toLowerCase() : 'other',
       description: String(item.description || '').trim(),
+      type: classifyByOperationCodes(
+        String(item.description || '').trim(),
+        normalizeItemType(item.type)
+      ),
       quantity: Number.isFinite(Number(item.quantity)) ? Number(item.quantity) : 1,
       unit_price: Number.isFinite(Number(item.unit_price)) ? Number(item.unit_price) : 0,
     }));

@@ -466,6 +466,8 @@ export default function EstimateBuilder() {
     }
     let lastSummary = summary
     let imported = 0
+    let partsRequestsCreated = 0
+    let partsRequestsFailed = 0
     try {
       for (const item of toImport) {
         const nextSort = items.length + imported
@@ -480,13 +482,38 @@ export default function EstimateBuilder() {
         setItems((prev) => [...prev, data.item])
         lastSummary = data.summary || lastSummary
         imported++
+
+        if (String(item.type || '').toLowerCase() === 'parts') {
+          const partName = String(item.description || '').trim() || 'Imported part'
+          const requestedQty = Math.max(1, Math.ceil(asNumber(item.quantity, 1)))
+          try {
+            await api.post('/parts-requests', {
+              ro_id: roId,
+              part_name: partName,
+              quantity: requestedQty,
+              notes: 'Auto-created from insurance estimate import',
+            })
+            partsRequestsCreated++
+          } catch (_) {
+            partsRequestsFailed++
+          }
+        }
       }
       setSummary(lastSummary)
       setOcrModalOpen(false)
       setOcrParsed(null)
       setOcrCrossCheck(null)
       setOcrMetaNote('')
-      alert(`✅ ${imported} item${imported !== 1 ? 's' : ''} imported from insurance estimate.`)
+      const noticeLines = [
+        `${imported} item${imported !== 1 ? 's' : ''} imported from insurance estimate.`,
+      ]
+      if (partsRequestsCreated > 0) {
+        noticeLines.push(`${partsRequestsCreated} part request${partsRequestsCreated !== 1 ? 's' : ''} added to Parts Requests.`)
+      }
+      if (partsRequestsFailed > 0) {
+        noticeLines.push(`${partsRequestsFailed} part request${partsRequestsFailed !== 1 ? 's' : ''} could not be created.`)
+      }
+      alert(noticeLines.join('\n'))
       await loadOpportunities({ silent: true })
     } catch (err) {
       alert(err?.response?.data?.error || 'Import failed — some items may not have been added')
