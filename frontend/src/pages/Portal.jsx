@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Phone, Car, Calendar, LogOut, Wrench, Truck, AlertTriangle, Package, CheckCircle } from 'lucide-react'
+import { Phone, Car, Calendar, LogOut, Wrench, Truck, AlertTriangle, Package, CheckCircle, Clock } from 'lucide-react'
 import api from '../lib/api'
 
 const CARRIER_LABELS = { ups:'UPS', fedex:'FedEx', usps:'USPS', dhl:'DHL' }
@@ -37,8 +37,8 @@ export default function Portal() {
   const [shop, setShop] = useState(null)
 
   useEffect(() => {
-    api.get('/portal/my-ros').then(r => setRos(r.data.ros || []))
-    api.get('/portal/shop').then(r => setShop(r.data))
+    api.get('/portal/my-ros').then(r => setRos(r.data.ros || [])).catch(() => {})
+    api.get('/portal/shop').then(r => setShop(r.data)).catch(() => {})
   }, [])
 
   function logout() {
