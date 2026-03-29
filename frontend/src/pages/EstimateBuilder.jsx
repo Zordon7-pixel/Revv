@@ -179,6 +179,7 @@ export default function EstimateBuilder() {
   const [financialNotice, setFinancialNotice] = useState('')
   const [opportunity, setOpportunity] = useState(null)
   const [opportunityLoading, setOpportunityLoading] = useState(false)
+  const [bulkTaxableSaving, setBulkTaxableSaving] = useState(false)
 
   async function loadOpportunities({ silent = false } = {}) {
     if (!silent) setOpportunityLoading(true)
@@ -289,6 +290,45 @@ export default function EstimateBuilder() {
       alert(err?.response?.data?.error || 'Could not delete line item')
     } finally {
       setDeletingId(null)
+    }
+  }
+
+  async function setAllTaxable(nextTaxable) {
+    const toUpdate = items.filter((item) => !!item.taxable !== !!nextTaxable)
+    if (!toUpdate.length) return
+    setBulkTaxableSaving(true)
+    setItems((prev) => prev.map((item) => (
+      toUpdate.some((candidate) => candidate.id === item.id)
+        ? { ...item, taxable: !!nextTaxable }
+        : item
+    )))
+
+    try {
+      let lastSummary = summary
+      for (const item of toUpdate) {
+        const payload = {
+          type: item.type,
+          description: item.description || '',
+          quantity: asNumber(item.quantity, 0),
+          unit_price: asNumber(item.unit_price, 0),
+          taxable: !!nextTaxable,
+          sort_order: Math.max(0, Math.trunc(asNumber(item.sort_order, 0))),
+        }
+        const { data } = await api.put(`/estimate-items/${roId}/${item.id}`, payload)
+        setItems((prev) => prev.map((row) => (row.id === item.id ? data.item : row)))
+        lastSummary = data.summary || lastSummary
+      }
+      setSummary(lastSummary || null)
+      await loadOpportunities({ silent: true })
+    } catch (err) {
+      alert(err?.response?.data?.error || 'Could not update taxable values')
+      try {
+        const { data } = await api.get(`/estimate-items/${roId}`)
+        setItems(data?.items || [])
+        setSummary(data?.summary || null)
+      } catch (_) {}
+    } finally {
+      setBulkTaxableSaving(false)
     }
   }
 
@@ -465,6 +505,9 @@ export default function EstimateBuilder() {
     other_total: 0, taxable_subtotal: 0, tax_rate: 0, tax_amount: 0,
     grand_total: 0, line_count: 0,
   }
+  const taxableCount = orderedItems.filter((item) => !!item.taxable).length
+  const allTaxableSelected = orderedItems.length > 0 && taxableCount === orderedItems.length
+  const noneTaxableSelected = taxableCount === 0
 
   return (
     <div className="max-w-6xl mx-auto space-y-4">
@@ -592,7 +635,35 @@ export default function EstimateBuilder() {
               <th className="text-left px-3 py-2">Description</th>
               <th className="text-right px-3 py-2">Qty</th>
               <th className="text-right px-3 py-2">Unit Price</th>
-              <th className="text-center px-3 py-2">Taxable</th>
+              <th className="text-center px-3 py-2">
+                <div className="flex items-center justify-center gap-2">
+                  <span>Taxable</span>
+                  <button
+                    type="button"
+                    disabled={bulkTaxableSaving || allTaxableSelected || orderedItems.length === 0}
+                    onClick={() => setAllTaxable(true)}
+                    className={`px-1.5 py-0.5 rounded border text-[10px] transition-colors ${
+                      allTaxableSelected
+                        ? 'border-emerald-600/60 text-emerald-300 bg-emerald-900/30'
+                        : 'border-[#2a2d3e] text-slate-300 hover:text-white'
+                    } disabled:opacity-50`}
+                  >
+                    All
+                  </button>
+                  <button
+                    type="button"
+                    disabled={bulkTaxableSaving || noneTaxableSelected || orderedItems.length === 0}
+                    onClick={() => setAllTaxable(false)}
+                    className={`px-1.5 py-0.5 rounded border text-[10px] transition-colors ${
+                      noneTaxableSelected
+                        ? 'border-slate-500/60 text-slate-200 bg-slate-800/40'
+                        : 'border-[#2a2d3e] text-slate-300 hover:text-white'
+                    } disabled:opacity-50`}
+                  >
+                    None
+                  </button>
+                </div>
+              </th>
               <th className="text-right px-3 py-2">Sort</th>
               <th className="text-right px-3 py-2">Total</th>
               <th className="text-right px-3 py-2">Actions</th>
