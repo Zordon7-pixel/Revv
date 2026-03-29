@@ -109,8 +109,8 @@ export default function Dashboard() {
 
   async function loadDashboardData() {
     const [summaryRes, monthSummaryRes, carryoverRes, appointmentsRes, goalsRes, adasRes, weeklyRes, rosRes] = await Promise.all([
-      api.get('/reports/summary?scope=all'),
-      api.get('/reports/summary'),
+      api.get('/reports/summary?scope=all').catch(() => ({ data: {} })),
+      api.get('/reports/summary').catch(() => ({ data: {} })),
       api.get('/ros/carryover-pending').catch(() => ({ data: { ros: [] } })),
       api.get('/appointments').catch(() => ({ data: { requests: [] } })),
       api.get(`/goals/${yearMonth}`).catch(() => ({ data: { goal: null } })),
@@ -119,24 +119,14 @@ export default function Dashboard() {
       api.get('/repair-orders').catch(() => ({ data: { ros: [] } })),
     ])
     const allRos = Array.isArray(rosRes?.data?.ros) ? rosRes.data.ros : []
+    // Derive active/completed directly from the RO list — most reliable single source.
+    // Fall back to summary API only when the RO list fetch failed (allRos is empty).
     const activeFromRos = allRos.filter((ro) => !isClosedRoStatus(ro.status)).length
     const completedFromRos = allRos.filter((ro) => isClosedRoStatus(ro.status)).length
-    const summaryActive = Number(summaryRes?.data?.active || 0)
-    const summaryCompleted = Number(summaryRes?.data?.completed || 0)
-    const summaryBuckets = countFromStatusBuckets(summaryRes?.data?.byStatus)
-    const monthBuckets = countFromStatusBuckets(monthSummaryRes?.data?.byStatus)
-    const resolvedActive = Math.max(
-      allRos.length > 0 ? activeFromRos : 0,
-      summaryActive,
-      summaryBuckets.active,
-      monthBuckets.active
-    )
-    const resolvedCompleted = Math.max(
-      allRos.length > 0 ? completedFromRos : 0,
-      summaryCompleted,
-      summaryBuckets.completed,
-      monthBuckets.completed
-    )
+    const summaryActive = Number(summaryRes?.data?.active ?? 0)
+    const summaryCompleted = Number(summaryRes?.data?.completed ?? 0)
+    const resolvedActive = allRos.length > 0 ? activeFromRos : summaryActive
+    const resolvedCompleted = allRos.length > 0 ? completedFromRos : summaryCompleted
 
     setData({
       ...summaryRes.data,
