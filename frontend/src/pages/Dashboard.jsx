@@ -64,6 +64,17 @@ function isClosedRoStatus(status) {
   return normalized === 'closed' || normalized === 'completed'
 }
 
+function countFromStatusBuckets(rows) {
+  const safeRows = Array.isArray(rows) ? rows : []
+  return safeRows.reduce((acc, row) => {
+    const count = Number(row?.count || 0)
+    if (!Number.isFinite(count) || count <= 0) return acc
+    if (isClosedRoStatus(row?.status)) acc.completed += count
+    else acc.active += count
+    return acc
+  }, { active: 0, completed: 0 })
+}
+
 export default function Dashboard() {
   const [data, setData] = useState(null)
   const [techData, setTechData] = useState(null)
@@ -112,12 +123,25 @@ export default function Dashboard() {
     const completedFromRos = allRos.filter((ro) => isClosedRoStatus(ro.status)).length
     const summaryActive = Number(summaryRes?.data?.active || 0)
     const summaryCompleted = Number(summaryRes?.data?.completed || 0)
-    const useRosCounts = allRos.length > 0
+    const summaryBuckets = countFromStatusBuckets(summaryRes?.data?.byStatus)
+    const monthBuckets = countFromStatusBuckets(monthSummaryRes?.data?.byStatus)
+    const resolvedActive = Math.max(
+      allRos.length > 0 ? activeFromRos : 0,
+      summaryActive,
+      summaryBuckets.active,
+      monthBuckets.active
+    )
+    const resolvedCompleted = Math.max(
+      allRos.length > 0 ? completedFromRos : 0,
+      summaryCompleted,
+      summaryBuckets.completed,
+      monthBuckets.completed
+    )
 
     setData({
       ...summaryRes.data,
-      active: useRosCounts ? activeFromRos : summaryActive,
-      completed: useRosCounts ? completedFromRos : summaryCompleted,
+      active: resolvedActive,
+      completed: resolvedCompleted,
       monthly_total: Number(monthSummaryRes.data?.total || 0),
       monthly_revenue: Number(monthSummaryRes.data?.revenue || 0),
       monthly_profit: Number(monthSummaryRes.data?.profit || 0),
