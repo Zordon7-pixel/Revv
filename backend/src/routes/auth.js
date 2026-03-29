@@ -6,6 +6,7 @@ const rateLimit = require('express-rate-limit');
 const { v4: uuidv4 } = require('uuid');
 const { dbGet, dbRun } = require('../db');
 const auth     = require('../middleware/auth');
+const { sendMail } = require('../services/mailer');
 
 const forgotPasswordLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
@@ -127,6 +128,19 @@ router.post('/forgot-password', forgotPasswordLimiter, async (req, res) => {
       const token = crypto.randomBytes(32).toString('hex');
       const expiresAt = new Date(Date.now() + 3600000).toISOString();
       await dbRun('INSERT INTO password_reset_tokens (id, user_id, token, expires_at) VALUES ($1, $2, $3, $4)', [uuidv4(), user.id, token, expiresAt]);
+      const resetUrl = `${process.env.FRONTEND_URL || 'https://revvshop.app'}/reset-password?token=${token}`;
+      try {
+        const result = await sendMail(
+          user.email,
+          'Reset your REVV password',
+          `<p>You requested a password reset for your REVV account.</p>
+<p><a href="${resetUrl}" style="color:#6366f1;font-weight:bold;">Click here to reset your password</a></p>
+<p>This link expires in 1 hour. If you did not request this, you can safely ignore this email.</p>`
+        );
+        console.log('[Auth] Password reset email sent:', result?.id);
+      } catch (mailErr) {
+        console.error('[Auth] Password reset email failed:', mailErr.message);
+      }
     }
     res.json({ ok: true });
   } catch (err) {
