@@ -373,7 +373,7 @@ router.put('/:id', auth, requireOwnerAdminOnly, async (req, res) => {
     const updateKeys = Object.keys(updates);
     const updateVals = Object.values(updates);
     const setClauses = updateKeys.map((k, i) => `${k} = $${i + 1}`).join(', ');
-    await dbRun(`UPDATE time_entries SET ${setClauses} WHERE id = $${updateKeys.length + 1}`, [...updateVals, req.params.id]);
+    await dbRun(`UPDATE time_entries SET ${setClauses} WHERE id = $${updateKeys.length + 1} AND shop_id = $${updateKeys.length + 2}`, [...updateVals, req.params.id, req.user.shop_id]);
 
     res.json({ entry: await enrich(await dbGet('SELECT * FROM time_entries WHERE id = $1', [req.params.id])) });
   } catch (err) {

@@ -1424,7 +1424,7 @@ router.post('/:id/approval-link', auth, requireTechnician, async (req, res) => {
        VALUES ($1, $2, $3, $4, $5)`,
       [uuidv4(), ro.id, req.user.shop_id, token, req.user.id]
     );
-    await dbRun('UPDATE repair_orders SET estimate_token = $1, updated_at = $2 WHERE id = $3', [token, new Date().toISOString(), ro.id]);
+    await dbRun('UPDATE repair_orders SET estimate_token = $1, updated_at = $2 WHERE id = $3 AND shop_id = $4', [token, new Date().toISOString(), ro.id, req.user.shop_id]);
     return res.json({ token, link: `${req.protocol}://${req.get('host')}/approve/${token}` });
   } catch (err) {
     return res.status(500).json({ error: err.message });
@@ -1483,6 +1483,9 @@ router.post('/approval/:token/respond', publicTokenLimiter, async (req, res) => 
     const now = new Date().toISOString();
     if (decision === 'approve') {
       const fromStatus = ro.status;
+      // Public endpoint — no req.user/shop_id available. Ownership is enforced by the approval
+      // token (uuidv4, cryptographically unguessable). ro.id is derived from the token lookup,
+      // so only the holder of the valid token can trigger this update. No shop_id needed here.
       await dbRun('UPDATE repair_orders SET status = $1, estimate_approved_at = $2, updated_at = $3 WHERE id = $4', ['approval', now, now, ro.id]);
       await dbRun(
         'INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by, note) VALUES ($1, $2, $3, $4, $5, $6)',
@@ -1726,7 +1729,7 @@ router.put('/:id', auth, requireTechnician, async (req, res) => {
       const updateKeys = Object.keys(updates);
       const updateVals = Object.values(updates);
       const setClauses = updateKeys.map((k, i) => `${k} = $${i + 1}`).join(', ');
-      await dbRun(`UPDATE repair_orders SET ${setClauses} WHERE id = $${updateKeys.length + 1}`, [...updateVals, req.params.id]);
+      await dbRun(`UPDATE repair_orders SET ${setClauses} WHERE id = $${updateKeys.length + 1} AND shop_id = $${updateKeys.length + 2}`, [...updateVals, req.params.id, req.user.shop_id]);
     } else if (Object.keys(vehicleUpdates).length === 0) {
       return res.status(400).json({ error: 'No valid fields to update' });
     }
@@ -1753,9 +1756,9 @@ router.put('/:id/status', auth, requireTechnician, async (req, res) => {
     const fromStatus = ro.status;
     const now = new Date().toISOString();
     if (status === 'delivery') {
-      await dbRun('UPDATE repair_orders SET status = $1, updated_at = $2, actual_delivery = $3 WHERE id = $4', [status, now, now.split('T')[0], req.params.id]);
+      await dbRun('UPDATE repair_orders SET status = $1, updated_at = $2, actual_delivery = $3 WHERE id = $4 AND shop_id = $5', [status, now, now.split('T')[0], req.params.id, req.user.shop_id]);
     } else {
-      await dbRun('UPDATE repair_orders SET status = $1, updated_at = $2 WHERE id = $3', [status, now, req.params.id]);
+      await dbRun('UPDATE repair_orders SET status = $1, updated_at = $2 WHERE id = $3 AND shop_id = $4', [status, now, req.params.id, req.user.shop_id]);
     }
     await dbRun('INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by, note) VALUES ($1, $2, $3, $4, $5, $6)', [uuidv4(), req.params.id, fromStatus, status, req.user.id, note || null]);
     notifyStatusChange(req.user.shop_id, { ...ro, id: req.params.id }, status);
@@ -1792,7 +1795,7 @@ router.patch('/:id/assign', auth, requireTechnician, async (req, res) => {
     const actorIsTechRole = ['technician', 'employee', 'staff'].includes(actorRole);
     const mismatchOverride = actorIsTechRole && !!ro.assigned_to && ro.assigned_to !== req.user.id;
 
-    await dbRun('UPDATE repair_orders SET assigned_to = $1, updated_at = $2 WHERE id = $3', [nextAssignedTo, new Date().toISOString(), req.params.id]);
+    await dbRun('UPDATE repair_orders SET assigned_to = $1, updated_at = $2 WHERE id = $3 AND shop_id = $4', [nextAssignedTo, new Date().toISOString(), req.params.id, req.user.shop_id]);
     const updated = await dbGet('SELECT * FROM repair_orders WHERE id = $1', [req.params.id]);
 
     if (mismatchOverride) {
@@ -1872,7 +1875,7 @@ router.patch('/:id', auth, requireTechnician, async (req, res) => {
       const updateKeys = Object.keys(updates);
       const updateVals = Object.values(updates);
       const setClauses = updateKeys.map((k, i) => `${k} = $${i + 1}`).join(', ');
-      await dbRun(`UPDATE repair_orders SET ${setClauses} WHERE id = $${updateKeys.length + 1}`, [...updateVals, req.params.id]);
+      await dbRun(`UPDATE repair_orders SET ${setClauses} WHERE id = $${updateKeys.length + 1} AND shop_id = $${updateKeys.length + 2}`, [...updateVals, req.params.id, req.user.shop_id]);
       return res.json(await enrichRO(await dbGet('SELECT * FROM repair_orders WHERE id = $1', [req.params.id])));
     }
 
@@ -1907,9 +1910,9 @@ router.patch('/:id', auth, requireTechnician, async (req, res) => {
     const fromStatus = ro.status;
     const now = new Date().toISOString();
     if (status === 'delivery') {
-      await dbRun('UPDATE repair_orders SET status = $1, updated_at = $2, actual_delivery = $3 WHERE id = $4', [status, now, now.split('T')[0], req.params.id]);
+      await dbRun('UPDATE repair_orders SET status = $1, updated_at = $2, actual_delivery = $3 WHERE id = $4 AND shop_id = $5', [status, now, now.split('T')[0], req.params.id, req.user.shop_id]);
     } else {
-      await dbRun('UPDATE repair_orders SET status = $1, updated_at = $2 WHERE id = $3', [status, now, req.params.id]);
+      await dbRun('UPDATE repair_orders SET status = $1, updated_at = $2 WHERE id = $3 AND shop_id = $4', [status, now, req.params.id, req.user.shop_id]);
     }
     await dbRun('INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by, note) VALUES ($1, $2, $3, $4, $5, $6)', [uuidv4(), req.params.id, fromStatus, status, req.user.id, note || null]);
     notifyStatusChange(req.user.shop_id, { ...ro, id: req.params.id }, status);
@@ -1934,7 +1937,7 @@ router.post('/:id/approve-estimate', auth, requireTechnician, async (req, res) =
     const ro = await dbGet('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
     if (!ro) return res.status(404).json({ error: 'Not found' });
     const now = new Date().toISOString();
-    await dbRun('UPDATE repair_orders SET estimate_approved_at = $1, estimate_approved_by = $2, updated_at = $3 WHERE id = $4', [now, req.user.id, now, req.params.id]);
+    await dbRun('UPDATE repair_orders SET estimate_approved_at = $1, estimate_approved_by = $2, updated_at = $3 WHERE id = $4 AND shop_id = $5', [now, req.user.id, now, req.params.id, req.user.shop_id]);
     const updatedRO = await dbGet('SELECT * FROM repair_orders WHERE id = $1', [req.params.id]);
     res.json(await enrichRO(updatedRO));
 
@@ -1970,8 +1973,8 @@ router.post('/:id/mark-paid', auth, requireTechnician, async (req, res) => {
     // Mark payment received only — do NOT auto-close the RO.
     // Admin/owner can manually close when ready.
     await dbRun(
-      'UPDATE repair_orders SET payment_received = 1, payment_received_at = $1, payment_method = $2, payment_status = $3, updated_at = $4 WHERE id = $5',
-      [now, method, 'succeeded', now, req.params.id]
+      'UPDATE repair_orders SET payment_received = 1, payment_received_at = $1, payment_method = $2, payment_status = $3, updated_at = $4 WHERE id = $5 AND shop_id = $6',
+      [now, method, 'succeeded', now, req.params.id, req.user.shop_id]
     );
 
     // Log payment event (no status change)

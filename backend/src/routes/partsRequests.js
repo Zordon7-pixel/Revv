@@ -60,7 +60,7 @@ router.patch('/:id', auth, requireTechnician, async (req, res) => {
     );
     if (!request) return res.status(404).json({ error: 'Not found' });
     if (request.shop_id !== req.user.shop_id) return res.status(403).json({ error: 'Forbidden' });
-    await dbRun('UPDATE parts_requests SET status = $1 WHERE id = $2', [status, req.params.id]);
+    await dbRun('UPDATE parts_requests SET status = $1 WHERE id = $2 AND ro_id IN (SELECT id FROM repair_orders WHERE shop_id = $3)', [status, req.params.id, req.user.shop_id]);
     res.json(await dbGet('SELECT * FROM parts_requests WHERE id = $1', [req.params.id]));
   } catch (err) {
     res.status(500).json({ error: err.message });

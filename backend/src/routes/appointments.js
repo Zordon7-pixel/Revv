@@ -106,7 +106,7 @@ router.put('/:id', auth, requireTechnician, async (req, res) => {
     );
     if (!found) return res.status(404).json({ error: 'Not found' });
 
-    await dbRun('UPDATE appointment_requests SET status = $1 WHERE id = $2', [status, req.params.id]);
+    await dbRun('UPDATE appointment_requests SET status = $1 WHERE id = $2 AND shop_id = $3', [status, req.params.id, req.user.shop_id]);
     const updated = await dbGet('SELECT * FROM appointment_requests WHERE id = $1', [req.params.id]);
     return res.json({ request: updated });
   } catch (err) {
