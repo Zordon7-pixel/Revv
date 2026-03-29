@@ -24,7 +24,21 @@ function SeverityBadge({ severity }) {
 }
 
 // ── OCR Preview Modal ─────────────────────────────────────────────────────────
-function OcrModal({ parsed, flags, analysisSummary, checked, crossCheck, metaNote, onToggle, onImport, onCancel, importing }) {
+function OcrModal({
+  parsed,
+  flags,
+  analysisSummary,
+  checked,
+  crossCheck,
+  metaNote,
+  onToggle,
+  onSelectAll,
+  onSelectNone,
+  onSelectPartsOnly,
+  onImport,
+  onCancel,
+  importing,
+}) {
   const checkedCount = Object.values(checked).filter(Boolean).length
   const hasAnalysis = flags && flags.length > 0
   const supplementTotal = analysisSummary?.total_supplement_opportunity || 0
@@ -80,6 +94,32 @@ function OcrModal({ parsed, flags, analysisSummary, checked, crossCheck, metaNot
 
         {/* Line items */}
         <div className="overflow-y-auto flex-1 px-5 py-3 space-y-2">
+          <div className="flex items-center justify-between gap-2 flex-wrap mb-1">
+            <div className="text-[11px] text-slate-500">Select which lines to import</div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={onSelectPartsOnly}
+                className="text-[11px] px-2 py-1 rounded border border-[#2a2d3e] text-amber-300 hover:text-amber-200"
+              >
+                Select Parts Only
+              </button>
+              <button
+                type="button"
+                onClick={onSelectAll}
+                className="text-[11px] px-2 py-1 rounded border border-[#2a2d3e] text-slate-300 hover:text-white"
+              >
+                Select All
+              </button>
+              <button
+                type="button"
+                onClick={onSelectNone}
+                className="text-[11px] px-2 py-1 rounded border border-[#2a2d3e] text-slate-300 hover:text-white"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
           {parsed.line_items.length === 0 ? (
             <p className="text-slate-500 text-sm text-center py-6">No line items extracted. Try a clearer photo.</p>
           ) : parsed.line_items.map((item, idx) => {
@@ -93,9 +133,9 @@ function OcrModal({ parsed, flags, analysisSummary, checked, crossCheck, metaNot
               : 'border-[#2a2d3e]'
 
             return (
-              <label
+              <div
                 key={idx}
-                className={`flex items-start gap-3 p-3 rounded-lg bg-[#0f1117] border cursor-pointer hover:border-indigo-500 transition-colors ${borderClass}`}
+                className={`flex items-start gap-3 p-3 rounded-lg bg-[#0f1117] border hover:border-indigo-500 transition-colors ${borderClass}`}
               >
                 <input
                   type="checkbox"
@@ -116,7 +156,7 @@ function OcrModal({ parsed, flags, analysisSummary, checked, crossCheck, metaNot
                     <div className="text-amber-400 text-xs mt-1">{flag.message}</div>
                   )}
                 </div>
-              </label>
+              </div>
             )
           })}
         </div>
@@ -448,6 +488,33 @@ export default function EstimateBuilder() {
     setOcrChecked((prev) => ({ ...prev, [idx]: !prev[idx] }))
   }
 
+  function selectAllOcrItems() {
+    if (!ocrParsed?.line_items?.length) return
+    const next = {}
+    ocrParsed.line_items.forEach((_, idx) => {
+      next[idx] = true
+    })
+    setOcrChecked(next)
+  }
+
+  function clearOcrSelection() {
+    if (!ocrParsed?.line_items?.length) return
+    const next = {}
+    ocrParsed.line_items.forEach((_, idx) => {
+      next[idx] = false
+    })
+    setOcrChecked(next)
+  }
+
+  function selectPartsOnlyOcrItems() {
+    if (!ocrParsed?.line_items?.length) return
+    const next = {}
+    ocrParsed.line_items.forEach((item, idx) => {
+      next[idx] = String(item?.type || '').toLowerCase() === 'parts'
+    })
+    setOcrChecked(next)
+  }
+
 
   async function importOcrItems() {
     if (!ocrParsed) return
@@ -458,7 +525,13 @@ export default function EstimateBuilder() {
       if (!proceed) return
     }
     setOcrImporting(true)
-    const toImport = ocrParsed.line_items.filter((_, idx) => ocrChecked[idx])
+    const selectedIndexSet = new Set(
+      Object.entries(ocrChecked || {})
+        .filter(([, isChecked]) => isChecked === true)
+        .map(([idx]) => Number(idx))
+        .filter((idx) => Number.isInteger(idx) && idx >= 0)
+    )
+    const toImport = ocrParsed.line_items.filter((_, idx) => selectedIndexSet.has(idx))
     if (!toImport.length) {
       setOcrImporting(false)
       alert('No line items selected to import.')
@@ -500,6 +573,11 @@ export default function EstimateBuilder() {
         }
       }
       setSummary(lastSummary)
+      try {
+        const refreshed = await api.get(`/estimate-items/${roId}`)
+        setItems(refreshed.data?.items || [])
+        setSummary(refreshed.data?.summary || lastSummary)
+      } catch (_) {}
       setOcrModalOpen(false)
       setOcrParsed(null)
       setOcrCrossCheck(null)
@@ -547,6 +625,9 @@ export default function EstimateBuilder() {
           metaNote={ocrMetaNote}
           checked={ocrChecked}
           onToggle={toggleOcrItem}
+          onSelectAll={selectAllOcrItems}
+          onSelectNone={clearOcrSelection}
+          onSelectPartsOnly={selectPartsOnlyOcrItems}
           onImport={importOcrItems}
           onCancel={() => {
             setOcrModalOpen(false)
