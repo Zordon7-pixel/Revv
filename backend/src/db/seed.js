@@ -7,9 +7,37 @@ async function runSeed() {
   const superadminEmail = (process.env.SUPERADMIN_EMAIL || '').trim().toLowerCase();
   const superadminPassword = process.env.SUPERADMIN_PASSWORD || '';
   if (superadminEmail && superadminPassword) {
-    const existingSuperadmin = await dbGet('SELECT id FROM users WHERE email = $1', [superadminEmail]);
-    if (!existingSuperadmin) {
-      const superadminHash = await bcrypt.hash(superadminPassword, 10);
+    const existingByEmail = await dbGet('SELECT id, role FROM users WHERE email = $1', [superadminEmail]);
+    const existingSuperadmin = await dbGet(
+      `SELECT id, email
+       FROM users
+       WHERE role = 'superadmin'
+       ORDER BY created_at ASC
+       LIMIT 1`,
+      []
+    );
+    const superadminHash = await bcrypt.hash(superadminPassword, 10);
+
+    if (existingByEmail) {
+      if (existingByEmail.role !== 'superadmin') {
+        throw new Error('SUPERADMIN_EMAIL belongs to a non-superadmin account. Choose another email.');
+      }
+      await dbRun(
+        `UPDATE users
+         SET name = $1, password_hash = $2, shop_id = NULL
+         WHERE id = $3`,
+        ['Super Admin', superadminHash, existingByEmail.id]
+      );
+      console.log('✅ Superadmin credentials rotated.');
+    } else if (existingSuperadmin) {
+      await dbRun(
+        `UPDATE users
+         SET name = $1, email = $2, password_hash = $3, shop_id = NULL
+         WHERE id = $4`,
+        ['Super Admin', superadminEmail, superadminHash, existingSuperadmin.id]
+      );
+      console.log(`✅ Superadmin email/password rotated to ${superadminEmail}.`);
+    } else {
       await dbRun(
         'INSERT INTO users (id, shop_id, name, email, password_hash, role) VALUES ($1, $2, $3, $4, $5, $6)',
         [uuidv4(), null, 'Super Admin', superadminEmail, superadminHash, 'superadmin']
