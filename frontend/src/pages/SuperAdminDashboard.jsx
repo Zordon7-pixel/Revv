@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Star } from 'lucide-react'
+import { Star, LogIn } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 
 export default function SuperAdminDashboard() {
   const [stats, setStats] = useState(null)
@@ -9,8 +10,10 @@ export default function SuperAdminDashboard() {
   const [selectedShop, setSelectedShop] = useState(null)
   const [shopDetail, setShopDetail] = useState(null)
   const [detailLoading, setDetailLoading] = useState(false)
+  const [impersonatingKey, setImpersonatingKey] = useState('')
 
   const token = localStorage.getItem('superadmin_token')
+  const navigate = useNavigate()
 
   async function fetchJson(url) {
     const res = await fetch(url, {
@@ -69,6 +72,37 @@ export default function SuperAdminDashboard() {
       setShopDetail(null)
     } finally {
       setDetailLoading(false)
+    }
+  }
+
+  async function impersonate(payload, key) {
+    setImpersonatingKey(key)
+    setError('')
+    try {
+      const res = await fetch('/api/superadmin/impersonate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error || 'Impersonation failed')
+      if (!data?.token) throw new Error('Missing impersonation token')
+
+      localStorage.setItem('sc_token', data.token)
+      localStorage.setItem('support_impersonation', JSON.stringify({
+        superadmin_id: data?.impersonation?.by_superadmin_id || null,
+        user_id: data?.user?.id || null,
+        user_email: data?.user?.email || null,
+        started_at: new Date().toISOString(),
+      }))
+      navigate('/dashboard')
+    } catch (err) {
+      setError(err?.message || 'Unable to open this account session.')
+    } finally {
+      setImpersonatingKey('')
     }
   }
 
@@ -171,6 +205,15 @@ export default function SuperAdminDashboard() {
                 <div className="text-slate-300">Phone: {shopDetail.shop.phone || '—'}</div>
                 <div className="text-slate-300">Address: {shopDetail.shop.address || '—'}</div>
                 <div className="text-slate-300">Total ROs: {shopDetail.ro_count ?? 0}</div>
+                <button
+                  type="button"
+                  onClick={() => impersonate({ shop_id: shopDetail.shop.id }, `shop:${shopDetail.shop.id}`)}
+                  disabled={impersonatingKey === `shop:${shopDetail.shop.id}`}
+                  className="mt-1 inline-flex items-center gap-1.5 text-xs bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-semibold px-3 py-1.5 rounded-lg"
+                >
+                  <LogIn size={12} />
+                  {impersonatingKey === `shop:${shopDetail.shop.id}` ? 'Opening…' : 'Open Shop Session'}
+                </button>
               </div>
             )}
           </div>
@@ -186,7 +229,18 @@ export default function SuperAdminDashboard() {
                         <div className="font-medium">{u.name}</div>
                         <div className="text-xs text-slate-500">{u.email}</div>
                       </div>
-                      <div className="text-xs text-slate-300 uppercase tracking-widest">{u.role}</div>
+                      <div className="flex items-center gap-2">
+                        <div className="text-xs text-slate-300 uppercase tracking-widest">{u.role}</div>
+                        <button
+                          type="button"
+                          onClick={() => impersonate({ user_id: u.id }, `user:${u.id}`)}
+                          disabled={impersonatingKey === `user:${u.id}`}
+                          className="inline-flex items-center gap-1 text-[11px] bg-[#20273a] hover:bg-[#2a334d] disabled:opacity-50 text-indigo-200 px-2 py-1 rounded-md border border-[#313957]"
+                        >
+                          <LogIn size={11} />
+                          {impersonatingKey === `user:${u.id}` ? 'Opening…' : 'Open'}
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>

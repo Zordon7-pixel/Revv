@@ -40,13 +40,13 @@ export default function SuperAdminLogin() {
           <div className="w-16 h-16 bg-[#EAB308] rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-yellow-900/40">
             <span className="text-[#0f1117] font-bold text-xl tracking-tight">REVV</span>
           </div>
-          <h1 className="text-2xl font-bold tracking-wide">Superadmin</h1>
+          <h1 className="text-2xl font-bold tracking-wide">Master Access</h1>
           <p className="text-xs font-semibold text-yellow-300 uppercase tracking-widest mt-2">Platform Control</p>
         </div>
 
         <form onSubmit={submit} className="bg-[#141824] rounded-2xl p-6 border border-[#242837] space-y-4">
           <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1.5">Email</label>
+            <label className="block text-xs font-medium text-slate-400 mb-1.5">Master Username</label>
             <input
               type="email"
               value={email}
@@ -75,7 +75,7 @@ export default function SuperAdminLogin() {
           >
             {loading ? 'Signing in...' : 'Sign In'}
           </button>
-          <p className="text-xs text-slate-500">Use your superadmin credentials.</p>
+          <p className="text-xs text-slate-500">Use your master superadmin username and password.</p>
         </form>
       </div>
     </div>

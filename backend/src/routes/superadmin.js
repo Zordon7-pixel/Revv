@@ -2,8 +2,23 @@ const router = require('express').Router();
 const { dbAll, dbGet, dbRun } = require('../db');
 const superadmin = require('../middleware/superadmin');
 const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const { v4: uuidv4 } = require('uuid');
 
 router.use(superadmin);
+
+function issueImpersonationToken(targetUser, requestedBySuperadminId) {
+  const payload = {
+    id: targetUser.id,
+    shop_id: targetUser.shop_id,
+    role: targetUser.role,
+    jti: uuidv4(),
+    support_impersonation: true,
+    impersonated_by: requestedBySuperadminId,
+  };
+  if (targetUser.customer_id) payload.customer_id = targetUser.customer_id;
+  return jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '7d' });
+}
 
 router.get('/shops', async (req, res) => {
   try {
@@ -149,6 +164,70 @@ router.delete('/users/:userId', async (req, res) => {
     res.json({ ok: true, deleted: user.email });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Impersonate any non-superadmin user (support debugging)
+router.post('/impersonate', async (req, res) => {
+  try {
+    const { user_id, shop_id } = req.body || {};
+
+    let targetUser = null;
+    if (user_id) {
+      targetUser = await dbGet(
+        `SELECT u.id, u.name, u.email, u.role, u.shop_id, u.customer_id, s.onboarded
+         FROM users u
+         LEFT JOIN shops s ON s.id = u.shop_id
+         WHERE u.id = $1`,
+        [user_id]
+      );
+    } else if (shop_id) {
+      targetUser = await dbGet(
+        `SELECT u.id, u.name, u.email, u.role, u.shop_id, u.customer_id, s.onboarded
+         FROM users u
+         LEFT JOIN shops s ON s.id = u.shop_id
+         WHERE u.shop_id = $1
+           AND u.role <> 'superadmin'
+         ORDER BY
+           CASE
+             WHEN u.role = 'owner' THEN 0
+             WHEN u.role = 'admin' THEN 1
+             WHEN u.role = 'staff' THEN 2
+             WHEN u.role = 'employee' THEN 3
+             WHEN u.role = 'technician' THEN 4
+             WHEN u.role = 'assistant' THEN 5
+             ELSE 6
+           END,
+           u.created_at ASC
+         LIMIT 1`,
+        [shop_id]
+      );
+    } else {
+      return res.status(400).json({ error: 'user_id or shop_id is required' });
+    }
+
+    if (!targetUser) return res.status(404).json({ error: 'Target user not found' });
+    if (targetUser.role === 'superadmin') return res.status(403).json({ error: 'Cannot impersonate superadmin users' });
+    if (!targetUser.shop_id) return res.status(400).json({ error: 'Target user is not linked to a shop' });
+
+    const token = issueImpersonationToken(targetUser, req.user.id);
+    return res.json({
+      token,
+      user: {
+        id: targetUser.id,
+        name: targetUser.name,
+        email: targetUser.email,
+        role: targetUser.role,
+        shop_id: targetUser.shop_id,
+        customer_id: targetUser.customer_id || null,
+        onboarded: Boolean(targetUser.onboarded),
+      },
+      impersonation: {
+        by_superadmin_id: req.user.id,
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
   }
 });
 
