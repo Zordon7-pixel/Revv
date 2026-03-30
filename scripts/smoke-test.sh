@@ -29,10 +29,10 @@ else
   fail "Health endpoint /api/health → $STATUS (expected 200)"
 fi
 
-# 2. Login with superadmin
+# 2. Login with demo account
 LOGIN_RESP=$(curl -s -X POST "$BASE_URL/api/auth/login" \
   -H "Content-Type: application/json" \
-  -d '{"email":"admin@revv.app","password":"admin1234"}' 2>/dev/null)
+  -d '{"email":"demo@revvauto.com","password":"RevvDemo123!"}' 2>/dev/null)
 TOKEN=$(echo "$LOGIN_RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('token',''))" 2>/dev/null)
 if [ -n "$TOKEN" ] && [ "$TOKEN" != "ERROR" ]; then
   pass "Auth /api/auth/login → token received"
@@ -40,14 +40,14 @@ else
   fail "Auth /api/auth/login → no token (response: $LOGIN_RESP)"
 fi
 
-# 3. Authenticated route — superadmin stats
+# 3. Authenticated route — RO list (owner access)
 if [ -n "$TOKEN" ]; then
-  STATS_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/api/superadmin/stats" \
+  ROS_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/api/ros" \
     -H "Authorization: Bearer $TOKEN" 2>/dev/null)
-  if [ "$STATS_STATUS" = "200" ]; then
-    pass "Superadmin /api/superadmin/stats → 200"
+  if [ "$ROS_STATUS" = "200" ]; then
+    pass "Authenticated /api/ros → 200"
   else
-    fail "Superadmin /api/superadmin/stats → $STATS_STATUS (expected 200)"
+    fail "Authenticated /api/ros → $ROS_STATUS (expected 200)"
   fi
 fi
 
