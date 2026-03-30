@@ -23,11 +23,20 @@ export default function ROPhotos({ roId, isAdmin }) {
   const [caption, setCaption] = useState('')
   const [photoType, setPhotoType] = useState('damage')
   const [isDragActive, setIsDragActive] = useState(false)
+  const [photoLoadError, setPhotoLoadError] = useState('')
   const fileRef = useRef(null)
   const dropZoneRef = useRef(null)
 
-  const load = () =>
-    api.get(`/photos/${roId}`).then(r => setPhotos(r.data.photos || [])).catch(err => console.error('[ROPhotos] Failed to load photos:', err.message))
+  const load = async () => {
+    try {
+      const r = await api.get(`/photos/${roId}`)
+      setPhotos(r.data.photos || [])
+      setPhotoLoadError('')
+    } catch (err) {
+      setPhotoLoadError(err?.response?.data?.error || 'Failed to load photos')
+      console.error('[ROPhotos] Failed to load photos:', err.message)
+    }
+  }
 
   useEffect(() => { load() }, [roId])
 

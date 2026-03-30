@@ -310,12 +310,17 @@ export default function Schedule() {
       await loadMonthShifts()
       return
     }
-    const [s, e] = await Promise.all([
-      api.get(`/schedule?week=${isoDate(monday)}`),
-      canManage ? api.get('/schedule/employees') : Promise.resolve({ data: { employees: [] } })
-    ])
-    setShifts(s.data.shifts || [])
-    setEmployees(e.data.employees || [])
+    try {
+      const [s, e] = await Promise.all([
+        api.get(`/schedule?week=${isoDate(monday)}`),
+        canManage ? api.get('/schedule/employees') : Promise.resolve({ data: { employees: [] } })
+      ])
+      setShifts(s.data.shifts || [])
+      setEmployees(e.data.employees || [])
+    } catch (err) {
+      console.error('[Schedule] Failed to load week shifts:', err.message)
+      alert('Error loading schedule: ' + err.message)
+    }
   }
   useEffect(() => { load() }, [monday, viewMode])
 
