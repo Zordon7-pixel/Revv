@@ -80,34 +80,37 @@ router.get('/helpdesk', async (req, res) => {
     const issueTypeSql = `(COALESCE(f.tester_name, '') = 'Auto-Reporter' OR f.message ILIKE '[AUTO]%')`;
 
     const ownerAccounts = await dbAll(
-      `SELECT
-         u.id AS owner_id,
-         u.name AS owner_name,
-         u.email AS owner_email,
-         u.shop_id,
-         s.name AS shop_name,
-         s.city AS shop_city,
-         s.state AS shop_state,
-         s.created_at AS shop_created_at,
-         COALESCE(stats.issue_count, 0) AS issue_count,
-         COALESCE(stats.error_count, 0) AS error_count,
-         COALESCE(stats.feedback_count, 0) AS feedback_count,
-         stats.last_issue_at
-       FROM users u
-       INNER JOIN shops s ON s.id = u.shop_id
-       LEFT JOIN (
-         SELECT
-           f.shop_id,
-           COUNT(*)::int AS issue_count,
-           COUNT(*) FILTER (WHERE ${issueTypeSql})::int AS error_count,
-           COUNT(*) FILTER (WHERE NOT ${issueTypeSql})::int AS feedback_count,
-           MAX(f.created_at) AS last_issue_at
-         FROM feedback f
-         WHERE f.shop_id IS NOT NULL AND f.shop_id <> ''
-         GROUP BY f.shop_id
-       ) stats ON stats.shop_id = u.shop_id::text
-       WHERE u.role = 'owner'
-       ORDER BY COALESCE(stats.last_issue_at, s.created_at) DESC, s.name ASC, u.name ASC`
+      `SELECT * FROM (
+         SELECT DISTINCT ON (u.shop_id)
+           u.id AS owner_id,
+           u.name AS owner_name,
+           u.email AS owner_email,
+           u.shop_id,
+           s.name AS shop_name,
+           s.city AS shop_city,
+           s.state AS shop_state,
+           s.created_at AS shop_created_at,
+           COALESCE(stats.issue_count, 0) AS issue_count,
+           COALESCE(stats.error_count, 0) AS error_count,
+           COALESCE(stats.feedback_count, 0) AS feedback_count,
+           stats.last_issue_at
+         FROM users u
+         INNER JOIN shops s ON s.id = u.shop_id
+         LEFT JOIN (
+           SELECT
+             f.shop_id,
+             COUNT(*)::int AS issue_count,
+             COUNT(*) FILTER (WHERE ${issueTypeSql})::int AS error_count,
+             COUNT(*) FILTER (WHERE NOT ${issueTypeSql})::int AS feedback_count,
+             MAX(f.created_at) AS last_issue_at
+           FROM feedback f
+           WHERE f.shop_id IS NOT NULL AND f.shop_id <> ''
+           GROUP BY f.shop_id
+         ) stats ON stats.shop_id = u.shop_id::text
+         WHERE u.role = 'owner'
+         ORDER BY u.shop_id, u.created_at ASC
+       ) primary_owners
+       ORDER BY COALESCE(last_issue_at, shop_created_at) DESC, shop_name ASC`
     );
 
     const issues = await dbAll(

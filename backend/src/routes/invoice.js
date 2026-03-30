@@ -40,8 +40,8 @@ function ensureRoom(doc, heightNeeded = 24) {
 
 function drawTableHeader(doc, col, y) {
   doc.font('Helvetica-Bold').fontSize(9).fillColor('#374151');
-  doc.text('DESCRIPTION', col.item, y);
-  doc.text('QTY', col.qty, y, { width: 40, align: 'right' });
+  doc.text('DESCRIPTION', col.item, y, { width: 290 });
+  doc.text('QTY', col.qty, y, { width: 40, align: 'center' });
   doc.text('UNIT', col.unit, y, { width: 70, align: 'right' });
   doc.text('TOTAL', col.total, y, { width: 60, align: 'right' });
   const nextRowY = y + 16;
@@ -177,8 +177,9 @@ function streamInvoicePdf(res, context) {
     const title = part.part_number
       ? `${part.part_name || 'Part'} (${part.part_number})`
       : (part.part_name || 'Part');
+    doc.font('Helvetica').fontSize(10).fillColor('#111827');
     doc.text(title, col.item, rowY, { width: 290 });
-    doc.text(String(qty), col.qty, rowY, { width: 40, align: 'right' });
+    doc.text(String(qty), col.qty, rowY, { width: 40, align: 'center' });
     doc.text(money(unit), col.unit, rowY, { width: 70, align: 'right' });
     doc.text(money(lineTotal), col.total, rowY, { width: 60, align: 'right' });
     rowY += 18;
@@ -196,34 +197,43 @@ function streamInvoicePdf(res, context) {
 
   for (const item of serviceItems) {
     rowY = ensureTableRow(doc, rowY, col);
+    doc.font('Helvetica').fontSize(10).fillColor('#111827');
     doc.text(item.description, col.item, rowY, { width: 290 });
-    doc.text('1', col.qty, rowY, { width: 40, align: 'right' });
+    doc.text('1', col.qty, rowY, { width: 40, align: 'center' });
     doc.text(money(item.amount), col.unit, rowY, { width: 70, align: 'right' });
     doc.text(money(item.amount), col.total, rowY, { width: 60, align: 'right' });
     rowY += 18;
     doc.moveTo(50, rowY - 3).lineTo(562, rowY - 3).strokeColor('#F3F4F6').lineWidth(1).stroke();
   }
 
-  doc.y = rowY + 12;
+  doc.y = rowY + 20;
   ensureRoom(doc, 120);
 
-  const summaryX = 365;
-  doc.font('Helvetica').fontSize(10).fillColor('#374151');
-  doc.text('Subtotal', summaryX, doc.y, { width: 120 });
-  doc.text(money(subtotal), 485, doc.y, { width: 75, align: 'right' });
+  // Summary section
+  doc.moveTo(50, doc.y).lineTo(562, doc.y).strokeColor('#D1D5DB').lineWidth(1.5).stroke();
+  doc.moveDown(0.4);
 
-  doc.text('Tax', summaryX, doc.y + 16, { width: 120 });
-  doc.text(money(tax), 485, doc.y + 16, { width: 75, align: 'right' });
+  const summaryX = 380;
+  const summaryValueX = 520;
+  doc.font('Helvetica').fontSize(11).fillColor('#374151');
+  doc.text('Subtotal', summaryX, doc.y, { width: 130 });
+  doc.text(money(subtotal), summaryValueX, doc.y, { width: 40, align: 'right' });
 
+  doc.moveDown(0.6);
+  doc.text('Tax', summaryX, doc.y, { width: 130 });
+  doc.text(money(tax), summaryValueX, doc.y, { width: 40, align: 'right' });
+
+  doc.moveDown(0.8);
   doc.font('Helvetica-Bold').fontSize(12).fillColor('#111827');
-  doc.text('Total', summaryX, doc.y + 36, { width: 120 });
-  doc.text(money(total), 485, doc.y + 36, { width: 75, align: 'right' });
+  doc.text('Total', summaryX, doc.y, { width: 130 });
+  doc.text(money(total), summaryValueX, doc.y, { width: 40, align: 'right' });
 
+  doc.moveDown(1.2);
   const paymentStatus = normalizedPaymentStatus(ro);
   doc.font('Helvetica').fontSize(10).fillColor('#374151');
-  doc.text('Payment Status', 50, doc.y + 70, { width: 140 });
+  doc.text('Payment Status', 50, doc.y, { width: 140 });
   doc.font('Helvetica-Bold').fillColor(paymentStatus === 'succeeded' ? '#047857' : '#B45309');
-  doc.text(String(paymentStatus).toUpperCase(), 160, doc.y + 70);
+  doc.text(String(paymentStatus).toUpperCase(), 195, doc.y, { width: 100 });
 
   if (ro.notes) {
     ensureRoom(doc, 70);

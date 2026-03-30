@@ -72,6 +72,14 @@ router.get('/weekly', auth, requireTechnician, async (req, res) => {
       [shopId]
     );
 
+    const statusCounts = await dbAll(
+      `SELECT COALESCE(NULLIF(LOWER(TRIM(status)), ''), 'intake') AS status, COUNT(*)::int AS count
+       FROM repair_orders
+       WHERE shop_id = $1
+       GROUP BY 1`,
+      [shopId]
+    );
+
     return res.json({
       week: {
         start: counts?.week_start,
@@ -86,6 +94,7 @@ router.get('/weekly', auth, requireTechnician, async (req, res) => {
       revenue_collected_this_week: Number(revenueRow?.amount_cents || 0) / 100,
       top_techs: topTechs || [],
       pending_parts_count: Number(pendingPartsRow?.pending_parts_count || 0),
+      status_counts: statusCounts || [],
       chart: {
         labels: ['This Week', 'Last 7 Days'],
         data: [thisWeek, lastWeek],

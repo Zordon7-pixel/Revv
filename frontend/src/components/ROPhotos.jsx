@@ -22,7 +22,9 @@ export default function ROPhotos({ roId, isAdmin }) {
   const [lightbox, setLightbox] = useState(null)
   const [caption, setCaption] = useState('')
   const [photoType, setPhotoType] = useState('damage')
+  const [isDragActive, setIsDragActive] = useState(false)
   const fileRef = useRef(null)
+  const dropZoneRef = useRef(null)
 
   const load = () =>
     api.get(`/photos/${roId}`).then(r => setPhotos(r.data.photos || [])).catch(err => console.error('[ROPhotos] Failed to load photos:', err.message))
@@ -66,6 +68,66 @@ export default function ROPhotos({ roId, isAdmin }) {
     } catch (err) {
       alert(err?.response?.data?.error || 'Failed to delete photo')
     }
+  }
+
+  function handleDragEnter(e) {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragActive(true)
+  }
+
+  function handleDragLeave(e) {
+    e.preventDefault()
+    e.stopPropagation()
+    if (e.target === dropZoneRef.current) {
+      setIsDragActive(false)
+    }
+  }
+
+  function handleDragOver(e) {
+    e.preventDefault()
+    e.stopPropagation()
+  }
+
+  async function handleDrop(e) {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragActive(false)
+    const files = e.dataTransfer?.files
+    if (!files || files.length === 0) return
+    
+    // Process each dropped file
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
+      if (!file.type.startsWith('image/')) {
+        alert(`${file.name} is not an image`)
+        continue
+      }
+      
+      setUploading(true)
+      setAnalyzingMsg('Optimizing photo…')
+      try {
+        const preparedFile = await optimizeImageForUpload(file, {
+          maxDimension: 2048,
+          targetBytes: 3 * 1024 * 1024,
+        })
+        setAnalyzingMsg(photoType === 'damage' ? 'Analyzing damage…' : 'Uploading…')
+        const fd = new FormData()
+        fd.append('photo', preparedFile)
+        fd.append('caption', caption)
+        fd.append('photo_type', photoType)
+        await api.post(`/photos/${roId}`, fd, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        })
+      } catch (err) {
+        alert(err?.response?.data?.error || `Upload of ${file.name} failed`)
+      } finally {
+        setUploading(false)
+        setAnalyzingMsg('')
+      }
+    }
+    setCaption('')
+    load()
   }
 
   const inp = 'bg-[#0f1117] border border-[#2a2d3e] rounded-lg text-xs text-slate-300 px-2 py-1.5 focus:outline-none focus:border-indigo-500'
@@ -124,10 +186,23 @@ export default function ROPhotos({ roId, isAdmin }) {
       )}
 
       {photos.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-10 border border-dashed border-[#2a2d3e] rounded-xl">
-          <Camera size={28} className="text-slate-600 mb-2" />
-          <p className="text-slate-500 text-sm">No photos yet</p>
-          <p className="text-slate-600 text-xs">Upload damage, progress, or completion photos</p>
+        <div
+          ref={dropZoneRef}
+          onDragEnter={handleDragEnter}
+          onDragLeave={handleDragLeave}
+          onDragOver={handleDragOver}
+          onDrop={handleDrop}
+          className={`flex flex-col items-center justify-center py-10 border-2 border-dashed rounded-xl cursor-pointer transition-colors ${
+            isDragActive
+              ? 'border-indigo-500 bg-indigo-900/20'
+              : 'border-[#2a2d3e] hover:border-indigo-600/50'
+          }`}
+        >
+          <Camera size={28} className={`mb-2 ${isDragActive ? 'text-indigo-400' : 'text-slate-600'}`} />
+          <p className={`text-sm ${isDragActive ? 'text-indigo-400' : 'text-slate-500'}`}>
+            {isDragActive ? 'Drop photos here' : 'No photos yet'}
+          </p>
+          <p className="text-slate-600 text-xs">Drag & drop or click upload button</p>
         </div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
