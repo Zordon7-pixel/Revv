@@ -4,9 +4,15 @@
   "scripts": {
     "build": "cd frontend && npm install && npm run build",
     "start": "cd backend && node src/app.js",
-    "install:all": "cd backend && npm install && cd ../frontend && npm install"
+    "install:all": "cd backend && npm install && cd ../frontend && npm install",
+    "seed:demo": "cd backend && node ../scripts/seed-demo.js",
+    "seed:demo:force": "cd backend && node ../scripts/seed-demo.js --force"
   },
   "engines": {
     "node": ">=18"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "uuid": "^13.0.0"
   }
 }

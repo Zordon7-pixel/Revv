@@ -4,7 +4,9 @@
   "main": "src/app.js",
   "scripts": {
     "start": "node src/app.js",
-    "dev": "nodemon src/app.js"
+    "dev": "nodemon src/app.js",
+    "seed:demo": "node ../scripts/seed-demo.js",
+    "seed:demo:force": "node ../scripts/seed-demo.js --force"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.79.0",

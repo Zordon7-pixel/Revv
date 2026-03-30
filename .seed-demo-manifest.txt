@@ -1,0 +1,139 @@
+REVV DEMO SEED SCRIPT — MANIFEST
+================================
+
+Created: 2026-03-30 10:22 EDT
+Task: Create one-command seed script for demo data
+
+FILES CREATED
+=============
+
+Scripts:
+  ✅ scripts/seed-demo.js (10 KB)
+     - Main Node.js seed script
+     - Idempotent, --force flag, full error handling
+     - Creates: shop, users, ROs, vehicles, customers, photos
+     
+  ✅ scripts/seed-demo.sh (820 B)
+     - Bash wrapper for convenience
+     - Checks .env before running
+     
+Documentation:
+  ✅ SEED-DEMO.md (6.3 KB)
+     - Comprehensive seed documentation
+     - Shop/user/RO details, usage, troubleshooting
+     
+  ✅ QUICKSTART.md (1.9 KB)
+     - 5-minute get-started guide
+     - Minimal setup, demo credentials
+     
+  ✅ scripts/README.md (2.6 KB)
+     - Scripts directory guide
+     - Setup, troubleshooting, file structure
+     
+  ✅ SEED-DEMO-CHECKLIST.md (4.6 KB)
+     - Pre-walkthrough checklist
+     - Health checks, demo workflow, recovery
+     
+Config Updates:
+  ✅ package.json (updated)
+     - Added "seed:demo" script
+     - Added "seed:demo:force" script
+     
+  ✅ backend/package.json (updated)
+     - Added "seed:demo" script
+     - Added "seed:demo:force" script
+
+TOTAL: 7 files created/modified, ~32 KB
+
+DEMO DATA
+=========
+
+Shop: Revv Auto Body
+  Location: 123 Collision Way, Brentwood MD 20722
+  Phone: (202) 555-0100
+  Labor Rate: $95/hr | Parts Markup: 40% | Tax: 8.75%
+
+Users (4):
+  demo@revvauto.com / RevvDemo123! (owner)
+  tech1@revvauto.com / TechPass123! (tech)
+  tech2@revvauto.com / TechPass123! (tech)
+  admin@revvauto.com / AdminPass123! (owner)
+
+Repair Orders (3):
+  RO #001 — 2024 Honda Accord — Front Collision — $8,500 — repair
+  RO #002 — 2022 Tesla Model 3 — Hail Damage — $12,000 — estimate
+  RO #003 — 2018 Ford F-150 — Frame Damage — $6,200 — parts
+
+Sample Photos: 7 total
+  RO #001: 3 photos
+  RO #002: 2 photos
+  RO #003: 2 photos
+  Format: Placeholder PNG (valid, 1x1)
+  Location: backend/uploads/photos/
+
+FEATURES
+========
+
+✅ Idempotent by default (skips if demo shop exists)
+✅ --force flag to wipe and recreate
+✅ Generates valid placeholder photo files
+✅ Full error handling and informative logging
+✅ Realistic demo data (3 ROs, different statuses)
+✅ npm scripts in both root and backend
+✅ Bash wrapper for convenience
+✅ CLI argument support (--force, --db-url)
+✅ Comprehensive documentation (4 docs)
+✅ Pre-walkthrough checklist included
+
+USAGE
+=====
+
+From root directory:
+  npm run seed:demo              # Idempotent seed
+  npm run seed:demo:force        # Force wipe & recreate
+
+From backend directory:
+  npm run seed:demo
+  npm run seed:demo:force
+
+Via bash:
+  bash scripts/seed-demo.sh
+  bash scripts/seed-demo.sh --force
+
+Direct Node:
+  cd backend && node ../scripts/seed-demo.js
+  cd backend && node ../scripts/seed-demo.js --force
+
+REQUIREMENTS
+============
+
+✅ PostgreSQL running
+✅ .env configured with DATABASE_URL
+✅ Dependencies installed (npm run install:all)
+✅ Node.js 18+
+
+NEXT STEPS
+==========
+
+1. Configure database:
+   cp backend/.env.example backend/.env
+   # Edit DATABASE_URL in backend/.env
+
+2. Seed demo data:
+   npm run seed:demo
+
+3. Start backend:
+   cd backend && npm run dev
+
+4. Start frontend (new terminal):
+   cd frontend && npm run dev
+
+5. Log in with demo credentials
+
+6. Explore the demo shop!
+
+For complete instructions, see:
+  • QUICKSTART.md — 5-minute setup
+  • SEED-DEMO.md — Full documentation
+  • SEED-DEMO-CHECKLIST.md — Pre-walkthrough checklist
+
