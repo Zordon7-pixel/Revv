@@ -50,6 +50,26 @@ function toDateLabel(dateKey) {
   return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
+function fromDateKey(dateKey) {
+  if (!dateKey) return null
+  const parsed = new Date(`${dateKey}T12:00:00`)
+  if (Number.isNaN(parsed.getTime())) return null
+  return parsed
+}
+
+function isSameMonthYear(a, b) {
+  if (!(a instanceof Date) || !(b instanceof Date)) return false
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth()
+}
+
+function clampDayToMonth(monthDate, preferredDay = 1) {
+  const year = monthDate.getFullYear()
+  const month = monthDate.getMonth()
+  const monthLastDay = new Date(year, month + 1, 0).getDate()
+  const safeDay = Math.max(1, Math.min(preferredDay, monthLastDay))
+  return new Date(year, month, safeDay)
+}
+
 function isDeliveredStatus(status) {
   const normalized = String(status || '').trim().toLowerCase()
   return normalized === 'delivery' || normalized === 'closed'
@@ -125,8 +145,13 @@ export default function Dashboard() {
     const completedFromRos = allRos.filter((ro) => isClosedRoStatus(ro.status)).length
     const summaryActive = Number(summaryRes?.data?.active ?? 0)
     const summaryCompleted = Number(summaryRes?.data?.completed ?? 0)
-    const resolvedActive = allRos.length > 0 ? activeFromRos : summaryActive
-    const resolvedCompleted = allRos.length > 0 ? completedFromRos : summaryCompleted
+    const summaryStatusCounts = countFromStatusBuckets(summaryRes?.data?.byStatus)
+    const resolvedActive = allRos.length > 0
+      ? activeFromRos
+      : (summaryActive > 0 || summaryCompleted > 0 ? summaryActive : summaryStatusCounts.active)
+    const resolvedCompleted = allRos.length > 0
+      ? completedFromRos
+      : (summaryActive > 0 || summaryCompleted > 0 ? summaryCompleted : summaryStatusCounts.completed)
 
     setData({
       ...summaryRes.data,
@@ -252,6 +277,13 @@ export default function Dashboard() {
       return String(a.ro_number || '').localeCompare(String(b.ro_number || ''))
     })
 
+  useEffect(() => {
+    const selectedDate = fromDateKey(selectedCalendarDate)
+    if (selectedDate && isSameMonthYear(selectedDate, calendarMonth)) return
+    const preferredDay = selectedDate ? selectedDate.getDate() : 1
+    setSelectedCalendarDate(toDateKey(clampDayToMonth(calendarMonth, preferredDay)))
+  }, [calendarMonth, selectedCalendarDate])
+
   function shiftCalendarMonth(offset) {
     setCalendarMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + offset, 1))
   }
@@ -329,14 +361,19 @@ export default function Dashboard() {
             <div className="grid grid-cols-7 gap-1">
               {calendarDays.map((date) => {
                 const key = toDateKey(date)
-                const inMonth = date.getMonth() === calendarMonth.getMonth()
+                const inMonth = isSameMonthYear(date, calendarMonth)
                 const dayEvents = calendarEventsByDate[key] || []
                 const selected = key === selectedCalendarDate
                 return (
                   <button
                     key={key}
                     type="button"
-                    onClick={() => setSelectedCalendarDate(key)}
+                    onClick={() => {
+                      setSelectedCalendarDate(key)
+                      if (!inMonth) {
+                        setCalendarMonth(new Date(date.getFullYear(), date.getMonth(), 1))
+                      }
+                    }}
                     className={`min-h-[86px] rounded-lg border px-1.5 py-1 text-left transition-colors ${
                       selected
                         ? 'border-indigo-500 bg-indigo-500/10'
