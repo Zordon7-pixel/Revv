@@ -17,7 +17,20 @@ function getMonday(d = new Date()) {
 }
 
 function isoDate(d) {
-  return d.toISOString().slice(0, 10)
+  if (!(d instanceof Date) || Number.isNaN(d.getTime())) return ''
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+function fromIsoDate(iso) {
+  const [y, m, d] = String(iso || '').split('-').map(Number)
+  if (!y || !m || !d) return null
+  const parsed = new Date(y, m - 1, d)
+  if (Number.isNaN(parsed.getTime())) return null
+  parsed.setHours(0, 0, 0, 0)
+  return parsed
 }
 
 function fmtHeader(d) {
@@ -53,11 +66,10 @@ function shiftTimeLabel(shift) {
 }
 
 function addDaysToIso(iso, days) {
-  const [y, m, d] = String(iso || '').split('-').map(Number)
-  if (!y || !m || !d) return iso
-  const date = new Date(y, m - 1, d)
+  const date = fromIsoDate(iso)
+  if (!date) return iso
   date.setDate(date.getDate() + days)
-  return date.toISOString().slice(0, 10)
+  return isoDate(date)
 }
 
 function shiftMatchesDate(shift, iso) {
@@ -219,7 +231,10 @@ export default function Schedule() {
   const navigate = useNavigate()
   const [viewMode, setViewMode] = useState('week') // 'week' or 'month'
   const [monday, setMonday] = useState(getMonday())
-  const [currentMonth, setCurrentMonth] = useState(new Date())
+  const [currentMonth, setCurrentMonth] = useState(() => {
+    const now = new Date()
+    return new Date(now.getFullYear(), now.getMonth(), 1)
+  })
   const [shifts, setShifts] = useState([])
   const [employees, setEmployees] = useState([])
   const [showAdd, setShowAdd] = useState(false)
@@ -264,15 +279,11 @@ export default function Schedule() {
   }
 
   function prevMonth() {
-    const d = new Date(currentMonth)
-    d.setMonth(d.getMonth() - 1)
-    setCurrentMonth(d)
+    setCurrentMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))
   }
 
   function nextMonth() {
-    const d = new Date(currentMonth)
-    d.setMonth(d.getMonth() + 1)
-    setCurrentMonth(d)
+    setCurrentMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))
   }
 
   function goToWeek(date) {
@@ -286,8 +297,8 @@ export default function Schedule() {
     try {
       const year = currentMonth.getFullYear()
       const month = currentMonth.getMonth()
-      const from = new Date(year, month, 1).toISOString().slice(0, 10)
-      const to = new Date(year, month + 1, 0).toISOString().slice(0, 10)
+      const from = isoDate(new Date(year, month, 1))
+      const to = isoDate(new Date(year, month + 1, 0))
       const [s, e] = await Promise.all([
         api.get(`/schedule?from=${from}&to=${to}`),
         canManage ? api.get('/schedule/employees') : Promise.resolve({ data: { employees: [] } }),
@@ -362,8 +373,9 @@ export default function Schedule() {
     setMonday(d) 
   }
   function thisWeek() { 
+    const now = new Date()
     setMonday(getMonday())
-    setCurrentMonth(new Date())
+    setCurrentMonth(new Date(now.getFullYear(), now.getMonth(), 1))
     setViewMode('week')
   }
 
