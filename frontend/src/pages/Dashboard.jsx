@@ -10,13 +10,17 @@ import CarryoverModal from '../components/CarryoverModal'
 function useCountUp(target, duration = 1000) {
   const [count, setCount] = React.useState(0)
   React.useEffect(() => {
-    if (!target) return
+    const safeTarget = Number(target) || 0
+    if (safeTarget <= 0) {
+      setCount(0)
+      return
+    }
     let start = 0
-    const step = target / (duration / 16)
+    const step = safeTarget / (duration / 16)
     const timer = setInterval(() => {
       start += step
-      if (start >= target) {
-        setCount(target)
+      if (start >= safeTarget) {
+        setCount(safeTarget)
         clearInterval(timer)
       } else setCount(Math.floor(start))
     }, 16)
@@ -282,7 +286,8 @@ export default function Dashboard() {
     if (selectedDate && isSameMonthYear(selectedDate, calendarMonth)) return
     const preferredDay = selectedDate ? selectedDate.getDate() : 1
     setSelectedCalendarDate(toDateKey(clampDayToMonth(calendarMonth, preferredDay)))
-  }, [calendarMonth, selectedCalendarDate])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [calendarMonth])
 
   function shiftCalendarMonth(offset) {
     setCalendarMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + offset, 1))
