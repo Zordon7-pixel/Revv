@@ -133,14 +133,14 @@ export default function Dashboard() {
 
   async function loadDashboardData() {
     const [summaryRes, monthSummaryRes, carryoverRes, appointmentsRes, goalsRes, adasRes, weeklyRes, rosRes] = await Promise.all([
-      api.get('/reports/summary?scope=all').catch(() => ({ data: {} })),
-      api.get('/reports/summary').catch(() => ({ data: {} })),
+      api.get('/reports/summary?scope=all').catch((err) => { console.error('[Dashboard] /reports/summary?scope=all failed:', err?.response?.status, err?.response?.data?.error || err?.message); return { data: {} } }),
+      api.get('/reports/summary').catch((err) => { console.error('[Dashboard] /reports/summary failed:', err?.response?.status, err?.response?.data?.error || err?.message); return { data: {} } }),
       api.get('/ros/carryover-pending').catch(() => ({ data: { ros: [] } })),
       api.get('/appointments').catch(() => ({ data: { requests: [] } })),
       api.get(`/goals/${yearMonth}`).catch(() => ({ data: { goal: null } })),
       api.get('/adas/queue').catch(() => ({ data: { queue: [] } })),
       api.get('/dashboard/weekly').catch(() => ({ data: null })),
-      api.get('/repair-orders').catch(() => ({ data: { ros: [] } })),
+      api.get('/repair-orders').catch((err) => { console.error('[Dashboard] /repair-orders failed:', err?.response?.status, err?.response?.data?.error || err?.message); return { data: { ros: [] } } }),
     ])
     const allRos = Array.isArray(rosRes?.data?.ros) ? rosRes.data.ros : []
     // Derive active/completed directly from the RO list — most reliable single source.
@@ -240,14 +240,25 @@ export default function Dashboard() {
   const weeklyTrendPercent = Number(weekly?.ro_opened?.trend_percent || 0)
   const canEditCalendar = role !== 'assistant'
 
+  const todayDateKey = toDateKey(new Date())
   const calendarEvents = calendarRos
     .map((ro) => {
       const delivered = isDeliveredStatus(ro.status)
       const actualDate = toDateKey(ro.actual_delivery)
       const estimatedDate = toDateKey(ro.estimated_delivery)
       const intakeDate = toDateKey(ro.intake_date)
-      const eventDate = delivered ? (actualDate || estimatedDate || intakeDate) : (estimatedDate || intakeDate)
-      const eventSource = delivered && actualDate ? 'actual_delivery' : (estimatedDate ? 'estimated_delivery' : 'intake_date')
+      // For active ROs with no estimated_delivery: fall back to intake_date if it's current month,
+      // otherwise use today so unscheduled ROs are always visible in the current calendar view.
+      let eventDate
+      if (delivered) {
+        eventDate = actualDate || estimatedDate || intakeDate
+      } else if (estimatedDate) {
+        eventDate = estimatedDate
+      } else {
+        const calYM = `${calendarMonth.getFullYear()}-${String(calendarMonth.getMonth() + 1).padStart(2, '0')}`
+        eventDate = (intakeDate && intakeDate.startsWith(calYM)) ? intakeDate : todayDateKey
+      }
+      const eventSource = delivered && actualDate ? 'actual_delivery' : estimatedDate ? 'estimated_delivery' : 'unscheduled'
       return {
         ...ro,
         eventDate,
@@ -448,6 +459,9 @@ export default function Dashboard() {
                       {ro.eventSource === 'actual_delivery' && (
                         <div className="text-[10px] text-emerald-300">Delivered on {toDateLabel(toDateKey(ro.actual_delivery))}</div>
                       )}
+                      {ro.eventSource === 'unscheduled' && (
+                        <div className="text-[10px] text-amber-400">No estimated delivery set — set a date above</div>
+                      )}
                       <div className="flex items-center gap-2">
                         {canDeliverSooner && (
                           <button
@@ -476,12 +490,12 @@ export default function Dashboard() {
         </div>
         {(() => {
           const unscheduled = calendarRos.filter(
-            (ro) => !toDateKey(ro.estimated_delivery) && !toDateKey(ro.intake_date) && !isDeliveredStatus(ro.status)
+            (ro) => !toDateKey(ro.estimated_delivery) && !isDeliveredStatus(ro.status)
           ).length
           if (unscheduled === 0) return null
           return (
             <p className="text-xs text-slate-500 text-center pt-1">
-              {unscheduled} active RO{unscheduled !== 1 ? 's' : ''} have no scheduled date
+              {unscheduled} active RO{unscheduled !== 1 ? 's' : ''} {unscheduled !== 1 ? 'have' : 'has'} no estimated delivery date — showing on today
             </p>
           )
         })()}
