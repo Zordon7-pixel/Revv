@@ -74,6 +74,31 @@ function clampDayToMonth(monthDate, preferredDay = 1) {
   return new Date(year, month, safeDay)
 }
 
+function toYearMonthKey(value) {
+  if (!value) return ''
+  const parsed = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(parsed.getTime())) return ''
+  const year = parsed.getFullYear()
+  const month = String(parsed.getMonth() + 1).padStart(2, '0')
+  return `${year}-${month}`
+}
+
+function fromYearMonthKey(yearMonthKey) {
+  const match = String(yearMonthKey || '').trim().match(/^(\d{4})-(\d{2})$/)
+  if (!match) {
+    const now = new Date()
+    return new Date(now.getFullYear(), now.getMonth(), 1)
+  }
+  const year = Number(match[1])
+  const monthIndex = Number(match[2]) - 1
+  return new Date(year, monthIndex, 1)
+}
+
+function shiftYearMonthKey(yearMonthKey, offset) {
+  const base = fromYearMonthKey(yearMonthKey)
+  return toYearMonthKey(new Date(base.getFullYear(), base.getMonth() + offset, 1))
+}
+
 function isDeliveredStatus(status) {
   const normalized = String(status || '').trim().toLowerCase()
   return normalized === 'delivery' || normalized === 'closed'
@@ -111,10 +136,7 @@ export default function Dashboard() {
   const [loadError, setLoadError] = useState(false)
   const [techLoadError, setTechLoadError] = useState(false)
   const [calendarRos, setCalendarRos] = useState([])
-  const [calendarMonth, setCalendarMonth] = useState(() => {
-    const now = new Date()
-    return new Date(now.getFullYear(), now.getMonth(), 1)
-  })
+  const [calendarMonthKey, setCalendarMonthKey] = useState(() => toYearMonthKey(new Date()))
   const [selectedCalendarDate, setSelectedCalendarDate] = useState(() => toDateKey(new Date()))
   const [calendarSavingKey, setCalendarSavingKey] = useState('')
   const [calendarError, setCalendarError] = useState('')
@@ -239,6 +261,8 @@ export default function Dashboard() {
   const weeklyTrendDirection = weekly?.ro_opened?.trend_direction || 'flat'
   const weeklyTrendPercent = Number(weekly?.ro_opened?.trend_percent || 0)
   const canEditCalendar = role !== 'assistant'
+  const calendarMonth = fromYearMonthKey(calendarMonthKey)
+  const monthLabel = calendarMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
 
   const todayDateKey = toDateKey(new Date())
   const calendarEvents = calendarRos
@@ -255,8 +279,7 @@ export default function Dashboard() {
       } else if (estimatedDate) {
         eventDate = estimatedDate
       } else {
-        const calYM = `${calendarMonth.getFullYear()}-${String(calendarMonth.getMonth() + 1).padStart(2, '0')}`
-        eventDate = (intakeDate && intakeDate.startsWith(calYM)) ? intakeDate : todayDateKey
+        eventDate = (intakeDate && intakeDate.startsWith(calendarMonthKey)) ? intakeDate : todayDateKey
       }
       const eventSource = delivered && actualDate ? 'actual_delivery' : estimatedDate ? 'estimated_delivery' : 'unscheduled'
       return {
@@ -298,10 +321,10 @@ export default function Dashboard() {
     const preferredDay = selectedDate ? selectedDate.getDate() : 1
     setSelectedCalendarDate(toDateKey(clampDayToMonth(calendarMonth, preferredDay)))
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [calendarMonth])
+  }, [calendarMonthKey])
 
   function shiftCalendarMonth(offset) {
-    setCalendarMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + offset, 1))
+    setCalendarMonthKey((prev) => shiftYearMonthKey(prev, offset))
   }
 
   async function updateCalendarEstimate(roId, nextDate) {
@@ -334,7 +357,6 @@ export default function Dashboard() {
   }
 
   function renderRoCalendar() {
-    const monthLabel = calendarMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
     return (
       <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 space-y-3">
         <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -346,14 +368,24 @@ export default function Dashboard() {
             <button
               type="button"
               onClick={() => shiftCalendarMonth(-1)}
+              aria-label="Previous calendar month"
+              data-testid="ro-calendar-prev-month"
               className="h-8 w-8 rounded-lg border border-[#2a2d3e] bg-[#0f1117] text-slate-300 hover:text-white"
             >
               <ChevronLeft size={14} />
             </button>
-            <div className="text-xs font-semibold text-slate-200 min-w-[120px] text-center">{monthLabel}</div>
+            <div
+              className="text-xs font-semibold text-slate-200 min-w-[120px] text-center"
+              data-no-auto-i18n="true"
+              data-testid="ro-calendar-month-label"
+            >
+              {monthLabel}
+            </div>
             <button
               type="button"
               onClick={() => shiftCalendarMonth(1)}
+              aria-label="Next calendar month"
+              data-testid="ro-calendar-next-month"
               className="h-8 w-8 rounded-lg border border-[#2a2d3e] bg-[#0f1117] text-slate-300 hover:text-white"
             >
               <ChevronRight size={14} />
@@ -374,7 +406,7 @@ export default function Dashboard() {
                 <div key={label} className="text-[10px] text-slate-500 text-center py-1">{label}</div>
               ))}
             </div>
-            <div className="grid grid-cols-7 gap-1">
+            <div className="grid grid-cols-7 gap-1" data-no-auto-i18n="true">
               {calendarDays.map((date) => {
                 const key = toDateKey(date)
                 const inMonth = isSameMonthYear(date, calendarMonth)
@@ -387,7 +419,7 @@ export default function Dashboard() {
                     onClick={() => {
                       setSelectedCalendarDate(key)
                       if (!inMonth) {
-                        setCalendarMonth(new Date(date.getFullYear(), date.getMonth(), 1))
+                        setCalendarMonthKey(toYearMonthKey(date))
                       }
                     }}
                     className={`min-h-[86px] rounded-lg border px-1.5 py-1 text-left transition-colors ${
@@ -419,8 +451,8 @@ export default function Dashboard() {
 
           <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-xl p-3">
             <div className="flex items-center justify-between mb-2">
-              <div className="text-xs font-semibold text-white">{toDateLabel(selectedCalendarDate)}</div>
-              <div className="text-[10px] text-slate-500">{selectedDayEvents.length} RO(s)</div>
+              <div className="text-xs font-semibold text-white" data-no-auto-i18n="true">{toDateLabel(selectedCalendarDate)}</div>
+              <div className="text-[10px] text-slate-500" data-no-auto-i18n="true">{selectedDayEvents.length} RO(s)</div>
             </div>
             {selectedDayEvents.length === 0 ? (
               <p className="text-xs text-slate-500">No repair orders scheduled for this day.</p>
@@ -494,7 +526,7 @@ export default function Dashboard() {
           ).length
           if (unscheduled === 0) return null
           return (
-            <p className="text-xs text-slate-500 text-center pt-1">
+            <p className="text-xs text-slate-500 text-center pt-1" data-no-auto-i18n="true">
               {unscheduled} active RO{unscheduled !== 1 ? 's' : ''} {unscheduled !== 1 ? 'have' : 'has'} no estimated delivery date — showing on today
             </p>
           )
@@ -663,6 +695,7 @@ export default function Dashboard() {
 
   const stats = [
     {
+      id: 'active-jobs',
       label: 'Active Jobs',
       value: displayActive,
       icon: ClipboardList,
@@ -673,6 +706,7 @@ export default function Dashboard() {
       goalProgress: roGoal > 0 ? Math.round(roProgress) : null,
     },
     {
+      id: 'completed',
       label: 'Completed',
       value: displayCompleted,
       icon: CheckCircle,
@@ -684,6 +718,7 @@ export default function Dashboard() {
     },
     ...(admin ? [
       {
+        id: 'total-revenue',
         label: 'Total Revenue',
         value: `$${displayRevenue.toLocaleString('en-US', { minimumFractionDigits: 0 })}`,
         icon: DollarSign,
@@ -694,6 +729,7 @@ export default function Dashboard() {
         goalProgress: revenueGoal > 0 ? Math.round(revenueProgress) : null,
       },
       {
+        id: 'true-profit',
         label: 'True Profit',
         value: `$${displayProfit.toLocaleString('en-US', { minimumFractionDigits: 0 })}`,
         icon: TrendingUp,
@@ -730,7 +766,13 @@ export default function Dashboard() {
               <div className="text-xs text-slate-400">{s.label}</div>
               <s.icon size={18} className={s.color} />
             </div>
-            <div className={`text-2xl font-bold ${s.color}`}>{s.value}</div>
+            <div
+              className={`text-2xl font-bold ${s.color}`}
+              data-no-auto-i18n="true"
+              data-testid={`stat-value-${s.id}`}
+            >
+              {s.value}
+            </div>
             {s.goalProgress != null && (
               <div className="mt-2">
                 <div className="h-1 bg-[#0f1117] rounded-full overflow-hidden">

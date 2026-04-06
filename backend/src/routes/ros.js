@@ -660,7 +660,7 @@ router.get('/', auth, async (req, res) => {
 
     if (normalizedStatus && normalizedStatus !== 'all') {
       if (normalizedStatus === 'open') {
-        where.push(`${normalizedStatusExpr} NOT IN ('closed', 'completed', 'delivery', 'ready')`);
+        where.push(`${normalizedStatusExpr} NOT IN ('closed', 'completed')`);
       } else if (normalizedStatus === 'in-progress') {
         where.push(`${normalizedStatusExpr} IN ('repair', 'paint', 'qc', 'in-progress')`);
       } else if (normalizedStatus === 'completed') {

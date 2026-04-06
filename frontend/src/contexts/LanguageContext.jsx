@@ -97,12 +97,26 @@ export function LanguageProvider({ children }) {
 
       let textNode = textWalker.nextNode()
       while (textNode) {
-        const existing = originalTextRef.current.get(textNode)
-        const base = existing != null ? existing : toEnglishLiteral(textNode.nodeValue, lang)
-        if (existing == null) {
+        const currentValue = String(textNode.nodeValue ?? '')
+        let base = originalTextRef.current.get(textNode)
+
+        if (base == null) {
+          base = toEnglishLiteral(currentValue, lang)
           originalTextRef.current.set(textNode, base)
+        } else {
+          const expectedCurrent = lang === 'en' ? base : mapLiteral(base, lang)
+          if (currentValue !== expectedCurrent) {
+            // React (or app code) changed this node after we cached it.
+            // Refresh the base value so dynamic content is not forced back to stale text.
+            base = lang === 'en' ? currentValue : toEnglishLiteral(currentValue, lang)
+            originalTextRef.current.set(textNode, base)
+          }
         }
-        textNode.nodeValue = lang === 'en' ? base : mapLiteral(base, lang)
+
+        const nextValue = lang === 'en' ? base : mapLiteral(base, lang)
+        if (currentValue !== nextValue) {
+          textNode.nodeValue = nextValue
+        }
         textNode = textWalker.nextNode()
       }
 
@@ -113,12 +127,24 @@ export function LanguageProvider({ children }) {
         const original = originalAttrRef.current.get(el) || {}
         attrs.forEach((attr) => {
           if (!el.hasAttribute(attr)) return
-          if (original[attr] == null) {
-            original[attr] = toEnglishLiteral(el.getAttribute(attr), lang)
+          const currentValue = String(el.getAttribute(attr) ?? '')
+          let base = original[attr]
+
+          if (base == null) {
+            base = toEnglishLiteral(currentValue, lang)
+            original[attr] = base
+          } else {
+            const expectedCurrent = lang === 'en' ? base : mapLiteral(base, lang)
+            if (currentValue !== expectedCurrent) {
+              base = lang === 'en' ? currentValue : toEnglishLiteral(currentValue, lang)
+              original[attr] = base
+            }
           }
-          const base = original[attr]
+
           const next = lang === 'en' ? base : mapLiteral(base, lang)
-          el.setAttribute(attr, next)
+          if (currentValue !== next) {
+            el.setAttribute(attr, next)
+          }
         })
         originalAttrRef.current.set(el, original)
       })

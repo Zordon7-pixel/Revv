@@ -5,6 +5,22 @@
 
 ---
 
+## Dispatch Guard — Prevent Duplicate Jobs
+
+Before starting any new task:
+
+1. Check the newest "Dispatch Log" entry in this file.
+2. If a task is marked **DONE + VERIFIED**, do not redispatch it unless there is a new repro with timestamp/evidence.
+3. If a task is only partial, mark it **IN PROGRESS** with next action.
+4. After finishing work, append/update the log with:
+   - date/time (ET + UTC),
+   - scope,
+   - files touched,
+   - verification method,
+   - status.
+
+---
+
 ## What This App Is
 
 Revv is an **auto body shop management platform** — NOT a general mechanic app.
@@ -257,3 +273,39 @@ Start command: `cd backend && node src/db/seed.js; node src/app.js`
 | 2026-03-23 | Assistant role-rank raised to 3 (admin-level); users.js gates added via disallowAssistant | 595b5bb | Security/Access |
 | 2026-03-23 | RO assign endpoint: tech override sends admin notification instead of silently proceeding | 595b5bb | Audit |
 | 2026-03-23 | Schedule: time validation rejects same-start-as-end, invalid format; overnight shifts detected | 595b5bb | Validation |
+
+---
+
+## Dispatch Log — 2026-04-05 (America/New_York)
+
+### DONE + VERIFIED
+
+1. **RO Calendar month label stuck on April**
+   - Scope: month label did not update when navigating months.
+   - Files: `frontend/src/contexts/LanguageContext.jsx`, `frontend/src/pages/Dashboard.jsx`
+   - Verification: live `revvshop.app` probe confirmed label moves (`April -> May`, `April -> March`).
+   - Status: DONE + VERIFIED
+
+2. **Dashboard Active/Completed parity**
+   - Scope: dashboard totals must match open/closed RO counts.
+   - Files: `frontend/src/pages/Dashboard.jsx`, `backend/src/routes/ros.js`
+   - Verification: live dashboard checks + RO list logic validation.
+   - Status: DONE + VERIFIED
+
+3. **Dynamic UI shield from auto-i18n rewrites**
+   - Scope: prevent auto-translation from freezing dynamic text.
+   - Files: `frontend/src/pages/Dashboard.jsx`
+   - Verification: month nav and dynamic counters remain stable after translation pass.
+   - Status: DONE + VERIFIED
+
+4. **Regression tests for calendar/count logic**
+   - Scope: lock in month-nav and active/completed behavior.
+   - Files: `frontend/vite.config.js`, `frontend/package.json`, `frontend/src/test/setupTests.js`, `frontend/src/pages/__tests__/Dashboard.regression.test.jsx`
+   - Verification: `cd frontend && npm run test:run` (2 passing tests).
+   - Status: DONE + VERIFIED
+
+5. **Triage bundle command**
+   - Scope: one-command diagnostics package to speed future issue reports.
+   - Files: `scripts/triage-bundle.sh`, `package.json`, `scripts/README.md`
+   - Verification: `npm run triage:bundle -- --no-network --issue "self-test triage"` generated bundle + tarball in `~/triage-bundles`.
+   - Status: DONE + VERIFIED

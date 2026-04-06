@@ -35,6 +35,38 @@ bash scripts/seed-demo.sh --force  # Force wipe
 
 ---
 
+### triage-bundle.sh
+One-command diagnostics snapshot for faster debugging.
+
+This creates a timestamped folder with:
+- environment/versions metadata
+- git status + diff
+- key app files snapshot
+- optional live health checks
+- optional test/smoke outputs
+- prefilled `ISSUE_REPORT.md`
+
+**Usage:**
+```bash
+# Default bundle
+npm run triage:bundle
+
+# Include issue title + live checks + tests
+npm run triage:bundle -- --issue "RO calendar month label stuck" --run-tests
+
+# Full capture including smoke test
+npm run triage:bundle -- --issue "Post-deploy auth failure" --run-tests --run-smoke --base-url https://revvshop.app
+
+# Offline/local-only capture (skip network)
+npm run triage:bundle -- --no-network
+```
+
+**Output:**
+- Folder: `~/triage-bundles/triage-YYYYMMDD-HHMMSS` (fallback: `/tmp/revv-triage-bundles`)
+- Archive: `~/triage-bundles/triage-YYYYMMDD-HHMMSS.tar.gz`
+
+---
+
 ## Setup Instructions
 
 ### 1. Install Dependencies
@@ -108,7 +140,9 @@ chmod 755 backend/uploads/photos
 scripts/
 ├── README.md           ← You are here
 ├── seed-demo.js        ← Node seed script
-└── seed-demo.sh        ← Bash wrapper
+├── seed-demo.sh        ← Bash wrapper
+├── smoke-test.sh       ← Post-deploy smoke checks
+└── triage-bundle.sh    ← One-command diagnostics bundle
 ```
 
 ## Notes

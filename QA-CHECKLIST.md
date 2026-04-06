@@ -4,6 +4,15 @@ Run through every item for every diff. CRITICAL items block ship. HIGH items mus
 
 ---
 
+## Dispatch De-Dupe Preflight (Run First)
+
+- [ ] Read latest `CLAUDE.md` Dispatch Log entry before opening new dispatches
+- [ ] If issue is marked **DONE + VERIFIED**, require new repro evidence (timestamp + steps + screenshot/log) before redispatch
+- [ ] Confirm whether issue is **new**, **regression**, or **not reproduced**
+- [ ] Add result to QA report so same job is not dispatched twice
+
+---
+
 ## CRITICAL — Block ship if any are true
 
 - [ ] DELETE or UPDATE query missing `AND shop_id = $N` ownership check
