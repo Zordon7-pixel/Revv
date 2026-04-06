@@ -104,6 +104,7 @@ app.use('/api/storage', require('./routes/storage'));
 app.use('/api/invoice', require('./routes/invoice'));
 app.use('/api/comms', require('./routes/comms'));
 app.use('/api/inventory', require('./routes/inventory'));
+app.use('/api/claim-tracker', require('./routes/claimTracker'));
 
 // Serve uploaded files
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));

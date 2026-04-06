@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const auth = require('../middleware/auth');
 const { dbGet, dbAll } = require('../db');
+const { calculateDeliveryFeeBreakdown, toMoney } = require('../services/deliveryFees');
 
 function money(value) {
   const n = Number(value || 0);
@@ -93,11 +94,12 @@ async function loadInvoiceContext(roId, shopId) {
     ),
   ]);
 
-  return { ro, shop, customer, vehicle, parts };
+  const deliveryFeeBreakdown = await calculateDeliveryFeeBreakdown(ro);
+  return { ro, shop, customer, vehicle, parts, deliveryFeeBreakdown };
 }
 
 function streamInvoicePdf(res, context) {
-  const { ro, shop, customer, vehicle, parts } = context;
+  const { ro, shop, customer, vehicle, parts, deliveryFeeBreakdown } = context;
   const partsItems = Array.isArray(parts) ? parts : [];
   const partsLineTotal = partsItems.reduce((sum, part) => {
     const qty = Number(part.quantity || 1);
@@ -109,10 +111,13 @@ function streamInvoicePdf(res, context) {
   const sublet = Number(ro.sublet_cost || 0);
   const tax = Number(ro.tax || 0);
   const partsCost = Number(ro.parts_cost || 0);
-  const subtotal = partsItems.length > 0
+  const subtotalWithoutDelivery = partsItems.length > 0
     ? (partsLineTotal + labor + sublet)
     : (partsCost + labor + sublet);
-  const total = Number(ro.total || 0) > 0 ? Number(ro.total) : subtotal + tax;
+  const deliveryFeeTotal = Number(deliveryFeeBreakdown?.total_fee || 0);
+  const subtotal = subtotalWithoutDelivery + deliveryFeeTotal;
+  const baseTotal = Number(ro.total || 0) > 0 ? Number(ro.total) : subtotalWithoutDelivery + tax;
+  const total = toMoney(baseTotal + deliveryFeeTotal);
 
   const safeRo = String(ro.ro_number || ro.id || 'invoice').replace(/[^a-zA-Z0-9-_]+/g, '-');
   res.setHeader('Content-Type', 'application/pdf');
@@ -195,6 +200,21 @@ function streamInvoicePdf(res, context) {
     serviceItems.unshift({ description: 'Parts', amount: partsCost });
   }
 
+  const deliveryLeg = deliveryFeeBreakdown?.delivery;
+  const pickupLeg = deliveryFeeBreakdown?.pickup;
+  if (deliveryLeg?.enabled && Number(deliveryLeg.amount || 0) > 0) {
+    let detail = '';
+    if (deliveryLeg.method === 'per_mile') detail = ` (${Number(deliveryLeg.miles || 0).toFixed(1)} mi)`;
+    if (deliveryLeg.method === 'zone' && deliveryLeg.applied_zone) detail = ` (${deliveryLeg.applied_zone})`;
+    serviceItems.push({ description: `Delivery Fee${detail}`, amount: Number(deliveryLeg.amount || 0) });
+  }
+  if (pickupLeg?.enabled && Number(pickupLeg.amount || 0) > 0) {
+    let detail = '';
+    if (pickupLeg.method === 'per_mile') detail = ` (${Number(pickupLeg.miles || 0).toFixed(1)} mi)`;
+    if (pickupLeg.method === 'zone' && pickupLeg.applied_zone) detail = ` (${pickupLeg.applied_zone})`;
+    serviceItems.push({ description: `Pickup Fee${detail}`, amount: Number(pickupLeg.amount || 0) });
+  }
+
   for (const item of serviceItems) {
     rowY = ensureTableRow(doc, rowY, col);
     doc.font('Helvetica').fontSize(10).fillColor('#111827');
@@ -222,6 +242,12 @@ function streamInvoicePdf(res, context) {
   doc.moveDown(0.6);
   doc.text('Tax', summaryX, doc.y, { width: 130 });
   doc.text(money(tax), summaryValueX, doc.y, { width: 40, align: 'right' });
+
+  if (deliveryFeeTotal > 0) {
+    doc.moveDown(0.6);
+    doc.text('Delivery/Pickup Fee', summaryX, doc.y, { width: 130 });
+    doc.text(money(deliveryFeeTotal), summaryValueX, doc.y, { width: 40, align: 'right' });
+  }
 
   doc.moveDown(0.8);
   doc.font('Helvetica-Bold').fontSize(12).fillColor('#111827');

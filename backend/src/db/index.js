@@ -259,6 +259,42 @@ async function initDb() {
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     );
 
+    CREATE TABLE IF NOT EXISTS ro_claim_evidence (
+      id UUID PRIMARY KEY,
+      ro_id UUID,
+      shop_id UUID,
+      uploaded_by UUID,
+      media_url TEXT NOT NULL,
+      media_type TEXT NOT NULL,
+      mime_type TEXT,
+      caption TEXT,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS ro_claim_contacts (
+      id UUID PRIMARY KEY,
+      ro_id UUID,
+      shop_id UUID,
+      logged_by UUID,
+      insurer_name TEXT,
+      contact_name TEXT NOT NULL,
+      channel TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      outcome TEXT,
+      follow_up TEXT,
+      contact_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS ro_claim_disputes (
+      id UUID PRIMARY KEY,
+      ro_id UUID,
+      shop_id UUID,
+      created_by UUID,
+      note TEXT NOT NULL,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    );
+
     CREATE TABLE IF NOT EXISTS parts_requests (
       id UUID PRIMARY KEY,
       ro_id UUID,

@@ -18,6 +18,7 @@ import VehicleDiagram from '../components/VehicleDiagram'
 import ClaimStatusCard from '../components/ClaimStatusCard'
 import InsurancePanel from '../components/InsurancePanel'
 import ROOperations from '../components/ROOperations'
+import ClaimTrackerPanel from '../components/ClaimTrackerPanel'
 import { optimizeImageForUpload } from '../lib/imageUpload'
 
 const PART_STATUS_META = {
@@ -1906,6 +1907,10 @@ export default function RODetail() {
 
       {(ro.payment_type === 'insurance' || ro.claim_number || ro.insurance_claim_number) && (
         <InsurancePanel roId={id} ro={ro} onUpdated={() => { load(); loadEstimateImport() }} />
+      )}
+
+      {(ro.payment_type === 'insurance' || ro.claim_number || ro.insurance_claim_number) && (
+        <ClaimTrackerPanel roId={id} canEdit={!userIsAssistant} />
       )}
 
       <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-5 space-y-4">

@@ -267,8 +267,8 @@ export default function Layout() {
     <div className="flex flex-col h-full min-h-0">
       <div className="p-5 border-b border-[#2a2d3e]">
         <div className="flex items-center gap-3 mb-1">
-          <div className="w-9 h-9 bg-indigo-600 rounded-lg flex items-center justify-center">
-            <Wrench size={18} className="text-white" />
+          <div className="w-9 h-9 rounded-lg overflow-hidden flex-shrink-0">
+            <img src="/revv-logo.jpg" alt="REVV" className="w-full h-full object-cover" />
           </div>
           <div>
             <div className="font-bold text-white text-sm">REVV</div>
@@ -356,7 +356,7 @@ export default function Layout() {
             <Menu size={20} />
           </button>
           <div className="flex items-center gap-2 flex-1">
-            <Wrench size={16} className="text-indigo-400" />
+            <img src="/revv-logo.jpg" alt="REVV" className="w-6 h-6 rounded object-cover" />
             <span className="font-bold text-sm">REVV</span>
           </div>
           <button

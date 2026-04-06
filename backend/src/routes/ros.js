@@ -7,6 +7,7 @@ const { sendSMS, isConfiguredForShop } = require('../services/sms');
 const { sendMail } = require('../services/mailer');
 const { statusChangeEmail } = require('../services/emailTemplates');
 const { createNotification } = require('../services/notifications');
+const { calculateDeliveryFeeBreakdown, toMoney } = require('../services/deliveryFees');
 const {
   createPaymentCheckoutLinkForRo,
   ensureTrackingToken,
@@ -1095,7 +1096,18 @@ router.get('/:id/invoice', auth, async (req, res) => {
     const ro = await dbGet('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
     if (!ro) return res.status(404).json({ error: 'Not found' });
     const shop = await dbGet('SELECT * FROM shops WHERE id = $1', [ro.shop_id]);
-    res.json({ ...await enrichRO(ro), shop });
+    const deliveryFeeBreakdown = await calculateDeliveryFeeBreakdown(ro);
+    const baseTotal = Number(
+      ro.total
+      || (Number(ro.parts_cost || 0) + Number(ro.labor_cost || 0) + Number(ro.sublet_cost || 0) + Number(ro.tax || 0))
+    );
+    const invoiceTotalWithDelivery = toMoney(baseTotal + Number(deliveryFeeBreakdown.total_fee || 0));
+    res.json({
+      ...await enrichRO(ro),
+      shop,
+      delivery_fee_breakdown: deliveryFeeBreakdown,
+      invoice_total_with_delivery: invoiceTotalWithDelivery,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1209,7 +1221,7 @@ router.delete('/:id/notes/:noteId', auth, requireAdmin, async (req, res) => {
     );
     if (!note) return res.status(404).json({ error: 'Note not found' });
 
-    await dbRun('DELETE FROM ro_internal_notes WHERE id = $1', [req.params.noteId]);
+    await dbRun('DELETE FROM ro_internal_notes WHERE id = $1 AND shop_id = $2', [req.params.noteId, req.user.shop_id]);
     return res.json({ ok: true });
   } catch (err) {
     return res.status(500).json({ error: err.message });
@@ -1415,9 +1427,12 @@ router.post('/:id/approval-link', auth, requireTechnician, async (req, res) => {
     if (!ro) return res.status(404).json({ error: 'Not found' });
 
     const token = uuidv4().replace(/-/g, '');
-    const existing = await dbGet('SELECT id FROM estimate_approval_links WHERE ro_id = $1 AND responded_at IS NULL', [ro.id]);
+    const existing = await dbGet(
+      'SELECT id FROM estimate_approval_links WHERE ro_id = $1 AND shop_id = $2 AND responded_at IS NULL',
+      [ro.id, req.user.shop_id]
+    );
     if (existing) {
-      await dbRun('DELETE FROM estimate_approval_links WHERE id = $1', [existing.id]);
+      await dbRun('DELETE FROM estimate_approval_links WHERE id = $1 AND shop_id = $2', [existing.id, req.user.shop_id]);
     }
     await dbRun(
       `INSERT INTO estimate_approval_links (id, ro_id, shop_id, token, created_by)
@@ -1439,6 +1454,8 @@ router.get('/approval/:token', publicTokenLimiter, async (req, res) => {
 
     const ro = await dbGet('SELECT * FROM repair_orders WHERE id = $1', [link.ro_id]);
     if (!ro) return res.status(404).json({ error: 'Repair order not found' });
+    const deliveryFeeBreakdown = await calculateDeliveryFeeBreakdown(ro);
+    const estimateTotalWithDelivery = toMoney(Number(ro.total || 0) + Number(deliveryFeeBreakdown.total_fee || 0));
     const customer = await dbGet('SELECT id, name, phone, email FROM customers WHERE id = $1', [ro.customer_id]);
     const vehicle = await dbGet('SELECT id, year, make, model FROM vehicles WHERE id = $1', [ro.vehicle_id]);
     const shop = await dbGet('SELECT id, name, phone FROM shops WHERE id = $1', [ro.shop_id]);
@@ -1454,6 +1471,8 @@ router.get('/approval/:token', publicTokenLimiter, async (req, res) => {
         sublet_cost: ro.sublet_cost || 0,
         tax: ro.tax || 0,
         total: ro.total || 0,
+        delivery_fee_breakdown: deliveryFeeBreakdown,
+        total_with_delivery: estimateTotalWithDelivery,
       },
       customer,
       vehicle,
@@ -2011,23 +2030,39 @@ router.delete('/:id', auth, requireTechnician, async (req, res) => {
   try {
     const { id } = req.params;
     const ro = await dbGet(
-      'SELECT id, status FROM repair_orders WHERE id = $1 AND shop_id = $2',
+      'SELECT id, status, shop_id FROM repair_orders WHERE id = $1 AND shop_id = $2',
       [id, req.user.shop_id]
     );
     if (!ro) return res.status(404).json({ error: 'Not found' });
+    if (ro.shop_id !== req.user.shop_id) return res.status(403).json({ error: 'Forbidden' });
 
     // Delete child records that lack CASCADE to avoid FK violations
-    await dbRun('DELETE FROM job_status_log WHERE ro_id = $1', [id]);
-    await dbRun('DELETE FROM ro_payments WHERE ro_id = $1', [id]).catch(() => {});
-    await dbRun('DELETE FROM estimate_approval_links WHERE ro_id = $1', [id]).catch(() => {});
-    await dbRun('DELETE FROM ro_comms WHERE ro_id = $1', [id]).catch(() => {});
-    await dbRun('DELETE FROM portal_tokens WHERE ro_id = $1', [id]).catch(() => {});
-    await dbRun('DELETE FROM sms_messages WHERE ro_id = $1', [id]).catch(() => {});
-    await dbRun('DELETE FROM ro_internal_notes WHERE ro_id = $1', [id]).catch(() => {});
-    await dbRun('DELETE FROM ro_supplements WHERE ro_id = $1', [id]).catch(() => {});
-    await dbRun('DELETE FROM ro_photos WHERE ro_id = $1', [id]).catch(() => {});
-    await dbRun('DELETE FROM estimate_line_items WHERE ro_id = $1', [id]).catch(() => {});
-    await dbRun('DELETE FROM parts_requests WHERE ro_id = $1', [id]).catch(() => {});
+    await dbRun(
+      `DELETE FROM job_status_log
+       WHERE ro_id = $1
+         AND ro_id IN (SELECT id FROM repair_orders WHERE id = $1 AND shop_id = $2)`,
+      [id, req.user.shop_id]
+    );
+    await dbRun('DELETE FROM ro_payments WHERE ro_id = $1 AND shop_id = $2', [id, req.user.shop_id]).catch(() => {});
+    await dbRun('DELETE FROM estimate_approval_links WHERE ro_id = $1 AND shop_id = $2', [id, req.user.shop_id]).catch(() => {});
+    await dbRun('DELETE FROM ro_comms WHERE ro_id = $1 AND shop_id = $2', [id, req.user.shop_id]).catch(() => {});
+    await dbRun('DELETE FROM portal_tokens WHERE ro_id = $1 AND shop_id = $2', [id, req.user.shop_id]).catch(() => {});
+    await dbRun('DELETE FROM sms_messages WHERE ro_id = $1 AND shop_id = $2', [id, req.user.shop_id]).catch(() => {});
+    await dbRun('DELETE FROM ro_internal_notes WHERE ro_id = $1 AND shop_id = $2', [id, req.user.shop_id]).catch(() => {});
+    await dbRun('DELETE FROM ro_supplements WHERE ro_id = $1 AND shop_id = $2', [id, req.user.shop_id]).catch(() => {});
+    await dbRun(
+      `DELETE FROM ro_photos
+       WHERE ro_id = $1
+         AND ro_id IN (SELECT id FROM repair_orders WHERE id = $1 AND shop_id = $2)`,
+      [id, req.user.shop_id]
+    ).catch(() => {});
+    await dbRun('DELETE FROM estimate_line_items WHERE ro_id = $1 AND shop_id = $2', [id, req.user.shop_id]).catch(() => {});
+    await dbRun(
+      `DELETE FROM parts_requests
+       WHERE ro_id = $1
+         AND ro_id IN (SELECT id FROM repair_orders WHERE id = $1 AND shop_id = $2)`,
+      [id, req.user.shop_id]
+    ).catch(() => {});
     await dbRun('DELETE FROM parts_orders WHERE ro_id = $1 AND shop_id = $2', [id, req.user.shop_id]).catch(() => {});
     await dbRun('DELETE FROM repair_orders WHERE id = $1 AND shop_id = $2', [id, req.user.shop_id]);
     res.json({ success: true });

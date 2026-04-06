@@ -174,8 +174,17 @@ router.delete('/:photo_id', auth, async (req, res) => {
     if (!photo) return res.status(404).json({ error: 'Not found' });
     if (photo.shop_id !== req.user.shop_id) return res.status(403).json({ error: 'Forbidden' });
     const filePath = path.join(__dirname, '../../', photo.photo_url);
-    try { fs.unlinkSync(filePath); } catch (_) {}
-    await dbRun('DELETE FROM ro_photos WHERE id = $1', [req.params.photo_id]);
+    try {
+      fs.unlinkSync(filePath);
+    } catch (unlinkErr) {
+      console.error('[Photos] DELETE file cleanup error:', { photo_id: req.params.photo_id, filePath, error: unlinkErr.message });
+    }
+    await dbRun(
+      `DELETE FROM ro_photos
+       WHERE id = $1
+         AND ro_id IN (SELECT id FROM repair_orders WHERE shop_id = $2)`,
+      [req.params.photo_id, req.user.shop_id]
+    );
     res.json({ ok: true });
   } catch (err) {
     console.error('[Photos] DELETE error:', err);

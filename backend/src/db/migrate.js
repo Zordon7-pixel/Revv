@@ -346,6 +346,45 @@ async function runMigrations() {
         note TEXT NOT NULL,
         created_at TIMESTAMPTZ DEFAULT NOW()
       )`,
+      `CREATE TABLE IF NOT EXISTS ro_claim_evidence (
+        id UUID PRIMARY KEY,
+        ro_id TEXT NOT NULL,
+        shop_id TEXT NOT NULL,
+        uploaded_by TEXT,
+        media_url TEXT NOT NULL,
+        media_type TEXT NOT NULL,
+        mime_type TEXT,
+        caption TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )`,
+      `CREATE TABLE IF NOT EXISTS ro_claim_contacts (
+        id UUID PRIMARY KEY,
+        ro_id TEXT NOT NULL,
+        shop_id TEXT NOT NULL,
+        logged_by TEXT,
+        insurer_name TEXT,
+        contact_name TEXT NOT NULL,
+        channel TEXT NOT NULL,
+        summary TEXT NOT NULL,
+        outcome TEXT,
+        follow_up TEXT,
+        contact_at TIMESTAMPTZ DEFAULT NOW(),
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )`,
+      `CREATE TABLE IF NOT EXISTS ro_claim_disputes (
+        id UUID PRIMARY KEY,
+        ro_id TEXT NOT NULL,
+        shop_id TEXT NOT NULL,
+        created_by TEXT,
+        note TEXT NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_ro_claim_evidence_ro_created ON ro_claim_evidence(ro_id, created_at DESC)`,
+      `CREATE INDEX IF NOT EXISTS idx_ro_claim_evidence_shop_ro ON ro_claim_evidence(shop_id, ro_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_ro_claim_contacts_ro_created ON ro_claim_contacts(ro_id, created_at DESC)`,
+      `CREATE INDEX IF NOT EXISTS idx_ro_claim_contacts_shop_ro ON ro_claim_contacts(shop_id, ro_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_ro_claim_disputes_ro_created ON ro_claim_disputes(ro_id, created_at DESC)`,
+      `CREATE INDEX IF NOT EXISTS idx_ro_claim_disputes_shop_ro ON ro_claim_disputes(shop_id, ro_id)`,
       // Two-way SMS message threads per RO
       `CREATE TABLE IF NOT EXISTS sms_messages (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -422,6 +461,49 @@ async function runMigrations() {
       )`,
       `CREATE INDEX IF NOT EXISTS idx_ro_operations_ro_id ON ro_operations(ro_id)`,
       `CREATE INDEX IF NOT EXISTS idx_ro_operations_shop_id ON ro_operations(shop_id)`,
+      `CREATE TABLE IF NOT EXISTS rental_inventory_items (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        shop_id TEXT NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        quantity INTEGER NOT NULL DEFAULT 0,
+        available_qty INTEGER NOT NULL DEFAULT 0,
+        daily_rate NUMERIC(10,2) NOT NULL DEFAULT 0,
+        notes TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_rental_inventory_items_shop ON rental_inventory_items(shop_id)`,
+      `CREATE TABLE IF NOT EXISTS ro_inventory_items (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        shop_id TEXT NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+        ro_id TEXT NOT NULL REFERENCES repair_orders(id) ON DELETE CASCADE,
+        inventory_item_id UUID NOT NULL REFERENCES rental_inventory_items(id) ON DELETE RESTRICT,
+        quantity INTEGER NOT NULL DEFAULT 1,
+        rental_days INTEGER NOT NULL DEFAULT 1,
+        daily_rate NUMERIC(10,2) NOT NULL DEFAULT 0,
+        notes TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE (ro_id, inventory_item_id)
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_ro_inventory_items_shop ON ro_inventory_items(shop_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_ro_inventory_items_ro ON ro_inventory_items(ro_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_ro_inventory_items_item ON ro_inventory_items(inventory_item_id)`,
+      `CREATE TABLE IF NOT EXISTS delivery_fee_settings (
+        shop_id TEXT PRIMARY KEY REFERENCES shops(id) ON DELETE CASCADE,
+        fee_type TEXT NOT NULL DEFAULT 'flat',
+        flat_fee NUMERIC(10,2) NOT NULL DEFAULT 0,
+        per_mile_rate NUMERIC(10,2) NOT NULL DEFAULT 0,
+        default_zone_fee NUMERIC(10,2) NOT NULL DEFAULT 0,
+        zone_fees JSONB NOT NULL DEFAULT '{}'::jsonb,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      )`,
+      `ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS delivery_required BOOLEAN DEFAULT FALSE`,
+      `ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS pickup_required BOOLEAN DEFAULT FALSE`,
+      `ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS delivery_miles NUMERIC(10,2)`,
+      `ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS pickup_miles NUMERIC(10,2)`,
+      `ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS delivery_zone TEXT`,
+      `ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS pickup_zone TEXT`,
     ];
 
     // Fix job_status_log FK to use ON DELETE CASCADE

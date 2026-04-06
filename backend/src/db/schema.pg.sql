@@ -255,6 +255,42 @@ CREATE TABLE IF NOT EXISTS claim_links (
   submitted_at TIMESTAMPTZ
 );
 
+CREATE TABLE IF NOT EXISTS ro_claim_evidence (
+  id UUID PRIMARY KEY,
+  ro_id UUID NOT NULL REFERENCES repair_orders(id) ON DELETE CASCADE,
+  shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+  uploaded_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  media_url TEXT NOT NULL,
+  media_type TEXT NOT NULL CHECK (media_type IN ('photo', 'video')),
+  mime_type TEXT,
+  caption TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS ro_claim_contacts (
+  id UUID PRIMARY KEY,
+  ro_id UUID NOT NULL REFERENCES repair_orders(id) ON DELETE CASCADE,
+  shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+  logged_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  insurer_name TEXT,
+  contact_name TEXT NOT NULL,
+  channel TEXT NOT NULL CHECK (channel IN ('phone', 'email', 'sms', 'portal', 'in-person')),
+  summary TEXT NOT NULL,
+  outcome TEXT,
+  follow_up TEXT,
+  contact_at TIMESTAMPTZ DEFAULT NOW(),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS ro_claim_disputes (
+  id UUID PRIMARY KEY,
+  ro_id UUID NOT NULL REFERENCES repair_orders(id) ON DELETE CASCADE,
+  shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+  created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  note TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS estimate_requests (
   id UUID PRIMARY KEY,
   shop_id TEXT REFERENCES shops(id) ON DELETE SET NULL,
@@ -297,6 +333,12 @@ CREATE INDEX IF NOT EXISTS idx_market_config_shop_id ON market_config(shop_id);
 CREATE INDEX IF NOT EXISTS idx_claim_links_shop_id ON claim_links(shop_id);
 CREATE INDEX IF NOT EXISTS idx_claim_links_ro_id ON claim_links(ro_id);
 CREATE INDEX IF NOT EXISTS idx_claim_links_token ON claim_links(token);
+CREATE INDEX IF NOT EXISTS idx_ro_claim_evidence_ro_created ON ro_claim_evidence(ro_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ro_claim_evidence_shop_ro ON ro_claim_evidence(shop_id, ro_id);
+CREATE INDEX IF NOT EXISTS idx_ro_claim_contacts_ro_created ON ro_claim_contacts(ro_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ro_claim_contacts_shop_ro ON ro_claim_contacts(shop_id, ro_id);
+CREATE INDEX IF NOT EXISTS idx_ro_claim_disputes_ro_created ON ro_claim_disputes(ro_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ro_claim_disputes_shop_ro ON ro_claim_disputes(shop_id, ro_id);
 CREATE INDEX IF NOT EXISTS idx_estimate_requests_shop_id ON estimate_requests(shop_id);
 CREATE INDEX IF NOT EXISTS idx_estimate_requests_status ON estimate_requests(status);
 
