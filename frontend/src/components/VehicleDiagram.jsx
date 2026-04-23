@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 
 const EXTERIOR_PANELS = [
   { id: 'front_bumper', label: 'Front Bumper', type: 'path', d: 'M102,24 L218,24 L228,50 L92,50 Z', family: 'body' },
@@ -74,12 +74,6 @@ export default function VehicleDiagram({ value = [], onChange, readOnly = false 
   const activePanels = mode === 'interior' ? INTERIOR_PANELS : EXTERIOR_PANELS
   const selectedExteriorCount = selected.filter((id) => !INTERIOR_PANEL_IDS.has(id)).length
   const selectedInteriorCount = selected.filter((id) => INTERIOR_PANEL_IDS.has(id)).length
-
-  useEffect(() => {
-    if (selectedInteriorCount > 0 && mode !== 'interior') {
-      setMode('interior')
-    }
-  }, [mode, selectedInteriorCount])
 
   function toggle(id) {
     if (readOnly) return
