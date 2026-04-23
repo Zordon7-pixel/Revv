@@ -46,8 +46,8 @@ export default function SuperAdminDashboard() {
           total_errors: data?.summary?.total_errors || 0,
           total_feedback: data?.summary?.total_feedback || 0,
         })
-      } catch {
-        if (active) setError('Unable to load master dashboard data.')
+      } catch (err) {
+        if (active) setError(err?.message || 'Unable to load master dashboard data.')
       } finally {
         if (active) setLoading(false)
       }

@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import Layout from './components/Layout'
 import PublicOnlyRoute from './components/PublicOnlyRoute'
@@ -45,10 +46,13 @@ import InspectionEditor from './pages/InspectionEditor'
 import InspectionPublic from './pages/InspectionPublic'
 import Terms from './pages/Terms'
 import Privacy from './pages/Privacy'
+import SmsTerms from './pages/SmsTerms'
 import ReviewSubmit from './pages/ReviewSubmit'
 import Reviews from './pages/Reviews'
 import StorageHold from './pages/StorageHold'
+import LeadsDashboard from './pages/LeadsDashboard'
 import { getToken, getTokenPayload } from './lib/auth'
+import { watchViewportProfile } from './lib/viewport'
 
 function PrivateRoute({ children }) {
   if (!getToken()) return <Navigate to="/login" />
@@ -110,6 +114,8 @@ function NonEmployeeRoute({ children }) {
 }
 
 export default function App() {
+  useEffect(() => watchViewportProfile(), [])
+
   return (
     <ThemeProvider>
       <LanguageProvider>
@@ -131,6 +137,7 @@ export default function App() {
             <Route path="/terms-and-conditions" element={<Terms />} />
             <Route path="/terms" element={<Navigate to="/terms-and-conditions" replace />} />
             <Route path="/privacy" element={<Privacy />} />
+            <Route path="/sms-terms" element={<SmsTerms />} />
             <Route path="/review/:token" element={<ReviewSubmit />} />
             <Route path="/onboarding" element={<PrivateRoute><Onboarding /></PrivateRoute>} />
             <Route path="/claim/:token" element={<ClaimPortal />} />
@@ -163,6 +170,7 @@ export default function App() {
               <Route path="estimate-requests" element={<ManagementRoute><EstimateRequests /></ManagementRoute>} />
               <Route path="job-costing" element={<ManagementRoute><JobCosting /></ManagementRoute>} />
               <Route path="goals" element={<ManagementRoute><Goals /></ManagementRoute>} />
+              <Route path="admin/leads" element={<AdminRoute><LeadsDashboard /></AdminRoute>} />
             </Route>
           </Routes>
         </BrowserRouter>

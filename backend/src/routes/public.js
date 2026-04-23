@@ -2,6 +2,7 @@ const router = require('express').Router();
 const { dbGet, dbAll, dbRun } = require('../db');
 const rateLimit = require('express-rate-limit');
 const { v4: uuidv4 } = require('uuid');
+const { sendDiscordEmbed } = require('../utils/discord');
 
 const estimateRequestRateLimit = rateLimit({
   windowMs: 60 * 60 * 1000,
@@ -182,6 +183,20 @@ router.post('/estimate-request', estimateRequestRateLimit, async (req, res) => {
         JSON.stringify(normalizedPhotos),
       ]
     );
+
+    // Notify Discord
+    sendDiscordEmbed({
+      title: '🔧 New Estimate Request',
+      description: `**${name.trim()}** submitted an estimate request`,
+      color: 0xf59e0b,
+      fields: [
+        { name: 'Email', value: normalizedEmail, inline: true },
+        { name: 'Phone', value: normalizedPhoneDigits, inline: true },
+        { name: 'Vehicle', value: `${year} ${make} ${model}`, inline: true },
+        { name: 'Damage', value: damage_type, inline: true },
+      ],
+      footer: 'REVV Lead Tracking',
+    });
 
     return res.status(201).json({ success: true, message: 'Request received' });
   } catch (err) {

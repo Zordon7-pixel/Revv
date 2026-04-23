@@ -321,7 +321,7 @@ export default function Layout() {
   )
 
   return (
-    <div className="flex h-screen bg-[#0f1117] overflow-hidden">
+    <div className="app-shell flex bg-[#0f1117] overflow-hidden">
       {/* Desktop sidebar */}
       <aside className="hidden md:flex flex-col w-56 bg-[#1a1d2e] border-r border-[#2a2d3e] flex-shrink-0 relative z-[70]">
         <SidebarContent />
@@ -331,7 +331,7 @@ export default function Layout() {
       {sidebarOpen && (
         <div className="fixed inset-0 z-50 md:hidden transition-opacity opacity-100 pointer-events-auto">
           <div className="absolute inset-0 bg-black/60" onClick={() => setSidebarOpen(false)} />
-          <aside className="fixed inset-y-0 left-0 z-50 w-56 bg-[#1a1d2e] border-r border-[#2a2d3e] transform transition-transform duration-200 translate-x-0">
+          <aside className="app-mobile-sidebar fixed inset-y-0 left-0 z-50 w-56 bg-[#1a1d2e] border-r border-[#2a2d3e] transform transition-transform duration-200 translate-x-0">
             <div className="flex justify-end p-3 border-b border-[#2a2d3e]">
               <button
                 onClick={() => setSidebarOpen(false)}
@@ -351,7 +351,7 @@ export default function Layout() {
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Mobile topbar */}
-        <header className="md:hidden flex items-center gap-3 px-4 py-3 bg-[#1a1d2e] border-b border-[#2a2d3e]">
+        <header className="app-mobile-header md:hidden flex items-center gap-3 px-4 py-3 bg-[#1a1d2e] border-b border-[#2a2d3e]">
           <button onClick={() => setSidebarOpen(true)} className="text-slate-400 hover:text-white">
             <Menu size={20} />
           </button>
@@ -433,7 +433,7 @@ export default function Layout() {
         <div className="relative flex-1 overflow-hidden" style={MAIN_AMBIENT_STYLE}>
           <div className="pointer-events-none absolute inset-0 opacity-[0.14]" style={REVV_WATERMARK_STYLE} />
           <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent via-[#0f1117]/25 to-[#0f1117]/55" />
-          <main className="relative z-10 h-full overflow-auto p-4 md:p-6">
+          <main className="app-main-scroll relative z-10 h-full overflow-auto p-4 md:p-6">
             <Outlet />
           </main>
         </div>

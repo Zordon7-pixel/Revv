@@ -34,6 +34,10 @@ const sections = [
     body: 'To the maximum extent permitted by law, Zordon Technologies LLC is not liable for indirect, incidental, special, consequential, or punitive damages, or for loss of profits, data, or business opportunities arising from use of REVV.',
   },
   {
+    title: 'SMS / Text Message Terms',
+    body: 'REVV enables auto repair shops to send SMS (text message) notifications to their customers regarding vehicle repair status updates. By providing a phone number to a REVV-powered shop, you consent to receive automated text messages about your repair order status, including but not limited to: repair progress updates, parts status, ready-for-pickup alerts, and payment links. Message frequency varies based on repair activity (typically 2–8 messages per repair order). Message and data rates may apply. You may opt out at any time by replying STOP to any message. For help, reply HELP or contact revvshopapp@gmail.com. Carriers are not liable for delayed or undelivered messages.',
+  },
+  {
     title: 'Termination',
     body: 'We may suspend or terminate access for violations of these Terms or misuse of the platform. You may stop using the service at any time. Subscription cancellation terms follow your selected billing plan.',
   },

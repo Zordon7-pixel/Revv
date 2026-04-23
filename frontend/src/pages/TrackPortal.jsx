@@ -44,11 +44,14 @@ export default function TrackPortal() {
   const [lightboxPhoto, setLightboxPhoto] = useState(null)
 
   const loadData = async () => {
+    setLoading(true)
+    setError(null)
     try {
       const res = await api.get(`/portal/track/${token}`)
       setData(res.data)
     } catch (err) {
-      setError(err.response?.data?.error || 'Unable to load tracking info')
+      setData(null)
+      setError(err?.response?.data?.error || 'Unable to load tracking info')
     } finally {
       setLoading(false)
     }

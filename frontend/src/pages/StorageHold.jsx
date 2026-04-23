@@ -49,6 +49,7 @@ export default function StorageHold() {
       setSummary(summaryRes.data || { unpaid_total: 0 })
     } catch (err) {
       console.error('[StorageHold] Failed to load:', err.message)
+      alert(err?.response?.data?.error || 'Failed to load storage holds')
     } finally {
       setLoading(false)
     }
@@ -62,6 +63,7 @@ export default function StorageHold() {
       setChargesByRo((prev) => ({ ...prev, [roId]: data.charges || [] }))
     } catch (err) {
       console.error('[StorageHold] Failed to load charges:', err.message)
+      alert(err?.response?.data?.error || 'Failed to load storage charges')
     }
   }
 

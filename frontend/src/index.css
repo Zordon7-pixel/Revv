@@ -2,11 +2,27 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --app-viewport-height: 100vh;
+  --app-viewport-width: 100vw;
+  --app-viewport-short: 100vw;
+  --app-viewport-long: 100vh;
+}
+
+@supports (height: 100dvh) {
+  :root {
+    --app-viewport-height: 100dvh;
+    --app-viewport-long: 100dvh;
+  }
+}
+
 /* ── Prevent horizontal overflow on all devices ── */
 html, body { overflow-x: hidden; max-width: 100%; }
 *, *::before, *::after { box-sizing: border-box; }
+html, body, #root { min-height: 100%; }
 
 body {
+  min-height: var(--app-viewport-height);
   background: #0f1117;
   color: #e2e8f0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -47,5 +63,62 @@ html.theme-light iframe {
 .kanban-scroll { overflow-x: auto; padding-bottom: 12px; -webkit-overflow-scrolling: touch; }
 .kanban-scroll::-webkit-scrollbar { height: 6px; }
 .kanban-scroll::-webkit-scrollbar-thumb { background: #2a2d3e; border-radius: 3px; }
+
+.app-shell {
+  min-height: var(--app-viewport-height);
+  height: var(--app-viewport-height);
+}
+
+.app-mobile-sidebar {
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.app-mobile-header {
+  padding-top: calc(0.75rem + env(safe-area-inset-top));
+}
+
+.app-main-scroll {
+  padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+  -webkit-overflow-scrolling: touch;
+}
+
+.sheet-modal-overlay {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.sheet-modal-card {
+  width: 100%;
+  max-width: 32rem;
+  max-height: min(calc(var(--app-viewport-height) - 2rem - env(safe-area-inset-top) - env(safe-area-inset-bottom)), 44rem);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sheet-modal-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.sheet-modal-footer {
+  padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+}
+
+@media (max-width: 767px) {
+  .sheet-modal-overlay {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .sheet-modal-card {
+    max-width: none;
+    max-height: calc(var(--app-viewport-height) - env(safe-area-inset-top));
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+}
 
 .status-badge { @apply px-2 py-0.5 rounded-full text-xs font-bold uppercase tracking-wide; }

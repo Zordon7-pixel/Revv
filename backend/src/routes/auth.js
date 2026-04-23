@@ -7,6 +7,7 @@ const { v4: uuidv4 } = require('uuid');
 const { dbGet, dbRun } = require('../db');
 const auth     = require('../middleware/auth');
 const { sendMail } = require('../services/mailer');
+const { sendDiscordEmbed } = require('../utils/discord');
 
 const forgotPasswordLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
@@ -95,6 +96,18 @@ router.post('/shop-register', async (req, res) => {
 
     const payload = { id: userId, shop_id: shopId, role: 'owner', jti: uuidv4() };
     const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '7d' });
+    // Fire Discord webhook for new shop registration
+    sendDiscordEmbed({
+      title: '🏪 New Shop Registration',
+      description: `**${shop_name.trim()}** just signed up`,
+      color: 0x6366f1,
+      fields: [
+        { name: 'Owner', value: name.trim(), inline: true },
+        { name: 'Email', value: emailNorm, inline: true },
+      ],
+      footer: 'REVV Lead Tracking',
+    });
+
     res.status(201).json({
       token,
       user: {

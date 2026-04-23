@@ -351,7 +351,16 @@ export default function RepairOrders() {
                     </div>
                   </td>
                   <td className="px-3 py-2 text-sm text-white">{ro.customer_name || '—'}</td>
-                  <td className="px-3 py-2 text-sm text-slate-300">{[ro.year, ro.make, ro.model].filter(Boolean).join(' ') || '—'}</td>
+                  <td className="px-3 py-2 text-sm text-slate-300">
+                    <span>{[ro.year, ro.make, ro.model].filter(Boolean).join(' ') || '—'}</span>
+                    {(() => {
+                      if (ro.actual_delivery) return null
+                      const days = Math.floor((Date.now() - new Date(ro.intake_date || ro.created_at).getTime()) / 86400000)
+                      if (days >= 60) return <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded-full bg-red-900/50 border border-red-600/40 text-red-300 text-[10px] font-semibold">🔴 {days}d</span>
+                      if (days >= 30) return <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded-full bg-yellow-900/50 border border-yellow-600/40 text-yellow-300 text-[10px] font-semibold">⚠️ {days}d</span>
+                      return null
+                    })()}
+                  </td>
                   <td className="px-3 py-2"><StatusBadge status={ro.status} /></td>
                   <td className="px-3 py-2 text-xs text-slate-400">{techById[ro.assigned_to] || 'Unassigned'}</td>
                   <td className="px-3 py-2 text-right">
@@ -399,7 +408,16 @@ export default function RepairOrders() {
                       {hasInsuranceClaim(ro) && <Shield size={11} className="text-sky-400" />}
                     </p>
                     <p className="text-white font-semibold text-sm">{ro.customer_name || '—'}</p>
-                    <p className="text-slate-400 text-xs">{[ro.year, ro.make, ro.model].filter(Boolean).join(' ') || '—'}</p>
+                    <p className="text-slate-400 text-xs">
+                      {[ro.year, ro.make, ro.model].filter(Boolean).join(' ') || '—'}
+                      {(() => {
+                        if (ro.actual_delivery) return null
+                        const days = Math.floor((Date.now() - new Date(ro.intake_date || ro.created_at).getTime()) / 86400000)
+                        if (days >= 60) return <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded-full bg-red-900/50 border border-red-600/40 text-red-300 text-[10px] font-semibold">🔴 {days}d</span>
+                        if (days >= 30) return <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded-full bg-yellow-900/50 border border-yellow-600/40 text-yellow-300 text-[10px] font-semibold">⚠️ {days}d</span>
+                        return null
+                      })()}
+                    </p>
                     {hasOpenSupplement(ro) && (
                       <p className="text-yellow-300 text-[10px] mt-1 inline-flex items-center gap-1">
                         <AlertTriangle size={10} /> Supplement {String(ro.supplement_status).toLowerCase()}

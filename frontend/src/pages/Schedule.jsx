@@ -244,6 +244,7 @@ export default function Schedule() {
   const [authorizedToday, setAuthorizedToday] = useState({})
   const [creatingRoShiftId, setCreatingRoShiftId] = useState('')
   const [createRoError, setCreateRoError] = useState('')
+  const [loadError, setLoadError] = useState('')
   const canManage = isAdmin() || isAssistant()
   const canCreateRo = isAdmin()
   const canAuthorizeEarly = isAdmin()
@@ -294,6 +295,7 @@ export default function Schedule() {
   }
 
   async function loadMonthShifts() {
+    setLoadError('')
     try {
       const year = currentMonth.getFullYear()
       const month = currentMonth.getMonth()
@@ -307,6 +309,7 @@ export default function Schedule() {
       if (canManage) setEmployees(e.data.employees || [])
     } catch (err) {
       console.error('[Schedule] Failed to load month shifts:', err.message)
+      setLoadError(err?.response?.data?.error || 'Error loading schedule')
     }
   }
 
@@ -321,6 +324,7 @@ export default function Schedule() {
       await loadMonthShifts()
       return
     }
+    setLoadError('')
     try {
       const [s, e] = await Promise.all([
         api.get(`/schedule?week=${isoDate(monday)}`),
@@ -330,7 +334,7 @@ export default function Schedule() {
       setEmployees(e.data.employees || [])
     } catch (err) {
       console.error('[Schedule] Failed to load week shifts:', err.message)
-      alert('Error loading schedule: ' + err.message)
+      setLoadError(err?.response?.data?.error || 'Error loading schedule')
     }
   }
   useEffect(() => { load() }, [monday, viewMode])
@@ -478,6 +482,12 @@ export default function Schedule() {
       {createRoError && (
         <div className="fixed right-4 top-4 z-[90] max-w-xs rounded-lg border border-red-500/40 bg-red-900/85 px-3 py-2 text-xs text-red-100 shadow-lg">
           {createRoError}
+        </div>
+      )}
+
+      {loadError && (
+        <div className="fixed right-4 top-20 z-[90] max-w-xs rounded-lg border border-red-500/40 bg-red-900/85 px-3 py-2 text-xs text-red-100 shadow-lg">
+          {loadError}
         </div>
       )}
 

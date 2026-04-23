@@ -16,6 +16,168 @@ const STATUS_COLORS = {
   qc: 'text-cyan-400', delivery: 'text-emerald-400', closed: 'text-slate-500'
 }
 
+const EMPTY_CUSTOMER_FORM = {
+  name: '',
+  phone: '',
+  email: '',
+  address: '',
+  insurance_company: '',
+  policy_number: '',
+}
+
+function createCustomerForm(customer = {}) {
+  return {
+    name: customer?.name || '',
+    phone: customer?.phone || '',
+    email: customer?.email || '',
+    address: customer?.address || '',
+    insurance_company: customer?.insurance_company || '',
+    policy_number: customer?.policy_number || '',
+  }
+}
+
+function normalizeCustomerForm(form) {
+  return {
+    name: String(form.name || '').trim(),
+    phone: String(form.phone || '').trim(),
+    email: String(form.email || '').trim(),
+    address: String(form.address || '').trim(),
+    insurance_company: String(form.insurance_company || '').trim(),
+    policy_number: String(form.policy_number || '').trim(),
+  }
+}
+
+function CustomerFormFields({ form, onChange }) {
+  return (
+    <>
+      <div>
+        <label className="block text-xs font-medium text-slate-400 mb-1">Full Name</label>
+        <input
+          type="text"
+          value={form.name}
+          onChange={(e) => onChange('name', e.target.value)}
+          placeholder="John Doe"
+          autoComplete="name"
+          enterKeyHint="next"
+          className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+        />
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-slate-400 mb-1">Phone</label>
+        <input
+          type="tel"
+          value={form.phone}
+          onChange={(e) => onChange('phone', e.target.value)}
+          placeholder="(212) 555-0100"
+          autoComplete="tel"
+          inputMode="tel"
+          enterKeyHint="next"
+          className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+        />
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-slate-400 mb-1">Email</label>
+        <input
+          type="email"
+          value={form.email}
+          onChange={(e) => onChange('email', e.target.value)}
+          placeholder="john@example.com"
+          autoComplete="email"
+          inputMode="email"
+          enterKeyHint="next"
+          className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+        />
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-slate-400 mb-1">Address</label>
+        <input
+          type="text"
+          value={form.address}
+          onChange={(e) => onChange('address', e.target.value)}
+          placeholder="123 Main St"
+          autoComplete="street-address"
+          enterKeyHint="next"
+          className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+        />
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-slate-400 mb-1">Insurance Company</label>
+        <input
+          type="text"
+          value={form.insurance_company}
+          onChange={(e) => onChange('insurance_company', e.target.value)}
+          placeholder="State Farm, GEICO..."
+          enterKeyHint="next"
+          className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+        />
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-slate-400 mb-1">Policy Number</label>
+        <input
+          type="text"
+          value={form.policy_number}
+          onChange={(e) => onChange('policy_number', e.target.value)}
+          placeholder="POL123456"
+          enterKeyHint="done"
+          className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+        />
+      </div>
+    </>
+  )
+}
+
+function CustomerFormModal({ title, form, error, loading, onChange, onClose, onSubmit, submitLabel }) {
+  function handleClose() {
+    if (!loading) onClose()
+  }
+
+  return (
+    <div
+      className="sheet-modal-overlay fixed inset-0 bg-black/70 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4"
+      onClick={handleClose}
+    >
+      <form
+        className="sheet-modal-card bg-[#1a1d2e] rounded-2xl border border-[#2a2d3e]"
+        onClick={(e) => e.stopPropagation()}
+        onSubmit={onSubmit}
+      >
+        <div className="sheet-modal-header border-b border-[#2a2d3e] px-5 sm:px-6 py-4 flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-white">{title}</h2>
+          <button
+            type="button"
+            onClick={handleClose}
+            className="text-slate-400 hover:text-white transition-colors"
+            disabled={loading}
+          >
+            <X size={20} />
+          </button>
+        </div>
+        <div className="sheet-modal-body px-5 sm:px-6 py-4 space-y-3">
+          <CustomerFormFields form={form} onChange={onChange} />
+          {error && <p className="text-sm text-red-300">{error}</p>}
+        </div>
+        <div className="sheet-modal-footer border-t border-[#2a2d3e] px-5 sm:px-6 py-4 flex flex-col-reverse sm:flex-row items-stretch sm:items-center gap-3 sm:justify-end">
+          <button
+            type="button"
+            onClick={handleClose}
+            disabled={loading}
+            className="px-4 py-2 text-sm text-slate-400 hover:text-white transition-colors disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={loading}
+            className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+          >
+            {loading ? 'Saving...' : submitLabel}
+          </button>
+        </div>
+      </form>
+    </div>
+  )
+}
+
 function CustomerDrawer({ customerId, onClose, adminUser, onEdit, onDelete }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -184,92 +346,51 @@ function CustomerDrawer({ customerId, onClose, adminUser, onEdit, onDelete }) {
 }
 
 function EditCustomerModal({ customer, onClose, onSave }) {
-  const [form, setForm] = useState({
-    name: customer?.name || '',
-    phone: customer?.phone || '',
-    email: customer?.email || '',
-    address: customer?.address || '',
-    insurance_company: customer?.insurance_company || '',
-    policy_number: customer?.policy_number || ''
-  })
+  const [form, setForm] = useState(() => createCustomerForm(customer))
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
   useEffect(() => {
-    setForm({
-      name: customer?.name || '',
-      phone: customer?.phone || '',
-      email: customer?.email || '',
-      address: customer?.address || '',
-      insurance_company: customer?.insurance_company || '',
-      policy_number: customer?.policy_number || ''
-    })
+    setForm(createCustomerForm(customer))
+    setError('')
   }, [customer])
 
-  async function saveCustomer() {
-    if (!form.name.trim()) return alert('Name is required')
+  function updateField(field, value) {
+    setForm((prev) => ({ ...prev, [field]: value }))
+    if (error) setError('')
+  }
+
+  async function saveCustomer(event) {
+    event.preventDefault()
+    const payload = normalizeCustomerForm(form)
+    if (!payload.name) {
+      setError('Name is required.')
+      return
+    }
     setLoading(true)
+    setError('')
     try {
-      await api.put(`/customers/${customer.id}`, form)
+      await api.put(`/customers/${customer.id}`, payload)
       await onSave()
       onClose()
-    } catch {
-      alert('Error updating customer')
+    } catch (err) {
+      setError(err?.response?.data?.error || 'Error updating customer.')
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-      <div className="bg-[#1a1d2e] rounded-2xl border border-[#2a2d3e] w-full max-w-md">
-        <div className="border-b border-[#2a2d3e] px-6 py-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-white">Edit Customer</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors" disabled={loading}>
-            <X size={20} />
-          </button>
-        </div>
-        <div className="px-6 py-4 space-y-3">
-          <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1">Full Name</label>
-            <input type="text" value={form.name} onChange={e => setForm({...form, name: e.target.value})} placeholder="John Doe"
-              className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500" />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1">Phone</label>
-            <input type="text" value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} placeholder="(212) 555-0100"
-              className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500" />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1">Email</label>
-            <input type="email" value={form.email} onChange={e => setForm({...form, email: e.target.value})} placeholder="john@example.com"
-              className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500" />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1">Address</label>
-            <input type="text" value={form.address} onChange={e => setForm({...form, address: e.target.value})} placeholder="123 Main St"
-              className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500" />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1">Insurance Company</label>
-            <input type="text" value={form.insurance_company} onChange={e => setForm({...form, insurance_company: e.target.value})} placeholder="State Farm, GEICO..."
-              className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500" />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1">Policy Number</label>
-            <input type="text" value={form.policy_number} onChange={e => setForm({...form, policy_number: e.target.value})} placeholder="POL123456"
-              className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500" />
-          </div>
-        </div>
-        <div className="border-t border-[#2a2d3e] px-6 py-4 flex items-center gap-3 justify-end">
-          <button onClick={onClose} disabled={loading} className="px-4 py-2 text-sm text-slate-400 hover:text-white transition-colors disabled:opacity-50">
-            Cancel
-          </button>
-          <button onClick={saveCustomer} disabled={loading} className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
-            {loading ? 'Saving...' : 'Save Customer'}
-          </button>
-        </div>
-      </div>
-    </div>
+    <CustomerFormModal
+      title="Edit Customer"
+      form={form}
+      error={error}
+      loading={loading}
+      onChange={updateField}
+      onClose={onClose}
+      onSubmit={saveCustomer}
+      submitLabel="Save Customer"
+    />
   )
 }
 
@@ -280,8 +401,9 @@ export default function Customers() {
   const [showAdd, setShowAdd] = useState(false)
   const [selectedId, setSelectedId] = useState(null)
   const [editingCustomer, setEditingCustomer] = useState(null)
-  const [form, setForm] = useState({ name:'', phone:'', email:'', address:'', insurance_company:'', policy_number:'' })
+  const [form, setForm] = useState(() => ({ ...EMPTY_CUSTOMER_FORM }))
   const [loading, setLoading] = useState(false)
+  const [formError, setFormError] = useState('')
   const adminUser = isAdmin()
   const assistantUser = isAssistant()
 
@@ -316,15 +438,42 @@ export default function Customers() {
     (c.insurance_company || '').toLowerCase().includes(q.toLowerCase())
   )
 
-  async function addCustomer() {
-    if (!form.name.trim()) return alert('Name is required')
+  function openAddCustomerModal() {
+    setForm({ ...EMPTY_CUSTOMER_FORM })
+    setFormError('')
+    setShowAdd(true)
+  }
+
+  function closeAddCustomerModal() {
+    if (loading) return
+    setShowAdd(false)
+    setFormError('')
+  }
+
+  function updateAddCustomerField(field, value) {
+    setForm((prev) => ({ ...prev, [field]: value }))
+    if (formError) setFormError('')
+  }
+
+  async function addCustomer(event) {
+    event.preventDefault()
+    const payload = normalizeCustomerForm(form)
+    if (!payload.name) {
+      setFormError('Name is required.')
+      return
+    }
     setLoading(true)
+    setFormError('')
     try {
-      await api.post('/customers', form)
+      await api.post('/customers', payload)
       await refreshCustomers()
       setShowAdd(false)
-      setForm({ name:'', phone:'', email:'', address:'', insurance_company:'', policy_number:'' })
-    } catch(e) { alert('Error saving customer') } finally { setLoading(false) }
+      setForm({ ...EMPTY_CUSTOMER_FORM })
+    } catch (e) {
+      setFormError(e?.response?.data?.error || 'Error saving customer.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function deleteCustomer(customer) {
@@ -358,7 +507,7 @@ export default function Customers() {
           <p className="text-slate-500 text-sm">{customers.length} on file</p>
         </div>
         {!assistantUser && (
-          <button onClick={() => setShowAdd(true)} className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium px-3 py-2 rounded-lg transition-colors">
+          <button onClick={openAddCustomerModal} className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium px-3 py-2 rounded-lg transition-colors">
             + Add Customer
           </button>
         )}
@@ -459,56 +608,16 @@ export default function Customers() {
 
       {/* Add Customer Modal */}
       {showAdd && !assistantUser && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-[#1a1d2e] rounded-2xl border border-[#2a2d3e] w-full max-w-md">
-            <div className="border-b border-[#2a2d3e] px-6 py-4 flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-white">New Customer</h2>
-              <button onClick={() => setShowAdd(false)} className="text-slate-400 hover:text-white transition-colors">
-                <X size={20} />
-              </button>
-            </div>
-            <div className="px-6 py-4 space-y-3">
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">Full Name</label>
-                <input type="text" value={form.name} onChange={e => setForm({...form, name: e.target.value})} placeholder="John Doe"
-                  className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">Phone</label>
-                <input type="text" value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} placeholder="(212) 555-0100"
-                  className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">Email</label>
-                <input type="email" value={form.email} onChange={e => setForm({...form, email: e.target.value})} placeholder="john@example.com"
-                  className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">Address</label>
-                <input type="text" value={form.address} onChange={e => setForm({...form, address: e.target.value})} placeholder="123 Main St"
-                  className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">Insurance Company</label>
-                <input type="text" value={form.insurance_company} onChange={e => setForm({...form, insurance_company: e.target.value})} placeholder="State Farm, GEICO..."
-                  className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">Policy Number</label>
-                <input type="text" value={form.policy_number} onChange={e => setForm({...form, policy_number: e.target.value})} placeholder="POL123456"
-                  className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500" />
-              </div>
-            </div>
-            <div className="border-t border-[#2a2d3e] px-6 py-4 flex items-center gap-3 justify-end">
-              <button onClick={() => setShowAdd(false)} disabled={loading} className="px-4 py-2 text-sm text-slate-400 hover:text-white transition-colors disabled:opacity-50">
-                Cancel
-              </button>
-              <button onClick={addCustomer} disabled={loading} className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
-                {loading ? 'Saving...' : 'Save Customer'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <CustomerFormModal
+          title="New Customer"
+          form={form}
+          error={formError}
+          loading={loading}
+          onChange={updateAddCustomerField}
+          onClose={closeAddCustomerModal}
+          onSubmit={addCustomer}
+          submitLabel="Save Customer"
+        />
       )}
 
       {/* Customer 360 Drawer */}

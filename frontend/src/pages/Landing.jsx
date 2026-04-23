@@ -13,6 +13,7 @@ import {
   Users,
   Wrench,
 } from 'lucide-react'
+import LeadCaptureForm from '../components/LeadCaptureForm'
 
 const features = [
   {
@@ -73,6 +74,7 @@ export default function Landing() {
     setSubmitting(false)
   }
 
+
   return (
     <div className="min-h-screen bg-[#0f1117] text-slate-100">
       {/* ── Nav ─────────────────────────────────────────────────────────── */}
@@ -90,6 +92,9 @@ export default function Landing() {
             </a>
             <a href="#download" className="text-sm text-slate-400 transition hover:text-white">
               Download
+            </a>
+            <a href="#contact" className="text-sm text-slate-400 transition hover:text-white">
+              Contact
             </a>
             <Link to="/login" className="text-sm text-slate-400 transition hover:text-white">
               Sign In
@@ -365,6 +370,21 @@ export default function Landing() {
                 </Link>
               </div>
             </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Contact / Lead Capture ────────────────────────────────────── */}
+      <section id="contact" className="px-6 py-20 md:px-16 lg:px-24">
+        <div className="mx-auto max-w-2xl">
+          <h2 className="text-3xl font-bold text-white md:text-4xl text-center">
+            Ready to modernize your shop?
+          </h2>
+          <p className="mt-4 text-center text-slate-400">
+            Tell us about your operation and we'll show you how REVV fits in.
+          </p>
+          <div className="mt-10 rounded-2xl border border-[#2a2d3e] bg-[#0f1117] p-8">
+            <LeadCaptureForm />
           </div>
         </div>
       </section>

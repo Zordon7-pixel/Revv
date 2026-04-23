@@ -11,7 +11,11 @@ const sections = [
   },
   {
     title: 'Data Sharing',
-    body: 'We do not sell personal data to third parties. We share data only with service providers required to run REVV, including Stripe (payments), Twilio (SMS), and Resend (email delivery), or when required by law.',
+    body: 'We do not sell personal data to third parties. We do not sell, rent, or share your phone number with third parties for marketing purposes. We share data only with service providers required to run REVV, including Stripe (payments), Twilio (SMS), and Resend (email delivery), or when required by law.',
+  },
+  {
+    title: 'SMS / Text Messages',
+    body: 'When a customer provides their phone number to a REVV-powered shop, that number may be used to send automated repair status updates via SMS. Phone numbers are stored securely and used solely for service-related communications. We do not use phone numbers for marketing or promotional messages. Customers may opt out at any time by replying STOP. For full SMS terms, visit revvshop.app/sms-terms.',
   },
   {
     title: 'Data Retention',
