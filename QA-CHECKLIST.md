@@ -2,6 +2,8 @@
 
 Run through every item for every diff. CRITICAL items block ship. HIGH items must be noted in report.
 
+> **For ship-readiness / pre-launch / full-QA runs, use the `pre-launch-audit` skill instead.** It supersets this checklist (adds mobile UI on iPhone, currency formatting, schema drift, cron health, etc.). Bryan invokes it via "do a full QA of Revv" or `/pre-launch-audit revv`. This checklist remains the floor for per-diff reviews in the build pipeline.
+
 ---
 
 ## Dispatch De-Dupe Preflight (Run First)

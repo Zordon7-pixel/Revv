@@ -731,7 +731,7 @@ export default function Dashboard() {
       {
         id: 'true-profit',
         label: 'True Profit',
-        value: `$${displayProfit.toLocaleString('en-US', { minimumFractionDigits: 0 })}`,
+        value: `$${displayProfit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
         icon: TrendingUp,
         color: 'text-amber-300',
         accent: 'bg-amber-500',

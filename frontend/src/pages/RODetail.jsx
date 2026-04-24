@@ -1592,7 +1592,7 @@ export default function RODetail() {
           <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-4 flex items-center gap-1.5">
             <Car size={12} /> Damage Diagram
           </h2>
-          <div className="overflow-auto">
+          <div className="overflow-auto w-full">
             <div className="min-w-[580px] sm:min-w-0">
               <VehicleDiagram
                 value={damagedPanels}

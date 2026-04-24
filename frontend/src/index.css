@@ -122,3 +122,21 @@ html.theme-light iframe {
 }
 
 .status-badge { @apply px-2 py-0.5 rounded-full text-xs font-bold uppercase tracking-wide; }
+
+/* Dark-mode native date/time pickers so the calendar icon is visible on iOS Safari.
+   Without this, the input looks empty/black-on-black. */
+input[type="date"],
+input[type="datetime-local"],
+input[type="time"],
+input[type="month"],
+input[type="week"] {
+  color-scheme: dark;
+}
+
+html.theme-light input[type="date"],
+html.theme-light input[type="datetime-local"],
+html.theme-light input[type="time"],
+html.theme-light input[type="month"],
+html.theme-light input[type="week"] {
+  color-scheme: light;
+}
