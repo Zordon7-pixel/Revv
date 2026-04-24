@@ -8,10 +8,10 @@ router.get('/', auth, requireEmployee, async (req, res) => {
   try {
     const rows = await dbAll(
       `SELECT n.*, ro.ro_number FROM notifications n
-       LEFT JOIN repair_orders ro ON ro.id = n.ro_id
-       WHERE n.shop_id = $1
+       LEFT JOIN repair_orders ro ON ro.id::text = n.ro_id::text
+       WHERE n.shop_id::text = $1::text
          AND n.read = FALSE
-         AND (n.user_id IS NULL OR n.user_id = $2)
+         AND (n.user_id IS NULL OR n.user_id::text = $2::text)
        ORDER BY n.created_at DESC
        LIMIT 10`,
       [req.user.shop_id, req.user.id]
@@ -26,7 +26,7 @@ router.get('/', auth, requireEmployee, async (req, res) => {
 router.patch('/read-all', auth, requireEmployee, async (req, res) => {
   try {
     await dbRun(
-      `UPDATE notifications SET read = TRUE WHERE shop_id = $1 AND (user_id IS NULL OR user_id = $2) AND read = FALSE`,
+      `UPDATE notifications SET read = TRUE WHERE shop_id::text = $1::text AND (user_id IS NULL OR user_id::text = $2::text) AND read = FALSE`,
       [req.user.shop_id, req.user.id]
     );
     res.json({ ok: true });
@@ -41,9 +41,9 @@ router.patch('/:id/read', auth, requireEmployee, async (req, res) => {
     await dbRun(
       `UPDATE notifications
        SET read = TRUE
-       WHERE id = $1
-         AND shop_id = $2
-         AND (user_id IS NULL OR user_id = $3)`,
+       WHERE id::text = $1::text
+         AND shop_id::text = $2::text
+         AND (user_id IS NULL OR user_id::text = $3::text)`,
       [req.params.id, req.user.shop_id, req.user.id]
     );
     res.json({ ok: true });

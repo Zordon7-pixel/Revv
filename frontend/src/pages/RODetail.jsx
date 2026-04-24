@@ -1125,6 +1125,7 @@ export default function RODetail() {
 
       {activeTab === 'overview' && (
         <>
+      <div className="overflow-x-auto">
       <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-1 flex items-center gap-1 w-fit">
         <button
           onClick={() => setOverviewTab('core')}
@@ -1162,6 +1163,7 @@ export default function RODetail() {
         >
           Communication
         </button>
+      </div>
       </div>
 
       {overviewTab === 'core' && (

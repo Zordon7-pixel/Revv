@@ -494,7 +494,7 @@ router.post('/lunch/end', auth, async (req, res) => {
 router.get('/notifications', auth, requireOwnerAdminOnly, async (req, res) => {
   try {
     const rows = await dbAll(
-      'SELECT n.*, u.name as employee_name FROM notifications n LEFT JOIN users u ON u.id = n.user_id WHERE n.shop_id = $1 ORDER BY n.created_at DESC LIMIT 50',
+      'SELECT n.*, u.name as employee_name FROM notifications n LEFT JOIN users u ON u.id::text = n.user_id::text WHERE n.shop_id::text = $1::text ORDER BY n.created_at DESC LIMIT 50',
       [req.user.shop_id]
     );
     const unread = rows.filter(r => !r.read).length;
