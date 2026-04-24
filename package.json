@@ -2,7 +2,7 @@
   "name": "revv",
   "version": "1.0.0",
   "scripts": {
-    "build": "cd frontend && npm install && npm run build",
+    "build": "cd frontend && npm install --include=dev && npm run build",
     "start": "cd backend && node src/app.js",
     "install:all": "cd backend && npm install && cd ../frontend && npm install",
     "seed:demo": "cd backend && node ../scripts/seed-demo.js",
