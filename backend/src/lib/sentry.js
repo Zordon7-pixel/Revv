@@ -41,22 +41,32 @@ function beforeSend(event /*, hint */) {
   return event;
 }
 
+function resolveSampleRate() {
+  const raw = parseFloat(process.env.SENTRY_SAMPLE_RATE);
+  if (Number.isNaN(raw)) return 1.0;
+  return Math.min(1, Math.max(0, raw));
+}
+
 function init() {
   const dsn = process.env.SENTRY_DSN_BACKEND;
   if (!dsn) {
     console.log('[sentry] DSN not set — Sentry disabled');
     return false;
   }
+  const sampleRate = resolveSampleRate();
+  // PINNED to @sentry/node v7. v8 removes Sentry.Handlers.requestHandler/errorHandler
+  // in favor of Sentry.expressIntegration() + Sentry.setupExpressErrorHandler(app).
+  // Bumping past 7.x requires migrating both call sites in app.js.
   Sentry.init({
     dsn,
     environment: process.env.SENTRY_ENVIRONMENT || 'production',
     release: process.env.RAILWAY_GIT_COMMIT_SHA || 'local',
-    sampleRate: 1.0,
+    sampleRate,
     tracesSampleRate: 0,
     initialScope: { tags: { platform: 'backend' } },
     beforeSend,
   });
-  console.log('[sentry] initialized — env=%s release=%s', process.env.SENTRY_ENVIRONMENT || 'production', process.env.RAILWAY_GIT_COMMIT_SHA || 'local');
+  console.log('[sentry] initialized — env=%s release=%s sampleRate=%s', process.env.SENTRY_ENVIRONMENT || 'production', process.env.RAILWAY_GIT_COMMIT_SHA || 'local', sampleRate);
   return true;
 }
 
