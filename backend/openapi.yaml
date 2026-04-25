@@ -1,0 +1,2197 @@
+openapi: 3.0.3
+info:
+  title: Revv API
+  version: 1.0.0
+  description: Revv shop-management API. Source of truth for all clients (web + mobile).
+servers:
+  - url: https://revvshop.app
+    description: Production
+  - url: http://localhost:4000
+    description: Local dev
+tags:
+  - name: auth
+  - name: ros
+  - name: customers
+  - name: notifications
+  - name: invoice
+  - name: estimateLineItems
+  - name: timeclock
+  - name: settings
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  responses:
+    BadRequest:
+      description: Validation failure
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Missing or invalid auth
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: Permission denied
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Conflict:
+      description: Conflict with current resource state
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Gone:
+      description: Resource or flow is no longer available
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    TooManyRequests:
+      description: Rate limit exceeded
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ServerError:
+      description: Server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  schemas:
+    ErrorResponse:
+      type: object
+      additionalProperties: true
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+          nullable: true
+        shiftStart:
+          type: string
+          nullable: true
+      required:
+        - error
+    OkResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+      required:
+        - ok
+    AuthUser:
+      type: object
+      additionalProperties: true
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+        shop_id:
+          type: string
+          format: uuid
+          nullable: true
+        customer_id:
+          type: string
+          format: uuid
+          nullable: true
+        onboarded:
+          type: boolean
+      required:
+        - id
+        - name
+        - email
+        - role
+        - shop_id
+        - customer_id
+        - onboarded
+    AuthLoginRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+      required:
+        - email
+        - password
+    AuthLoginResponse:
+      type: object
+      properties:
+        token:
+          type: string
+        user:
+          $ref: '#/components/schemas/AuthUser'
+      required:
+        - token
+        - user
+    ForgotPasswordRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+      required:
+        - email
+    ResetPasswordRequest:
+      type: object
+      properties:
+        token:
+          type: string
+        password:
+          type: string
+      required:
+        - token
+        - password
+    Shop:
+      type: object
+      additionalProperties: true
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        phone:
+          type: string
+          nullable: true
+        address:
+          type: string
+          nullable: true
+        city:
+          type: string
+          nullable: true
+        state:
+          type: string
+          nullable: true
+        zip:
+          type: string
+          nullable: true
+        onboarded:
+          type: boolean
+          nullable: true
+        sms_notifications_enabled:
+          type: boolean
+          nullable: true
+        email_notifications_enabled:
+          type: boolean
+          nullable: true
+        labor_rate:
+          type: number
+          nullable: true
+        parts_markup:
+          type: number
+          nullable: true
+        tax_rate:
+          type: number
+          nullable: true
+        logo_url:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+        - id
+        - name
+    AuthMeResponse:
+      type: object
+      properties:
+        user:
+          $ref: '#/components/schemas/AuthUser'
+        shop:
+          $ref: '#/components/schemas/Shop'
+      required:
+        - user
+        - shop
+    Customer:
+      type: object
+      additionalProperties: true
+      properties:
+        id:
+          type: string
+          format: uuid
+        shop_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        phone:
+          type: string
+          nullable: true
+        email:
+          type: string
+          format: email
+          nullable: true
+        address:
+          type: string
+          nullable: true
+        insurance_company:
+          type: string
+          nullable: true
+        policy_number:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+        - id
+        - shop_id
+        - name
+    CustomerWithPortalAccess:
+      allOf:
+        - $ref: '#/components/schemas/Customer'
+        - type: object
+          properties:
+            has_portal_access:
+              type: boolean
+          required:
+            - has_portal_access
+    Vehicle:
+      type: object
+      additionalProperties: true
+      properties:
+        id:
+          type: string
+          format: uuid
+        shop_id:
+          type: string
+          format: uuid
+          nullable: true
+        customer_id:
+          type: string
+          format: uuid
+          nullable: true
+        year:
+          type: integer
+          nullable: true
+        make:
+          type: string
+          nullable: true
+        model:
+          type: string
+          nullable: true
+        vin:
+          type: string
+          nullable: true
+        color:
+          type: string
+          nullable: true
+        plate:
+          type: string
+          nullable: true
+        mileage:
+          type: integer
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+        - id
+    CustomerRepairOrderSummary:
+      type: object
+      additionalProperties: true
+      properties:
+        id:
+          type: string
+          format: uuid
+          nullable: true
+        ro_number:
+          type: string
+          nullable: true
+        status:
+          type: string
+          nullable: true
+        job_type:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+        - ro_number
+        - status
+        - job_type
+        - created_at
+    CustomerDetail:
+      allOf:
+        - $ref: '#/components/schemas/Customer'
+        - type: object
+          properties:
+            vehicles:
+              type: array
+              items:
+                $ref: '#/components/schemas/Vehicle'
+            ros:
+              type: array
+              items:
+                $ref: '#/components/schemas/CustomerRepairOrderSummary'
+          required:
+            - vehicles
+            - ros
+    CustomersListResponse:
+      type: object
+      properties:
+        customers:
+          type: array
+          items:
+            $ref: '#/components/schemas/Customer'
+      required:
+        - customers
+    CustomerCreateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        phone:
+          type: string
+          nullable: true
+        email:
+          type: string
+          format: email
+          nullable: true
+        address:
+          type: string
+          nullable: true
+        insurance_company:
+          type: string
+          nullable: true
+        policy_number:
+          type: string
+          nullable: true
+      required:
+        - name
+    CustomerUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          nullable: true
+        phone:
+          type: string
+          nullable: true
+        email:
+          type: string
+          format: email
+          nullable: true
+        address:
+          type: string
+          nullable: true
+        insurance_company:
+          type: string
+          nullable: true
+        policy_number:
+          type: string
+          nullable: true
+    Notification:
+      type: object
+      additionalProperties: true
+      properties:
+        id:
+          type: string
+          format: uuid
+        shop_id:
+          type: string
+          format: uuid
+          nullable: true
+        user_id:
+          type: string
+          format: uuid
+          nullable: true
+        type:
+          type: string
+        title:
+          type: string
+        body:
+          type: string
+          nullable: true
+        ro_id:
+          type: string
+          format: uuid
+          nullable: true
+        ro_number:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+        read:
+          type: boolean
+      required:
+        - id
+        - type
+        - title
+        - read
+    NotificationsListResponse:
+      type: object
+      properties:
+        notifications:
+          type: array
+          items:
+            $ref: '#/components/schemas/Notification'
+        unread:
+          type: integer
+      required:
+        - notifications
+        - unread
+    AssignedTech:
+      type: object
+      additionalProperties: true
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        role:
+          type: string
+      required:
+        - id
+        - name
+        - role
+    ProfitSummary:
+      type: object
+      properties:
+        gross:
+          type: number
+        cogs:
+          type: number
+        naiveProfit:
+          type: number
+        nyAdjustments:
+          type: number
+        trueProfit:
+          type: number
+        margin:
+          type: integer
+      required:
+        - gross
+        - cogs
+        - naiveProfit
+        - nyAdjustments
+        - trueProfit
+        - margin
+    RepairOrderLogEntry:
+      type: object
+      additionalProperties: true
+      properties:
+        id:
+          type: string
+          format: uuid
+        ro_id:
+          type: string
+          format: uuid
+        from_status:
+          type: string
+          nullable: true
+        to_status:
+          type: string
+        changed_by:
+          type: string
+          nullable: true
+        note:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+        - id
+        - to_status
+    PartOrder:
+      type: object
+      additionalProperties: true
+      properties:
+        id:
+          type: string
+          format: uuid
+        shop_id:
+          type: string
+          format: uuid
+          nullable: true
+        ro_id:
+          type: string
+          format: uuid
+          nullable: true
+        part_name:
+          type: string
+        part_number:
+          type: string
+          nullable: true
+        vendor:
+          type: string
+          nullable: true
+        quantity:
+          type: integer
+          nullable: true
+        unit_cost:
+          type: number
+          nullable: true
+        status:
+          type: string
+          nullable: true
+        ordered_date:
+          type: string
+          format: date-time
+          nullable: true
+        expected_date:
+          type: string
+          format: date-time
+          nullable: true
+        received_date:
+          type: string
+          format: date-time
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        tracking_number:
+          type: string
+          nullable: true
+        carrier:
+          type: string
+          nullable: true
+        tracking_status:
+          type: string
+          nullable: true
+        tracking_detail:
+          type: string
+          nullable: true
+        tracking_updated_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+        - id
+        - part_name
+    RepairOrderBase:
+      type: object
+      additionalProperties: true
+      properties:
+        id:
+          type: string
+          format: uuid
+        shop_id:
+          type: string
+          format: uuid
+        ro_number:
+          type: string
+          nullable: true
+        vehicle_id:
+          type: string
+          format: uuid
+          nullable: true
+        customer_id:
+          type: string
+          format: uuid
+          nullable: true
+        assigned_to:
+          type: string
+          format: uuid
+          nullable: true
+        job_type:
+          type: string
+          nullable: true
+        status:
+          type: string
+          nullable: true
+        payment_type:
+          type: string
+          nullable: true
+        payment_status:
+          type: string
+          nullable: true
+        intake_date:
+          type: string
+          format: date-time
+          nullable: true
+        estimated_delivery:
+          type: string
+          format: date-time
+          nullable: true
+        actual_delivery:
+          type: string
+          format: date-time
+          nullable: true
+        parts_cost:
+          type: number
+          nullable: true
+        labor_cost:
+          type: number
+          nullable: true
+        sublet_cost:
+          type: number
+          nullable: true
+        tax:
+          type: number
+          nullable: true
+        total:
+          type: number
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+        - id
+        - shop_id
+    RepairOrderListItem:
+      allOf:
+        - $ref: '#/components/schemas/RepairOrderBase'
+        - type: object
+          properties:
+            year:
+              type: integer
+              nullable: true
+            make:
+              type: string
+              nullable: true
+            model:
+              type: string
+              nullable: true
+            color:
+              type: string
+              nullable: true
+            customer_name:
+              type: string
+              nullable: true
+            customer_phone:
+              type: string
+              nullable: true
+    RepairOrderListResponse:
+      type: object
+      properties:
+        ros:
+          type: array
+          items:
+            $ref: '#/components/schemas/RepairOrderListItem'
+      required:
+        - ros
+    RepairOrder:
+      allOf:
+        - $ref: '#/components/schemas/RepairOrderBase'
+        - type: object
+          properties:
+            vehicle:
+              $ref: '#/components/schemas/Vehicle'
+              nullable: true
+            customer:
+              $ref: '#/components/schemas/CustomerWithPortalAccess'
+              nullable: true
+            log:
+              type: array
+              items:
+                $ref: '#/components/schemas/RepairOrderLogEntry'
+            parts:
+              type: array
+              items:
+                $ref: '#/components/schemas/PartOrder'
+            profit:
+              $ref: '#/components/schemas/ProfitSummary'
+            assigned_tech:
+              $ref: '#/components/schemas/AssignedTech'
+              nullable: true
+          required:
+            - log
+            - parts
+            - profit
+    BulkStatusRequest:
+      type: object
+      properties:
+        ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        status:
+          type: string
+        new_status:
+          type: string
+      required:
+        - ids
+    BulkStatusResponse:
+      type: object
+      properties:
+        updated:
+          type: integer
+      required:
+        - updated
+    DeliveryFeeLeg:
+      type: object
+      additionalProperties: true
+      properties:
+        enabled:
+          type: boolean
+        miles:
+          type: number
+        zone:
+          type: string
+        method:
+          type: string
+        rate:
+          type: number
+          nullable: true
+        applied_zone:
+          type: string
+          nullable: true
+        amount:
+          type: number
+      required:
+        - enabled
+        - miles
+        - zone
+        - method
+        - amount
+    DeliveryFeeBreakdown:
+      type: object
+      additionalProperties: true
+      properties:
+        fee_type:
+          type: string
+        flat_fee:
+          type: number
+        per_mile_rate:
+          type: number
+        default_zone_fee:
+          type: number
+        zone_fees:
+          type: object
+          additionalProperties:
+            type: number
+        delivery:
+          $ref: '#/components/schemas/DeliveryFeeLeg'
+        pickup:
+          $ref: '#/components/schemas/DeliveryFeeLeg'
+        total_fee:
+          type: number
+      required:
+        - fee_type
+        - flat_fee
+        - per_mile_rate
+        - default_zone_fee
+        - zone_fees
+        - delivery
+        - pickup
+        - total_fee
+    Invoice:
+      allOf:
+        - $ref: '#/components/schemas/RepairOrder'
+        - type: object
+          properties:
+            shop:
+              $ref: '#/components/schemas/Shop'
+            delivery_fee_breakdown:
+              $ref: '#/components/schemas/DeliveryFeeBreakdown'
+            invoice_total_with_delivery:
+              type: number
+          required:
+            - shop
+            - delivery_fee_breakdown
+            - invoice_total_with_delivery
+    EstimateLineItem:
+      type: object
+      additionalProperties: true
+      properties:
+        id:
+          type: string
+          format: uuid
+        ro_id:
+          type: string
+          format: uuid
+        shop_id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum:
+            - labor
+            - parts
+            - sublet
+            - other
+        description:
+          type: string
+        quantity:
+          type: number
+        unit_price:
+          type: number
+        total:
+          type: number
+        taxable:
+          type: boolean
+        sort_order:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+        - id
+        - ro_id
+        - shop_id
+        - type
+        - description
+        - quantity
+        - unit_price
+        - total
+        - taxable
+        - sort_order
+    EstimateLineItemCreateRequest:
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+            - labor
+            - parts
+            - sublet
+            - other
+        description:
+          type: string
+        quantity:
+          type: number
+        unit_price:
+          type: number
+        taxable:
+          type: boolean
+        sort_order:
+          type: integer
+    EstimateLineItemUpdateRequest:
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+            - labor
+            - parts
+            - sublet
+            - other
+        description:
+          type: string
+        quantity:
+          type: number
+        unit_price:
+          type: number
+        taxable:
+          type: boolean
+        sort_order:
+          type: integer
+    EstimateSummary:
+      type: object
+      properties:
+        subtotal:
+          type: number
+        labor_total:
+          type: number
+        parts_total:
+          type: number
+        sublet_total:
+          type: number
+        other_total:
+          type: number
+        taxable_subtotal:
+          type: number
+        tax_rate:
+          type: number
+        tax_amount:
+          type: number
+        grand_total:
+          type: number
+        line_count:
+          type: integer
+      required:
+        - subtotal
+        - labor_total
+        - parts_total
+        - sublet_total
+        - other_total
+        - taxable_subtotal
+        - tax_rate
+        - tax_amount
+        - grand_total
+        - line_count
+    EstimateItemsResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/EstimateLineItem'
+        summary:
+          $ref: '#/components/schemas/EstimateSummary'
+      required:
+        - success
+        - items
+        - summary
+    EstimateItemMutationResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        item:
+          $ref: '#/components/schemas/EstimateLineItem'
+        summary:
+          $ref: '#/components/schemas/EstimateSummary'
+      required:
+        - success
+        - item
+        - summary
+    EstimateItemDeleteResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        deleted_id:
+          type: string
+          format: uuid
+        summary:
+          $ref: '#/components/schemas/EstimateSummary'
+      required:
+        - success
+        - deleted_id
+        - summary
+    EstimateSummaryResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        summary:
+          $ref: '#/components/schemas/EstimateSummary'
+      required:
+        - success
+        - summary
+    EstimateShopRates:
+      type: object
+      properties:
+        labor_rate:
+          type: number
+        paint_rate:
+          type: number
+        parts_markup:
+          type: number
+      required:
+        - labor_rate
+        - paint_rate
+        - parts_markup
+    EstimateOpportunitiesSummary:
+      type: object
+      properties:
+        line_count:
+          type: integer
+        labor_undercut_count:
+          type: integer
+        review_count:
+          type: integer
+        total_supplement_opportunity:
+          type: number
+        current_grand_total:
+          type: number
+        projected_grand_total:
+          type: number
+        current_true_profit:
+          type: number
+        projected_true_profit:
+          type: number
+        profit_uplift:
+          type: number
+      required:
+        - line_count
+        - labor_undercut_count
+        - review_count
+        - total_supplement_opportunity
+        - current_grand_total
+        - projected_grand_total
+        - current_true_profit
+        - projected_true_profit
+        - profit_uplift
+    EstimateOpportunityFlag:
+      type: object
+      additionalProperties: true
+      properties:
+        item_id:
+          type: string
+          format: uuid
+          nullable: true
+        type:
+          type: string
+        description:
+          type: string
+        quantity:
+          type: number
+          nullable: true
+        insurance_rate:
+          type: number
+          nullable: true
+        shop_rate:
+          type: number
+          nullable: true
+        gap_per_unit:
+          type: number
+          nullable: true
+        supplement_opportunity:
+          type: number
+        message:
+          type: string
+          nullable: true
+      required:
+        - type
+        - description
+        - supplement_opportunity
+    EstimateOpportunitiesResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        shop_rates:
+          $ref: '#/components/schemas/EstimateShopRates'
+        summary:
+          $ref: '#/components/schemas/EstimateOpportunitiesSummary'
+        flags:
+          type: array
+          items:
+            $ref: '#/components/schemas/EstimateOpportunityFlag'
+      required:
+        - success
+        - shop_rates
+        - summary
+        - flags
+    TimeclockUser:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+      required:
+        - id
+        - name
+        - email
+        - role
+    TimeclockEntry:
+      type: object
+      additionalProperties: true
+      properties:
+        id:
+          type: string
+          format: uuid
+        shop_id:
+          type: string
+          format: uuid
+          nullable: true
+        user_id:
+          type: string
+          format: uuid
+          nullable: true
+        clock_in:
+          type: string
+          format: date-time
+          nullable: true
+        clock_out:
+          type: string
+          format: date-time
+          nullable: true
+        clock_in_lat:
+          type: number
+          nullable: true
+        clock_in_lng:
+          type: number
+          nullable: true
+        clock_out_lat:
+          type: number
+          nullable: true
+        clock_out_lng:
+          type: number
+          nullable: true
+        scheduled_start:
+          type: string
+          nullable: true
+        is_late:
+          type: integer
+          nullable: true
+        late_minutes:
+          type: integer
+          nullable: true
+        unscheduled_approved_by:
+          type: string
+          nullable: true
+        unscheduled_approved_at:
+          type: string
+          format: date-time
+          nullable: true
+        total_hours:
+          type: number
+          nullable: true
+        adjusted_by:
+          type: string
+          nullable: true
+        admin_note:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+        user:
+          $ref: '#/components/schemas/TimeclockUser'
+          nullable: true
+      required:
+        - id
+    TimeclockClockRequest:
+      type: object
+      properties:
+        lat:
+          type: number
+          nullable: true
+        lng:
+          type: number
+          nullable: true
+    TimeclockStatusResponse:
+      type: object
+      properties:
+        clocked_in:
+          type: boolean
+        entry:
+          $ref: '#/components/schemas/TimeclockEntry'
+          nullable: true
+      required:
+        - clocked_in
+        - entry
+    TimeclockClockInResponse:
+      type: object
+      properties:
+        entry:
+          $ref: '#/components/schemas/TimeclockEntry'
+        is_late:
+          type: integer
+        late_minutes:
+          type: integer
+        scheduled_start:
+          type: string
+          nullable: true
+      required:
+        - entry
+        - is_late
+        - late_minutes
+        - scheduled_start
+    TimeclockClockOutResponse:
+      type: object
+      properties:
+        entry:
+          $ref: '#/components/schemas/TimeclockEntry'
+        total_hours:
+          type: number
+      required:
+        - entry
+        - total_hours
+    TimeclockEntriesResponse:
+      type: object
+      properties:
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/TimeclockEntry'
+      required:
+        - entries
+    Settings:
+      type: object
+      properties:
+        sms_notifications_enabled:
+          type: boolean
+        email_notifications_enabled:
+          type: boolean
+      required:
+        - sms_notifications_enabled
+        - email_notifications_enabled
+    SettingsUpdateRequest:
+      type: object
+      properties:
+        sms_notifications_enabled:
+          type: boolean
+        email_notifications_enabled:
+          type: boolean
+    SettingsResetResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        deleted:
+          type: object
+          additionalProperties:
+            type: integer
+      required:
+        - ok
+        - deleted
+security:
+  - bearerAuth: []
+paths:
+  /api/auth/login:
+    post:
+      tags:
+        - auth
+      summary: Authenticate a shop user
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthLoginRequest'
+      responses:
+        '200':
+          description: Authenticated user and JWT
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthLoginResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/auth/register:
+    post:
+      tags:
+        - auth
+      summary: Deprecated customer registration endpoint
+      security: []
+      responses:
+        '410':
+          $ref: '#/components/responses/Gone'
+  /api/auth/forgot-password:
+    post:
+      tags:
+        - auth
+      summary: Request a password reset link
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ForgotPasswordRequest'
+      responses:
+        '200':
+          description: Password reset request accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/auth/reset-password:
+    post:
+      tags:
+        - auth
+      summary: Reset a password with a valid token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+      responses:
+        '200':
+          description: Password reset completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/auth/me:
+    get:
+      tags:
+        - auth
+      summary: Get the current authenticated user and shop
+      responses:
+        '200':
+          description: Current authenticated user and shop
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthMeResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/auth/logout:
+    post:
+      tags:
+        - auth
+      summary: Revoke the current session token
+      responses:
+        '200':
+          description: Current token revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/auth/logout-all:
+    post:
+      tags:
+        - auth
+      summary: Revoke all tokens issued before now for the current user
+      responses:
+        '200':
+          description: All user sessions revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/ros:
+    get:
+      tags:
+        - ros
+      summary: List repair orders for the current shop
+      parameters:
+        - in: query
+          name: search
+          schema:
+            type: string
+        - in: query
+          name: status
+          schema:
+            type: string
+        - in: query
+          name: tech_id
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: assigned_to
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: type
+          schema:
+            type: string
+        - in: query
+          name: job_type
+          schema:
+            type: string
+        - in: query
+          name: date_from
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: date_to
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: payment_status
+          schema:
+            type: string
+        - in: query
+          name: payment_type
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Repair orders for the current shop
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RepairOrderListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/ros/from-schedule/{scheduleId}:
+    post:
+      tags:
+        - ros
+      summary: Create a repair order from a schedule entry
+      parameters:
+        - in: path
+          name: scheduleId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '201':
+          description: Repair order created from the schedule entry
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RepairOrder'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/ros/bulk-status:
+    post:
+      tags:
+        - ros
+      summary: Bulk update repair order status
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkStatusRequest'
+      responses:
+        '200':
+          description: Repair orders updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkStatusResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/ros/{id}:
+    get:
+      tags:
+        - ros
+      summary: Get a repair order by id
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Enriched repair order
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RepairOrder'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/ros/{id}/invoice:
+    get:
+      tags:
+        - ros
+      summary: Get invoice preview data for a repair order
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Invoice preview data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invoice'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/customers:
+    get:
+      tags:
+        - customers
+      summary: List customers for the current shop
+      responses:
+        '200':
+          description: Customers ordered by name
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomersListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    post:
+      tags:
+        - customers
+      summary: Create a customer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerCreateRequest'
+      responses:
+        '201':
+          description: Customer created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Customer'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/customers/{id}:
+    get:
+      tags:
+        - customers
+      summary: Get a customer with linked vehicles and repair orders
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Customer details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerDetail'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    put:
+      tags:
+        - customers
+      summary: Update a customer
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerUpdateRequest'
+      responses:
+        '200':
+          description: Updated customer, or null when the id is missing
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Customer'
+                nullable: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    delete:
+      tags:
+        - customers
+      summary: Delete a customer
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Customer deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/notifications:
+    get:
+      tags:
+        - notifications
+      summary: List unread notifications for the current user
+      responses:
+        '200':
+          description: Latest unread notifications
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationsListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/notifications/read-all:
+    patch:
+      tags:
+        - notifications
+      summary: Mark all current-user notifications as read
+      responses:
+        '200':
+          description: Notifications marked as read
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/notifications/{id}/read:
+    patch:
+      tags:
+        - notifications
+      summary: Mark a notification as read
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Notification marked as read
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/invoice/public/{token}:
+    get:
+      tags:
+        - invoice
+      summary: Download a public invoice PDF by token
+      security: []
+      parameters:
+        - in: path
+          name: token
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Invoice PDF
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '410':
+          $ref: '#/components/responses/Gone'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/invoice/{roId}:
+    get:
+      tags:
+        - invoice
+      summary: Download an invoice PDF for a repair order
+      parameters:
+        - in: path
+          name: roId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Invoice PDF
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/estimate-items/{roId}:
+    get:
+      tags:
+        - estimateLineItems
+      summary: List estimate line items for a repair order
+      parameters:
+        - in: path
+          name: roId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Estimate line items and current summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EstimateItemsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    post:
+      tags:
+        - estimateLineItems
+      summary: Create an estimate line item
+      parameters:
+        - in: path
+          name: roId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EstimateLineItemCreateRequest'
+      responses:
+        '201':
+          description: Estimate line item created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EstimateItemMutationResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/estimate-items/{roId}/{itemId}:
+    put:
+      tags:
+        - estimateLineItems
+      summary: Update an estimate line item
+      parameters:
+        - in: path
+          name: roId
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - in: path
+          name: itemId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EstimateLineItemUpdateRequest'
+      responses:
+        '200':
+          description: Estimate line item updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EstimateItemMutationResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    delete:
+      tags:
+        - estimateLineItems
+      summary: Delete an estimate line item
+      parameters:
+        - in: path
+          name: roId
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - in: path
+          name: itemId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Estimate line item deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EstimateItemDeleteResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/estimate-items/{roId}/summary:
+    get:
+      tags:
+        - estimateLineItems
+      summary: Get estimate totals for a repair order
+      parameters:
+        - in: path
+          name: roId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Estimate summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EstimateSummaryResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/estimate-items/{roId}/opportunities:
+    get:
+      tags:
+        - estimateLineItems
+      summary: Analyze estimate profit opportunities
+      parameters:
+        - in: path
+          name: roId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Profit opportunity analysis
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EstimateOpportunitiesResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/timeclock/status:
+    get:
+      tags:
+        - timeclock
+      summary: Get the current user's clock-in status
+      responses:
+        '200':
+          description: Current clock-in status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TimeclockStatusResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/timeclock/in:
+    post:
+      tags:
+        - timeclock
+      summary: Clock in the current user
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TimeclockClockRequest'
+      responses:
+        '201':
+          description: User clocked in
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TimeclockClockInResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/timeclock/clock-in:
+    post:
+      tags:
+        - timeclock
+      summary: Clock in the current user using the alias route
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TimeclockClockRequest'
+      responses:
+        '201':
+          description: User clocked in
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TimeclockClockInResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/timeclock/out:
+    post:
+      tags:
+        - timeclock
+      summary: Clock out the current user
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TimeclockClockRequest'
+      responses:
+        '200':
+          description: User clocked out
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TimeclockClockOutResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/timeclock/entries:
+    get:
+      tags:
+        - timeclock
+      summary: List timeclock entries
+      parameters:
+        - in: query
+          name: user_id
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: date_from
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: date_to
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Timeclock entries visible to the current user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TimeclockEntriesResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/settings:
+    get:
+      tags:
+        - settings
+      summary: Get shop notification settings
+      responses:
+        '200':
+          description: Current shop settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Settings'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    patch:
+      tags:
+        - settings
+      summary: Update shop notification settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SettingsUpdateRequest'
+      responses:
+        '200':
+          description: Updated shop settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Settings'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/settings/reset/{section}:
+    post:
+      tags:
+        - settings
+      summary: Reset a shop data section
+      parameters:
+        - in: path
+          name: section
+          required: true
+          schema:
+            type: string
+            enum:
+              - ros
+              - customers
+              - vehicles
+              - timeclock
+              - all
+      responses:
+        '200':
+          description: Reset operation completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SettingsResetResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'

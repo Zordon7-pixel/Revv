@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "scripts": {
     "build": "cd frontend && npm install --include=dev && npm run build",
+    "openapi:generate": "bash scripts/openapi-generate.sh",
     "start": "cd backend && node src/app.js",
     "install:all": "cd backend && npm install && cd ../frontend && npm install",
     "seed:demo": "cd backend && node ../scripts/seed-demo.js",
@@ -15,5 +16,8 @@
   "dependencies": {
     "bcryptjs": "^3.0.3",
     "uuid": "^13.0.0"
+  },
+  "devDependencies": {
+    "openapi-typescript": "^7.4.4"
   }
 }
