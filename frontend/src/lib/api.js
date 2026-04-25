@@ -1,3 +1,6 @@
+// @ts-check
+/** @typedef {import('@revv/api-types').paths} RevvPaths */
+
 import axios from 'axios'
 
 const api = axios.create({ baseURL: '/api' })

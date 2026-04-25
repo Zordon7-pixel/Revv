@@ -17,6 +17,9 @@ const app = express();
 
 // Trust Railway's load balancer proxy (fixes X-Forwarded-For for rate limiting)
 app.set('trust proxy', 1);
+const sentry = require('./lib/sentry');
+sentry.init();
+app.use(sentry.requestHandler());
 
 // CORS — restrict to known origin in production
 const allowedOrigins = process.env.CORS_ORIGIN
@@ -107,6 +110,7 @@ app.use('/api/inventory', require('./routes/inventory'));
 app.use('/api/claim-tracker', require('./routes/claimTracker'));
 app.use('/api/waitlist', require('./routes/waitlist'));
 app.use('/api/v1/leads', require('./routes/leads'));
+app.use(sentry.errorHandler());
 
 // Serve uploaded files
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
