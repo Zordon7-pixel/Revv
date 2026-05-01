@@ -1,6 +1,6 @@
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { LayoutDashboard, ArrowLeft, ClipboardList, ClipboardCheck, Users, BarChart3, Settings, UserCog, LogOut, Menu, Wrench, Clock, CalendarDays, Package, CreditCard, Radar, TrendingUp, X, HelpCircle, Star, ChevronDown } from 'lucide-react'
+import { LayoutDashboard, ArrowLeft, ClipboardList, ClipboardCheck, Users, BarChart3, Settings, UserCog, LogOut, Menu, Wrench, Clock, CalendarDays, Package, CreditCard, Radar, TrendingUp, X, HelpCircle, Star, ChevronDown, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import FeedbackButton from './FeedbackButton'
 import HelpPanel from './HelpPanel'
 import NotificationBell from './NotificationBell'
@@ -60,6 +60,9 @@ export default function Layout() {
   const { t } = useLanguage()
   const { theme, setTheme } = useTheme()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try { return localStorage.getItem('revv_sidebar_collapsed') === '1' } catch { return false }
+  })
   const [helpOpen, setHelpOpen] = useState(false)
   const [currentUserName, setCurrentUserName] = useState('')
   const [currentUserEmail, setCurrentUserEmail] = useState('')
@@ -103,6 +106,14 @@ export default function Layout() {
 
   function openUserArea() {
     setUserMenuOpen((prev) => !prev)
+  }
+
+  function toggleSidebarCollapsed() {
+    setSidebarCollapsed((prev) => {
+      const next = !prev
+      try { localStorage.setItem('revv_sidebar_collapsed', next ? '1' : '0') } catch {}
+      return next
+    })
   }
 
   function goBackOrDashboard() {
@@ -323,7 +334,9 @@ export default function Layout() {
   return (
     <div className="app-shell flex bg-[#0f1117] overflow-hidden">
       {/* Desktop sidebar */}
-      <aside className="hidden md:flex flex-col w-56 bg-[#1a1d2e] border-r border-[#2a2d3e] flex-shrink-0 relative z-[70]">
+      <aside
+        className={`${sidebarCollapsed ? 'hidden' : 'hidden md:flex'} flex-col w-56 bg-[#1a1d2e] border-r border-[#2a2d3e] flex-shrink-0 relative z-[70]`}
+      >
         <SidebarContent />
       </aside>
 
@@ -393,6 +406,15 @@ export default function Layout() {
         {/* Desktop navbar */}
         <header className="hidden md:flex items-center justify-between gap-3 px-6 py-3 bg-[#1a1d2e] border-b border-[#2a2d3e]">
           <div className="flex items-center gap-2">
+            <button
+              onClick={toggleSidebarCollapsed}
+              className="h-9 w-9 rounded-lg border border-[#2a2d3e] bg-[#0f1117] text-slate-300 hover:text-white hover:border-indigo-400 transition-colors flex items-center justify-center"
+              aria-label={sidebarCollapsed ? 'Show sidebar' : 'Hide sidebar'}
+              aria-pressed={sidebarCollapsed}
+              title={sidebarCollapsed ? 'Show sidebar' : 'Hide sidebar'}
+            >
+              {sidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+            </button>
             <button
               onClick={goBackOrDashboard}
               className="h-9 px-3 rounded-lg border border-[#2a2d3e] bg-[#0f1117] text-slate-300 hover:text-white hover:border-indigo-400 transition-colors flex items-center gap-2"

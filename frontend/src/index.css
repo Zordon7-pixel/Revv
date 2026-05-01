@@ -140,3 +140,24 @@ html.theme-light input[type="month"],
 html.theme-light input[type="week"] {
   color-scheme: light;
 }
+
+/* Mobile typing reliability — defensive rules for "can't see what I'm writing" reports.
+   - 16px minimum on iOS prevents Safari's auto-zoom on focus, which can shift the
+     focused input out of view inside fixed modals.
+   - Explicit caret-color guards against caret being invisible if currentColor inherits
+     a transparent or near-bg value somewhere in the cascade.
+   - scroll-margin-bottom keeps the focused input above the on-screen keyboard when the
+     browser scrolls it into view. */
+@media (max-width: 767px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]),
+  textarea,
+  select {
+    font-size: max(16px, 1em);
+  }
+}
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]),
+textarea {
+  caret-color: currentColor;
+  scroll-margin-bottom: 30vh;
+}
