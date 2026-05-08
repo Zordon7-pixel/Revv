@@ -74,6 +74,38 @@ function normalizedPaymentStatus(status, paymentReceived) {
   return paymentReceived ? 'succeeded' : 'unpaid';
 }
 
+function shopRoSuffix(shopId) {
+  return crypto
+    .createHash('sha1')
+    .update(String(shopId || ''))
+    .digest('hex')
+    .slice(0, 8)
+    .toUpperCase();
+}
+
+async function getNextRoNumber(shopId, offset = 0) {
+  const year = new Date().getUTCFullYear();
+  const maxRow = await dbGet(
+    `
+      SELECT COALESCE(
+        MAX(
+          CASE
+            WHEN ro_number ~ $2 THEN CAST(SPLIT_PART(ro_number, '-', 3) AS INTEGER)
+            ELSE NULL
+          END
+        ),
+        0
+      )::int AS n
+      FROM repair_orders
+      WHERE shop_id = $1
+    `,
+    [shopId, `^RO-${year}-[0-9]+(-[A-F0-9]{8})?$`]
+  );
+
+  const nextNum = (maxRow?.n || 0) + 1 + offset;
+  return `RO-${year}-${String(nextNum).padStart(4, '0')}-${shopRoSuffix(shopId)}`;
+}
+
 function queueStatusSMS(roId, shopId, toStatus) {
   setImmediate(async () => {
     try {
@@ -781,25 +813,7 @@ router.post('/from-schedule/:scheduleId', auth, requireTechnician, async (req, r
     let attempts = 0;
 
     while (attempts < 5) {
-      const maxRow = await dbGet(
-        `
-          SELECT COALESCE(
-            MAX(
-              CASE
-                WHEN ro_number ~ '^RO-[0-9]{4}-[0-9]+$' THEN CAST(SPLIT_PART(ro_number, '-', 3) AS INTEGER)
-                ELSE NULL
-              END
-            ),
-            0
-          )::int AS n
-          FROM repair_orders
-          WHERE shop_id = $1
-        `,
-        [req.user.shop_id]
-      );
-
-      const nextNum = (maxRow?.n || 0) + 1;
-      roNumber = `RO-2026-${String(nextNum).padStart(4, '0')}`;
+      roNumber = await getNextRoNumber(req.user.shop_id, attempts);
       roId = uuidv4();
 
       try {
@@ -1579,24 +1593,7 @@ router.post('/', auth, requireTechnician, roLimitGuard, async (req, res) => {
     const today = new Date().toISOString().split('T')[0];
     const panelsJson = Array.isArray(damaged_panels) ? JSON.stringify(damaged_panels) : (damaged_panels || '[]');
     while (attempts < 5) {
-      const maxRow = await dbGet(
-        `
-          SELECT COALESCE(
-            MAX(
-              CASE
-                WHEN ro_number ~ '^RO-[0-9]{4}-[0-9]+$' THEN CAST(SPLIT_PART(ro_number, '-', 3) AS INTEGER)
-                ELSE NULL
-              END
-            ),
-            0
-          )::int as n
-          FROM repair_orders
-          WHERE shop_id = $1
-        `,
-        [req.user.shop_id]
-      );
-      const nextNum = (maxRow?.n || 0) + 1;
-      roNumber = `RO-2026-${String(nextNum).padStart(4, '0')}`;
+      roNumber = await getNextRoNumber(req.user.shop_id, attempts);
       roId = uuidv4();
       try {
         await dbRun(`
