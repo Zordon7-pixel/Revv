@@ -53,6 +53,13 @@ function init() {
     release: process.env.RAILWAY_GIT_COMMIT_SHA || 'local',
     sampleRate: 1.0,
     tracesSampleRate: 0,
+    // @sentry/node v7's Undici instrumentation can crash Node 22 fetch calls
+    // (Resend password-reset mail path) with `request.headers.split is not a function`.
+    // Keep request/error capture, but disable only the fetch/undici auto-integration.
+    integrations: (integrations) => integrations.filter((integration) => {
+      const name = String(integration?.name || '').toLowerCase();
+      return !name.includes('undici') && !name.includes('fetch');
+    }),
     initialScope: { tags: { platform: 'backend' } },
     beforeSend,
   });
