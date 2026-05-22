@@ -199,8 +199,30 @@ export default function AddROModal({ onClose, onSaved }) {
     }))
   }
 
+  function useSavedVehicle() {
+    const fallbackVehicle = customerVehicles[0] || null
+    setForm((prev) => {
+      const selected = customerVehicles.find((v) => v.id === prev.vehicle_id) || fallbackVehicle
+      return {
+        ...prev,
+        new_vehicle: false,
+        vehicle_id: selected?.id || prev.vehicle_id || '',
+        year: selected?.year || prev.year || '',
+        make: selected?.make || prev.make || '',
+        model: selected?.model || prev.model || '',
+        vin: selected?.vin || prev.vin || '',
+        color: selected?.color || prev.color || '',
+        plate: selected?.plate || prev.plate || '',
+      }
+    })
+  }
+
   async function submit() {
     // Validate before hitting the API
+    if (autoFillLoading) {
+      alert('Still loading customer vehicle defaults. Please try again in a moment.')
+      return
+    }
     if (!form.new_customer && !form.customer_id) {
       alert('Please select an existing customer or switch to new customer.')
       return
@@ -363,7 +385,7 @@ export default function AddROModal({ onClose, onSaved }) {
                   <div className="flex gap-2">
                     <button
                       type="button"
-                      onClick={() => set('new_vehicle', false)}
+                      onClick={useSavedVehicle}
                       className={`flex-1 py-2 rounded-lg text-xs font-medium transition-colors ${!form.new_vehicle ? 'bg-indigo-600 text-white' : 'bg-[#0f1117] text-slate-400 border border-[#2a2d3e]'}`}
                     >
                       Saved Vehicle
@@ -533,6 +555,7 @@ export default function AddROModal({ onClose, onSaved }) {
                 if (form.new_customer && !form.customer_name.trim()) { alert(`${t('common.name')} is required.`); return }
               }
               if (step === 2) {
+                if (autoFillLoading) { alert('Still loading customer vehicle defaults. Please try again in a moment.'); return }
                 if (!form.new_vehicle && !form.vehicle_id) { alert('Select a saved vehicle or switch to New vehicle.'); return }
                 if (form.new_vehicle && (!form.year || !form.make.trim() || !form.model.trim())) { alert(`${t('common.year')}, ${t('common.make').toLowerCase()}, and ${t('common.model').toLowerCase()} are required.`); return }
               }
