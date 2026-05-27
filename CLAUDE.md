@@ -328,3 +328,19 @@ Start command: `cd backend && node src/db/seed.js; node src/app.js`
 cd frontend && npm run test:run  # 11/11 passed
 cd frontend && npm run build     # clean production build
 ```
+
+---
+
+## Dispatch Log — 2026-05-27 Feedback b7f286d6 Assistant Access Required
+
+**Status:** Shipped. Fixed the Parts On Order route returning `assistant access required` for technician/employee-level roles by using the existing technician access gate instead of the assistant/admin gate.
+
+**Files changed**
+- `backend/src/routes/parts.js` — changed `/api/parts/all-pending` authorization from `requireAssistant` to `requireTechnician`, matching the page's intended owner/admin/technician/employee/staff access.
+
+**Verification**
+```
+node --check backend/src/routes/parts.js
+cd frontend && npm run test:run   # 11/11 passed
+cd frontend && npm run build      # clean production build
+```
