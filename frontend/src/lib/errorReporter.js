@@ -17,6 +17,17 @@ const seen = new Map();
 const recentClicks = []; // last 5 click descriptors, newest last
 const RECENT_CLICKS_MAX = 5;
 
+export function shouldAutoReportAlert(message) {
+  const text = String(message ?? '').trim();
+  if (!text) return false;
+
+  // Intentional form-validation alerts are expected UX, not production bugs.
+  // Reporting them created false high-priority feedback such as "[AUTO] Name is required."
+  if (/^.+\s(?:is|are) required\.?$/i.test(text)) return false;
+
+  return true;
+}
+
 function buildPayload(message, source, context = {}) {
   return {
     app: 'revv',
@@ -91,12 +102,14 @@ export function initErrorReporter() {
         message: text,
         data: { last_click: lastClick, url: window.location.href },
       });
-      report(
-        buildPayload(text, 'window.alert', {
-          last_click: lastClick,
-          recent_clicks: recentClicks.slice(),
-        })
-      );
+      if (shouldAutoReportAlert(text)) {
+        report(
+          buildPayload(text, 'window.alert', {
+            last_click: lastClick,
+            recent_clicks: recentClicks.slice(),
+          })
+        );
+      }
       // Preserve original popup behavior so the user still sees it.
       return originalAlert(message);
     };
