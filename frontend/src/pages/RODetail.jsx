@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Pencil, Save, X, Package, PackageCheck, PackageX, Plus, CheckCircle, AlertCircle, Clock, Truck, RefreshCw, ExternalLink, Car, DollarSign, ClipboardList, Smartphone, AlertTriangle, Copy, Printer, User, Phone, MessageSquare, Mail, Users, CreditCard, Search, Camera, Trash2, ChevronDown, ChevronUp } from 'lucide-react'
 import api from '../lib/api'
+import { tryCopyToClipboard } from '../lib/clipboard'
 import { STATUS_COLORS, STATUS_LABELS } from './RepairOrders'
 import StatusBadge from '../components/StatusBadge'
 import PaymentStatusBadge, { normalizePaymentStatus } from '../components/PaymentStatusBadge'
@@ -568,8 +569,8 @@ export default function RODetail() {
       const { data } = await api.post(`/ros/${id}/approval-link`)
       const url = data.link || `${window.location.origin}/approve/${data.token}`
       setApprovalLink(url)
-      await navigator.clipboard.writeText(url)
-      alert('Approval link copied to clipboard.')
+      const copied = await tryCopyToClipboard(url)
+      alert(copied ? 'Approval link copied to clipboard.' : 'Approval link generated. Copy it from the highlighted box below.')
     } catch (err) {
       alert(err?.response?.data?.error || 'Could not generate approval link')
     } finally {

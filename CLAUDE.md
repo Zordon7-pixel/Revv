@@ -309,3 +309,22 @@ Start command: `cd backend && node src/db/seed.js; node src/app.js`
    - Files: `scripts/triage-bundle.sh`, `package.json`, `scripts/README.md`
    - Verification: `npm run triage:bundle -- --no-network --issue "self-test triage"` generated bundle + tarball in `~/triage-bundles`.
    - Status: DONE + VERIFIED
+
+---
+
+## Dispatch Log — 2026-05-27 Approval Link Clipboard Fallback
+
+**Status:** DONE + VERIFIED
+
+**Scope:** Fix false "Could not generate approval link" failures when the backend generated the link successfully but browser clipboard access was denied/unavailable.
+
+**Files changed**
+- `frontend/src/pages/RODetail.jsx` — approval-link generation now keeps the generated link visible and only downgrades the success alert if clipboard copy fails.
+- `frontend/src/lib/clipboard.js` — safe clipboard helper that returns false instead of throwing.
+- `frontend/src/lib/__tests__/clipboard.test.js` — regression coverage for success, denied clipboard access, and unavailable Clipboard API.
+
+**Verification**
+```
+cd frontend && npm run test:run  # 11/11 passed
+cd frontend && npm run build     # clean production build
+```
