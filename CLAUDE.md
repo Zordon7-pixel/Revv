@@ -433,3 +433,37 @@ git diff --check  # passed
 - No production DB writes, seed/reset commands, or destructive SQL were run.
 - Miles Automotive data untouched.
 - No push performed from this branch.
+
+---
+
+## Dispatch Log — 2026-06-01 Phase 1 Supplement Finder
+
+**Status:** DONE + VERIFIED
+
+**Time**
+- 2026-06-01 12:42:58 EDT
+- 2026-06-01 16:42:58 UTC
+
+**Scope**
+- Added RO-detail Supplement Finder panel for insurance ROs. It analyzes stored estimate-builder line items through `/api/insurance-ocr/analyze`, or uploads an insurer estimate through `/api/insurance-ocr/parse` then analyzes extracted lines.
+- Added per-RO margin summary from the analyze response: insurer allowed, shop value, and supplement opportunity.
+- Added dashboard month-to-date supplement opportunity tile backed by a shop-scoped aggregate endpoint. Phase 1 computes from stored estimate line items because no shop-scoped persisted analyze-result table exists.
+
+**Files changed**
+- `backend/src/routes/dashboard.js`
+- `frontend/src/components/SupplementFinderPanel.jsx`
+- `frontend/src/pages/Dashboard.jsx`
+- `frontend/src/pages/RODetail.jsx`
+- `CLAUDE.md`
+
+**Verification**
+```
+cd frontend && npm run test:run  # 11 files, 20 tests passed
+cd backend && npm test  # no backend test script configured
+cd backend && node --check src/routes/dashboard.js src/routes/insuranceOcr.js src/routes/estimateLineItems.js  # passed
+cd frontend && npm run build  # production build passed with existing chunk-size warnings
+```
+
+**Data safety**
+- No migrations, seed scripts, reset scripts, or destructive DB commands were run.
+- New backend aggregate is scoped to `req.user.shop_id` and uses parameterized SQL.

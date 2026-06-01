@@ -1,7 +1,46 @@
 const router = require('express').Router();
 const { dbGet, dbAll } = require('../db');
 const auth = require('../middleware/auth');
-const { requireTechnician } = require('../middleware/roles');
+const { requireAdmin, requireTechnician } = require('../middleware/roles');
+
+router.get('/supplements/monthly-opportunity', auth, requireAdmin, async (req, res) => {
+  try {
+    const shopId = req.user.shop_id;
+
+    // Phase 1 does not persist analyze snapshots. Until a shop-scoped analyze-results
+    // table exists, compute the month-to-date opportunity from stored RO estimate lines.
+    const row = await dbGet(
+      `SELECT
+         COALESCE(SUM(
+           CASE
+             WHEN LOWER(COALESCE(eli.type, '')) = 'labor'
+              AND COALESCE(s.labor_rate, 0) > COALESCE(eli.unit_price, 0)
+             THEN (COALESCE(s.labor_rate, 0) - COALESCE(eli.unit_price, 0)) * COALESCE(eli.quantity, 0)
+             ELSE 0
+           END
+         ), 0)::numeric(12,2) AS total_supplement_opportunity,
+         COUNT(DISTINCT ro.id)::int AS ro_count
+       FROM repair_orders ro
+       JOIN estimate_line_items eli ON eli.ro_id = ro.id AND eli.shop_id = ro.shop_id
+       JOIN shops s ON s.id = ro.shop_id
+       WHERE ro.shop_id = $1
+         AND ro.created_at >= DATE_TRUNC('month', NOW())
+         AND ro.created_at < DATE_TRUNC('month', NOW()) + INTERVAL '1 month'`,
+      [shopId]
+    );
+
+    return res.json({
+      success: true,
+      month_start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString(),
+      total_supplement_opportunity: Number(row?.total_supplement_opportunity || 0),
+      ro_count: Number(row?.ro_count || 0),
+      source: 'estimate_line_items',
+    });
+  } catch (err) {
+    console.error('[Dashboard] supplement monthly opportunity error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
 router.get('/weekly', auth, requireTechnician, async (req, res) => {
   try {

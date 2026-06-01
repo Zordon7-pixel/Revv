@@ -18,6 +18,7 @@ import { useLanguage } from '../contexts/LanguageContext'
 import VehicleDiagram from '../components/VehicleDiagram'
 import ClaimStatusCard from '../components/ClaimStatusCard'
 import InsurancePanel from '../components/InsurancePanel'
+import SupplementFinderPanel from '../components/SupplementFinderPanel'
 import ROOperations from '../components/ROOperations'
 import ClaimTrackerPanel from '../components/ClaimTrackerPanel'
 import { optimizeImageForUpload } from '../lib/imageUpload'
@@ -1921,6 +1922,14 @@ export default function RODetail() {
           }}
           isAdmin={isAdmin()}
           onOpenStorage={() => setActiveTab('storage')}
+        />
+      )}
+
+      {userIsAdmin && (ro.payment_type === 'insurance' || ro.claim_number || ro.insurance_claim_number) && (
+        <SupplementFinderPanel
+          roId={id}
+          importedItems={estimateImport.items}
+          importedSummary={estimateImport.summary}
         />
       )}
 
