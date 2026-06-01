@@ -11,6 +11,7 @@
 
 import * as Sentry from '@sentry/react';
 import api from './api';
+import { safeExternalErrorMessage } from './safeErrors';
 
 const COOLDOWN_MS = 10_000; // dedupe same error within 10s
 const seen = new Map();
@@ -28,15 +29,22 @@ export function shouldAutoReportAlert(message) {
   return true;
 }
 
+export function sanitizeAutoReportMessage(message) {
+  const raw = String(message ?? '').trim();
+  if (!raw) return '';
+  return safeExternalErrorMessage({ message: raw }, raw).slice(0, 1000);
+}
+
 function buildPayload(message, source, context = {}) {
+  const safeMessage = sanitizeAutoReportMessage(message);
   return {
     app: 'revv',
     tester_name: 'Auto-Reporter',
     category: 'bug',
     priority: 'high',
-    message: `[AUTO] ${message}`,
+    message: `[AUTO] ${safeMessage}`,
     expected: 'No error',
-    actual: message,
+    actual: safeMessage,
     context: JSON.stringify({
       url: window.location.href,
       userAgent: navigator.userAgent,
@@ -94,7 +102,7 @@ export function initErrorReporter() {
   if (typeof window.alert === 'function' && !window.alert.__revvPatched) {
     const originalAlert = window.alert.bind(window);
     const patched = (message) => {
-      const text = String(message ?? '').slice(0, 1000);
+      const text = sanitizeAutoReportMessage(message);
       const lastClick = recentClicks[recentClicks.length - 1] || null;
       Sentry.addBreadcrumb({
         category: 'ui.alert',
@@ -111,7 +119,7 @@ export function initErrorReporter() {
         );
       }
       // Preserve original popup behavior so the user still sees it.
-      return originalAlert(message);
+      return originalAlert(text);
     };
     patched.__revvPatched = true;
     window.alert = patched;

@@ -433,3 +433,36 @@ git diff --check  # passed
 - No production DB writes, seed/reset commands, or destructive SQL were run.
 - Miles Automotive data untouched.
 - No push performed from this branch.
+
+## Dispatch Log — 2026-06-01 Feedback 6d314a80 OpenAI 401 Auto-Report Sanitization
+
+**Status:** built + verified; ready to ship
+
+**Time**
+- 2026-06-01 12:43:16 EDT
+- 2026-06-01 16:43:16 UTC
+
+**Scope**
+- Auto-feedback reporter now sanitizes provider credential errors before Sentry breadcrumbs, feedback payloads, and alert display.
+- Feedback API now sanitizes inbound OpenAI/API-key failure text before inserting feedback rows, preventing raw provider key fragments from being stored if a caller misses frontend wrapping.
+- Added frontend and backend regressions for the exact `[AUTO] 401 Incorrect API key provided: sk-proj-...` feedback shape.
+
+**Files changed**
+- `backend/src/routes/feedback.js`
+- `backend/src/__tests__/feedback.sanitize.test.js`
+- `frontend/src/lib/errorReporter.js`
+- `frontend/src/lib/__tests__/errorReporter.test.js`
+- `CLAUDE.md`
+
+**Verification**
+```
+node --test src/__tests__/feedback.sanitize.test.js src/__tests__/insuranceOcr.notifyOps.test.js src/__tests__/role-guards.test.js  # 5 tests passed
+cd frontend && npm run test:run -- src/lib/__tests__/errorReporter.test.js src/lib/__tests__/phase31Safety.test.js  # 2 files, 5 tests passed
+npm run build  # production build passed with existing chunk-size warnings
+node --check backend/src/routes/feedback.js && git diff --check  # passed
+rg "Incorrect API key provided|platform\\.openai\\.com/account/api-keys|sk-proj" backend/src frontend/src -g '!**/__tests__/**'  # zero production-code matches
+```
+
+**Data safety**
+- No production DB writes, seed/reset commands, or destructive SQL were run.
+- No customer/shop production data was mutated.
