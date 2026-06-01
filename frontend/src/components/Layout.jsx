@@ -28,6 +28,7 @@ const allNav = [
   { to: '/inventory',    icon: Package,         labelKey: 'nav.inventory',    group: 'operations', adminOnly: false },
   { to: '/storage',      icon: Package,         labelKey: 'nav.storage',      group: 'operations', adminOnly: false },
   { to: '/timeclock',    icon: Clock,           labelKey: 'nav.timeclock',    group: 'core', adminOnly: false },
+  { to: '/floor',        icon: Wrench,          label: 'Floor Mode',          group: 'operations', techOnly: true },
   { to: '/tech',         icon: Wrench,          labelKey: 'nav.techView',     group: 'operations', nonAdminOnly: true },
   { to: '/adas',         icon: Radar,           labelKey: 'nav.adas',         group: 'operations', adminOnly: true, employeeAllowed: true },
   { to: '/vehicle-diagnostics', icon: ClipboardCheck, labelKey: 'nav.vehicleDiagnostics', group: 'operations', adminOnly: false },
@@ -187,14 +188,16 @@ export default function Layout() {
   const nav = useMemo(() => {
     return allNav.filter((n) => {
       if (assistant) {
-        if (n.to === '/team' || n.to === '/users' || n.to === '/settings' || n.to === '/tech') return false
+        if (n.to === '/team' || n.to === '/users' || n.to === '/settings' || n.to === '/tech' || n.to === '/floor') return false
         return true
       }
       if (employeeRestrictedNav) {
+        if (n.techOnly) return true
         if (n.employeeAllowed) return true
         if (n.to === '/storage' || n.to === '/tech') return false
         if (n.group === 'financial' || n.group === 'insights') return false
       }
+      if (n.techOnly) return false
       if (n.nonAdminOnly) return !admin
       if (n.ownerOnly) return role === 'owner' || role === 'admin'
       if (n.adminOnly) return admin

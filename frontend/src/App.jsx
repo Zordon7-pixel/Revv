@@ -26,6 +26,7 @@ import EstimateBuilder from './pages/EstimateBuilder'
 import TechWorkload from './pages/TechWorkload'
 import Payments from './pages/Payments'
 import TechView from './pages/TechView'
+import FloorMode from './pages/FloorMode'
 import ApprovalPortal from './pages/ApprovalPortal'
 import BookAppointment from './pages/BookAppointment'
 import SuperAdminLogin from './pages/SuperAdminLogin'
@@ -95,7 +96,7 @@ function EmployeeOnlyRoute({ children }) {
   if (!getToken()) return <Navigate to="/login" />
   try {
     const role = getTokenPayload()?.role
-    if (!['employee', 'staff'].includes(role)) return <Navigate to="/" />
+    if (!['technician', 'employee', 'staff'].includes(role)) return <Navigate to="/" />
   } catch {
     return <Navigate to="/" />
   }
@@ -151,6 +152,7 @@ export default function App() {
               <Route path="payments" element={<ManagementRoute><Payments /></ManagementRoute>} />
               <Route path="storage" element={<ManagementRoute><StorageHold /></ManagementRoute>} />
               <Route path="tech" element={<EmployeeOnlyRoute><TechView /></EmployeeOnlyRoute>} />
+              <Route path="floor" element={<EmployeeOnlyRoute><FloorMode /></EmployeeOnlyRoute>} />
               <Route path="ros/:id" element={<RODetail />} />
               <Route path="estimate-builder/:roId" element={<EstimateBuilder />} />
               <Route path="ros/:id/inspection/:inspectionId" element={<InspectionEditor />} />

@@ -495,3 +495,38 @@ git diff --check
 **Data safety**
 - No migrations, seed, reset, or destructive scripts were run.
 - No secrets were read, logged, or changed.
+
+## Dispatch Log — 2026-06-01 Phase 3 Floor Mode
+
+**Status:** built + verified
+
+**Time**
+- 2026-06-01 13:05:22 EDT
+- 2026-06-01 17:05:22 UTC
+
+**Scope**
+- Added `/floor` technician tablet route showing the logged-in tech's active assigned ROs grouped by parts, repair, paint, and QC.
+- Added one-tap optimistic status advance through parts -> repair -> paint -> QC -> delivery using the existing status-update endpoint with rollback/error handling.
+- Added floor clock in/out control via existing timeclock endpoints and quick photo access via `ROPhotos`.
+- Added technician-only nav entry and aligned technician role access for the existing tech route guard.
+
+**Files changed**
+- `frontend/src/pages/FloorMode.jsx`
+- `frontend/src/pages/__tests__/FloorMode.test.jsx`
+- `frontend/src/App.jsx`
+- `frontend/src/components/Layout.jsx`
+- `frontend/src/pages/TechView.jsx`
+- `CLAUDE.md`
+
+**Verification**
+```
+cd frontend && npm run test:run  # 12 files, 23/23 tests passed
+cd backend && node --test src/__tests__/*.test.js  # 5/5 tests passed
+cd frontend && npm run build  # production build passed with existing chunk-size warnings
+cd frontend && npm run test:run -- FloorMode.test.jsx  # 1 file, 2/2 tests passed after final text tweak
+git diff --check  # passed
+```
+
+**Data safety**
+- No migrations, seed, reset, or destructive scripts were run.
+- No secrets were read, logged, or changed.
