@@ -466,3 +466,32 @@ rg "Incorrect API key provided|platform\\.openai\\.com/account/api-keys|sk-proj"
 **Data safety**
 - No production DB writes, seed/reset commands, or destructive SQL were run.
 - No customer/shop production data was mutated.
+
+## Dispatch Log — 2026-06-01 Dashboard Supplement Access + RO Resume Scoping
+
+**Status:** built + verified; commit blocked by sandbox `.git` write restriction
+
+**Time**
+- 2026-06-01 12:54:21 EDT
+- 2026-06-01 16:54:21 UTC
+
+**Scope**
+- Dashboard supplement monthly opportunity aggregate is restricted to `owner`, `admin`, and `superadmin`; authenticated non-admin roles receive 403.
+- SIU/total-loss resume read-back now includes `AND shop_id = $2` with `req.user.shop_id` after the shop-scoped update.
+
+**Files changed**
+- `backend/src/routes/dashboard.js`
+- `backend/src/routes/ros.js`
+- `CLAUDE.md`
+
+**Verification**
+```
+node --check backend/src/routes/dashboard.js backend/src/routes/ros.js
+cd backend && node --test src/__tests__/feedback.sanitize.test.js src/__tests__/insuranceOcr.notifyOps.test.js src/__tests__/role-guards.test.js  # 5/5 passed
+cd frontend && npm run test:run  # 11 files, 21/21 tests passed
+git diff --check
+```
+
+**Data safety**
+- No migrations, seed, reset, or destructive scripts were run.
+- No secrets were read, logged, or changed.

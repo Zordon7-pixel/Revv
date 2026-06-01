@@ -1910,7 +1910,7 @@ router.patch('/:id', auth, requireTechnician, async (req, res) => {
       const updateVals = Object.values(updates);
       const setClauses = updateKeys.map((k, i) => `${k} = $${i + 1}`).join(', ');
       await dbRun(`UPDATE repair_orders SET ${setClauses} WHERE id = $${updateKeys.length + 1} AND shop_id = $${updateKeys.length + 2}`, [...updateVals, req.params.id, req.user.shop_id]);
-      return res.json(await enrichRO(await dbGet('SELECT * FROM repair_orders WHERE id = $1', [req.params.id])));
+      return res.json(await enrichRO(await dbGet('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id])));
     }
 
     if (!STATUSES.includes(status)) return res.status(400).json({ error: 'Invalid status' });

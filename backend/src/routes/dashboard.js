@@ -1,9 +1,18 @@
 const router = require('express').Router();
 const { dbGet, dbAll } = require('../db');
 const auth = require('../middleware/auth');
-const { requireAdmin, requireTechnician } = require('../middleware/roles');
+const { requireTechnician } = require('../middleware/roles');
 
-router.get('/supplements/monthly-opportunity', auth, requireAdmin, async (req, res) => {
+function requireOwnerAdminOnly(req, res, next) {
+  if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+  const role = String(req.user.role || '').toLowerCase();
+  if (!['owner', 'admin', 'superadmin'].includes(role)) {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+  return next();
+}
+
+router.get('/supplements/monthly-opportunity', auth, requireOwnerAdminOnly, async (req, res) => {
   try {
     const shopId = req.user.shop_id;
 
