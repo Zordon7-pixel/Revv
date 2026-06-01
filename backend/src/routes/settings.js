@@ -1,16 +1,9 @@
 const router = require('express').Router();
 const { dbGet, dbRun } = require('../db');
 const auth = require('../middleware/auth');
-const { requireAdmin, requireTechnician } = require('../middleware/roles');
+const { requireAdmin, requireTechnician, disallowAssistant } = require('../middleware/roles');
 
 const SECTIONS = new Set(['ros', 'customers', 'vehicles', 'timeclock', 'all']);
-
-function disallowAssistant(req, res, next) {
-  if (req.user?.role === 'assistant') {
-    return res.status(403).json({ error: 'Admin access required' });
-  }
-  return next();
-}
 
 async function resetRos(shopId) {
   await dbRun(

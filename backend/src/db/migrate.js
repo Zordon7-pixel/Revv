@@ -523,6 +523,16 @@ async function runMigrations() {
       }
     }
 
+    try {
+      await query(
+        `ALTER TABLE time_entries
+         ALTER COLUMN unscheduled_approved_at TYPE TIMESTAMPTZ
+         USING unscheduled_approved_at::timestamptz`
+      );
+    } catch (e) {
+      console.warn('[migrate] unscheduled_approved_at type warning:', e.message.split('\n')[0]);
+    }
+
     console.log('[migrate] All idempotent migrations complete.');
   } catch (err) {
     console.error('[migrate] Fatal migration error:', err.message);

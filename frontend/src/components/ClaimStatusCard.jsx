@@ -76,7 +76,7 @@ export default function ClaimStatusCard({ ro, onUpdate, isAdmin, onOpenStorage }
       </div>
 
       {/* SIU Banner */}
-      {ro.status === 'siu_hold' && (
+      {(ro.status === 'siu_hold' || ro.claim_status === 'siu') && (
         <div className="bg-violet-900/20 border border-violet-700/50 rounded-lg p-3 mb-4 flex items-start gap-2">
           <AlertTriangle size={14} className="text-violet-400 mt-0.5 shrink-0" />
           <div>
@@ -87,7 +87,7 @@ export default function ClaimStatusCard({ ro, onUpdate, isAdmin, onOpenStorage }
       )}
 
       {/* Total Loss Banner */}
-      {ro.status === 'total_loss' && (
+      {(ro.status === 'total_loss' || ro.claim_status === 'total_loss') && (
         <div className="bg-red-900/20 border border-red-700/50 rounded-lg p-3 mb-4 flex items-start gap-2">
           <XCircle size={14} className="text-red-400 mt-0.5 shrink-0" />
           <div>

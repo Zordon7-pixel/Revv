@@ -389,3 +389,47 @@ rm -rf frontend/dist && git diff --check && git ls-files frontend/dist  # clean,
 - `./scripts/smoke-test.sh https://revv-production-ffa9.up.railway.app` → 6 PASS + 1 WARN (`RESEND_API_KEY` not present in local shell env).
 - Live OCR probe with demo auth + synthetic image upload returns `503 {"success":false,"error":"AI estimate extraction is not configured correctly. Please contact support."}`.
 - Railway logs for the live probe show sanitized structured OCR logging only: `[InsuranceOCR] Error: { code: 'invalid_api_key' }`.
+
+## Dispatch Log — 2026-05-31 Phase 32 Pre-Launch Hardening
+
+**Status:** shipped; awaiting verification
+
+**Time**
+- 2026-05-31 20:59:13 EDT
+- 2026-06-01 00:59:13 UTC
+
+**Scope**
+- Assistant-role backend bypass patched for subscription and settings reset gates.
+- ADAS backend reads patched with admin authorization; frontend `/adas` route was already wrapped in `AdminRoute` at dispatch start.
+- `unscheduled_approved_at` schema drift patched with an idempotent TIMESTAMPTZ migration guard; `db/index.js` and `schema.pg.sql` already matched.
+- Claim-status banners patched to derive Total Loss and SIU warnings from either workflow status or claim status.
+- ROPhotos load failures now render visibly, stale failed-photo state resets on RO changes, and backend-derived photo alerts use sanitized external error messaging.
+- OCR provider failure monitoring shipped through `notifyOps`, with throttled Discord webhook delivery and sanitized context only.
+
+**Files changed**
+- `backend/src/middleware/roles.js`
+- `backend/src/routes/subscriptions.js`
+- `backend/src/routes/settings.js`
+- `backend/src/routes/adas.js`
+- `backend/src/db/migrate.js`
+- `backend/src/routes/insuranceOcr.js`
+- `backend/src/services/notifyOps.js`
+- `frontend/src/components/ClaimStatusCard.jsx`
+- `frontend/src/components/ROPhotos.jsx`
+- Backend tests under `backend/src/__tests__`
+- Frontend regression tests under `frontend/src/components/__tests__`
+
+**Verification**
+```
+node --check backend/src/routes/subscriptions.js backend/src/routes/settings.js backend/src/routes/adas.js backend/src/middleware/roles.js backend/src/db/index.js backend/src/db/migrate.js backend/src/routes/insuranceOcr.js backend/src/services/notifyOps.js  # passed
+node --test backend/src/__tests__/role-guards.test.js backend/src/__tests__/insuranceOcr.notifyOps.test.js  # 4 tests passed
+cd frontend && npm run test:run  # 11 files, 20 tests passed
+cd frontend && npm run build  # production build passed with existing chunk-size warnings
+rg "sk-proj|platform.openai.com/account/api-keys|Incorrect API key provided" backend/src frontend/src  # zero matches
+git diff --check  # passed
+```
+
+**Data safety**
+- No production DB writes, seed/reset commands, or destructive SQL were run.
+- Miles Automotive data untouched.
+- No push performed from this branch.

@@ -1,5 +1,6 @@
 const router = require('express').Router();
 const auth = require('../middleware/auth');
+const { requireAdmin } = require('../middleware/roles');
 const { dbAll } = require('../db');
 const calibrationData = require('../data/adas-calibrations.json');
 
@@ -21,7 +22,7 @@ function lookupCalibration(year, make, model) {
   ));
 }
 
-router.get('/lookup', auth, (req, res) => {
+router.get('/lookup', auth, requireAdmin, (req, res) => {
   const { year, make, model } = req.query || {};
   if (!year || !make || !model) {
     return res.status(400).json({ error: 'year, make, and model are required' });
@@ -49,7 +50,7 @@ router.get('/lookup', auth, (req, res) => {
   });
 });
 
-router.get('/queue', auth, async (req, res) => {
+router.get('/queue', auth, requireAdmin, async (req, res) => {
   try {
     const ros = await dbAll(
       `SELECT

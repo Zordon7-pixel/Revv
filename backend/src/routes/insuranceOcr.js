@@ -10,6 +10,7 @@ const { execFile } = require('child_process');
 const { promisify } = require('util');
 const auth = require('../middleware/auth');
 const { dbGet } = require('../db');
+const { notifyOps } = require('../services/notifyOps');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 const execFileAsync = promisify(execFile);
@@ -112,6 +113,14 @@ function logInsuranceOcrError(err) {
     type: err?.type || err?.error?.type || null,
     request_id: err?.request_id || err?.headers?.['x-request-id'] || null,
   });
+}
+
+function classifyAiProviderError(err) {
+  const status = Number(err?.status || err?.response?.status || err?.code);
+  if (status === 401 || status === 403) return 'invalid_api_key';
+  if (status === 429) return 'rate_limit_exceeded';
+  if (status >= 500 && status <= 599) return 'provider_5xx';
+  return null;
 }
 
 function classifyByOperationCodes(description, currentType) {
@@ -549,6 +558,14 @@ router.post('/parse', auth, upload.single('estimate_image'), async (req, res) =>
     });
   } catch (err) {
     logInsuranceOcrError(err);
+    const providerCode = classifyAiProviderError(err);
+    if (providerCode) {
+      await notifyOps('high', providerCode, {
+        shop_id: req.user.shop_id,
+        ro_id: req.body?.ro_id || req.body?.roId || 'n/a',
+      });
+      return res.status(503).json({ success: false, error: AI_CONFIG_ERROR });
+    }
     const status = isAiProviderConfigError(err) ? 503 : 500;
     return res.status(status).json({ success: false, error: safeInsuranceOcrError(err) });
   }

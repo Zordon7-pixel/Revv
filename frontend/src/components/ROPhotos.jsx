@@ -3,6 +3,7 @@ import { Camera, Trash2, ZoomIn, Upload, X, Sparkles } from 'lucide-react'
 import api from '../lib/api'
 import { optimizeImageForUpload } from '../lib/imageUpload'
 import { resolveUploadedMediaUrl } from '../lib/mediaUrls'
+import { safeExternalErrorMessage } from '../lib/safeErrors'
 
 const PHOTO_TYPE_META = {
   damage:   { label: 'Damage',   cls: 'text-red-400 bg-red-900/30 border-red-700/40' },
@@ -30,12 +31,13 @@ export default function ROPhotos({ roId, isAdmin }) {
   const dropZoneRef = useRef(null)
 
   const load = async () => {
+    setFailedPhotoIds({})
     try {
       const r = await api.get(`/photos/${roId}`)
       setPhotos(r.data.photos || [])
       setPhotoLoadError('')
     } catch (err) {
-      setPhotoLoadError(err?.response?.data?.error || 'Failed to load photos')
+      setPhotoLoadError(safeExternalErrorMessage(err, 'Failed to load photos'))
       console.error('[ROPhotos] Failed to load photos:', err.message)
     }
   }
@@ -63,7 +65,7 @@ export default function ROPhotos({ roId, isAdmin }) {
       setCaption('')
       load()
     } catch (err) {
-      alert(err?.response?.data?.error || 'Upload failed')
+      alert(safeExternalErrorMessage(err, 'Upload failed'))
     } finally {
       setUploading(false)
       setAnalyzingMsg('')
@@ -77,7 +79,7 @@ export default function ROPhotos({ roId, isAdmin }) {
       await api.delete(`/photos/${photoId}`)
       load()
     } catch (err) {
-      alert(err?.response?.data?.error || 'Failed to delete photo')
+      alert(safeExternalErrorMessage(err, 'Failed to delete photo'))
     }
   }
 
@@ -131,7 +133,7 @@ export default function ROPhotos({ roId, isAdmin }) {
           headers: { 'Content-Type': 'multipart/form-data' },
         })
       } catch (err) {
-        alert(err?.response?.data?.error || `Upload of ${file.name} failed`)
+        alert(safeExternalErrorMessage(err, `Upload of ${file.name} failed`))
       } finally {
         setUploading(false)
         setAnalyzingMsg('')
@@ -194,6 +196,12 @@ export default function ROPhotos({ roId, isAdmin }) {
         <p className="text-[10px] text-indigo-400/70 flex items-center gap-1 mb-3">
           <Sparkles size={10} /> AI will auto-analyze damage severity and zones
         </p>
+      )}
+
+      {photoLoadError && (
+        <div className="mb-3 rounded-lg border border-red-800/50 bg-red-950/30 px-3 py-2 text-xs text-red-300">
+          {photoLoadError}
+        </div>
       )}
 
       {photos.length === 0 ? (

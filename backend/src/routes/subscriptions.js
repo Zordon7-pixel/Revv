@@ -1,6 +1,6 @@
 const express = require('express');
 const auth = require('../middleware/auth');
-const { requireAdmin } = require('../middleware/roles');
+const { requireAdmin, disallowAssistant } = require('../middleware/roles');
 const { getStripeClient } = require('../services/stripe');
 const { dbGet, dbRun } = require('../db');
 
@@ -11,13 +11,6 @@ const PLAN_BY_PRICE_ID = {
   [process.env.STRIPE_PRICE_ID_PRO]: 'pro',
   [process.env.STRIPE_PRICE_ID_AGENCY]: 'agency',
 };
-
-function disallowAssistant(req, res, next) {
-  if (req.user?.role === 'assistant') {
-    return res.status(403).json({ error: 'Admin access required' });
-  }
-  return next();
-}
 
 function normalizeRequestedPlan(input) {
   const value = String(input || '').trim().toLowerCase();
@@ -71,7 +64,7 @@ async function ensureStripeCustomer(shopId) {
   return { stripe, customerId: customer.id };
 }
 
-router.get('/status', auth, requireAdmin, async (req, res) => {
+router.get('/status', auth, requireAdmin, disallowAssistant, async (req, res) => {
   try {
     const shop = await dbGet(
       `SELECT plan, trial_ends_at, plan_expires_at, stripe_subscription_id

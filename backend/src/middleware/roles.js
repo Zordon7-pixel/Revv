@@ -28,6 +28,13 @@ const requireTechnician = requireRole('technician');
 const requireAssistant = requireRole('assistant');
 const requireEmployee = requireTechnician;
 
+const disallowAssistant = (req, res, next) => {
+  if (req.user?.role === 'assistant') {
+    return res.status(403).json({ error: 'Assistant access required' });
+  }
+  return next();
+};
+
 const requireCustomer = (req, res, next) => {
   if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
   if (req.user.role !== 'customer') return res.status(403).json({ error: 'Customer access only' });
@@ -42,5 +49,6 @@ module.exports = {
   requireTechnician,
   requireAssistant,
   requireEmployee,
+  disallowAssistant,
   requireCustomer,
 };

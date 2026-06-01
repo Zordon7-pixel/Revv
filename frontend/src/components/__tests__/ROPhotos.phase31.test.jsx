@@ -52,4 +52,16 @@ describe('ROPhotos uploaded media URLs', () => {
     expect(await screen.findByText('Photo unavailable')).toBeInTheDocument()
     expect(window.alert).not.toHaveBeenCalled()
   })
+
+  it('renders a load error when the photo API fails', async () => {
+    api.get.mockRejectedValue({
+      response: { data: { error: 'Failed to load photos' } },
+      message: 'request failed',
+    })
+
+    render(<ROPhotos roId="ro-1" isAdmin />)
+
+    expect(await screen.findByText('Failed to load photos')).toBeInTheDocument()
+    expect(screen.getByText('No photos yet')).toBeInTheDocument()
+  })
 })
