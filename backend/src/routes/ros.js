@@ -1883,8 +1883,19 @@ router.patch('/:id', auth, requireTechnician, async (req, res) => {
           notifyStatusChange(req.user.shop_id, { ...ro, id: req.params.id }, 'siu_hold');
           queueStatusSMS(req.params.id, req.user.shop_id, 'siu_hold');
         } else if (updates.claim_status === 'approved') {
-          // Resume from where we were before SIU, or fall back to 'approval'
-          const resumeStatus = ro.pre_siu_status || (ro.status === 'siu_hold' || ro.status === 'total_loss' ? 'approval' : ro.status);
+          const latestNonHoldStatus = !ro.pre_siu_status && (ro.status === 'siu_hold' || ro.status === 'total_loss')
+            ? await dbGet(
+                `SELECT l.to_status
+                 FROM job_status_log l
+                 JOIN repair_orders scoped_ro ON scoped_ro.id = l.ro_id AND scoped_ro.shop_id = $2
+                 WHERE l.ro_id = $1
+                   AND l.to_status NOT IN ('siu_hold', 'total_loss')
+                 ORDER BY l.created_at DESC
+                 LIMIT 1`,
+                [req.params.id, req.user.shop_id]
+              )
+            : null;
+          const resumeStatus = ro.pre_siu_status || latestNonHoldStatus?.to_status || (ro.status === 'siu_hold' || ro.status === 'total_loss' ? 'approval' : ro.status);
           updates.status = resumeStatus;
           updates.pre_siu_status = null;
           await dbRun('INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by, note) VALUES ($1, $2, $3, $4, $5, $6)',

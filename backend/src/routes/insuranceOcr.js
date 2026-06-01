@@ -692,7 +692,7 @@ router.post('/analyze', auth, async (req, res) => {
     });
   } catch (err) {
     console.error('[InsuranceOCR/analyze] Error:', err);
-    return res.status(500).json({ success: false, error: err.message || 'Internal server error' });
+    return res.status(500).json({ success: false, error: safeInsuranceOcrError(err) });
   }
 });
 
