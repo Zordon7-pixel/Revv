@@ -382,3 +382,10 @@ rm -rf frontend/dist && git diff --check && git ls-files frontend/dist  # clean,
 - No local backend boot against protected DB.
 - No seed/reset/delete commands.
 - Miles Automotive data untouched.
+
+**Railway verification**
+- Pushed commit `c1b2b5c` to `main`; Railway deployment `8490c6e5-0156-418d-ab16-26f9f3926aef` is SUCCESS for commit `c1b2b5cee823cc3e552bdbc6d7575b492d0da789`.
+- `curl https://revv-production-ffa9.up.railway.app/api/health` → HTTP 200.
+- `./scripts/smoke-test.sh https://revv-production-ffa9.up.railway.app` → 6 PASS + 1 WARN (`RESEND_API_KEY` not present in local shell env).
+- Live OCR probe with demo auth + synthetic image upload returns `503 {"success":false,"error":"AI estimate extraction is not configured correctly. Please contact support."}`.
+- Railway logs for the live probe show sanitized structured OCR logging only: `[InsuranceOCR] Error: { code: 'invalid_api_key' }`.
