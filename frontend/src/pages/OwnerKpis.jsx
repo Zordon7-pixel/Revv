@@ -13,7 +13,8 @@ function moneyFromCents(value) {
 }
 
 function pct(value) {
-  return `${Number(value || 0).toFixed(1)}%`
+  const numeric = Number(value ?? 0)
+  return `${Number.isFinite(numeric) ? numeric.toFixed(1) : '0.0'}%`
 }
 
 function todayKey() {
@@ -25,13 +26,37 @@ function monthStartKey() {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
 }
 
-function KpiCard({ icon: Icon, label, value, sublabel, tone = 'text-white', to }) {
+function daysAgoKey(days) {
+  const date = new Date()
+  date.setDate(date.getDate() - days)
+  return date.toISOString().slice(0, 10)
+}
+
+function formatDate(value) {
+  if (!value) return ''
+  return new Date(`${value}T00:00:00`).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
+}
+
+function formatDateRange(start, end) {
+  const formattedStart = formatDate(start)
+  const formattedEnd = formatDate(end)
+  if (!formattedStart && !formattedEnd) return ''
+  if (formattedStart === formattedEnd) return formattedStart
+  return [formattedStart, formattedEnd].filter(Boolean).join(' - ')
+}
+
+function KpiCard({ icon: Icon, label, period, value, sublabel, tone = 'text-white', to, testId }) {
   const content = (
     <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 h-full hover:border-indigo-400/50 transition-colors">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-xs text-slate-500 mb-1">{label}</div>
-          <div className={`text-2xl font-bold ${tone}`}>{value}</div>
+          {period && <div className="text-[11px] text-slate-600 mb-1">Period: {period}</div>}
+          <div className={`text-2xl font-bold ${tone}`} data-testid={testId}>{value}</div>
         </div>
         <div className="w-9 h-9 rounded-lg bg-[#0f1117] border border-[#2a2d3e] flex items-center justify-center text-indigo-300">
           <Icon size={18} />
@@ -88,7 +113,11 @@ export default function OwnerKpis() {
   const capture = ownerData?.supplement_capture || {}
   const identified = Number(supplementOpportunity?.total_supplement_opportunity || 0)
   const captured = Number(capture.captured_cents || 0) / 100
-  const captureRate = identified > 0 ? (captured / identified) * 100 : 0
+  const captureRate = capture.capture_rate ?? 0
+  const cycleTimePeriod = `Last 120 days (${formatDateRange(daysAgoKey(120), todayKey())})`
+  const monthToDatePeriod = `Month to date (${formatDateRange(monthStartKey(), todayKey())})`
+  const selectedPeriod = formatDateRange(from, to)
+  const turnaroundPeriod = 'Last 90 days of closed ROs'
   const recentMargins = useMemo(() => (jobCosting?.rows || []).slice(0, 6).map((row) => {
     const revenue = Number(row.total || 0)
     const profit = Number(row.true_profit || 0)
@@ -137,17 +166,17 @@ export default function OwnerKpis() {
       {error && <div className="bg-red-900/30 border border-red-700 rounded-xl p-4 text-sm text-red-300">{error}</div>}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        <KpiCard icon={Clock3} label="Avg Cycle Stage" value={`${avgStageDays.toFixed(1)}d`} sublabel="Average across logged stages" tone="text-sky-300" />
-        <KpiCard icon={PackageCheck} label="Supplement Capture" value={pct(captureRate)} sublabel={`${money(identified)} identified / ${money(captured)} captured`} tone="text-amber-300" />
-        <KpiCard icon={Percent} label="Avg RO Margin" value={pct(jobCosting?.avgMargin)} sublabel={`${money(jobCosting?.grossProfit)} gross profit`} tone="text-emerald-300" to="/job-costing" />
-        <KpiCard icon={Users} label="Tech Throughput" value={ownerData?.tech_efficiency?.reduce((sum, tech) => sum + Number(tech.ros_advanced || 0), 0) || 0} sublabel="ROs advanced this month" tone="text-indigo-300" to="/performance" />
+        <KpiCard icon={Clock3} label="Avg Cycle Stage" period={cycleTimePeriod} value={`${avgStageDays.toFixed(1)}d`} sublabel="Average across logged stages" tone="text-sky-300" />
+        <KpiCard icon={PackageCheck} label="Supplement Capture" period={monthToDatePeriod} value={pct(captureRate)} sublabel={`${money(identified)} identified / ${money(captured)} captured`} tone="text-amber-300" testId="supplement-capture-rate-value" />
+        <KpiCard icon={Percent} label="Avg RO Margin" period={selectedPeriod} value={pct(jobCosting?.avgMargin)} sublabel={`${money(jobCosting?.grossProfit)} gross profit`} tone="text-emerald-300" to="/job-costing" />
+        <KpiCard icon={Users} label="Tech Throughput" period={monthToDatePeriod} value={ownerData?.tech_efficiency?.reduce((sum, tech) => sum + Number(tech.ros_advanced || 0), 0) || 0} sublabel="ROs advanced this month" tone="text-indigo-300" to="/performance" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <section className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-semibold text-white flex items-center gap-2"><Clock3 size={16} /> Cycle Time by Stage</h2>
-            <span className="text-[11px] text-slate-500">Last 120 days</span>
+            <span className="text-[11px] text-slate-500">{cycleTimePeriod}</span>
           </div>
           <div className="space-y-3">
             {(ownerData?.cycle_time_by_stage || []).map((stage) => {
@@ -173,7 +202,10 @@ export default function OwnerKpis() {
         <section className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-semibold text-white flex items-center gap-2"><DollarSign size={16} /> Margin per RO</h2>
-            <Link to="/job-costing" className="text-xs text-indigo-300 hover:text-indigo-200 flex items-center gap-1">Job costing <ArrowRight size={13} /></Link>
+            <div className="flex flex-col items-end gap-1">
+              <span className="text-[11px] text-slate-500">{selectedPeriod}</span>
+              <Link to="/job-costing" className="text-xs text-indigo-300 hover:text-indigo-200 flex items-center gap-1">Job costing <ArrowRight size={13} /></Link>
+            </div>
           </div>
           <div className="space-y-2">
             {recentMargins.map((row) => (
@@ -195,7 +227,10 @@ export default function OwnerKpis() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <section className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4">
-          <h2 className="text-sm font-semibold text-white flex items-center gap-2 mb-3"><Activity size={16} /> Supplement Capture</h2>
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <h2 className="text-sm font-semibold text-white flex items-center gap-2"><Activity size={16} /> Supplement Capture</h2>
+            <span className="text-[11px] text-slate-500">{monthToDatePeriod}</span>
+          </div>
           <div className="space-y-3 text-sm">
             <div className="flex justify-between"><span className="text-slate-400">Identified opportunity</span><span className="text-amber-300 font-semibold">{money(identified)}</span></div>
             <div className="flex justify-between"><span className="text-slate-400">Captured approved</span><span className="text-emerald-300 font-semibold">{moneyFromCents(capture.captured_cents)}</span></div>
@@ -209,7 +244,7 @@ export default function OwnerKpis() {
             <Link to="/monthly-report" className="text-xs text-indigo-300 hover:text-indigo-200 flex items-center gap-1">Monthly report <ArrowRight size={13} /></Link>
           </div>
           <div className="text-3xl font-bold text-white">{carryover.length}</div>
-          <div className="text-xs text-slate-500 mt-1">ROs pending revenue assignment</div>
+          <div className="text-xs text-slate-500 mt-1">Current carryover queue</div>
           <button onClick={() => navigate('/dashboard')} className="mt-4 text-xs text-slate-300 hover:text-white flex items-center gap-1">
             Open dashboard carryover workflow <ArrowRight size={13} />
           </button>
@@ -230,7 +265,7 @@ export default function OwnerKpis() {
             {turnaround ? `${turnaround.minDays}-${turnaround.maxDays} days` : '—'}
           </div>
           <div className="text-xs text-slate-500 mt-1">
-            {turnaround?.label ? `${turnaround.label} · ${turnaround.basedOnSamples || 0} samples` : 'Uses existing estimator output'}
+            {turnaround?.label ? `${turnaround.label} · ${turnaround.basedOnSamples || 0} samples · ${turnaroundPeriod}` : 'Uses existing estimator output'}
           </div>
         </section>
       </div>

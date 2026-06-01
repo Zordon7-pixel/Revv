@@ -564,3 +564,35 @@ git diff --check  # passed
 - No migrations, seed, reset, or destructive scripts were run.
 - New backend queries are parameterized and scoped through `req.user.shop_id`.
 - No secrets were read, logged, or changed.
+
+## Dispatch Log — 2026-06-01 Phase 4 Owner KPI QA Fixes
+
+**Status:** DONE + VERIFIED
+
+**Time**
+- 2026-06-01 15:38:40 EDT
+- 2026-06-01 19:38:40 UTC
+
+**Scope**
+- Fixed Owner KPIs supplement capture card to render backend `supplement_capture.capture_rate` directly.
+- Allowed `superadmin` through the Owner KPI frontend route path to match the backend owner KPI guard.
+- Added explicit KPI period labels for the backend query windows.
+- Added frontend regression coverage for backend-provided supplement capture rate rendering.
+
+**Files changed**
+- `frontend/src/pages/OwnerKpis.jsx`
+- `frontend/src/pages/__tests__/OwnerKpis.test.jsx`
+- `frontend/src/App.jsx`
+- `CLAUDE.md`
+
+**Verification**
+```
+cd frontend && npm run test:run -- OwnerKpis.test.jsx  # 1 file, 1/1 passed
+cd frontend && npm run test:run  # 13 files, 24/24 passed
+cd backend && node --test src/__tests__/*.test.js  # 5/5 passed
+```
+
+**Data safety**
+- No migrations, seed, reset, or destructive scripts were run.
+- No backend query changes were made.
+- No secrets were read, logged, or changed.

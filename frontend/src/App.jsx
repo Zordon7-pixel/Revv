@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import Layout from './components/Layout'
 import PublicOnlyRoute from './components/PublicOnlyRoute'
 import Login from './pages/Login'
@@ -57,9 +57,10 @@ import { getToken, getTokenPayload } from './lib/auth'
 import { watchViewportProfile } from './lib/viewport'
 
 function PrivateRoute({ children }) {
+  const location = useLocation()
   if (!getToken()) return <Navigate to="/login" />
   try {
-    if (getTokenPayload()?.role === 'superadmin') return <Navigate to="/superadmin" />
+    if (getTokenPayload()?.role === 'superadmin' && location.pathname !== '/owner-kpis') return <Navigate to="/superadmin" />
   } catch {}
   return children
 }
@@ -88,7 +89,7 @@ function OwnerRoute({ children }) {
   if (!getToken()) return <Navigate to="/login" />
   try {
     const role = getTokenPayload()?.role
-    if (role !== 'owner' && role !== 'admin') return <Navigate to="/" />
+    if (!['owner', 'admin', 'superadmin'].includes(role)) return <Navigate to="/" />
   } catch {}
   return children
 }
