@@ -1905,7 +1905,23 @@ export default function RODetail() {
       </div>
 
       {ro.payment_type === 'insurance' && (
-        <ClaimStatusCard ro={ro} onUpdate={setRo} isAdmin={isAdmin()} />
+        <ClaimStatusCard
+          ro={ro}
+          onUpdate={(updatedRo) => {
+            setRo(updatedRo)
+            setStorageForm((prev) => ({
+              ...prev,
+              storage_hold: !!updatedRo.storage_hold,
+              storage_rate_per_day: updatedRo.storage_rate_per_day ?? prev.storage_rate_per_day,
+              storage_start_date: updatedRo.storage_start_date || prev.storage_start_date,
+              storage_company: updatedRo.storage_company ?? prev.storage_company,
+              storage_contact: updatedRo.storage_contact ?? prev.storage_contact,
+              storage_notes: updatedRo.storage_notes ?? prev.storage_notes,
+            }))
+          }}
+          isAdmin={isAdmin()}
+          onOpenStorage={() => setActiveTab('storage')}
+        />
       )}
 
       {(ro.payment_type === 'insurance' || ro.claim_number || ro.insurance_claim_number) && (

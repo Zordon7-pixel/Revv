@@ -1867,8 +1867,12 @@ router.patch('/:id', auth, requireTechnician, async (req, res) => {
         const now = new Date().toISOString();
         if (updates.claim_status === 'total_loss') {
           updates.status = 'total_loss';
+          updates.storage_hold = true;
+          if (!ro.storage_start_date) {
+            updates.storage_start_date = now.slice(0, 10);
+          }
           await dbRun('INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by, note) VALUES ($1, $2, $3, $4, $5, $6)',
-            [uuidv4(), req.params.id, ro.status, 'total_loss', req.user.id, 'Claim marked as Total Loss']);
+            [uuidv4(), req.params.id, ro.status, 'total_loss', req.user.id, 'Claim marked as Total Loss; storage hold enabled']);
           notifyStatusChange(req.user.shop_id, { ...ro, id: req.params.id }, 'total_loss');
           queueStatusSMS(req.params.id, req.user.shop_id, 'total_loss');
         } else if (updates.claim_status === 'siu') {

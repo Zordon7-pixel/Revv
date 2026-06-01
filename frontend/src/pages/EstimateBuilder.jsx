@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { AlertTriangle, ArrowLeft, Camera, CheckCircle, Plus, Trash2, X } from 'lucide-react'
 import api from '../lib/api'
 import { computeEstimateCrossCheck } from '../lib/estimateCrossCheck'
+import { safeExternalErrorMessage } from '../lib/safeErrors'
 
 const ITEM_TYPES = ['labor', 'parts', 'sublet', 'other']
 
@@ -207,6 +208,7 @@ export default function EstimateBuilder() {
 
   // OCR state
   const [ocrLoading, setOcrLoading] = useState(false)
+  const [ocrError, setOcrError] = useState('')
   const [ocrModalOpen, setOcrModalOpen] = useState(false)
   const [ocrParsed, setOcrParsed] = useState(null)
   const [ocrFlags, setOcrFlags] = useState(null)
@@ -401,6 +403,7 @@ export default function EstimateBuilder() {
     if (!file) return
     e.target.value = ''
     setOcrLoading(true)
+    setOcrError('')
     try {
       // Phase 1: parse
       const form = new FormData()
@@ -484,7 +487,7 @@ export default function EstimateBuilder() {
         // Analysis failure is non-fatal — import still works
       }
     } catch (err) {
-      alert(err?.response?.data?.error || err.message || 'Could not parse estimate file')
+      setOcrError(safeExternalErrorMessage(err, 'Could not parse estimate file. Try again or upload a clearer file.'))
     } finally {
       setOcrLoading(false)
     }
@@ -698,6 +701,11 @@ export default function EstimateBuilder() {
       {financialNotice && (
         <div className="text-xs text-emerald-300 bg-emerald-900/20 border border-emerald-800/40 rounded-lg px-3 py-2">
           {financialNotice}
+        </div>
+      )}
+      {ocrError && (
+        <div role="alert" className="text-xs text-red-300 bg-red-950/30 border border-red-800/40 rounded-lg px-3 py-2">
+          {ocrError}
         </div>
       )}
 

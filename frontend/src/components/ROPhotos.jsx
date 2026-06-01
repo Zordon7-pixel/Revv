@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Camera, Trash2, ZoomIn, Upload, X, Sparkles } from 'lucide-react'
 import api from '../lib/api'
 import { optimizeImageForUpload } from '../lib/imageUpload'
+import { resolveUploadedMediaUrl } from '../lib/mediaUrls'
 
 const PHOTO_TYPE_META = {
   damage:   { label: 'Damage',   cls: 'text-red-400 bg-red-900/30 border-red-700/40' },
@@ -20,6 +21,7 @@ export default function ROPhotos({ roId, isAdmin }) {
   const [uploading, setUploading] = useState(false)
   const [analyzingMsg, setAnalyzingMsg] = useState('')
   const [lightbox, setLightbox] = useState(null)
+  const [failedPhotoIds, setFailedPhotoIds] = useState({})
   const [caption, setCaption] = useState('')
   const [photoType, setPhotoType] = useState('damage')
   const [isDragActive, setIsDragActive] = useState(false)
@@ -224,6 +226,8 @@ export default function ROPhotos({ roId, isAdmin }) {
                 ? (() => { try { return JSON.parse(photo.ai_zones) } catch { return [] } })()
                 : []
             const displayCaption = photo.caption || photo.ai_description || null
+            const photoUrl = resolveUploadedMediaUrl(photo.photo_url)
+            const photoFailed = !!failedPhotoIds[photo.id]
 
             return (
               <div
@@ -239,11 +243,19 @@ export default function ROPhotos({ roId, isAdmin }) {
                 }}
                 className="relative group rounded-xl overflow-hidden border border-[#2a2d3e] aspect-video bg-[#0f1117] cursor-zoom-in"
               >
-                <img
-                  src={photo.photo_url}
-                  alt={displayCaption || 'Photo'}
-                  className="w-full h-full object-cover"
-                />
+                {photoUrl && !photoFailed ? (
+                  <img
+                    src={photoUrl}
+                    alt={displayCaption || 'Photo'}
+                    className="w-full h-full object-cover"
+                    onError={() => setFailedPhotoIds((prev) => ({ ...prev, [photo.id]: true }))}
+                  />
+                ) : (
+                  <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-slate-500">
+                    <Camera size={22} className="text-slate-600" />
+                    <span className="text-xs font-medium">Photo unavailable</span>
+                  </div>
+                )}
 
                 {/* AI assessed badge — top right */}
                 {photo.ai_severity && (
@@ -312,11 +324,19 @@ export default function ROPhotos({ roId, isAdmin }) {
             className="relative max-w-4xl max-h-full"
             onClick={e => e.stopPropagation()}
           >
-            <img
-              src={lightbox.photo_url}
-              alt={lightbox.caption || lightbox.ai_description || 'Photo'}
-              className="max-h-[85vh] max-w-full object-contain rounded-xl"
-            />
+            {resolveUploadedMediaUrl(lightbox.photo_url) && !failedPhotoIds[lightbox.id] ? (
+              <img
+                src={resolveUploadedMediaUrl(lightbox.photo_url)}
+                alt={lightbox.caption || lightbox.ai_description || 'Photo'}
+                className="max-h-[85vh] max-w-full object-contain rounded-xl"
+                onError={() => setFailedPhotoIds((prev) => ({ ...prev, [lightbox.id]: true }))}
+              />
+            ) : (
+              <div className="flex min-h-64 w-80 max-w-full flex-col items-center justify-center gap-2 rounded-xl border border-[#2a2d3e] bg-[#0f1117] text-slate-500">
+                <Camera size={28} className="text-slate-600" />
+                <span className="text-sm font-medium">Photo unavailable</span>
+              </div>
+            )}
             {/* AI assessment detail in lightbox */}
             {lightbox.ai_severity && (
               <div className="mt-3 bg-[#1a1d2e]/90 rounded-xl border border-[#2a2d3e] p-3">

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { BadgeDollarSign, ChevronDown, ChevronUp, FileImage, Mail, Phone, ShieldCheck, Upload, X } from 'lucide-react'
 import api from '../lib/api'
 import { computeEstimateCrossCheck } from '../lib/estimateCrossCheck'
+import { safeExternalErrorMessage } from '../lib/safeErrors'
 
 const INSURANCE_COMPANIES = [
   'State Farm',
@@ -155,7 +156,7 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
         setOcrError('No line items were extracted. Try a clearer estimate image/PDF.')
       }
     } catch (err) {
-      setOcrError(err?.response?.data?.error || 'Could not parse the estimate. Try a clearer file.')
+      setOcrError(safeExternalErrorMessage(err, 'Could not parse the estimate. Try a clearer file.'))
     } finally {
       setOcrParsing(false)
     }
@@ -374,7 +375,7 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
                 {!ocrPreview && (
                   <p className="text-xs text-slate-400 italic">{ocrFile.name}</p>
                 )}
-                {ocrError && <p className="text-xs text-red-400">{ocrError}</p>}
+                {ocrError && <p role="alert" className="text-xs text-red-400">{ocrError}</p>}
                 <button
                   type="button"
                   onClick={parseEstimate}
@@ -409,7 +410,7 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
                     </label>
                   ))}
                 </div>
-                {ocrError && <p className="text-xs text-red-400">{ocrError}</p>}
+                {ocrError && <p role="alert" className="text-xs text-red-400">{ocrError}</p>}
                 <div className="flex gap-2">
                   <button
                     type="button"

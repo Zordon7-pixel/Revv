@@ -344,3 +344,41 @@ node --check backend/src/routes/parts.js
 cd frontend && npm run test:run   # 11/11 passed
 cd frontend && npm run build      # clean production build
 ```
+
+---
+
+## Dispatch Log — 2026-05-31 Phase 31 User Feedback Fixes
+
+**Status:** Shipped from clean `origin/main` worktree for Railway deployment.
+
+**Scope**
+- Total loss now moves into storage/pickup handling: `claim_status = total_loss` sets `status = total_loss`, enables `storage_hold`, and stamps `storage_start_date` only when empty.
+- Total-loss UI now says `Total Loss — Storage + Pickup / Release`, explains that repair labor/deductible are not collected, and opens the Storage Hold tab.
+- RO photos now resolve relative `/uploads/...` URLs against the app origin and show `Photo unavailable` on image load failure.
+- Estimate AI import now sanitizes provider/auth errors at the backend and again in frontend display code. The raw provider 401/key-help text from the user screenshot is no longer rendered or returned.
+
+**Files changed**
+- `backend/src/routes/ros.js`
+- `backend/src/routes/insuranceOcr.js`
+- `frontend/src/components/ClaimStatusCard.jsx`
+- `frontend/src/components/ROPhotos.jsx`
+- `frontend/src/components/InsurancePanel.jsx`
+- `frontend/src/pages/RODetail.jsx`
+- `frontend/src/pages/EstimateBuilder.jsx`
+- `frontend/src/lib/mediaUrls.js`
+- `frontend/src/lib/safeErrors.js`
+- Phase 31 regression tests under `frontend/src/**/__tests__`
+
+**Verification**
+```
+node --check backend/src/routes/ros.js backend/src/routes/photos.js backend/src/routes/insuranceOcr.js backend/src/app.js  # PASS
+cd frontend && npm run test:run  # 10 files, 18 tests passed
+cd frontend && npm run build     # PASS
+rg "sk-proj|platform.openai.com/account/api-keys|Incorrect API key provided" backend/src frontend/src  # zero matches
+rm -rf frontend/dist && git diff --check && git ls-files frontend/dist  # clean, no tracked dist
+```
+
+**Data safety**
+- No local backend boot against protected DB.
+- No seed/reset/delete commands.
+- Miles Automotive data untouched.

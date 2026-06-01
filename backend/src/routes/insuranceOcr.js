@@ -15,6 +15,7 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 const execFileAsync = promisify(execFile);
 const PDF_TEXT_CHAR_LIMIT = 120000;
 const PDF_IMAGE_PAGE_LIMIT = 6;
+const AI_CONFIG_ERROR = 'AI estimate extraction is not configured correctly. Please contact support.';
 
 const SYSTEM_PROMPT = `You are an insurance estimate parser for auto body shops. Extract all line items from this insurance estimate document.
 Return ONLY valid JSON in this exact format:
@@ -79,6 +80,38 @@ Return only the JSON object, no markdown fences, no extra text.`;
 function normalizeItemType(type) {
   const next = String(type || '').trim().toLowerCase();
   return ['labor', 'parts', 'sublet', 'other'].includes(next) ? next : 'other';
+}
+
+function isAiProviderConfigError(err) {
+  const status = Number(err?.status || err?.response?.status || err?.code);
+  const code = String(err?.code || err?.error?.code || err?.type || '').toLowerCase();
+  const message = String(err?.message || '').toLowerCase();
+  return (
+    status === 401 ||
+    code.includes('invalid_api_key') ||
+    message.includes('incorrect api key') ||
+    message.includes('invalid api key') ||
+    /platform\.[a-z]+\.com\/account\/api-keys/i.test(message)
+  );
+}
+
+function safeInsuranceOcrError(err) {
+  if (isAiProviderConfigError(err)) return AI_CONFIG_ERROR;
+  const message = String(err?.message || '').trim();
+  if (!message) return 'Could not parse estimate file. Try again or upload a clearer file.';
+  if (/sk-(?:proj-)?[A-Za-z0-9_-]+/.test(message) || /openai|api key|platform\.[a-z]+\.com/i.test(message)) {
+    return AI_CONFIG_ERROR;
+  }
+  return message.replace(/sk-(?:proj-)?[A-Za-z0-9_-]+/g, '[redacted]');
+}
+
+function logInsuranceOcrError(err) {
+  console.error('[InsuranceOCR] Error:', {
+    status: err?.status || err?.response?.status || null,
+    code: err?.code || err?.error?.code || null,
+    type: err?.type || err?.error?.type || null,
+    request_id: err?.request_id || err?.headers?.['x-request-id'] || null,
+  });
 }
 
 function classifyByOperationCodes(description, currentType) {
@@ -375,7 +408,7 @@ router.post('/parse', auth, upload.single('estimate_image'), async (req, res) =>
 
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
-      return res.status(500).json({ success: false, error: 'OpenAI API key not configured on this server' });
+      return res.status(503).json({ success: false, error: AI_CONFIG_ERROR });
     }
 
     const openai = new OpenAI({ apiKey });
@@ -515,8 +548,9 @@ router.post('/parse', auth, upload.single('estimate_image'), async (req, res) =>
       },
     });
   } catch (err) {
-    console.error('[InsuranceOCR] Error:', err);
-    return res.status(500).json({ success: false, error: err.message || 'Internal server error' });
+    logInsuranceOcrError(err);
+    const status = isAiProviderConfigError(err) ? 503 : 500;
+    return res.status(status).json({ success: false, error: safeInsuranceOcrError(err) });
   }
 });
 

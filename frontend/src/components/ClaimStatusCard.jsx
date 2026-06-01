@@ -38,7 +38,7 @@ const OPTIONS = [
   },
 ]
 
-export default function ClaimStatusCard({ ro, onUpdate, isAdmin }) {
+export default function ClaimStatusCard({ ro, onUpdate, isAdmin, onOpenStorage }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
   const current = ro.claim_status || null
@@ -91,8 +91,17 @@ export default function ClaimStatusCard({ ro, onUpdate, isAdmin }) {
         <div className="bg-red-900/20 border border-red-700/50 rounded-lg p-3 mb-4 flex items-start gap-2">
           <XCircle size={14} className="text-red-400 mt-0.5 shrink-0" />
           <div>
-            <p className="text-xs font-semibold text-red-300">Total Loss — Awaiting Tow / Release</p>
-            <p className="text-xs text-slate-400 mt-0.5">No repairs will be performed. Coordinate vehicle tow pickup or customer release.</p>
+            <p className="text-xs font-semibold text-red-300">Total Loss — Storage + Pickup / Release</p>
+            <p className="text-xs text-slate-400 mt-0.5">No repair labor or deductible is collected. Track storage charges, then coordinate tow pickup or customer release.</p>
+            {onOpenStorage && (
+              <button
+                type="button"
+                onClick={onOpenStorage}
+                className="mt-2 text-xs font-semibold rounded-lg border border-[#EAB308]/40 bg-[#EAB308]/10 px-3 py-1.5 text-[#EAB308] hover:bg-[#EAB308]/15"
+              >
+                Open Storage Hold
+              </button>
+            )}
           </div>
         </div>
       )}
