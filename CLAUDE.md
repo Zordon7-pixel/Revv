@@ -530,3 +530,37 @@ git diff --check  # passed
 **Data safety**
 - No migrations, seed, reset, or destructive scripts were run.
 - No secrets were read, logged, or changed.
+
+## Dispatch Log — 2026-06-01 Phase 4 Owner Truth / KPI Dashboard
+
+**Status:** built + verified
+
+**Time**
+- 2026-06-01 15:29:29 EDT
+- 2026-06-01 19:29:29 UTC
+
+**Scope**
+- Added owner/admin-gated `/api/dashboard/owner-kpis` aggregate for missing KPI data only: cycle time by stage from `job_status_log`, supplement captured/requested totals, and tech throughput.
+- Added `/owner-kpis` frontend view that composes the new aggregate with existing supplement opportunity, job-costing, carryover, and turnaround-estimator APIs.
+- Added owner/admin nav entry under Financial and route guard using existing `OwnerRoute`.
+
+**Files changed**
+- `backend/src/routes/dashboard.js`
+- `frontend/src/pages/OwnerKpis.jsx`
+- `frontend/src/App.jsx`
+- `frontend/src/components/Layout.jsx`
+- `CLAUDE.md`
+
+**Verification**
+```
+node --check backend/src/routes/dashboard.js  # passed
+cd backend && node --test src/__tests__/*.test.js  # 5/5 passed
+cd frontend && npm run test:run  # 12 files, 23/23 passed
+cd frontend && npm run build  # production build passed with existing chunk-size warnings
+git diff --check  # passed
+```
+
+**Data safety**
+- No migrations, seed, reset, or destructive scripts were run.
+- New backend queries are parameterized and scoped through `req.user.shop_id`.
+- No secrets were read, logged, or changed.

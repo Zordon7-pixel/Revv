@@ -1,6 +1,6 @@
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { LayoutDashboard, ArrowLeft, ClipboardList, ClipboardCheck, Users, BarChart3, Settings, UserCog, LogOut, Menu, Wrench, Clock, CalendarDays, Package, CreditCard, Radar, TrendingUp, X, HelpCircle, Star, ChevronDown, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import { LayoutDashboard, ArrowLeft, ClipboardList, ClipboardCheck, Users, BarChart3, Settings, UserCog, LogOut, Menu, Wrench, Clock, CalendarDays, Package, CreditCard, Radar, TrendingUp, Gauge, X, HelpCircle, Star, ChevronDown, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import FeedbackButton from './FeedbackButton'
 import HelpPanel from './HelpPanel'
 import NotificationBell from './NotificationBell'
@@ -35,6 +35,7 @@ const allNav = [
 
   { to: '/payments',     icon: CreditCard,      labelKey: 'nav.payments',     group: 'financial', adminOnly: false },
   { to: '/job-costing',  icon: TrendingUp,      labelKey: 'nav.jobCosting',   group: 'financial', ownerOnly: true  },
+  { to: '/owner-kpis',   icon: Gauge,           label: 'Owner KPIs',          group: 'financial', ownerOnly: true  },
 
   { to: '/reviews',      icon: Star,            labelKey: 'nav.reviews',      group: 'insights', adminOnly: false },
   { to: '/reports',      icon: BarChart3,       labelKey: 'nav.reports',      group: 'insights', adminOnly: true  },

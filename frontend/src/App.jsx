@@ -42,6 +42,7 @@ import { LanguageProvider } from './contexts/LanguageContext'
 import { ThemeProvider } from './contexts/ThemeContext'
 import JobCosting from './pages/JobCosting'
 import Goals from './pages/Goals'
+import OwnerKpis from './pages/OwnerKpis'
 import Landing from './pages/Landing'
 import InspectionEditor from './pages/InspectionEditor'
 import InspectionPublic from './pages/InspectionPublic'
@@ -172,6 +173,7 @@ export default function App() {
               <Route path="estimate-requests" element={<ManagementRoute><EstimateRequests /></ManagementRoute>} />
               <Route path="job-costing" element={<ManagementRoute><JobCosting /></ManagementRoute>} />
               <Route path="goals" element={<ManagementRoute><Goals /></ManagementRoute>} />
+              <Route path="owner-kpis" element={<OwnerRoute><OwnerKpis /></OwnerRoute>} />
               <Route path="admin/leads" element={<AdminRoute><LeadsDashboard /></AdminRoute>} />
             </Route>
           </Routes>

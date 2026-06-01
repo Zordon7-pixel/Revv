@@ -51,6 +51,125 @@ router.get('/supplements/monthly-opportunity', auth, requireOwnerAdminOnly, asyn
   }
 });
 
+router.get('/owner-kpis', auth, requireOwnerAdminOnly, async (req, res) => {
+  try {
+    const shopId = req.user.shop_id;
+
+    const [cycleTimeByStage, supplementCapture, techEfficiency] = await Promise.all([
+      dbAll(
+        `WITH ordered_logs AS (
+           SELECT
+             ro.id AS ro_id,
+             COALESCE(NULLIF(LOWER(TRIM(l.to_status)), ''), 'intake') AS stage,
+             l.created_at AS stage_started_at,
+             LEAD(l.created_at) OVER (PARTITION BY l.ro_id ORDER BY l.created_at ASC) AS next_stage_at,
+             ro.status AS current_status,
+             ro.updated_at
+           FROM job_status_log l
+           JOIN repair_orders ro ON ro.id = l.ro_id
+           WHERE ro.shop_id = $1
+             AND l.created_at >= NOW() - INTERVAL '120 days'
+         ),
+         stage_durations AS (
+           SELECT
+             stage,
+             EXTRACT(EPOCH FROM (
+               COALESCE(
+                 next_stage_at,
+                 CASE
+                   WHEN COALESCE(NULLIF(LOWER(TRIM(current_status)), ''), 'intake') = stage THEN NOW()
+                   ELSE updated_at
+                 END
+               ) - stage_started_at
+             )) / 3600.0 AS hours_in_stage
+           FROM ordered_logs
+           WHERE stage NOT IN ('total_loss', 'siu_hold')
+         )
+         SELECT
+           stage,
+           COUNT(*)::int AS sample_count,
+           ROUND(AVG(hours_in_stage)::numeric, 1)::float AS avg_hours,
+           ROUND((AVG(hours_in_stage) / 24.0)::numeric, 2)::float AS avg_days
+         FROM stage_durations
+         WHERE hours_in_stage >= 0
+           AND hours_in_stage <= 24 * 120
+         GROUP BY stage
+         ORDER BY CASE stage
+           WHEN 'intake' THEN 1
+           WHEN 'estimate' THEN 2
+           WHEN 'approval' THEN 3
+           WHEN 'parts' THEN 4
+           WHEN 'repair' THEN 5
+           WHEN 'paint' THEN 6
+           WHEN 'qc' THEN 7
+           WHEN 'delivery' THEN 8
+           WHEN 'closed' THEN 9
+           ELSE 99
+         END`,
+        [shopId]
+      ),
+      dbGet(
+        `SELECT
+           COUNT(*) FILTER (WHERE LOWER(COALESCE(supplement_status, 'none')) IN ('requested', 'pending', 'approved'))::int AS supplement_ro_count,
+           COALESCE(SUM(CASE
+             WHEN LOWER(COALESCE(supplement_status, 'none')) IN ('requested', 'pending', 'approved')
+             THEN supplement_amount
+             ELSE 0
+           END), 0)::bigint AS requested_cents,
+           COALESCE(SUM(CASE
+             WHEN LOWER(COALESCE(supplement_status, 'none')) = 'approved'
+             THEN supplement_amount
+             ELSE 0
+           END), 0)::bigint AS captured_cents
+         FROM repair_orders
+         WHERE shop_id = $1
+           AND created_at >= DATE_TRUNC('month', NOW())
+           AND created_at < DATE_TRUNC('month', NOW()) + INTERVAL '1 month'`,
+        [shopId]
+      ),
+      dbAll(
+        `SELECT
+           u.id AS tech_id,
+           u.name AS tech_name,
+           COUNT(*) FILTER (WHERE l.from_status IS NOT NULL)::int AS status_advances,
+           COUNT(DISTINCT l.ro_id) FILTER (WHERE l.from_status IS NOT NULL)::int AS ros_advanced,
+           COUNT(DISTINCT l.ro_id) FILTER (WHERE LOWER(TRIM(l.to_status)) IN ('closed', 'completed'))::int AS ros_closed
+         FROM job_status_log l
+         JOIN repair_orders ro ON ro.id = l.ro_id
+         JOIN users u ON u.id::text = l.changed_by
+         WHERE ro.shop_id = $1
+           AND u.shop_id = $1
+           AND l.created_at >= DATE_TRUNC('month', NOW())
+           AND l.created_at < DATE_TRUNC('month', NOW()) + INTERVAL '1 month'
+           AND u.role IN ('owner', 'admin', 'technician', 'employee', 'staff')
+         GROUP BY u.id, u.name
+         HAVING COUNT(*) FILTER (WHERE l.from_status IS NOT NULL) > 0
+             OR COUNT(DISTINCT l.ro_id) FILTER (WHERE LOWER(TRIM(l.to_status)) IN ('closed', 'completed')) > 0
+         ORDER BY ros_closed DESC, ros_advanced DESC, u.name ASC
+         LIMIT 10`,
+        [shopId]
+      ),
+    ]);
+
+    const capturedCents = Number(supplementCapture?.captured_cents || 0);
+    const requestedCents = Number(supplementCapture?.requested_cents || 0);
+
+    return res.json({
+      cycle_time_by_stage: cycleTimeByStage || [],
+      supplement_capture: {
+        supplement_ro_count: Number(supplementCapture?.supplement_ro_count || 0),
+        requested_cents: requestedCents,
+        captured_cents: capturedCents,
+        capture_rate: requestedCents > 0 ? Number(((capturedCents / requestedCents) * 100).toFixed(1)) : 0,
+      },
+      tech_efficiency: techEfficiency || [],
+    });
+  } catch (err) {
+    console.error('[Dashboard] owner KPIs error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 router.get('/weekly', auth, requireTechnician, async (req, res) => {
   try {
     const shopId = req.user.shop_id;
