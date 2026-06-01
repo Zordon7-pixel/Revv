@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ClipboardList, DollarSign, CheckCircle, TrendingUp, Hand, AlertCircle, CalendarDays, ChevronRight, Radar, ArrowUpRight, ArrowDownRight, Minus, ChevronLeft, Truck } from 'lucide-react'
+import { ClipboardList, DollarSign, CheckCircle, TrendingUp, Hand, AlertCircle, CalendarDays, ChevronRight, Radar, ArrowUpRight, ArrowDownRight, Minus, ChevronLeft, Truck, BadgeDollarSign } from 'lucide-react'
 import api from '../lib/api'
 import { getRole, getTokenPayload, isAdmin } from '../lib/auth'
 import { STATUS_COLORS, STATUS_LABELS } from './RepairOrders'
@@ -128,6 +128,7 @@ export default function Dashboard() {
   const [data, setData] = useState(null)
   const [techData, setTechData] = useState(null)
   const [weekly, setWeekly] = useState(null)
+  const [supplementOpportunity, setSupplementOpportunity] = useState(null)
   const [goal, setGoal] = useState(null)
   const [pendingCarryover, setPendingCarryover] = useState([])
   const [pendingAppointments, setPendingAppointments] = useState(0)
@@ -154,7 +155,7 @@ export default function Dashboard() {
   })()
 
   async function loadDashboardData() {
-    const [summaryRes, monthSummaryRes, carryoverRes, appointmentsRes, goalsRes, adasRes, weeklyRes, rosRes] = await Promise.all([
+    const [summaryRes, monthSummaryRes, carryoverRes, appointmentsRes, goalsRes, adasRes, weeklyRes, supplementRes, rosRes] = await Promise.all([
       api.get('/reports/summary?scope=all').catch((err) => { console.error('[Dashboard] /reports/summary?scope=all failed:', err?.response?.status, err?.response?.data?.error || err?.message); return { data: {} } }),
       api.get('/reports/summary').catch((err) => { console.error('[Dashboard] /reports/summary failed:', err?.response?.status, err?.response?.data?.error || err?.message); return { data: {} } }),
       api.get('/ros/carryover-pending').catch(() => ({ data: { ros: [] } })),
@@ -162,6 +163,7 @@ export default function Dashboard() {
       api.get(`/goals/${yearMonth}`).catch(() => ({ data: { goal: null } })),
       api.get('/adas/queue').catch(() => ({ data: { queue: [] } })),
       api.get('/dashboard/weekly').catch(() => ({ data: null })),
+      api.get('/dashboard/supplements/monthly-opportunity').catch(() => ({ data: null })),
       api.get('/repair-orders').catch((err) => { console.error('[Dashboard] /repair-orders failed:', err?.response?.status, err?.response?.data?.error || err?.message); return { data: { ros: [] } } }),
     ])
     const allRos = Array.isArray(rosRes?.data?.ros) ? rosRes.data.ros : []
@@ -192,6 +194,7 @@ export default function Dashboard() {
     setGoal(goalsRes.data?.goal || null)
     setAdasQueue(adasRes.data?.queue || [])
     setWeekly(weeklyRes.data || null)
+    setSupplementOpportunity(supplementRes.data || null)
     setCalendarRos(allRos)
   }
 
@@ -737,6 +740,17 @@ export default function Dashboard() {
         accent: 'bg-amber-500',
         card: 'bg-gradient-to-br from-amber-900/40 to-[#1a1d2e]',
         to: '/monthly-report',
+        goalProgress: null,
+      },
+      {
+        id: 'supplement-opportunity',
+        label: 'Supplement Opportunity',
+        value: `$${Number(supplementOpportunity?.total_supplement_opportunity || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+        icon: BadgeDollarSign,
+        color: 'text-yellow-300',
+        accent: 'bg-yellow-500',
+        card: 'bg-gradient-to-br from-yellow-900/30 to-[#1a1d2e]',
+        to: '/ros?status=estimate',
         goalProgress: null,
       },
     ] : []),
