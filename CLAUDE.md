@@ -724,3 +724,42 @@ cd frontend && npm run test:run  # 14 files, 26/26 tests passed
 - Dashboard queries remain parameterized and scoped through `req.user.shop_id`.
 - Owner/admin gating remains intact.
 - No secrets were read, logged, or changed.
+
+## Dispatch Log — 2026-06-02 SMS Compliance Footer + Consent Capture
+
+**Status:** DONE + VERIFIED
+
+**Time**
+- 2026-06-02 12:11:19 EDT
+- 2026-06-02 16:11:19 UTC
+
+**Scope**
+- Added centralized outbound customer-facing SMS opt-out footer handling in `sendSMS`, with dedupe-safe detection for existing STOP opt-out language.
+- Marked the late clock-in admin SMS as internal so it does not receive customer compliance language.
+- Added `customers.sms_consent BOOLEAN DEFAULT TRUE` through the idempotent PostgreSQL migration path and fresh schema.
+- Added RO intake consent capture in `AddROModal` for new and existing customers, persisting the value without changing SMS send gating.
+- Stored the final footer-appended outbound SMS body in SMS thread routes when messages are logged.
+
+**Files changed**
+- `backend/src/services/sms.js`
+- `backend/src/routes/sms.js`
+- `backend/src/routes/timeclock.js`
+- `backend/src/routes/customers.js`
+- `backend/src/routes/ros.js`
+- `backend/src/db/migrate.js`
+- `backend/src/db/schema.pg.sql`
+- `backend/src/__tests__/sms-compliance.test.js`
+- `frontend/src/components/AddROModal.jsx`
+- `CLAUDE.md`
+
+**Verification**
+```
+cd backend && node --test src/__tests__/*.test.js  # 15/15 passed
+cd frontend && npm run test:run  # 14 files, 26/26 tests passed
+```
+
+**Data safety**
+- No seed, reset, or destructive scripts were run.
+- Schema change is additive and idempotent: `ALTER TABLE customers ADD COLUMN IF NOT EXISTS sms_consent BOOLEAN DEFAULT TRUE`.
+- Customer consent updates remain parameterized and scoped through `req.user.shop_id`.
+- Existing SMS send behavior is unchanged except for required compliance footer content.

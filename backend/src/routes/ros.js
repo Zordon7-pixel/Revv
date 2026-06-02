@@ -1650,7 +1650,7 @@ router.post('/approval/:token/respond', publicTokenLimiter, async (req, res) => 
 
 router.post('/', auth, requireTechnician, roLimitGuard, async (req, res) => {
   try {
-    const { customer_id, vehicle_id, job_type, payment_type, claim_number, insurer, adjuster_name, adjuster_phone, adjuster_email, deductible, notes, estimated_delivery, damaged_panels } = req.body;
+    const { customer_id, vehicle_id, job_type, payment_type, claim_number, insurer, adjuster_name, adjuster_phone, adjuster_email, deductible, notes, estimated_delivery, damaged_panels, sms_consent } = req.body;
     if (!customer_id || !vehicle_id) {
       return res.status(400).json({ error: 'customer_id and vehicle_id are required' });
     }
@@ -1661,6 +1661,12 @@ router.post('/', auth, requireTechnician, roLimitGuard, async (req, res) => {
       [vehicle_id, req.user.shop_id, customer_id]
     );
     if (!vehicle) return res.status(400).json({ error: 'Invalid vehicle_id for this customer/shop' });
+    if (typeof sms_consent === 'boolean') {
+      await dbRun(
+        'UPDATE customers SET sms_consent = $1 WHERE id = $2 AND shop_id = $3',
+        [sms_consent, customer_id, req.user.shop_id]
+      );
+    }
 
     const duplicateConditions = ['ro.customer_id = $2'];
     const duplicateParams = [req.user.shop_id, customer_id];

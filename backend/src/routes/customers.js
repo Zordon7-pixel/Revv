@@ -78,7 +78,7 @@ router.get('/:id/history', auth, async (req, res) => {
 router.get('/:id/autofill', auth, async (req, res) => {
   try {
     const customer = await dbGet(
-      'SELECT id, name, phone, email, insurance_company, policy_number FROM customers WHERE id = $1 AND shop_id = $2',
+      'SELECT id, name, phone, sms_consent, email, insurance_company, policy_number FROM customers WHERE id = $1 AND shop_id = $2',
       [req.params.id, req.user.shop_id]
     );
     if (!customer) return res.status(404).json({ error: 'Not found' });
@@ -140,14 +140,14 @@ router.get('/:id', auth, async (req, res) => {
 
 router.post('/', auth, requireTechnician, async (req, res) => {
   try {
-    const { name, phone, email, address, insurance_company, policy_number } = req.body;
+    const { name, phone, email, address, insurance_company, policy_number, sms_consent } = req.body;
     if (!name || !name.trim()) return res.status(400).json({ error: 'Customer name is required.' });
     const shop = await dbGet('SELECT id FROM shops WHERE id = $1', [req.user.shop_id]);
     if (!shop) return res.status(401).json({ error: 'Session expired. Please log out and back in.' });
     const id = uuidv4();
     await dbRun(
-      'INSERT INTO customers (id, shop_id, name, phone, email, address, insurance_company, policy_number) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
-      [id, req.user.shop_id, name.trim(), phone || null, email || null, address || null, insurance_company || null, policy_number || null]
+      'INSERT INTO customers (id, shop_id, name, phone, sms_consent, email, address, insurance_company, policy_number) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)',
+      [id, req.user.shop_id, name.trim(), phone || null, sms_consent !== false, email || null, address || null, insurance_company || null, policy_number || null]
     );
     res.status(201).json(await dbGet('SELECT * FROM customers WHERE id = $1 AND shop_id = $2', [id, req.user.shop_id]));
   } catch (err) {
@@ -158,10 +158,11 @@ router.post('/', auth, requireTechnician, async (req, res) => {
 
 router.put('/:id', auth, requireTechnician, async (req, res) => {
   try {
-    const { name, phone, email, address, insurance_company, policy_number } = req.body;
+    const { name, phone, email, address, insurance_company, policy_number, sms_consent } = req.body;
+    const nextSmsConsent = typeof sms_consent === 'boolean' ? sms_consent : null;
     await dbRun(
-      'UPDATE customers SET name=$1, phone=$2, email=$3, address=$4, insurance_company=$5, policy_number=$6 WHERE id=$7 AND shop_id=$8',
-      [name, phone, email, address, insurance_company, policy_number, req.params.id, req.user.shop_id]
+      'UPDATE customers SET name=$1, phone=$2, sms_consent=COALESCE($3, sms_consent), email=$4, address=$5, insurance_company=$6, policy_number=$7 WHERE id=$8 AND shop_id=$9',
+      [name, phone, nextSmsConsent, email, address, insurance_company, policy_number, req.params.id, req.user.shop_id]
     );
     res.json(await dbGet('SELECT * FROM customers WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]));
   } catch (err) {

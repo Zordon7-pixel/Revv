@@ -32,7 +32,7 @@ export default function AddROModal({ onClose, onSaved }) {
   const [form, setForm] = useState({
     // Customer (new or existing)
     customer_id: '', new_customer: false,
-    customer_name: '', customer_phone: '', customer_email: '',
+    customer_name: '', customer_phone: '', customer_email: '', sms_consent: true,
     // Vehicle
     vehicle_id: '', new_vehicle: true,
     year: '', make: '', model: '', vin: '', color: '', plate: '',
@@ -69,6 +69,7 @@ export default function AddROModal({ onClose, onSaved }) {
           if (!next.customer_name && customer?.name) next.customer_name = customer.name
           if (!next.customer_phone && customer?.phone) next.customer_phone = customer.phone
           if (!next.customer_email && customer?.email) next.customer_email = customer.email
+          next.sms_consent = customer?.sms_consent !== false
           if (latestVehicle && (!next.vehicle_id || next.new_vehicle)) {
             next.new_vehicle = false
             next.vehicle_id = latestVehicle.id || ''
@@ -245,7 +246,7 @@ export default function AddROModal({ onClose, onSaved }) {
     try {
       let customer_id = form.customer_id
       if (!customer_id || form.new_customer) {
-        const { data } = await api.post('/customers', { name: form.customer_name, phone: form.customer_phone, email: form.customer_email })
+        const { data } = await api.post('/customers', { name: form.customer_name, phone: form.customer_phone, email: form.customer_email, sms_consent: form.sms_consent })
         customer_id = data.id
       }
       let vehicle_id = form.vehicle_id
@@ -263,7 +264,8 @@ export default function AddROModal({ onClose, onSaved }) {
         adjuster_name: form.adjuster_name, adjuster_phone: form.adjuster_phone,
         adjuster_email: form.adjuster_email,
         deductible: +form.deductible || 0, estimated_delivery: form.estimated_delivery, notes: form.notes,
-        damaged_panels: form.damaged_panels
+        damaged_panels: form.damaged_panels,
+        sms_consent: form.sms_consent
       })
       if (ro?.duplicate_warning) {
         setDuplicateWarning(ro.duplicate_warning)
@@ -336,6 +338,7 @@ export default function AddROModal({ onClose, onSaved }) {
                       vin: '',
                       color: '',
                       plate: '',
+                      sms_consent: true,
                     }))
                   }}
                   className={`flex-1 py-2 rounded-lg text-xs font-medium transition-colors ${form.new_customer ? 'bg-indigo-600 text-white' : 'bg-[#0f1117] text-slate-400 border border-[#2a2d3e]'}`}
@@ -361,6 +364,7 @@ export default function AddROModal({ onClose, onSaved }) {
                         vin: '',
                         color: '',
                         plate: '',
+                        sms_consent: true,
                       }))
                     }}
                     className={inp}
@@ -375,6 +379,15 @@ export default function AddROModal({ onClose, onSaved }) {
                   <div><label className={lbl}>Email</label><input className={inp} type="email" value={form.customer_email} onChange={e => set('customer_email', e.target.value)} placeholder="john@email.com" /></div>
                 </>
               )}
+              <label className="flex items-start gap-2 text-xs text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={form.sms_consent}
+                  onChange={e => set('sms_consent', e.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-[#2a2d3e] bg-[#0f1117] accent-indigo-600"
+                />
+                Customer consents to receive SMS status updates
+              </label>
             </>
           )}
           {step === 2 && (
