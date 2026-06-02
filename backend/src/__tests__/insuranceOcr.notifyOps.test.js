@@ -23,7 +23,7 @@ test('insurance OCR parse and analyze routes are rate limited and accept PDF imp
   assert.match(source, /const insuranceOcrLimiter = rateLimit\(/);
   assert.match(source, /windowMs: 10 \* 60 \* 1000/);
   assert.match(source, /max: 15/);
-  assert.match(source, /keyGenerator: \(req\)/);
+  assert.match(source, /keyGenerator: insuranceOcrLimiterKeyGenerator/);
   assert.match(source, /req\.user\.shop_id/);
   assert.match(source, /message: \{ error: 'Too many requests\. Try again in 10 minutes\.' \}/);
   assert.match(source, /router\.post\('\/parse', auth, insuranceOcrLimiter, upload\.single\('estimate_image'\)/);
@@ -32,4 +32,17 @@ test('insurance OCR parse and analyze routes are rate limited and accept PDF imp
   assert.match(source, /filename\.endsWith\('\.pdf'\)/);
   assert.match(source, /"vin": "string or null"/);
   assert.match(source, /vin: parsed\.vin \|\| null/);
+});
+
+test('insurance OCR limiter key generator falls back to request IP', () => {
+  const { insuranceOcrLimiterKeyGenerator } = require('../routes/insuranceOcr');
+
+  assert.equal(
+    insuranceOcrLimiterKeyGenerator({ user: { shop_id: 1, id: 2 }, ip: '9.9.9.9' }),
+    '1:2'
+  );
+  assert.equal(
+    insuranceOcrLimiterKeyGenerator({ user: {}, ip: '9.9.9.9' }),
+    '9.9.9.9'
+  );
 });

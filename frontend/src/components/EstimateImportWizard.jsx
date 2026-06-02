@@ -143,7 +143,7 @@ export default function EstimateImportWizard({ onClose, onImported }) {
       })
       onImported?.(data?.ro)
     } catch (err) {
-      setError(err?.response?.data?.error || 'Could not create the repair order.')
+      setError(safeExternalErrorMessage(err, 'Could not create the repair order.'))
     } finally {
       setCreating(false)
     }

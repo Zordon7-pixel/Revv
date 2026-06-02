@@ -2,7 +2,6 @@ const router = require('express').Router();
 const multer = require('multer');
 const OpenAI = require('openai');
 const rateLimit = require('express-rate-limit');
-const { ipKeyGenerator } = require('express-rate-limit');
 const pdfParse = require('pdf-parse');
 const fs = require('fs/promises');
 const os = require('os');
@@ -29,16 +28,18 @@ const upload = multer({
     return cb(new Error('Unsupported estimate file type. Upload a PDF or image.'));
   },
 });
+function insuranceOcrLimiterKeyGenerator(req) {
+  return req.user?.shop_id && req.user?.id
+    ? `${req.user.shop_id}:${req.user.id}`
+    : req.ip || 'unknown';
+}
+
 const insuranceOcrLimiter = rateLimit({
   windowMs: 10 * 60 * 1000,
   max: 15,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => (
-    req.user?.shop_id && req.user?.id
-      ? `${req.user.shop_id}:${req.user.id}`
-      : ipKeyGenerator(req.ip)
-  ),
+  keyGenerator: insuranceOcrLimiterKeyGenerator,
   message: { error: 'Too many requests. Try again in 10 minutes.' },
 });
 const execFileAsync = promisify(execFile);
@@ -727,3 +728,5 @@ router.post('/analyze', auth, insuranceOcrLimiter, async (req, res) => {
 });
 
 module.exports = router;
+module.exports.insuranceOcrLimiter = insuranceOcrLimiter;
+module.exports.insuranceOcrLimiterKeyGenerator = insuranceOcrLimiterKeyGenerator;

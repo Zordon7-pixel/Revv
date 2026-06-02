@@ -1,5 +1,5 @@
 const router = require('express').Router();
-const { dbGet, dbAll, dbRun } = require('../db');
+const { pool, dbGet, dbAll, dbRun } = require('../db');
 const auth = require('../middleware/auth');
 const { requireAdmin, requireTechnician } = require('../middleware/roles');
 const { calculateProfit } = require('../services/profit');
@@ -18,6 +18,7 @@ const roLimitGuard = require('../middleware/roLimitGuard');
 const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
+const { insuranceOcrLimiter } = require('./insuranceOcr');
 
 const STATUSES = ['intake','estimate','approval','parts','repair','paint','qc','delivery','closed','total_loss','siu_hold'];
 // Simple: status update + ready for pickup only. No approval/estimate SMS.
@@ -386,8 +387,8 @@ function normalizeImportedEstimateItems(items) {
     .filter(Boolean);
 }
 
-async function getEstimateSummaryForRo(roId, shopId) {
-  const row = await dbGet(
+async function getEstimateSummaryForRo(roId, shopId, queryOne = dbGet) {
+  const row = await queryOne(
     `SELECT
        COALESCE(SUM(total), 0) AS subtotal,
        COALESCE(SUM(CASE WHEN type = 'labor' THEN total ELSE 0 END), 0) AS labor_total,
@@ -399,7 +400,7 @@ async function getEstimateSummaryForRo(roId, shopId) {
      WHERE ro_id = $1 AND shop_id = $2`,
     [roId, shopId]
   );
-  const shop = await dbGet('SELECT COALESCE(tax_rate, 0) AS tax_rate FROM shops WHERE id = $1', [shopId]);
+  const shop = await queryOne('SELECT COALESCE(tax_rate, 0) AS tax_rate FROM shops WHERE id = $1', [shopId]);
   const taxRate = normalizeMoney(shop?.tax_rate, 0);
   const taxableSubtotal = normalizeMoney(row?.taxable_subtotal, 0);
   const tax = taxableSubtotal * taxRate;
@@ -413,17 +414,17 @@ async function getEstimateSummaryForRo(roId, shopId) {
   };
 }
 
-async function syncImportedRoFinancials(roId, shopId) {
-  const current = await dbGet(
+async function syncImportedRoFinancials(roId, shopId, queryOne = dbGet, queryRun = dbRun) {
+  const current = await queryOne(
     `SELECT id, deductible_waived, referral_fee, goodwill_repair_cost
      FROM repair_orders
      WHERE id = $1 AND shop_id = $2`,
     [roId, shopId]
   );
   if (!current) return null;
-  const summary = await getEstimateSummaryForRo(roId, shopId);
+  const summary = await getEstimateSummaryForRo(roId, shopId, queryOne);
   const profit = calculateProfit({ ...current, ...summary });
-  await dbRun(
+  await queryRun(
     `UPDATE repair_orders
      SET parts_cost = $1,
          labor_cost = $2,
@@ -1795,7 +1796,9 @@ router.post('/', auth, requireTechnician, roLimitGuard, async (req, res) => {
   }
 });
 
-router.post('/import-estimate', auth, requireTechnician, roLimitGuard, async (req, res) => {
+router.post('/import-estimate', auth, requireTechnician, insuranceOcrLimiter, roLimitGuard, async (req, res) => {
+  let client;
+  let committed = false;
   try {
     const body = req.body || {};
     const vehicle = body.vehicle || {};
@@ -1824,8 +1827,16 @@ router.post('/import-estimate', auth, requireTechnician, roLimitGuard, async (re
     const claimNumber = cleanText(insurance.claim_number || body.claim_number, 120);
     const insuranceCompany = cleanText(insurance.company || body.insurance_company, 160);
     const deductible = normalizeMoney(insurance.deductible || body.deductible, 0);
+    client = await pool.connect();
+    const txGet = async (sql, params = []) => {
+      const result = await client.query(sql, params);
+      return result.rows[0] || null;
+    };
+    const txRun = (sql, params = []) => client.query(sql, params);
 
-    await dbRun(
+    await client.query('BEGIN');
+
+    await txRun(
       `INSERT INTO customers (id, shop_id, name, phone, email, address, insurance_company, policy_number)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
       [
@@ -1840,7 +1851,7 @@ router.post('/import-estimate', auth, requireTechnician, roLimitGuard, async (re
       ]
     );
 
-    await dbRun(
+    await txRun(
       `INSERT INTO vehicles (id, shop_id, customer_id, year, make, model, vin, color, plate, mileage)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
       [
@@ -1863,8 +1874,9 @@ router.post('/import-estimate', auth, requireTechnician, roLimitGuard, async (re
     while (attempts < 5) {
       roNumber = await getNextRoNumber(req.user.shop_id, attempts);
       roId = uuidv4();
+      await txRun('SAVEPOINT import_estimate_ro_insert');
       try {
-        await dbRun(
+        await txRun(
           `INSERT INTO repair_orders (
              id, shop_id, ro_number, vehicle_id, customer_id, job_type, status, payment_type,
              claim_number, insurer, insurance_claim_number, insurance_company,
@@ -1890,8 +1902,11 @@ router.post('/import-estimate', auth, requireTechnician, roLimitGuard, async (re
             cleanText(body.notes, 1000) || 'Created from CCC/Mitchell estimate import',
           ]
         );
+        await txRun('RELEASE SAVEPOINT import_estimate_ro_insert');
         break;
       } catch (err) {
+        await txRun('ROLLBACK TO SAVEPOINT import_estimate_ro_insert');
+        await txRun('RELEASE SAVEPOINT import_estimate_ro_insert');
         if (err?.code === '23505' || (err?.message && err.message.includes('duplicate key'))) {
           attempts += 1;
           continue;
@@ -1903,18 +1918,21 @@ router.post('/import-estimate', auth, requireTechnician, roLimitGuard, async (re
 
     for (let i = 0; i < lineItems.length; i += 1) {
       const item = lineItems[i];
-      await dbRun(
+      await txRun(
         `INSERT INTO estimate_line_items (id, ro_id, shop_id, type, description, quantity, unit_price, taxable, sort_order)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
         [uuidv4(), roId, req.user.shop_id, item.type, item.description, item.quantity, item.unit_price, item.type === 'parts', i]
       );
     }
 
-    const summary = await syncImportedRoFinancials(roId, req.user.shop_id);
-    await dbRun(
+    const summary = await syncImportedRoFinancials(roId, req.user.shop_id, txGet, txRun);
+    await txRun(
       'INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by, note) VALUES ($1, $2, $3, $4, $5, $6)',
       [uuidv4(), roId, null, 'intake', req.user.id, `Created from estimate import (${lineItems.length} line items)`]
     );
+    const ro = await txGet('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2', [roId, req.user.shop_id]);
+    await client.query('COMMIT');
+    committed = true;
     createNotification(
       req.user.shop_id,
       null,
@@ -1924,7 +1942,6 @@ router.post('/import-estimate', auth, requireTechnician, roLimitGuard, async (re
       roId
     ).catch(() => {});
 
-    const ro = await dbGet('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2', [roId, req.user.shop_id]);
     return res.status(201).json({
       success: true,
       ro: await enrichRO(ro),
@@ -1932,8 +1949,17 @@ router.post('/import-estimate', auth, requireTechnician, roLimitGuard, async (re
       summary,
     });
   } catch (err) {
+    if (client && !committed) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (rollbackErr) {
+        console.error('[RO Import Estimate] Rollback error:', rollbackErr?.message || rollbackErr);
+      }
+    }
     console.error('[RO Import Estimate] Error:', err?.message || err);
     return res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    if (client) client.release();
   }
 });
 
