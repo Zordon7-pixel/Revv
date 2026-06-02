@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const { messageWithComplianceFooter } = require('../services/sms');
+const { SMS_OPT_IN_CONFIRMATION_MESSAGE } = require('../services/customerOptInConfirmation');
 
 test('SMS compliance footer is appended to customer-facing messages', () => {
   const body = messageWithComplianceFooter('Your vehicle is ready for pickup.');
@@ -31,4 +32,11 @@ test('SMS compliance footer can be skipped for internal messages', () => {
   const body = 'Late Clock-In Alert: Employee clocked in late.';
 
   assert.equal(messageWithComplianceFooter(body, { customerFacing: false }), body);
+});
+
+test('SMS opt-in confirmation does not receive a duplicate compliance footer', () => {
+  assert.equal(
+    messageWithComplianceFooter(SMS_OPT_IN_CONFIRMATION_MESSAGE),
+    SMS_OPT_IN_CONFIRMATION_MESSAGE
+  );
 });

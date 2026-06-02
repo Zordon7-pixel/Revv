@@ -2,6 +2,7 @@ const router = require('express').Router();
 const { dbGet, dbAll, dbRun } = require('../db');
 const auth = require('../middleware/auth');
 const { requireTechnician } = require('../middleware/roles');
+const { sendCustomerOptInConfirmation } = require('../services/customerOptInConfirmation');
 const { v4: uuidv4 } = require('uuid');
 
 router.get('/', auth, async (req, res) => {
@@ -149,6 +150,11 @@ router.post('/', auth, requireTechnician, async (req, res) => {
       'INSERT INTO customers (id, shop_id, name, phone, sms_consent, email, address, insurance_company, policy_number) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)',
       [id, req.user.shop_id, name.trim(), phone || null, sms_consent !== false, email || null, address || null, insurance_company || null, policy_number || null]
     );
+    await sendCustomerOptInConfirmation({
+      phone,
+      smsConsent: sms_consent !== false,
+      shopId: req.user.shop_id,
+    });
     res.status(201).json(await dbGet('SELECT * FROM customers WHERE id = $1 AND shop_id = $2', [id, req.user.shop_id]));
   } catch (err) {
     console.error('Customer save error:', err.message);

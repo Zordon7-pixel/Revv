@@ -763,3 +763,36 @@ cd frontend && npm run test:run  # 14 files, 26/26 tests passed
 - Schema change is additive and idempotent: `ALTER TABLE customers ADD COLUMN IF NOT EXISTS sms_consent BOOLEAN DEFAULT TRUE`.
 - Customer consent updates remain parameterized and scoped through `req.user.shop_id`.
 - Existing SMS send behavior is unchanged except for required compliance footer content.
+
+## Dispatch Log — 2026-06-02 One-Time SMS Opt-In Confirmation
+
+**Status:** DONE + VERIFIED
+
+**Time**
+- 2026-06-02 13:34:46 EDT
+- 2026-06-02 17:34:46 UTC
+
+**Scope**
+- Added a reusable customer opt-in confirmation send helper using the existing SMS send path and shop-scoped Twilio lookup.
+- Sent the confirmation only when a newly created customer is opted in and has a non-empty phone number.
+- Routed estimate-import RO customer creation through the same helper after transaction commit.
+- Verified the exact confirmation text does not receive a duplicate STOP/HELP footer.
+
+**Files changed**
+- `backend/src/services/customerOptInConfirmation.js`
+- `backend/src/routes/customers.js`
+- `backend/src/routes/ros.js`
+- `backend/src/__tests__/customerOptInConfirmation.test.js`
+- `backend/src/__tests__/sms-compliance.test.js`
+- `CLAUDE.md`
+
+**Verification**
+```
+cd backend && node --test src/__tests__/*.test.js  # 20/20 passed
+cd frontend && npm run test:run  # 14 files, 26/26 tests passed
+```
+
+**Data safety**
+- No migrations, seed, reset, or destructive scripts were run.
+- New calls reuse existing parameterized customer insert paths and `req.user.shop_id`.
+- SMS send failures are logged with `[SMS Opt-In Confirmation]` and do not fail create requests.

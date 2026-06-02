@@ -14,6 +14,7 @@ const {
   sendClosedPaidInvoiceEmail,
 } = require('../services/customerBilling');
 const { syncInvoiceForRo } = require('../services/quickbooks');
+const { sendCustomerOptInConfirmation } = require('../services/customerOptInConfirmation');
 const roLimitGuard = require('../middleware/roLimitGuard');
 const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
@@ -1817,6 +1818,8 @@ router.post('/import-estimate', auth, requireTechnician, insuranceOcrLimiter, ro
     const lineItems = normalizeImportedEstimateItems(body.line_items);
 
     const customerName = cleanText(customer.name || body.customer_name, 160) || 'Imported Estimate Customer';
+    const customerPhone = cleanText(customer.phone || body.customer_phone, 50);
+    const customerSmsConsent = body.sms_consent === true || customer.sms_consent === true;
     const vehicleYear = cleanYear(vehicle.year || body.vehicle_year);
     const vehicleMake = cleanText(vehicle.make || body.vehicle_make, 80);
     const vehicleModel = cleanText(vehicle.model || body.vehicle_model, 120);
@@ -1847,13 +1850,14 @@ router.post('/import-estimate', auth, requireTechnician, insuranceOcrLimiter, ro
     await client.query('BEGIN');
 
     await txRun(
-      `INSERT INTO customers (id, shop_id, name, phone, email, address, insurance_company, policy_number)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      `INSERT INTO customers (id, shop_id, name, phone, sms_consent, email, address, insurance_company, policy_number)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
       [
         customerId,
         req.user.shop_id,
         customerName,
-        cleanText(customer.phone || body.customer_phone, 50),
+        customerPhone,
+        customerSmsConsent,
         cleanText(customer.email || body.customer_email, 160),
         cleanText(customer.address || body.customer_address, 255),
         insuranceCompany,
@@ -1943,6 +1947,11 @@ router.post('/import-estimate', auth, requireTechnician, insuranceOcrLimiter, ro
     const ro = await txGet('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2', [roId, req.user.shop_id]);
     await client.query('COMMIT');
     committed = true;
+    await sendCustomerOptInConfirmation({
+      phone: customerPhone,
+      smsConsent: customerSmsConsent,
+      shopId: req.user.shop_id,
+    });
     createNotification(
       req.user.shop_id,
       null,
