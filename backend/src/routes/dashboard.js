@@ -136,7 +136,11 @@ router.get('/owner-kpis', auth, requireOwnerAdminOnly, async (req, res) => {
            COUNT(DISTINCT l.ro_id) FILTER (WHERE LOWER(TRIM(l.to_status)) IN ('closed', 'completed'))::int AS ros_closed
          FROM job_status_log l
          JOIN repair_orders ro ON ro.id = l.ro_id
-         JOIN users u ON u.id::text = l.changed_by
+         JOIN users u ON u.id = CASE
+           WHEN l.changed_by ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+           THEN l.changed_by::uuid
+           ELSE NULL
+         END
          WHERE ro.shop_id = $1
            AND u.shop_id = $1
            AND l.created_at >= DATE_TRUNC('month', NOW())

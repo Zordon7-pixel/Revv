@@ -2,6 +2,7 @@ const router = require('express').Router();
 const multer = require('multer');
 const OpenAI = require('openai');
 const rateLimit = require('express-rate-limit');
+const { ipKeyGenerator } = rateLimit;
 const pdfParse = require('pdf-parse');
 const fs = require('fs/promises');
 const os = require('os');
@@ -31,7 +32,7 @@ const upload = multer({
 function insuranceOcrLimiterKeyGenerator(req) {
   return req.user?.shop_id && req.user?.id
     ? `${req.user.shop_id}:${req.user.id}`
-    : req.ip || 'unknown';
+    : ipKeyGenerator(req.ip || 'unknown');
 }
 
 const insuranceOcrLimiter = rateLimit({

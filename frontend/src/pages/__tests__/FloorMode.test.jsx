@@ -43,6 +43,7 @@ describe('FloorMode', () => {
           data: {
             ros: [
               { id: 'ro-1', ro_number: 'RO-1', status: 'repair', customer_name: 'Miles Davis', year: 2022, make: 'Honda', model: 'Civic' },
+              { id: 'ro-3', ro_number: 'RO-3', status: 'qc', customer_name: 'Quincy Customer' },
               { id: 'ro-2', ro_number: 'RO-2', status: 'delivery', customer_name: 'Ready Customer' },
             ],
           },
@@ -65,6 +66,7 @@ describe('FloorMode', () => {
 
     expect(await screen.findByText('RO-1')).toBeInTheDocument()
     expect(screen.getByText('Miles Davis')).toBeInTheDocument()
+    expect(screen.getByText('RO-3')).toBeInTheDocument()
     expect(screen.queryByText('RO-2')).not.toBeInTheDocument()
     expect(api.get).toHaveBeenCalledWith('/ros', {
       params: { assigned_to: 'tech-1', status: 'open' },
@@ -85,5 +87,21 @@ describe('FloorMode', () => {
     expect(await screen.findByText('Nope')).toBeInTheDocument()
     expect(screen.getByText('RO-1')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /move to paint/i })).toBeInTheDocument()
+  })
+
+  it('restores a qc card and surfaces an error when advancing to delivery fails', async () => {
+    const user = userEvent.setup()
+    api.put.mockRejectedValueOnce({ response: { data: { error: 'Delivery blocked' } } })
+    renderFloorMode()
+
+    await screen.findByText('RO-3')
+    await user.click(screen.getByRole('button', { name: /move to delivery/i }))
+
+    await waitFor(() => {
+      expect(api.put).toHaveBeenCalledWith('/ros/ro-3/status', { status: 'delivery' })
+    })
+    expect(await screen.findByText('Delivery blocked')).toBeInTheDocument()
+    expect(screen.getByText('RO-3')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /move to delivery/i })).toBeInTheDocument()
   })
 })

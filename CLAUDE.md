@@ -596,3 +596,37 @@ cd backend && node --test src/__tests__/*.test.js  # 5/5 passed
 - No migrations, seed, reset, or destructive scripts were run.
 - No backend query changes were made.
 - No secrets were read, logged, or changed.
+
+## Dispatch Log — 2026-06-01 Consolidated Hardening Backlog
+
+**Status:** DONE + VERIFIED
+
+**Time**
+- 2026-06-01 22:34:58 EDT
+- 2026-06-02 02:34:58 UTC
+
+**Scope**
+- Forced technician-rank `/ros` list callers to their own `assigned_to` filter while preserving owner/admin/manager/superadmin filtering within shop scope.
+- Updated insurance OCR rate-limit IP fallback to use express-rate-limit `ipKeyGenerator`, preserving the primary `shop_id:user_id` key path and eliminating the IPv6 key-generator validation warning.
+- Rewrote Owner KPI tech-efficiency join to cast guarded `job_status_log.changed_by` UUID values instead of casting `users.id`.
+- Added FloorMode regression coverage for failed optimistic `qc -> delivery` advancement restoring the card and surfacing the API error.
+- Skipped optional OwnerKpis dependency/i18n items to avoid behavior drift and broader string-scope changes.
+
+**Files changed**
+- `backend/src/routes/ros.js`
+- `backend/src/routes/insuranceOcr.js`
+- `backend/src/routes/dashboard.js`
+- `backend/src/__tests__/insuranceOcr.notifyOps.test.js`
+- `frontend/src/pages/__tests__/FloorMode.test.jsx`
+- `CLAUDE.md`
+
+**Verification**
+```
+cd backend && node --test src/__tests__/*.test.js  # 7/7 passed; no ERR_ERL_KEY_GEN_IPV6 output
+cd frontend && npm run test:run  # 14 files, 26/26 tests passed
+```
+
+**Data safety**
+- No migrations, seed, reset, or destructive scripts were run.
+- Backend query changes remain parameterized and scoped through `req.user.shop_id`.
+- No secrets were read, logged, or changed.

@@ -34,7 +34,7 @@ test('insurance OCR parse and analyze routes are rate limited and accept PDF imp
   assert.match(source, /vin: parsed\.vin \|\| null/);
 });
 
-test('insurance OCR limiter key generator falls back to request IP', () => {
+test('insurance OCR limiter key generator falls back to normalized request IP', () => {
   const { insuranceOcrLimiterKeyGenerator } = require('../routes/insuranceOcr');
 
   assert.equal(
@@ -44,5 +44,9 @@ test('insurance OCR limiter key generator falls back to request IP', () => {
   assert.equal(
     insuranceOcrLimiterKeyGenerator({ user: {}, ip: '9.9.9.9' }),
     '9.9.9.9'
+  );
+  assert.equal(
+    insuranceOcrLimiterKeyGenerator({ user: {}, ip: '2001:db8::1' }),
+    '2001:db8::/56'
   );
 });

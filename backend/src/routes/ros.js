@@ -772,7 +772,11 @@ router.get('/', auth, async (req, res) => {
     const normalizedStatus = String(status || '').trim().toLowerCase();
     const normalizedTechId = String(tech_id || '').trim();
     const normalizedAssignedTo = String(assigned_to || '').trim();
-    const assignedFilter = normalizedTechId || normalizedAssignedTo;
+    const actorRole = String(req.user.role || '').toLowerCase();
+    const canFilterAssignedTo = ['owner', 'admin', 'manager', 'superadmin'].includes(actorRole);
+    const assignedFilter = canFilterAssignedTo
+      ? normalizedTechId || normalizedAssignedTo
+      : req.user.id;
     const normalizedType = String(type || '').trim().toLowerCase();
     const normalizedJobType = String(job_type || '').trim().toLowerCase() || normalizedType;
     const normalizedDateFrom = String(date_from || '').trim();
