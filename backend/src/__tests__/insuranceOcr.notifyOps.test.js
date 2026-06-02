@@ -15,3 +15,21 @@ test('insurance OCR imports notifyOps and handles provider failure branches', ()
   assert.match(source, /rate_limit_exceeded/);
   assert.match(source, /provider_5xx/);
 });
+
+test('insurance OCR parse and analyze routes are rate limited and accept PDF imports', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../routes/insuranceOcr.js'), 'utf8');
+
+  assert.match(source, /require\('express-rate-limit'\)/);
+  assert.match(source, /const insuranceOcrLimiter = rateLimit\(/);
+  assert.match(source, /windowMs: 10 \* 60 \* 1000/);
+  assert.match(source, /max: 15/);
+  assert.match(source, /keyGenerator: \(req\)/);
+  assert.match(source, /req\.user\.shop_id/);
+  assert.match(source, /message: \{ error: 'Too many requests\. Try again in 10 minutes\.' \}/);
+  assert.match(source, /router\.post\('\/parse', auth, insuranceOcrLimiter, upload\.single\('estimate_image'\)/);
+  assert.match(source, /router\.post\('\/analyze', auth, insuranceOcrLimiter/);
+  assert.match(source, /application\/pdf/);
+  assert.match(source, /filename\.endsWith\('\.pdf'\)/);
+  assert.match(source, /"vin": "string or null"/);
+  assert.match(source, /vin: parsed\.vin \|\| null/);
+});

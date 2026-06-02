@@ -1,6 +1,8 @@
 const router = require('express').Router();
 const multer = require('multer');
 const OpenAI = require('openai');
+const rateLimit = require('express-rate-limit');
+const { ipKeyGenerator } = require('express-rate-limit');
 const pdfParse = require('pdf-parse');
 const fs = require('fs/promises');
 const os = require('os');
@@ -12,7 +14,33 @@ const auth = require('../middleware/auth');
 const { dbGet } = require('../db');
 const { notifyOps } = require('../services/notifyOps');
 
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+const allowedEstimateMimeTypes = new Set(['application/pdf']);
+function isAllowedEstimateFile(file) {
+  const mimeType = String(file?.mimetype || '').toLowerCase();
+  const filename = String(file?.originalname || '').toLowerCase();
+  return mimeType.startsWith('image/') || allowedEstimateMimeTypes.has(mimeType) || filename.endsWith('.pdf');
+}
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (isAllowedEstimateFile(file)) return cb(null, true);
+    return cb(new Error('Unsupported estimate file type. Upload a PDF or image.'));
+  },
+});
+const insuranceOcrLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 15,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => (
+    req.user?.shop_id && req.user?.id
+      ? `${req.user.shop_id}:${req.user.id}`
+      : ipKeyGenerator(req.ip)
+  ),
+  message: { error: 'Too many requests. Try again in 10 minutes.' },
+});
 const execFileAsync = promisify(execFile);
 const PDF_TEXT_CHAR_LIMIT = 120000;
 const PDF_IMAGE_PAGE_LIMIT = 6;
@@ -29,6 +57,7 @@ Return ONLY valid JSON in this exact format:
   "customer_name": "string or null",
   "customer_phone": "string or null",
   "vehicle": "string or null",
+  "vin": "string or null",
   "vehicle_year": "string or null",
   "vehicle_make": "string or null",
   "vehicle_model": "string or null",
@@ -409,7 +438,7 @@ async function extractPdfPageImages(buffer, maxPages = PDF_IMAGE_PAGE_LIMIT) {
 }
 
 // ── Phase 1: OCR parse ───────────────────────────────────────────────────────
-router.post('/parse', auth, upload.single('estimate_image'), async (req, res) => {
+router.post('/parse', auth, insuranceOcrLimiter, upload.single('estimate_image'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ success: false, error: 'No file uploaded. Use field name: estimate_image' });
@@ -548,6 +577,7 @@ router.post('/parse', auth, upload.single('estimate_image'), async (req, res) =>
         customer_name: parsed.customer_name || null,
         customer_phone: parsed.customer_phone || null,
         vehicle: parsed.vehicle || null,
+        vin: parsed.vin || null,
         vehicle_year: parsed.vehicle_year || null,
         vehicle_make: parsed.vehicle_make || null,
         vehicle_model: parsed.vehicle_model || null,
@@ -575,7 +605,7 @@ router.post('/parse', auth, upload.single('estimate_image'), async (req, res) =>
 // POST /api/insurance-ocr/analyze
 // Body: { line_items: [...] }  (same shape as /parse output)
 // Returns: { flags: [...], summary: { ... } }
-router.post('/analyze', auth, async (req, res) => {
+router.post('/analyze', auth, insuranceOcrLimiter, async (req, res) => {
   try {
     // FIX: guard against shop not found — return error instead of silently zeroing rates
     const shop = await dbGet(

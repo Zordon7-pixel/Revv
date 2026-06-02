@@ -350,6 +350,105 @@ function toIntCents(value) {
   return Math.round(n);
 }
 
+function cleanText(value, max = 255) {
+  const next = String(value || '').trim();
+  return next ? next.slice(0, max) : null;
+}
+
+function cleanYear(value) {
+  const next = Number.parseInt(value, 10);
+  const currentYear = new Date().getUTCFullYear() + 1;
+  return Number.isFinite(next) && next >= 1900 && next <= currentYear ? next : null;
+}
+
+function normalizeMoney(value, fallback = 0) {
+  const n = Number(String(value ?? '').replace(/[$,]/g, ''));
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function normalizeImportedEstimateItems(items) {
+  if (!Array.isArray(items)) return [];
+  return items
+    .slice(0, 300)
+    .map((item) => {
+      const type = String(item?.type || '').trim().toLowerCase();
+      const description = cleanText(item?.description, 500);
+      if (!description) return null;
+      const quantity = normalizeMoney(item?.quantity, 1);
+      const unitPrice = normalizeMoney(item?.unit_price, 0);
+      return {
+        type: ['labor', 'parts', 'sublet', 'other'].includes(type) ? type : 'other',
+        description,
+        quantity: quantity > 0 ? quantity : 1,
+        unit_price: unitPrice >= 0 ? unitPrice : 0,
+      };
+    })
+    .filter(Boolean);
+}
+
+async function getEstimateSummaryForRo(roId, shopId) {
+  const row = await dbGet(
+    `SELECT
+       COALESCE(SUM(total), 0) AS subtotal,
+       COALESCE(SUM(CASE WHEN type = 'labor' THEN total ELSE 0 END), 0) AS labor_total,
+       COALESCE(SUM(CASE WHEN type = 'parts' THEN total ELSE 0 END), 0) AS parts_total,
+       COALESCE(SUM(CASE WHEN type = 'sublet' THEN total ELSE 0 END), 0) AS sublet_total,
+       COALESCE(SUM(CASE WHEN taxable THEN total ELSE 0 END), 0) AS taxable_subtotal,
+       COUNT(*)::int AS line_count
+     FROM estimate_line_items
+     WHERE ro_id = $1 AND shop_id = $2`,
+    [roId, shopId]
+  );
+  const shop = await dbGet('SELECT COALESCE(tax_rate, 0) AS tax_rate FROM shops WHERE id = $1', [shopId]);
+  const taxRate = normalizeMoney(shop?.tax_rate, 0);
+  const taxableSubtotal = normalizeMoney(row?.taxable_subtotal, 0);
+  const tax = taxableSubtotal * taxRate;
+  return {
+    parts_cost: normalizeMoney(row?.parts_total, 0),
+    labor_cost: normalizeMoney(row?.labor_total, 0),
+    sublet_cost: normalizeMoney(row?.sublet_total, 0),
+    tax,
+    total: normalizeMoney(row?.subtotal, 0) + tax,
+    line_count: Number.parseInt(row?.line_count, 10) || 0,
+  };
+}
+
+async function syncImportedRoFinancials(roId, shopId) {
+  const current = await dbGet(
+    `SELECT id, deductible_waived, referral_fee, goodwill_repair_cost
+     FROM repair_orders
+     WHERE id = $1 AND shop_id = $2`,
+    [roId, shopId]
+  );
+  if (!current) return null;
+  const summary = await getEstimateSummaryForRo(roId, shopId);
+  const profit = calculateProfit({ ...current, ...summary });
+  await dbRun(
+    `UPDATE repair_orders
+     SET parts_cost = $1,
+         labor_cost = $2,
+         sublet_cost = $3,
+         tax = $4,
+         total = $5,
+         estimate_amount = $6,
+         true_profit = $7,
+         updated_at = NOW()
+     WHERE id = $8 AND shop_id = $9`,
+    [
+      summary.parts_cost,
+      summary.labor_cost,
+      summary.sublet_cost,
+      summary.tax,
+      summary.total,
+      summary.total,
+      normalizeMoney(profit?.trueProfit, 0),
+      roId,
+      shopId,
+    ]
+  );
+  return summary;
+}
+
 function normalizeLineText(value) {
   return String(value || '')
     .toLowerCase()
@@ -1693,6 +1792,148 @@ router.post('/', auth, requireTechnician, roLimitGuard, async (req, res) => {
     res.status(201).json(enriched);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/import-estimate', auth, requireTechnician, roLimitGuard, async (req, res) => {
+  try {
+    const body = req.body || {};
+    const vehicle = body.vehicle || {};
+    const customer = body.customer || {};
+    const insurance = body.insurance || {};
+    const lineItems = normalizeImportedEstimateItems(body.line_items);
+
+    const customerName = cleanText(customer.name || body.customer_name, 160) || 'Imported Estimate Customer';
+    const vehicleYear = cleanYear(vehicle.year || body.vehicle_year);
+    const vehicleMake = cleanText(vehicle.make || body.vehicle_make, 80);
+    const vehicleModel = cleanText(vehicle.model || body.vehicle_model, 120);
+
+    if (!vehicleMake || !vehicleModel) {
+      return res.status(400).json({ error: 'Vehicle make and model are required' });
+    }
+    if (Array.isArray(body.line_items) && body.line_items.length > 300) {
+      return res.status(400).json({ error: 'Too many line items' });
+    }
+
+    const shop = await dbGet('SELECT id FROM shops WHERE id = $1', [req.user.shop_id]);
+    if (!shop) return res.status(401).json({ error: 'Session expired. Please log out and back in.' });
+
+    const customerId = uuidv4();
+    const vehicleId = uuidv4();
+    const today = new Date().toISOString().split('T')[0];
+    const claimNumber = cleanText(insurance.claim_number || body.claim_number, 120);
+    const insuranceCompany = cleanText(insurance.company || body.insurance_company, 160);
+    const deductible = normalizeMoney(insurance.deductible || body.deductible, 0);
+
+    await dbRun(
+      `INSERT INTO customers (id, shop_id, name, phone, email, address, insurance_company, policy_number)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [
+        customerId,
+        req.user.shop_id,
+        customerName,
+        cleanText(customer.phone || body.customer_phone, 50),
+        cleanText(customer.email || body.customer_email, 160),
+        cleanText(customer.address || body.customer_address, 255),
+        insuranceCompany,
+        cleanText(insurance.policy_number || body.policy_number, 120),
+      ]
+    );
+
+    await dbRun(
+      `INSERT INTO vehicles (id, shop_id, customer_id, year, make, model, vin, color, plate, mileage)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      [
+        vehicleId,
+        req.user.shop_id,
+        customerId,
+        vehicleYear,
+        vehicleMake,
+        vehicleModel,
+        cleanText(vehicle.vin || body.vin, 40),
+        cleanText(vehicle.color, 80),
+        cleanText(vehicle.plate, 40),
+        null,
+      ]
+    );
+
+    let roNumber;
+    let roId;
+    let attempts = 0;
+    while (attempts < 5) {
+      roNumber = await getNextRoNumber(req.user.shop_id, attempts);
+      roId = uuidv4();
+      try {
+        await dbRun(
+          `INSERT INTO repair_orders (
+             id, shop_id, ro_number, vehicle_id, customer_id, job_type, status, payment_type,
+             claim_number, insurer, insurance_claim_number, insurance_company,
+             adjuster_name, adjuster_phone, adjuster_email, deductible, intake_date, notes
+           )
+           VALUES ($1, $2, $3, $4, $5, 'collision', 'intake', 'insurance',
+                   $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+          [
+            roId,
+            req.user.shop_id,
+            roNumber,
+            vehicleId,
+            customerId,
+            claimNumber,
+            insuranceCompany,
+            claimNumber,
+            insuranceCompany,
+            cleanText(insurance.adjuster_name || body.adjuster_name, 160),
+            cleanText(insurance.adjuster_phone || body.adjuster_phone, 50),
+            cleanText(insurance.adjuster_email || body.adjuster_email, 160),
+            deductible,
+            today,
+            cleanText(body.notes, 1000) || 'Created from CCC/Mitchell estimate import',
+          ]
+        );
+        break;
+      } catch (err) {
+        if (err?.code === '23505' || (err?.message && err.message.includes('duplicate key'))) {
+          attempts += 1;
+          continue;
+        }
+        throw err;
+      }
+    }
+    if (attempts >= 5) throw new Error('Failed to generate unique RO number after 5 attempts');
+
+    for (let i = 0; i < lineItems.length; i += 1) {
+      const item = lineItems[i];
+      await dbRun(
+        `INSERT INTO estimate_line_items (id, ro_id, shop_id, type, description, quantity, unit_price, taxable, sort_order)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [uuidv4(), roId, req.user.shop_id, item.type, item.description, item.quantity, item.unit_price, item.type === 'parts', i]
+      );
+    }
+
+    const summary = await syncImportedRoFinancials(roId, req.user.shop_id);
+    await dbRun(
+      'INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by, note) VALUES ($1, $2, $3, $4, $5, $6)',
+      [uuidv4(), roId, null, 'intake', req.user.id, `Created from estimate import (${lineItems.length} line items)`]
+    );
+    createNotification(
+      req.user.shop_id,
+      null,
+      'ro_created',
+      'New Repair Order Created',
+      `RO #${roNumber} created from estimate import`,
+      roId
+    ).catch(() => {});
+
+    const ro = await dbGet('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2', [roId, req.user.shop_id]);
+    return res.status(201).json({
+      success: true,
+      ro: await enrichRO(ro),
+      imported_line_count: lineItems.length,
+      summary,
+    });
+  } catch (err) {
+    console.error('[RO Import Estimate] Error:', err?.message || err);
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });
 
