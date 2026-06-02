@@ -61,14 +61,14 @@ router.get('/owner-kpis', auth, requireOwnerAdminOnly, async (req, res) => {
            SELECT
              ro.id AS ro_id,
              COALESCE(NULLIF(LOWER(TRIM(l.to_status)), ''), 'intake') AS stage,
-             l.created_at AS stage_started_at,
-             LEAD(l.created_at) OVER (PARTITION BY l.ro_id ORDER BY l.created_at ASC) AS next_stage_at,
+             NULLIF(l.created_at::text, '')::timestamptz AS stage_started_at,
+             LEAD(NULLIF(l.created_at::text, '')::timestamptz) OVER (PARTITION BY l.ro_id ORDER BY NULLIF(l.created_at::text, '')::timestamptz ASC) AS next_stage_at,
              ro.status AS current_status,
-             ro.updated_at
+             NULLIF(ro.updated_at::text, '')::timestamptz AS updated_at
            FROM job_status_log l
            JOIN repair_orders ro ON ro.id = l.ro_id
            WHERE ro.shop_id = $1
-             AND l.created_at >= NOW() - INTERVAL '120 days'
+             AND NULLIF(l.created_at::text, '')::timestamptz >= NOW() - INTERVAL '120 days'
          ),
          stage_durations AS (
            SELECT
@@ -136,9 +136,9 @@ router.get('/owner-kpis', auth, requireOwnerAdminOnly, async (req, res) => {
            COUNT(DISTINCT l.ro_id) FILTER (WHERE LOWER(TRIM(l.to_status)) IN ('closed', 'completed'))::int AS ros_closed
          FROM job_status_log l
          JOIN repair_orders ro ON ro.id = l.ro_id
-         JOIN users u ON u.id = CASE
+         JOIN users u ON u.id::text = CASE
            WHEN l.changed_by ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-           THEN l.changed_by::uuid
+           THEN l.changed_by
            ELSE NULL
          END
          WHERE ro.shop_id = $1
@@ -222,11 +222,11 @@ router.get('/weekly', auth, requireTechnician, async (req, res) => {
          u.name AS tech_name,
          COUNT(ro.id)::int AS jobs_completed
        FROM repair_orders ro
-       JOIN users u ON u.id = ro.assigned_to
+       JOIN users u ON u.id::text = ro.assigned_to::text
        WHERE ro.shop_id = $1
          AND ro.status IN ('delivery', 'closed')
-         AND COALESCE(ro.actual_delivery, ro.updated_at) >= DATE_TRUNC('week', NOW())
-         AND COALESCE(ro.actual_delivery, ro.updated_at) < DATE_TRUNC('week', NOW()) + INTERVAL '7 days'
+         AND COALESCE(NULLIF(ro.actual_delivery::text, '')::timestamptz, ro.updated_at) >= DATE_TRUNC('week', NOW())
+         AND COALESCE(NULLIF(ro.actual_delivery::text, '')::timestamptz, ro.updated_at) < DATE_TRUNC('week', NOW()) + INTERVAL '7 days'
        GROUP BY u.id, u.name
        ORDER BY jobs_completed DESC, u.name ASC
        LIMIT 3`,

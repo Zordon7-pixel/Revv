@@ -660,3 +660,36 @@ cd frontend && npm run test:run  # 14 files, 26/26 tests passed
 - No migrations, seed, reset, or destructive scripts were run.
 - GET `/ros` query remains parameterized and scoped through `req.user.shop_id`.
 - No secrets were read, logged, or changed.
+
+## Dispatch Log — 2026-06-01 Dashboard Live 500 Fixes
+
+**Status:** DONE + VERIFIED
+
+**Time**
+- 2026-06-01 23:36:44 EDT
+- 2026-06-02 03:36:44 UTC
+
+**Scope**
+- Fixed GET `/api/dashboard/weekly` top-tech query by casting legacy/text `actual_delivery` values to `timestamptz` before the fallback to `updated_at`.
+- Cast weekly `assigned_to`/`users.id` comparison through text to avoid schema-history UUID/text join failures.
+- Fixed GET `/api/dashboard/owner-kpis` cycle-time timestamp expressions by normalizing `job_status_log.created_at` and `repair_orders.updated_at` to `timestamptz`.
+- Changed owner KPI tech-efficiency user join to compare text IDs after UUID-format validation instead of casting `job_status_log.changed_by` to UUID.
+- Added backend dashboard smoke coverage for empty-shop JSON responses and Postgres-safe query shape.
+
+**Files changed**
+- `backend/src/routes/dashboard.js`
+- `backend/src/__tests__/dashboard.postgresShape.test.js`
+- `CLAUDE.md`
+
+**Verification**
+```
+node --check backend/src/routes/dashboard.js backend/src/__tests__/dashboard.postgresShape.test.js  # passed
+node --test backend/src/__tests__/*.test.js  # 11/11 passed
+cd frontend && npm run test:run  # 14 files, 26/26 passed
+```
+
+**Data safety**
+- No migrations, seed, reset, or destructive scripts were run.
+- Dashboard queries remain parameterized and scoped through `req.user.shop_id`.
+- Owner/admin and technician gating remain intact.
+- No secrets were read, logged, or changed.
