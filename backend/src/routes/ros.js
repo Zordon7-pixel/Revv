@@ -1,7 +1,7 @@
 const router = require('express').Router();
 const { pool, dbGet, dbAll, dbRun } = require('../db');
 const auth = require('../middleware/auth');
-const { requireAdmin, requireTechnician } = require('../middleware/roles');
+const { ROLE_RANK, getRoleRank, requireAdmin, requireTechnician } = require('../middleware/roles');
 const { calculateProfit } = require('../services/profit');
 const { sendSMS, isConfiguredForShop } = require('../services/sms');
 const { sendMail } = require('../services/mailer');
@@ -773,7 +773,7 @@ router.get('/', auth, async (req, res) => {
     const normalizedTechId = String(tech_id || '').trim();
     const normalizedAssignedTo = String(assigned_to || '').trim();
     const actorRole = String(req.user.role || '').toLowerCase();
-    const canFilterAssignedTo = ['owner', 'admin', 'manager', 'superadmin'].includes(actorRole);
+    const canFilterAssignedTo = getRoleRank(actorRole) >= ROLE_RANK.admin || actorRole === 'superadmin';
     const assignedFilter = canFilterAssignedTo
       ? normalizedTechId || normalizedAssignedTo
       : req.user.id;

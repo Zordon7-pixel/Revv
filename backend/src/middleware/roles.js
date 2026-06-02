@@ -43,6 +43,7 @@ const requireCustomer = (req, res, next) => {
 
 module.exports = {
   ROLE_RANK,
+  getRoleRank,
   requireRole,
   requireOwner,
   requireAdmin,

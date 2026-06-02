@@ -630,3 +630,33 @@ cd frontend && npm run test:run  # 14 files, 26/26 tests passed
 - No migrations, seed, reset, or destructive scripts were run.
 - Backend query changes remain parameterized and scoped through `req.user.shop_id`.
 - No secrets were read, logged, or changed.
+
+## Dispatch Log — 2026-06-01 ROS Assigned-To Role-Rank QA Fix
+
+**Status:** DONE + VERIFIED
+
+**Time**
+- 2026-06-01 22:41:43 EDT
+- 2026-06-02 02:41:43 UTC
+
+**Scope**
+- Changed GET `/ros` assigned-to filtering permission from a hardcoded role list to role-rank based admin-tier access, preserving explicit `superadmin` filtering.
+- Added regression coverage that assistant callers can filter arbitrary `assigned_to` values within shop scope while technician callers are forced to their own user id.
+
+**Files changed**
+- `backend/src/middleware/roles.js`
+- `backend/src/routes/ros.js`
+- `backend/src/__tests__/ros.assignedToScope.test.js`
+- `CLAUDE.md`
+
+**Verification**
+```
+node --check src/routes/ros.js src/middleware/roles.js src/__tests__/ros.assignedToScope.test.js  # passed
+cd backend && node --test src/__tests__/*.test.js  # 9/9 passed
+cd frontend && npm run test:run  # 14 files, 26/26 tests passed
+```
+
+**Data safety**
+- No migrations, seed, reset, or destructive scripts were run.
+- GET `/ros` query remains parameterized and scoped through `req.user.shop_id`.
+- No secrets were read, logged, or changed.
