@@ -724,3 +724,34 @@ cd frontend && npm run test:run  # 14 files, 26/26 tests passed
 - Dashboard queries remain parameterized and scoped through `req.user.shop_id`.
 - Owner/admin gating remains intact.
 - No secrets were read, logged, or changed.
+
+## Dispatch Log — 2026-06-02 Claim Tracker User Join Cast Fix
+
+**Status:** DONE + VERIFIED
+
+**Time**
+- 2026-06-02 09:01:15 EDT
+- 2026-06-02 13:01:15 UTC
+
+**Scope**
+- Fixed GET `/api/claim-tracker/ro/:roId` evidence, contact, and dispute user joins by casting `users.id` to text before comparing against legacy text actor columns.
+- Applied the same cast to the POST evidence, contacts, and disputes return queries.
+- Added backend Postgres shape coverage to prevent raw `users.id = ro_claim_*` actor joins from returning.
+- Confirmed the repair order ownership precheck and claim tracker `ro_id` filters are column-to-parameter comparisons, not uuid/text column-to-column comparisons.
+
+**Files changed**
+- `backend/src/routes/claimTracker.js`
+- `backend/src/__tests__/claimTracker.postgresShape.test.js`
+- `CLAUDE.md`
+
+**Verification**
+```
+rg -n "u\\.id\\s*=|u\\.id::text\\s*=|::uuid|=\\s*[ecd]\\.(uploaded_by|logged_by|created_by)" backend/src/routes/claimTracker.js  # only six u.id::text joins found
+cd backend && node --test src/__tests__/*.test.js  # 12/12 passed
+cd frontend && npm run test:run  # 14 files, 26/26 tests passed
+```
+
+**Data safety**
+- No migrations, seed, reset, or destructive scripts were run.
+- Claim tracker queries remain parameterized and scoped through `req.user.shop_id`.
+- No secrets were read, logged, or changed.

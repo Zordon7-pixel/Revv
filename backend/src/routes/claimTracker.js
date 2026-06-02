@@ -133,7 +133,7 @@ router.get('/ro/:roId', auth, async (req, res) => {
          e.created_at,
          COALESCE(u.name, 'Unknown') AS uploaded_by_name
        FROM ro_claim_evidence e
-       LEFT JOIN users u ON u.id = e.uploaded_by
+       LEFT JOIN users u ON u.id::text = e.uploaded_by
        WHERE e.ro_id = $1 AND e.shop_id = $2
        ORDER BY e.created_at DESC`,
       [req.params.roId, req.user.shop_id]
@@ -153,7 +153,7 @@ router.get('/ro/:roId', auth, async (req, res) => {
          c.created_at,
          COALESCE(u.name, 'Unknown') AS logged_by_name
        FROM ro_claim_contacts c
-       LEFT JOIN users u ON u.id = c.logged_by
+       LEFT JOIN users u ON u.id::text = c.logged_by
        WHERE c.ro_id = $1 AND c.shop_id = $2
        ORDER BY c.contact_at DESC, c.created_at DESC`,
       [req.params.roId, req.user.shop_id]
@@ -167,7 +167,7 @@ router.get('/ro/:roId', auth, async (req, res) => {
          d.created_at,
          COALESCE(u.name, 'Unknown') AS created_by_name
        FROM ro_claim_disputes d
-       LEFT JOIN users u ON u.id = d.created_by
+       LEFT JOIN users u ON u.id::text = d.created_by
        WHERE d.ro_id = $1 AND d.shop_id = $2
        ORDER BY d.created_at DESC`,
       [req.params.roId, req.user.shop_id]
@@ -225,7 +225,7 @@ router.post('/ro/:roId/evidence', auth, requireTechnician, upload.single('media'
          e.created_at,
          COALESCE(u.name, 'Unknown') AS uploaded_by_name
        FROM ro_claim_evidence e
-       LEFT JOIN users u ON u.id = e.uploaded_by
+       LEFT JOIN users u ON u.id::text = e.uploaded_by
        WHERE e.id = $1`,
       [evidenceId]
     );
@@ -325,7 +325,7 @@ router.post('/ro/:roId/contacts', auth, requireTechnician, async (req, res) => {
          c.created_at,
          COALESCE(u.name, 'Unknown') AS logged_by_name
        FROM ro_claim_contacts c
-       LEFT JOIN users u ON u.id = c.logged_by
+       LEFT JOIN users u ON u.id::text = c.logged_by
        WHERE c.id = $1`,
       [contactId]
     );
@@ -378,7 +378,7 @@ router.post('/ro/:roId/disputes', auth, requireTechnician, async (req, res) => {
          d.created_at,
          COALESCE(u.name, 'Unknown') AS created_by_name
        FROM ro_claim_disputes d
-       LEFT JOIN users u ON u.id = d.created_by
+       LEFT JOIN users u ON u.id::text = d.created_by
        WHERE d.id = $1`,
       [disputeId]
     );
