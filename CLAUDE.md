@@ -693,3 +693,34 @@ cd frontend && npm run test:run  # 14 files, 26/26 passed
 - Dashboard queries remain parameterized and scoped through `req.user.shop_id`.
 - Owner/admin and technician gating remain intact.
 - No secrets were read, logged, or changed.
+
+## Dispatch Log — 2026-06-01 Owner KPI Timestamp Cast QA Fix
+
+**Status:** DONE + VERIFIED
+
+**Time**
+- 2026-06-01 23:44:07 EDT
+- 2026-06-02 03:44:07 UTC
+
+**Scope**
+- Fixed GET `/api/dashboard/owner-kpis` tech-efficiency date window to cast `job_status_log.created_at` through `NULLIF(l.created_at::text, '')::timestamptz` before comparing to `DATE_TRUNC('month', NOW())`.
+- Extended dashboard Postgres shape coverage to assert the tech-efficiency predicates are cast and that no raw `l.created_at` comparisons remain in the owner KPI SQL captured by the route.
+
+**Files changed**
+- `backend/src/routes/dashboard.js`
+- `backend/src/__tests__/dashboard.postgresShape.test.js`
+- `CLAUDE.md`
+
+**Verification**
+```
+node --check backend/src/routes/dashboard.js backend/src/__tests__/dashboard.postgresShape.test.js  # passed
+node --test backend/src/__tests__/dashboard.postgresShape.test.js  # 2/2 passed
+node --test backend/src/__tests__/*.test.js  # 11/11 passed
+cd frontend && npm run test:run  # 14 files, 26/26 tests passed
+```
+
+**Data safety**
+- No migrations, seed, reset, or destructive scripts were run.
+- Dashboard queries remain parameterized and scoped through `req.user.shop_id`.
+- Owner/admin gating remains intact.
+- No secrets were read, logged, or changed.

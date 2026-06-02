@@ -132,4 +132,10 @@ test('GET /dashboard/owner-kpis casts legacy timestamps and avoids uuid-vs-text 
   assert.ok(techQuery, 'Expected tech-efficiency query to run');
   assert.match(techQuery.sql, /JOIN users u ON u\.id::text = CASE/);
   assert.doesNotMatch(techQuery.sql, /l\.changed_by::uuid/);
+  assert.match(techQuery.sql, /NULLIF\(l\.created_at::text, ''\)::timestamptz >= DATE_TRUNC\('month', NOW\(\)\)/);
+  assert.match(techQuery.sql, /NULLIF\(l\.created_at::text, ''\)::timestamptz < DATE_TRUNC\('month', NOW\(\)\) \+ INTERVAL '1 month'/);
+
+  const ownerKpiSql = calls.map((call) => call.sql).join('\n');
+  const rawCreatedAtComparisons = ownerKpiSql.match(/\bl\.created_at\s*(?:[<>]=?|=)/g) || [];
+  assert.deepEqual(rawCreatedAtComparisons, [], 'Expected every owner-kpis l.created_at comparison to cast through timestamptz');
 });

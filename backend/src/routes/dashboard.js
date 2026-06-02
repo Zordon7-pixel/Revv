@@ -143,8 +143,8 @@ router.get('/owner-kpis', auth, requireOwnerAdminOnly, async (req, res) => {
          END
          WHERE ro.shop_id = $1
            AND u.shop_id = $1
-           AND l.created_at >= DATE_TRUNC('month', NOW())
-           AND l.created_at < DATE_TRUNC('month', NOW()) + INTERVAL '1 month'
+           AND NULLIF(l.created_at::text, '')::timestamptz >= DATE_TRUNC('month', NOW())
+           AND NULLIF(l.created_at::text, '')::timestamptz < DATE_TRUNC('month', NOW()) + INTERVAL '1 month'
            AND u.role IN ('owner', 'admin', 'technician', 'employee', 'staff')
          GROUP BY u.id, u.name
          HAVING COUNT(*) FILTER (WHERE l.from_status IS NOT NULL) > 0
