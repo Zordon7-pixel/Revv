@@ -22,6 +22,7 @@ import SupplementFinderPanel from '../components/SupplementFinderPanel'
 import ROOperations from '../components/ROOperations'
 import ClaimTrackerPanel from '../components/ClaimTrackerPanel'
 import { optimizeImageForUpload } from '../lib/imageUpload'
+import { resolveUploadedMediaUrl } from '../lib/mediaUrls'
 
 const PART_STATUS_META = {
   ordered:     { label: 'Ordered',     cls: 'text-blue-400   bg-blue-900/30   border-blue-700',   icon: Clock },
@@ -118,6 +119,7 @@ export default function RODetail() {
   const [preDropoffUploading, setPreDropoffUploading] = useState(false)
   const [preDropoffExpanded, setPreDropoffExpanded] = useState(true)
   const [preDropoffLightbox, setPreDropoffLightbox] = useState(null)
+  const [failedPreDropoffPhotoIds, setFailedPreDropoffPhotoIds] = useState({})
   const [inspectionSummary, setInspectionSummary] = useState([])
   const [creatingInspection, setCreatingInspection] = useState(false)
 
@@ -1350,21 +1352,38 @@ export default function RODetail() {
                 <p className="text-sm text-slate-500">No pre-dropoff photos added yet.</p>
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {preDropoffPhotos.map((photo) => (
-                    <button
-                      type="button"
-                      key={photo.id}
-                      onClick={() => setPreDropoffLightbox(photo)}
-                      className="relative group rounded-xl overflow-hidden border border-[#2a2d3e] aspect-video bg-[#0f1117]"
-                    >
-                      <img src={photo.photo_url} alt="Pre-dropoff" className="w-full h-full object-cover" />
-                      <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/80">
-                        <span className="text-[9px] px-1.5 py-0.5 rounded-full border font-semibold text-cyan-300 bg-cyan-900/30 border-cyan-700/40">
-                          Pre-Dropoff
-                        </span>
-                      </div>
-                    </button>
-                  ))}
+                  {preDropoffPhotos.map((photo) => {
+                    const photoUrl = resolveUploadedMediaUrl(photo.photo_url)
+                    const photoFailed = !!failedPreDropoffPhotoIds[photo.id]
+
+                    return (
+                      <button
+                        type="button"
+                        key={photo.id}
+                        onClick={() => setPreDropoffLightbox(photo)}
+                        className="relative group rounded-xl overflow-hidden border border-[#2a2d3e] aspect-video bg-[#0f1117]"
+                      >
+                        {photoUrl && !photoFailed ? (
+                          <img
+                            src={photoUrl}
+                            alt="Pre-dropoff"
+                            className="w-full h-full object-cover"
+                            onError={() => setFailedPreDropoffPhotoIds((prev) => ({ ...prev, [photo.id]: true }))}
+                          />
+                        ) : (
+                          <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-slate-500">
+                            <Camera size={20} className="text-slate-600" />
+                            <span className="text-xs font-medium">Photo unavailable</span>
+                          </div>
+                        )}
+                        <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/80">
+                          <span className="text-[9px] px-1.5 py-0.5 rounded-full border font-semibold text-cyan-300 bg-cyan-900/30 border-cyan-700/40">
+                            Pre-Dropoff
+                          </span>
+                        </div>
+                      </button>
+                    )
+                  })}
                 </div>
               )}
             </div>
@@ -1378,11 +1397,19 @@ export default function RODetail() {
           onClick={() => setPreDropoffLightbox(null)}
         >
           <div className="relative max-w-4xl max-h-full" onClick={(e) => e.stopPropagation()}>
-            <img
-              src={preDropoffLightbox.photo_url}
-              alt="Pre-dropoff full view"
-              className="max-h-[85vh] max-w-full object-contain rounded-xl"
-            />
+            {resolveUploadedMediaUrl(preDropoffLightbox.photo_url) && !failedPreDropoffPhotoIds[preDropoffLightbox.id] ? (
+              <img
+                src={resolveUploadedMediaUrl(preDropoffLightbox.photo_url)}
+                alt="Pre-dropoff full view"
+                className="max-h-[85vh] max-w-full object-contain rounded-xl"
+                onError={() => setFailedPreDropoffPhotoIds((prev) => ({ ...prev, [preDropoffLightbox.id]: true }))}
+              />
+            ) : (
+              <div className="flex min-h-64 w-80 max-w-full flex-col items-center justify-center gap-2 rounded-xl border border-[#2a2d3e] bg-[#0f1117] text-slate-500">
+                <Camera size={28} className="text-slate-600" />
+                <span className="text-sm font-medium">Photo unavailable</span>
+              </div>
+            )}
             <button
               type="button"
               onClick={() => setPreDropoffLightbox(null)}

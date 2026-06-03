@@ -796,3 +796,36 @@ cd frontend && npm run test:run  # 14 files, 26/26 tests passed
 - No migrations, seed, reset, or destructive scripts were run.
 - New calls reuse existing parameterized customer insert paths and `req.user.shop_id`.
 - SMS send failures are logged with `[SMS Opt-In Confirmation]` and do not fail create requests.
+
+## Dispatch Log — 2026-06-03 Inspection Photo + Claim Evidence Fixes
+
+**Status:** DONE + VERIFIED
+
+**Scope**
+- Fixed claim tracker `users` joins by comparing `users.id::text` to text audit columns, resolving the live `operator does not exist: text = uuid` failure without schema changes.
+- Stopped claim tracker routes from returning raw internal database errors to the browser; user-facing responses now use safe messages while server logs keep the diagnostic context.
+- Resolved relative claim evidence media URLs with `resolveUploadedMediaUrl`, and added image/video fallback UI for missing Railway upload files.
+- Resolved relative pre-dropoff inspection photo URLs in RO Detail, including the full-screen lightbox, and replaced broken-image tiles with a clean `Photo unavailable` fallback.
+- Added a focused claim tracker regression test for relative upload URLs, broken evidence fallback, and no browser alerts.
+
+**Files changed**
+- `backend/src/routes/claimTracker.js`
+- `frontend/src/components/ClaimTrackerPanel.jsx`
+- `frontend/src/components/__tests__/ClaimTrackerPanel.phase32.test.jsx`
+- `frontend/src/pages/RODetail.jsx`
+- `CLAUDE.md`
+
+**Verification**
+```
+node --check backend/src/routes/claimTracker.js backend/src/app.js backend/src/db/index.js backend/src/services/email.js backend/src/lib/devSafety.js
+cd backend && node --test src/__tests__/*.test.js  # 20/20 passed
+cd frontend && npm run test:run  # 15 files, 28/28 tests passed
+cd frontend && npm run build
+rm -rf frontend/dist && git diff --check && git ls-files frontend/dist
+```
+
+**Data safety**
+- No migrations, seed, reset, or destructive scripts were run.
+- Miles Automotive data was not touched.
+- Fix is query/UI only; historical DB rows remain intact.
+- Historical upload rows whose local files were already lost by an earlier Railway container/deploy now render a clean unavailable state instead of a broken browser icon. Persistent media storage is still the durable prevention path for future deploys.

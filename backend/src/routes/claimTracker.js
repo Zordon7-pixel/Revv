@@ -115,6 +115,11 @@ function normalizeText(value, maxLen) {
   return text.slice(0, maxLen);
 }
 
+function logAndRespond(res, context, err, message = 'Internal server error') {
+  console.error(`[ClaimTracker] ${context}:`, err);
+  return res.status(500).json({ error: message });
+}
+
 router.get('/ro/:roId', auth, async (req, res) => {
   try {
     await ensureClaimTrackerTables();
@@ -133,7 +138,7 @@ router.get('/ro/:roId', auth, async (req, res) => {
          e.created_at,
          COALESCE(u.name, 'Unknown') AS uploaded_by_name
        FROM ro_claim_evidence e
-       LEFT JOIN users u ON u.id = e.uploaded_by
+       LEFT JOIN users u ON u.id::text = e.uploaded_by
        WHERE e.ro_id = $1 AND e.shop_id = $2
        ORDER BY e.created_at DESC`,
       [req.params.roId, req.user.shop_id]
@@ -153,7 +158,7 @@ router.get('/ro/:roId', auth, async (req, res) => {
          c.created_at,
          COALESCE(u.name, 'Unknown') AS logged_by_name
        FROM ro_claim_contacts c
-       LEFT JOIN users u ON u.id = c.logged_by
+       LEFT JOIN users u ON u.id::text = c.logged_by
        WHERE c.ro_id = $1 AND c.shop_id = $2
        ORDER BY c.contact_at DESC, c.created_at DESC`,
       [req.params.roId, req.user.shop_id]
@@ -167,7 +172,7 @@ router.get('/ro/:roId', auth, async (req, res) => {
          d.created_at,
          COALESCE(u.name, 'Unknown') AS created_by_name
        FROM ro_claim_disputes d
-       LEFT JOIN users u ON u.id = d.created_by
+       LEFT JOIN users u ON u.id::text = d.created_by
        WHERE d.ro_id = $1 AND d.shop_id = $2
        ORDER BY d.created_at DESC`,
       [req.params.roId, req.user.shop_id]
@@ -175,7 +180,7 @@ router.get('/ro/:roId', auth, async (req, res) => {
 
     return res.json({ evidence, contacts, disputes });
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    return logAndRespond(res, 'Load tracker failed', err, 'Could not load claim tracker data');
   }
 });
 
@@ -225,14 +230,14 @@ router.post('/ro/:roId/evidence', auth, requireTechnician, upload.single('media'
          e.created_at,
          COALESCE(u.name, 'Unknown') AS uploaded_by_name
        FROM ro_claim_evidence e
-       LEFT JOIN users u ON u.id = e.uploaded_by
+       LEFT JOIN users u ON u.id::text = e.uploaded_by
        WHERE e.id = $1`,
       [evidenceId]
     );
 
     return res.status(201).json({ evidence: created });
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    return logAndRespond(res, 'Upload evidence failed', err, 'Could not upload evidence file');
   }
 });
 
@@ -260,7 +265,7 @@ router.delete('/evidence/:id', auth, requireTechnician, async (req, res) => {
 
     return res.json({ ok: true });
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    return logAndRespond(res, 'Delete evidence failed', err, 'Could not delete evidence file');
   }
 });
 
@@ -325,14 +330,14 @@ router.post('/ro/:roId/contacts', auth, requireTechnician, async (req, res) => {
          c.created_at,
          COALESCE(u.name, 'Unknown') AS logged_by_name
        FROM ro_claim_contacts c
-       LEFT JOIN users u ON u.id = c.logged_by
+       LEFT JOIN users u ON u.id::text = c.logged_by
        WHERE c.id = $1`,
       [contactId]
     );
 
     return res.status(201).json({ contact: created });
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    return logAndRespond(res, 'Save contact failed', err, 'Could not save contact log entry');
   }
 });
 
@@ -349,7 +354,7 @@ router.delete('/contacts/:id', auth, requireTechnician, async (req, res) => {
     await dbRun('DELETE FROM ro_claim_contacts WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
     return res.json({ ok: true });
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    return logAndRespond(res, 'Delete contact failed', err, 'Could not delete contact log entry');
   }
 });
 
@@ -378,14 +383,14 @@ router.post('/ro/:roId/disputes', auth, requireTechnician, async (req, res) => {
          d.created_at,
          COALESCE(u.name, 'Unknown') AS created_by_name
        FROM ro_claim_disputes d
-       LEFT JOIN users u ON u.id = d.created_by
+       LEFT JOIN users u ON u.id::text = d.created_by
        WHERE d.id = $1`,
       [disputeId]
     );
 
     return res.status(201).json({ dispute: created });
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    return logAndRespond(res, 'Save dispute failed', err, 'Could not save dispute note');
   }
 });
 
@@ -402,7 +407,7 @@ router.delete('/disputes/:id', auth, requireTechnician, async (req, res) => {
     await dbRun('DELETE FROM ro_claim_disputes WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
     return res.json({ ok: true });
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    return logAndRespond(res, 'Delete dispute failed', err, 'Could not delete dispute note');
   }
 });
 

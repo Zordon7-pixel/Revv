@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, Camera, Film, PhoneCall, ShieldAlert, Trash2, Upload } from 'lucide-react'
 import api from '../lib/api'
+import { resolveUploadedMediaUrl } from '../lib/mediaUrls'
+import { safeExternalErrorMessage } from '../lib/safeErrors'
 
 const CHANNEL_OPTIONS = [
   { value: 'phone', label: 'Phone' },
@@ -35,7 +37,9 @@ function formatDateTime(value) {
 export default function ClaimTrackerPanel({ roId, canEdit }) {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
+  const [actionError, setActionError] = useState('')
   const [evidence, setEvidence] = useState([])
+  const [failedEvidenceIds, setFailedEvidenceIds] = useState({})
   const [contacts, setContacts] = useState([])
   const [disputes, setDisputes] = useState([])
 
@@ -59,11 +63,12 @@ export default function ClaimTrackerPanel({ roId, canEdit }) {
     try {
       const { data } = await api.get(`/claim-tracker/ro/${roId}`)
       setEvidence(data?.evidence || [])
+      setFailedEvidenceIds({})
       setContacts(data?.contacts || [])
       setDisputes(data?.disputes || [])
       setLoadError('')
     } catch (err) {
-      setLoadError(err?.response?.data?.error || 'Could not load claim tracker data')
+      setLoadError(safeExternalErrorMessage(err, 'Could not load claim tracker data'))
     } finally {
       setLoading(false)
     }
@@ -79,6 +84,7 @@ export default function ClaimTrackerPanel({ roId, canEdit }) {
     if (!selectedEvidenceFile) return
 
     setUploadingEvidence(true)
+    setActionError('')
     try {
       const fd = new FormData()
       fd.append('media', selectedEvidenceFile)
@@ -92,7 +98,7 @@ export default function ClaimTrackerPanel({ roId, canEdit }) {
       if (fileInputRef.current) fileInputRef.current.value = ''
       await loadTracker()
     } catch (err) {
-      alert(err?.response?.data?.error || 'Could not upload evidence file')
+      setActionError(safeExternalErrorMessage(err, 'Could not upload evidence file'))
     } finally {
       setUploadingEvidence(false)
     }
@@ -102,11 +108,12 @@ export default function ClaimTrackerPanel({ roId, canEdit }) {
     if (!window.confirm('Delete this evidence file?')) return
 
     setDeletingEvidenceId(evidenceId)
+    setActionError('')
     try {
       await api.delete(`/claim-tracker/evidence/${evidenceId}`)
       await loadTracker()
     } catch (err) {
-      alert(err?.response?.data?.error || 'Could not delete evidence file')
+      setActionError(safeExternalErrorMessage(err, 'Could not delete evidence file'))
     } finally {
       setDeletingEvidenceId('')
     }
@@ -125,17 +132,18 @@ export default function ClaimTrackerPanel({ roId, canEdit }) {
     }
 
     if (!payload.contact_name || !payload.summary) {
-      alert('Contact name and summary are required.')
+      setActionError('Contact name and summary are required.')
       return
     }
 
     setSavingContact(true)
+    setActionError('')
     try {
       await api.post(`/claim-tracker/ro/${roId}/contacts`, payload)
       setContactForm(EMPTY_CONTACT_FORM)
       await loadTracker()
     } catch (err) {
-      alert(err?.response?.data?.error || 'Could not save contact log entry')
+      setActionError(safeExternalErrorMessage(err, 'Could not save contact log entry'))
     } finally {
       setSavingContact(false)
     }
@@ -145,11 +153,12 @@ export default function ClaimTrackerPanel({ roId, canEdit }) {
     if (!window.confirm('Delete this contact log entry?')) return
 
     setDeletingContactId(contactId)
+    setActionError('')
     try {
       await api.delete(`/claim-tracker/contacts/${contactId}`)
       await loadTracker()
     } catch (err) {
-      alert(err?.response?.data?.error || 'Could not delete contact log entry')
+      setActionError(safeExternalErrorMessage(err, 'Could not delete contact log entry'))
     } finally {
       setDeletingContactId('')
     }
@@ -161,12 +170,13 @@ export default function ClaimTrackerPanel({ roId, canEdit }) {
     if (!note) return
 
     setSavingDispute(true)
+    setActionError('')
     try {
       await api.post(`/claim-tracker/ro/${roId}/disputes`, { note })
       setDisputeNote('')
       await loadTracker()
     } catch (err) {
-      alert(err?.response?.data?.error || 'Could not save dispute note')
+      setActionError(safeExternalErrorMessage(err, 'Could not save dispute note'))
     } finally {
       setSavingDispute(false)
     }
@@ -176,17 +186,18 @@ export default function ClaimTrackerPanel({ roId, canEdit }) {
     if (!window.confirm('Delete this dispute note?')) return
 
     setDeletingDisputeId(disputeId)
+    setActionError('')
     try {
       await api.delete(`/claim-tracker/disputes/${disputeId}`)
       await loadTracker()
     } catch (err) {
-      alert(err?.response?.data?.error || 'Could not delete dispute note')
+      setActionError(safeExternalErrorMessage(err, 'Could not delete dispute note'))
     } finally {
       setDeletingDisputeId('')
     }
   }
 
-  const inp = 'w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500'
+  const inp = 'w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#EAB308]'
 
   if (loading) {
     return (
@@ -199,8 +210,14 @@ export default function ClaimTrackerPanel({ roId, canEdit }) {
   return (
     <div className="space-y-4">
       {loadError && (
-        <div className="bg-red-900/20 border border-red-700/40 rounded-xl p-3 text-sm text-red-200 flex items-center gap-2">
+        <div role="alert" className="bg-red-900/20 border border-red-700/40 rounded-xl p-3 text-sm text-red-200 flex items-center gap-2">
           <AlertTriangle size={14} /> {loadError}
+        </div>
+      )}
+
+      {actionError && (
+        <div role="alert" className="bg-red-900/20 border border-red-700/40 rounded-xl p-3 text-sm text-red-200 flex items-center gap-2">
+          <AlertTriangle size={14} /> {actionError}
         </div>
       )}
 
@@ -236,7 +253,7 @@ export default function ClaimTrackerPanel({ roId, canEdit }) {
             <button
               type="submit"
               disabled={uploadingEvidence || !selectedEvidenceFile}
-              className="text-xs bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-3 py-2 rounded-lg disabled:opacity-50"
+              className="text-xs bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] font-semibold px-3 py-2 rounded-lg disabled:opacity-50"
             >
               {uploadingEvidence ? 'Uploading...' : 'Add Evidence'}
             </button>
@@ -247,39 +264,59 @@ export default function ClaimTrackerPanel({ roId, canEdit }) {
           <p className="text-sm text-slate-500">No claim evidence files yet.</p>
         ) : (
           <div className="grid sm:grid-cols-2 gap-3">
-            {evidence.map((item) => (
-              <div key={item.id} className="bg-[#0f1117] border border-[#2a2d3e] rounded-xl p-3">
-                <div className="rounded-lg overflow-hidden border border-[#2a2d3e] bg-black mb-2">
-                  {item.media_type === 'video' ? (
-                    <video src={item.media_url} controls className="w-full h-40 object-cover" />
-                  ) : (
-                    <img src={item.media_url} alt={item.caption || 'Claim evidence'} className="w-full h-40 object-cover" />
-                  )}
-                </div>
+            {evidence.map((item) => {
+              const mediaUrl = resolveUploadedMediaUrl(item.media_url)
+              const mediaFailed = !!failedEvidenceIds[item.id]
 
-                <div className="flex items-center justify-between gap-2 mb-1">
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold ${item.media_type === 'video' ? 'text-indigo-300 bg-indigo-900/30 border-indigo-700/40' : 'text-emerald-300 bg-emerald-900/20 border-emerald-700/40'}`}>
-                    {item.media_type === 'video' ? <span className="inline-flex items-center gap-1"><Film size={10} /> Video</span> : <span className="inline-flex items-center gap-1"><Camera size={10} /> Photo</span>}
-                  </span>
-                  {canEdit && (
-                    <button
-                      type="button"
-                      onClick={() => removeEvidence(item.id)}
-                      disabled={deletingEvidenceId === item.id}
-                      className="text-slate-500 hover:text-red-400 disabled:opacity-50"
-                      title="Delete evidence"
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  )}
-                </div>
+              return (
+                <div key={item.id} className="bg-[#0f1117] border border-[#2a2d3e] rounded-xl p-3">
+                  <div className="rounded-lg overflow-hidden border border-[#2a2d3e] bg-black mb-2">
+                    {mediaUrl && !mediaFailed && item.media_type === 'video' ? (
+                      <video
+                        src={mediaUrl}
+                        controls
+                        className="w-full h-40 object-cover"
+                        onError={() => setFailedEvidenceIds((prev) => ({ ...prev, [item.id]: true }))}
+                      />
+                    ) : mediaUrl && !mediaFailed ? (
+                      <img
+                        src={mediaUrl}
+                        alt={item.caption || 'Claim evidence'}
+                        className="w-full h-40 object-cover"
+                        onError={() => setFailedEvidenceIds((prev) => ({ ...prev, [item.id]: true }))}
+                      />
+                    ) : (
+                      <div className="flex h-40 w-full flex-col items-center justify-center gap-1 text-slate-500">
+                        {item.media_type === 'video' ? <Film size={22} className="text-slate-600" /> : <Camera size={22} className="text-slate-600" />}
+                        <span className="text-xs font-medium">Evidence unavailable</span>
+                      </div>
+                    )}
+                  </div>
 
-                {item.caption && <p className="text-sm text-slate-200 whitespace-pre-wrap">{item.caption}</p>}
-                <p className="text-[11px] text-slate-500 mt-1">
-                  Added {formatDateTime(item.created_at)} by {item.uploaded_by_name || 'Unknown'}
-                </p>
-              </div>
-            ))}
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold ${item.media_type === 'video' ? 'text-[#EAB308] bg-[#EAB308]/10 border-[#EAB308]/40' : 'text-emerald-300 bg-emerald-900/20 border-emerald-700/40'}`}>
+                      {item.media_type === 'video' ? <span className="inline-flex items-center gap-1"><Film size={10} /> Video</span> : <span className="inline-flex items-center gap-1"><Camera size={10} /> Photo</span>}
+                    </span>
+                    {canEdit && (
+                      <button
+                        type="button"
+                        onClick={() => removeEvidence(item.id)}
+                        disabled={deletingEvidenceId === item.id}
+                        className="text-slate-500 hover:text-red-400 disabled:opacity-50"
+                        title="Delete evidence"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    )}
+                  </div>
+
+                  {item.caption && <p className="text-sm text-slate-200 whitespace-pre-wrap">{item.caption}</p>}
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    Added {formatDateTime(item.created_at)} by {item.uploaded_by_name || 'Unknown'}
+                  </p>
+                </div>
+              )
+            })}
           </div>
         )}
       </div>
@@ -358,7 +395,7 @@ export default function ClaimTrackerPanel({ roId, canEdit }) {
             <button
               type="submit"
               disabled={savingContact}
-              className="text-xs bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-3 py-2 rounded-lg disabled:opacity-50"
+              className="text-xs bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] font-semibold px-3 py-2 rounded-lg disabled:opacity-50"
             >
               {savingContact ? 'Saving...' : 'Add Contact Entry'}
             </button>
@@ -423,7 +460,7 @@ export default function ClaimTrackerPanel({ roId, canEdit }) {
             <button
               type="submit"
               disabled={savingDispute || !disputeNote.trim()}
-              className="text-xs bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-3 py-2 rounded-lg disabled:opacity-50"
+              className="text-xs bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] font-semibold px-3 py-2 rounded-lg disabled:opacity-50"
             >
               {savingDispute ? 'Saving...' : 'Add Dispute Note'}
             </button>
