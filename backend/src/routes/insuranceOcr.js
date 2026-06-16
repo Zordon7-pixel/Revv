@@ -71,6 +71,9 @@ Return ONLY valid JSON in this exact format:
     "paint_labor_hours": 0,
     "paint_labor_rate": 0,
     "paint_labor_cost": 0,
+    "mechanical_labor_hours": 0,
+    "mechanical_labor_rate": 0,
+    "mechanical_labor_cost": 0,
     "paint_supplies_hours": 0,
     "paint_supplies_rate": 0,
     "paint_supplies_cost": 0,
@@ -89,7 +92,8 @@ Return ONLY valid JSON in this exact format:
     "total_cost_of_repairs": 0,
     "deductible": 0,
     "total_adjustments": 0,
-    "net_cost_of_repairs": 0
+    "net_cost_of_repairs": 0,
+    "revenue": 0
   },
   "line_items": [
     {
@@ -195,10 +199,12 @@ function parseEstimateTotalsFromPdfText(text) {
     return m ? toNumberOrNull(m[1]) : null;
   };
 
+  const startsWithValueLabel = (label) => new RegExp(`^${label}\\s*(?=[-$0-9])`, 'i');
+
   const parseHourRateLine = (labelRegex) => {
     const line = totalLines.find((row) => labelRegex.test(row));
     if (!line) return { hours: null, rate: null, cost: null };
-    const m = line.match(/([0-9]+(?:\.[0-9]+)?)\s*hrs\s*@\s*\$?\s*([0-9,]+(?:\.[0-9]+)?)\s*\/hr\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
+    const m = line.match(/([0-9]+(?:\.[0-9]+)?)\s*hrs\s*@\s*\$?\s*([0-9,]+(?:\.[0-9]+)?)\s*\/\s*hr\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
     if (!m) return { hours: null, rate: null, cost: takeTrailingMoney(line) };
     return {
       hours: toNumberOrNull(m[1]),
@@ -210,7 +216,7 @@ function parseEstimateTotalsFromPdfText(text) {
   const parseTaxLine = (labelRegex) => {
     const line = totalLines.find((row) => labelRegex.test(row));
     if (!line) return { basis: null, rate: null, cost: null };
-    const m = line.match(/\$\s*([0-9,]+(?:\.[0-9]+)?)\s*@\s*([0-9]+(?:\.[0-9]+)?)\s*%\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
+    const m = line.match(/\$?\s*([0-9,]+(?:\.[0-9]+)?)\s*@\s*([0-9]+(?:\.[0-9]+)?)\s*%\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
     if (!m) return { basis: null, rate: null, cost: takeTrailingMoney(line) };
     return {
       basis: toNumberOrNull(m[1]),
@@ -219,12 +225,13 @@ function parseEstimateTotalsFromPdfText(text) {
     };
   };
 
-  const bodyLabor = parseHourRateLine(/^Body Labor\b/i);
-  const paintLabor = parseHourRateLine(/^Paint Labor\b/i);
-  const paintSupplies = parseHourRateLine(/^Paint Supplies\b/i);
-  const salesTax = parseTaxLine(/^Sales Tax\b/i);
-  const countyTax = parseTaxLine(/^County Tax\b/i);
-  const otherTax1 = parseTaxLine(/^Other Tax 1\b/i);
+  const bodyLabor = parseHourRateLine(startsWithValueLabel('Body Labor'));
+  const paintLabor = parseHourRateLine(startsWithValueLabel('Paint Labor'));
+  const mechanicalLabor = parseHourRateLine(startsWithValueLabel('Mechanical Labor'));
+  const paintSupplies = parseHourRateLine(startsWithValueLabel('Paint Supplies'));
+  const salesTax = parseTaxLine(startsWithValueLabel('Sales Tax'));
+  const countyTax = parseTaxLine(startsWithValueLabel('County Tax'));
+  const otherTax1 = parseTaxLine(startsWithValueLabel('Other Tax 1'));
 
   const byLabelMoney = (labelRegex) => {
     const line = totalLines.find((row) => labelRegex.test(row));
@@ -232,19 +239,22 @@ function parseEstimateTotalsFromPdfText(text) {
   };
 
   const totals = {
-    parts: byLabelMoney(/^Parts\b/i),
+    parts: byLabelMoney(startsWithValueLabel('Parts')),
     body_labor_hours: bodyLabor.hours,
     body_labor_rate: bodyLabor.rate,
     body_labor_cost: bodyLabor.cost,
     paint_labor_hours: paintLabor.hours,
     paint_labor_rate: paintLabor.rate,
     paint_labor_cost: paintLabor.cost,
+    mechanical_labor_hours: mechanicalLabor.hours,
+    mechanical_labor_rate: mechanicalLabor.rate,
+    mechanical_labor_cost: mechanicalLabor.cost,
     paint_supplies_hours: paintSupplies.hours,
     paint_supplies_rate: paintSupplies.rate,
     paint_supplies_cost: paintSupplies.cost,
-    miscellaneous: byLabelMoney(/^Miscellaneous\b/i),
-    other_charges: byLabelMoney(/^Other Charges\b/i),
-    subtotal: byLabelMoney(/^Subtotal\b/i),
+    miscellaneous: byLabelMoney(startsWithValueLabel('Miscellaneous')),
+    other_charges: byLabelMoney(startsWithValueLabel('Other Charges')),
+    subtotal: byLabelMoney(startsWithValueLabel('Subtotal')),
     sales_tax_basis: salesTax.basis,
     sales_tax_rate: salesTax.rate,
     sales_tax_cost: salesTax.cost,
@@ -254,11 +264,12 @@ function parseEstimateTotalsFromPdfText(text) {
     other_tax_1_basis: otherTax1.basis,
     other_tax_1_rate: otherTax1.rate,
     other_tax_1_cost: otherTax1.cost,
-    total_cost_of_repairs: byLabelMoney(/^Total Cost of Repairs\b/i),
-    deductible: byLabelMoney(/^Deductible\b/i),
-    total_adjustments: byLabelMoney(/^Total Adjustments\b/i),
-    net_cost_of_repairs: byLabelMoney(/^Net Cost of Repairs\b/i),
+    total_cost_of_repairs: byLabelMoney(startsWithValueLabel('Total Cost of Repairs')),
+    deductible: byLabelMoney(startsWithValueLabel('Deductible')),
+    total_adjustments: byLabelMoney(startsWithValueLabel('Total Adjustments')),
+    net_cost_of_repairs: byLabelMoney(startsWithValueLabel('Net Cost of Repairs')),
   };
+  totals.revenue = totals.net_cost_of_repairs ?? totals.total_cost_of_repairs;
 
   const hasAnyValue = Object.values(totals).some((value) => value !== null);
   return hasAnyValue ? totals : null;
@@ -274,6 +285,9 @@ function normalizeEstimateTotals(raw) {
     'paint_labor_hours',
     'paint_labor_rate',
     'paint_labor_cost',
+    'mechanical_labor_hours',
+    'mechanical_labor_rate',
+    'mechanical_labor_cost',
     'paint_supplies_hours',
     'paint_supplies_rate',
     'paint_supplies_cost',
@@ -293,12 +307,14 @@ function normalizeEstimateTotals(raw) {
     'deductible',
     'total_adjustments',
     'net_cost_of_repairs',
+    'revenue',
   ];
 
   const normalized = {};
   for (const key of fields) {
     normalized[key] = toNumberOrNull(raw[key]);
   }
+  normalized.revenue = normalized.revenue ?? normalized.net_cost_of_repairs ?? normalized.total_cost_of_repairs;
   const hasAny = Object.values(normalized).some((value) => value !== null);
   return hasAny ? normalized : null;
 }
@@ -731,3 +747,4 @@ router.post('/analyze', auth, insuranceOcrLimiter, async (req, res) => {
 module.exports = router;
 module.exports.insuranceOcrLimiter = insuranceOcrLimiter;
 module.exports.insuranceOcrLimiterKeyGenerator = insuranceOcrLimiterKeyGenerator;
+module.exports.parseEstimateTotalsFromPdfText = parseEstimateTotalsFromPdfText;
