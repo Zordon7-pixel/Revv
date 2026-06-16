@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE Estimate [
+  <!ENTITY xxe SYSTEM "file:///etc/passwd">
+  <!ENTITY lol "lol">
+  <!ENTITY lol1 "&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;">
+  <!ENTITY lol2 "&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;">
+  <!ENTITY lol3 "&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;">
+]>
+<Estimate>
+  <Header>
+    <InsuranceCompanyName>&xxe;</InsuranceCompanyName>
+    <ClaimNumber>XXE-1</ClaimNumber>
+    <CustomerName>&lol3;</CustomerName>
+  </Header>
+  <Vehicle>
+    <VehicleYear>2026</VehicleYear>
+    <VehicleMake>Safe</VehicleMake>
+    <VehicleModel>Parser</VehicleModel>
+    <VIN>SAFEVIN1234567890</VIN>
+  </Vehicle>
+  <DamageLineInfo>
+    <LineItem>
+      <LineType>Labor</LineType>
+      <OperationCode>RPR</OperationCode>
+      <Description>RPR inert entity &xxe;</Description>
+      <Quantity>1</Quantity>
+      <UnitPrice>1.00</UnitPrice>
+      <LaborUnits>1</LaborUnits>
+    </LineItem>
+  </DamageLineInfo>
+</Estimate>
