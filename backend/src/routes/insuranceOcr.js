@@ -45,7 +45,7 @@ const insuranceOcrLimiter = rateLimit({
 });
 const execFileAsync = promisify(execFile);
 const PDF_TEXT_CHAR_LIMIT = 120000;
-const PDF_IMAGE_PAGE_LIMIT = 6;
+const PDF_IMAGE_PAGE_LIMIT = 12;
 const AI_CONFIG_ERROR = 'AI estimate extraction is not configured correctly. Please contact support.';
 
 const SYSTEM_PROMPT = `You are an insurance estimate parser for auto body shops. Extract all line items from this insurance estimate document.
