@@ -383,9 +383,33 @@ function normalizeImportedEstimateItems(items) {
         description,
         quantity: quantity > 0 ? quantity : 1,
         unit_price: unitPrice >= 0 ? unitPrice : 0,
+        operation_code: cleanText(item?.operation_code, 40),
+        labor_units: item?.labor_units === null || item?.labor_units === undefined
+          ? null
+          : normalizeMoney(item.labor_units, null),
+        part_type: cleanText(item?.part_type, 80),
+        part_number: cleanText(item?.part_number, 120),
       };
     })
     .filter(Boolean);
+}
+
+function operationTypeForImportedItem(item) {
+  const text = `${item.operation_code || ''} ${item.description || ''}`.toLowerCase();
+  if (item.type === 'sublet') return 'general';
+  if (/\bpaint|refn|refinish|blend|blnd\b/.test(text)) return 'paint';
+  if (/\bglass|windshield|lamp|light\b/.test(text)) return 'glass';
+  if (/\bmechanical|align|alignment|suspension|wheel\b/.test(text)) return 'mechanical';
+  if (/\bassembly|reassembl|rni|r\s*&\s*i|r\/i\b/.test(text)) return 'assembly';
+  return item.type === 'labor' ? 'body' : 'general';
+}
+
+function importedItemNotes(item) {
+  const notes = [];
+  if (item.operation_code) notes.push(`Operation: ${item.operation_code}`);
+  if (item.part_type) notes.push(`Part type: ${item.part_type}`);
+  if (item.part_number) notes.push(`Part number: ${item.part_number}`);
+  return notes.length ? notes.join(' | ') : null;
 }
 
 async function getEstimateSummaryForRo(roId, shopId, queryOne = dbGet) {
@@ -1806,7 +1830,7 @@ router.post('/', auth, requireTechnician, roLimitGuard, async (req, res) => {
   }
 });
 
-router.post('/import-estimate', auth, requireTechnician, insuranceOcrLimiter, roLimitGuard, async (req, res) => {
+async function importEstimateHandler(req, res) {
   let client;
   let committed = false;
   try {
@@ -1936,6 +1960,43 @@ router.post('/import-estimate', auth, requireTechnician, insuranceOcrLimiter, ro
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
         [uuidv4(), roId, req.user.shop_id, item.type, item.description, item.quantity, item.unit_price, item.type === 'parts', i]
       );
+
+      if (item.type === 'parts') {
+        await txRun(
+          `INSERT INTO parts_requests (id, ro_id, requested_by, part_name, part_number, quantity, status, notes)
+           VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7)`,
+          [
+            uuidv4(),
+            roId,
+            req.user.id,
+            item.description,
+            item.part_number,
+            Math.max(1, Math.ceil(item.quantity || 1)),
+            importedItemNotes(item),
+          ]
+        );
+      }
+
+      if (item.type === 'labor' || item.type === 'sublet') {
+        const estimatedHours = item.labor_units ?? (item.type === 'labor' ? item.quantity : null);
+        await txRun(
+          `INSERT INTO ro_operations (id, ro_id, shop_id, title, operation_type, technician_id,
+             status, estimated_hours, labor_rate, notes, sort_order, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, 'queued', $7, $8, $9, $10, NOW(), NOW())`,
+          [
+            uuidv4(),
+            roId,
+            req.user.shop_id,
+            item.description,
+            operationTypeForImportedItem(item),
+            null,
+            estimatedHours,
+            item.type === 'labor' ? item.unit_price : null,
+            importedItemNotes(item),
+            i,
+          ]
+        );
+      }
     }
 
     const summary = await syncImportedRoFinancials(roId, req.user.shop_id, txGet, txRun);
@@ -1979,7 +2040,9 @@ router.post('/import-estimate', auth, requireTechnician, insuranceOcrLimiter, ro
   } finally {
     if (client) client.release();
   }
-});
+}
+
+router.post('/import-estimate', auth, requireTechnician, insuranceOcrLimiter, roLimitGuard, importEstimateHandler);
 
 router.put('/:id', auth, requireTechnician, async (req, res) => {
   try {
@@ -2369,3 +2432,4 @@ router.delete('/:id', auth, requireTechnician, async (req, res) => {
 });
 
 module.exports = router;
+module.exports.importEstimateHandler = importEstimateHandler;
