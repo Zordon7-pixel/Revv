@@ -30,7 +30,7 @@ function formatUSD(value) {
 }
 
 function hasNumber(value) {
-  return Number.isFinite(Number(value))
+  return value != null && value !== '' && Number.isFinite(Number(value))
 }
 
 function laborSummary(hours, rate, cost) {
