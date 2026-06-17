@@ -23,6 +23,24 @@ function money(value) {
   return Number.isFinite(n) ? n.toFixed(2) : '0.00'
 }
 
+function formatUSD(value) {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return ''
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n)
+}
+
+function hasNumber(value) {
+  return Number.isFinite(Number(value))
+}
+
+function laborSummary(hours, rate, cost) {
+  if (!hasNumber(cost)) return ''
+  const details = []
+  if (hasNumber(hours)) details.push(`${Number(hours)} hrs`)
+  if (hasNumber(rate)) details.push(`@ ${formatUSD(rate)}/hr`)
+  return details.length ? `${details.join(' ')} = ${formatUSD(cost)}` : formatUSD(cost)
+}
+
 function splitVehicle(vehicle) {
   const parts = String(vehicle || '').trim().split(/\s+/).filter(Boolean)
   const year = /^\d{4}$/.test(parts[0]) ? parts.shift() : ''
@@ -66,6 +84,7 @@ export default function EstimateImportWizard({ onClose, onImported }) {
   const [error, setError] = useState('')
   const [form, setForm] = useState(emptyForm)
   const [items, setItems] = useState([])
+  const [estimateTotals, setEstimateTotals] = useState(null)
 
   const total = useMemo(
     () => items.reduce((sum, item) => sum + (Number(item.quantity) || 0) * (Number(item.unit_price) || 0), 0),
@@ -74,6 +93,19 @@ export default function EstimateImportWizard({ onClose, onImported }) {
 
   const inp = 'w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-[#EAB308]'
   const lbl = 'block text-xs font-medium text-slate-400 mb-1.5'
+  const showFinancials = estimateTotals && (hasNumber(estimateTotals.revenue) || hasNumber(estimateTotals.subtotal))
+  const financialRows = showFinancials
+    ? [
+        ['Body Labor', laborSummary(estimateTotals.body_labor_hours, estimateTotals.body_labor_rate, estimateTotals.body_labor_cost)],
+        ['Paint Labor', laborSummary(estimateTotals.paint_labor_hours, estimateTotals.paint_labor_rate, estimateTotals.paint_labor_cost)],
+        ['Mechanical Labor', laborSummary(estimateTotals.mechanical_labor_hours, estimateTotals.mechanical_labor_rate, estimateTotals.mechanical_labor_cost)],
+        ['Paint Supplies', laborSummary(estimateTotals.paint_supplies_hours, estimateTotals.paint_supplies_rate, estimateTotals.paint_supplies_cost)],
+        ['Parts', formatUSD(estimateTotals.parts)],
+        ['Subtotal', formatUSD(estimateTotals.subtotal)],
+        ['Sales Tax', formatUSD(estimateTotals.sales_tax_cost)],
+        ['Net', formatUSD(estimateTotals.net_cost_of_repairs)],
+      ].filter(([, value]) => value)
+    : []
 
   function setField(key, value) {
     setForm((prev) => ({ ...prev, [key]: value }))
@@ -104,6 +136,7 @@ export default function EstimateImportWizard({ onClose, onImported }) {
       const parsed = data?.parsed || {}
       setForm(parsedToForm(parsed))
       setItems(normalizeItems(parsed))
+      setEstimateTotals(parsed?.estimate_totals || null)
       setStep('review')
     } catch (err) {
       setError(safeExternalErrorMessage(err, 'Could not parse that estimate. Try a clearer PDF or image.'))
@@ -212,6 +245,27 @@ export default function EstimateImportWizard({ onClose, onImported }) {
 
           {step === 'review' && (
             <div className="space-y-5">
+              {showFinancials && (
+                <div className="border border-[#2c3345] rounded-lg bg-[#0f1117] px-4 py-3">
+                  <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
+                    <h3 className="text-sm font-semibold text-white">Job Financials</h3>
+                    {hasNumber(estimateTotals.revenue) && (
+                      <p className="text-sm font-semibold text-[#EAB308]">
+                        This job brings in {formatUSD(estimateTotals.revenue)}
+                      </p>
+                    )}
+                  </div>
+                  <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
+                    {financialRows.map(([label, value]) => (
+                      <div key={label} className="flex items-center justify-between gap-3 text-xs">
+                        <span className="text-slate-500">{label}</span>
+                        <span className="text-slate-200 text-right">{value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label className={lbl}>Customer</label>
