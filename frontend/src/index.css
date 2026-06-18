@@ -130,6 +130,21 @@ html.theme-light iframe {
   }
 }
 
+html[data-touch="true"][data-text-entry-focus="true"] .sheet-modal-overlay {
+  align-items: flex-start;
+  padding-top: calc(0.5rem + env(safe-area-inset-top));
+  padding-bottom: 0;
+}
+
+html[data-touch="true"][data-text-entry-focus="true"] .sheet-modal-card {
+  max-height: min(calc(var(--app-viewport-height) - 0.75rem - env(safe-area-inset-top)), 52vh);
+}
+
+html[data-touch="true"][data-text-entry-focus="true"] .sheet-modal-body {
+  scroll-padding-top: 1rem;
+  scroll-padding-bottom: calc(50vh + env(safe-area-inset-bottom));
+}
+
 @media (max-width: 767px) and (orientation: landscape) {
   .sheet-modal-header,
   .sheet-modal-footer {
