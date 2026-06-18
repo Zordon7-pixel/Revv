@@ -7,6 +7,7 @@
   --app-viewport-width: 100vw;
   --app-viewport-short: 100vw;
   --app-viewport-long: 100vh;
+  --app-keyboard-inset: 0px;
 }
 
 @supports (height: 100dvh) {
@@ -80,12 +81,14 @@ html.theme-light iframe {
 
 .app-main-scroll {
   padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+  scroll-padding-bottom: calc(35vh + env(safe-area-inset-bottom));
   -webkit-overflow-scrolling: touch;
 }
 
 .sheet-modal-overlay {
   overflow-y: auto;
   overscroll-behavior: contain;
+  min-height: var(--app-viewport-height);
 }
 
 .sheet-modal-card {
@@ -101,6 +104,8 @@ html.theme-light iframe {
   flex: 1 1 auto;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  scroll-padding-bottom: calc(35vh + env(safe-area-inset-bottom));
 }
 
 .sheet-modal-footer {
@@ -118,6 +123,23 @@ html.theme-light iframe {
     max-height: calc(var(--app-viewport-height) - env(safe-area-inset-top));
     border-bottom-left-radius: 0;
     border-bottom-right-radius: 0;
+  }
+
+  html[data-keyboard-open="true"] .sheet-modal-card {
+    max-height: calc(var(--app-viewport-height) - env(safe-area-inset-top));
+  }
+}
+
+@media (max-width: 767px) and (orientation: landscape) {
+  .sheet-modal-header,
+  .sheet-modal-footer {
+    padding-top: 0.75rem;
+    padding-bottom: 0.75rem;
+  }
+
+  .sheet-modal-body {
+    padding-top: 0.75rem;
+    padding-bottom: calc(1.25rem + env(safe-area-inset-bottom));
   }
 }
 
@@ -153,6 +175,8 @@ html.theme-light input[type="week"] {
   textarea,
   select {
     font-size: max(16px, 1em);
+    scroll-margin-top: 5rem;
+    scroll-margin-bottom: calc(45vh + env(safe-area-inset-bottom));
   }
 }
 

@@ -280,13 +280,13 @@ export default function AddROModal({ onClose, onSaved }) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-0 sm:p-4">
-      <div className="bg-[#1a1d2e] border border-[#2a2d3e] sm:max-w-2xl sm:rounded-xl rounded-none w-full h-screen sm:h-auto sm:max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-5 border-b border-[#2a2d3e]">
+    <div className="sheet-modal-overlay fixed inset-0 bg-black/70 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
+      <div className="sheet-modal-card bg-[#1a1d2e] border border-[#2a2d3e] sm:max-w-2xl sm:rounded-xl rounded-t-2xl">
+        <div className="sheet-modal-header flex items-center justify-between p-5 border-b border-[#2a2d3e]">
           <h2 className="font-bold text-white">{t('ro.addRO')}</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={18} /></button>
+          <button type="button" onClick={onClose} className="text-slate-400 hover:text-white" aria-label="Close new RO form"><X size={18} /></button>
         </div>
-        <div className="p-5 space-y-4">
+        <div className="sheet-modal-body p-5 space-y-4">
           {duplicateWarning && (
             <div className="bg-amber-500/10 border border-amber-400/40 rounded-lg p-3 space-y-2">
               <p className="text-amber-300 text-sm">
@@ -554,7 +554,7 @@ export default function AddROModal({ onClose, onSaved }) {
             </>
           )}
         </div>
-        <div className="flex items-center justify-between p-5 border-t border-[#2a2d3e]">
+        <div className="sheet-modal-footer flex items-center justify-between p-5 border-t border-[#2a2d3e]">
           <button onClick={() => step > 1 ? setStep(s=>s-1) : onClose()} className="text-slate-400 hover:text-white text-sm transition-colors">
             {step > 1 ? `← ${t('common.back')}` : t('common.cancel')}
           </button>
