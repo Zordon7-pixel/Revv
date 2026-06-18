@@ -58,10 +58,12 @@ describe('keyboard focus guard', () => {
     const cleanup = installKeyboardFocusGuard(mockWindow)
     input.dispatchEvent(new Event('focusin', { bubbles: true }))
 
+    expect(mockWindow.document.documentElement.dataset.textEntryFocus).toBe('true')
     expect(input.scrollIntoView).toHaveBeenCalled()
 
     cleanup()
 
+    expect(mockWindow.document.documentElement.dataset.textEntryFocus).toBeUndefined()
     expect(mockWindow.visualViewport.removeEventListener).toHaveBeenCalledWith('resize', expect.any(Function))
     expect(mockWindow.visualViewport.removeEventListener).toHaveBeenCalledWith('scroll', expect.any(Function))
     expect(mockWindow.removeEventListener).toHaveBeenCalledWith('orientationchange', expect.any(Function))
