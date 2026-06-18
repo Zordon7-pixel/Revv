@@ -404,6 +404,7 @@ export default function Customers() {
   const [form, setForm] = useState(() => ({ ...EMPTY_CUSTOMER_FORM }))
   const [loading, setLoading] = useState(false)
   const [formError, setFormError] = useState('')
+  const [deleteError, setDeleteError] = useState('')
   const adminUser = isAdmin()
   const assistantUser = isAssistant()
 
@@ -480,12 +481,20 @@ export default function Customers() {
     if (!customer?.id) return
     const confirmed = window.confirm(`Delete customer "${customer.name}"? This action cannot be undone.`)
     if (!confirmed) return
+    setDeleteError('')
     try {
       await api.delete(`/customers/${customer.id}`)
       if (selectedId === customer.id) setSelectedId(null)
       await refreshCustomers()
-    } catch {
-      alert('Error deleting customer')
+      return true
+    } catch (e) {
+      const message = e?.response?.data?.error || 'Error deleting customer'
+      if (e?.response?.status === 409) {
+        setDeleteError(message)
+      } else {
+        alert(message)
+      }
+      return false
     }
   }
 
@@ -495,8 +504,7 @@ export default function Customers() {
   }
 
   async function deleteFromDrawer(customer) {
-    await deleteCustomer(customer)
-    setSelectedId(null)
+    if (await deleteCustomer(customer)) setSelectedId(null)
   }
 
   return (
@@ -512,6 +520,12 @@ export default function Customers() {
           </button>
         )}
       </div>
+
+      {deleteError && (
+        <div className="bg-red-900/40 border border-red-700/50 text-red-100 text-sm px-3 py-2 rounded-lg">
+          {deleteError}
+        </div>
+      )}
 
       {/* Search */}
       <div className="relative">

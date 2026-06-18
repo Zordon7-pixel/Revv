@@ -1,5 +1,5 @@
 const router = require('express').Router();
-const { dbGet, dbAll, dbRun } = require('../db');
+const { pool, dbGet, dbAll, dbRun } = require('../db');
 const auth = require('../middleware/auth');
 const { requireTechnician } = require('../middleware/roles');
 const { sendCustomerOptInConfirmation } = require('../services/customerOptInConfirmation');
@@ -177,12 +177,48 @@ router.put('/:id', auth, requireTechnician, async (req, res) => {
 });
 
 router.delete('/:id', auth, requireTechnician, async (req, res) => {
+  let client;
   try {
-    await dbRun('UPDATE users SET customer_id = NULL WHERE customer_id = $1', [req.params.id]);
-    await dbRun('DELETE FROM customers WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
+    client = await pool.connect();
+    await client.query('BEGIN');
+
+    const roCount = await client.query(
+      'SELECT COUNT(*)::int AS count FROM repair_orders WHERE customer_id = $1 AND shop_id = $2',
+      [req.params.id, req.user.shop_id]
+    );
+    const count = Number(roCount.rows?.[0]?.count || 0);
+    if (count > 0) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: `Cannot delete: customer has ${count} repair order(s). Archive instead.`,
+        code: 'HAS_REPAIR_ORDERS',
+        count,
+      });
+    }
+
+    await client.query('DELETE FROM vehicles WHERE customer_id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
+    await client.query('UPDATE users SET customer_id = NULL WHERE customer_id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
+    await client.query('DELETE FROM customers WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
+    await client.query('COMMIT');
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (client) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (rollbackErr) {
+        console.error('[Customer Delete] Rollback error:', rollbackErr?.message || rollbackErr, {
+          customerId: req.params.id,
+          shopId: req.user.shop_id,
+        });
+      }
+    }
+    console.error('[Customer Delete] Error:', err?.message || err, {
+      customerId: req.params.id,
+      shopId: req.user.shop_id,
+    });
+    res.status(500).json({ error: 'Failed to delete customer. Please try again.' });
+  } finally {
+    if (client) client.release();
   }
 });
 

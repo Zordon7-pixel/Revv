@@ -138,6 +138,21 @@ export default function RepairOrders() {
 
   const techById = useMemo(() => Object.fromEntries(techs.map((t) => [t.id, t.name])), [techs])
   const allVisibleSelected = ros.length > 0 && ros.every((ro) => selected.has(ro.id))
+  const loadedPaymentStatuses = useMemo(() => {
+    return new Set(ros.map((ro) => String(ro.payment_status || '').trim().toLowerCase()).filter(Boolean))
+  }, [ros])
+  const loadedJobTypes = useMemo(() => {
+    return new Set(ros.map((ro) => String(ro.job_type || '').trim().toLowerCase()).filter(Boolean))
+  }, [ros])
+  const visiblePaymentStatuses = useMemo(() => {
+    return PAYMENT_STATUSES.filter((paymentStatus) => (
+      loadedPaymentStatuses.has(paymentStatus.value) || paymentStatus.value === filters.paymentStatus
+    ))
+  }, [filters.paymentStatus, loadedPaymentStatuses])
+  const visibleJobTypes = useMemo(() => {
+    return JOB_TYPES.filter((jobType) => loadedJobTypes.has(jobType) || jobType === filters.jobType)
+  }, [filters.jobType, loadedJobTypes])
+  const showJobTypeFilter = loadedJobTypes.size > 1 || filters.jobType !== 'all'
 
   function hasInsuranceClaim(ro) {
     return !!(ro.insurance_claim_number || ro.claim_number)
@@ -252,25 +267,27 @@ export default function RepairOrders() {
             <option value="all">All Techs</option>
             {techs.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
           </select>
-          <select
-            value={filters.jobType}
-            onChange={(e) => updateFilter('job_type', e.target.value)}
-            className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#EAB308]"
-          >
-            <option value="all">All Job Types</option>
-            {JOB_TYPES.map((jobType) => (
-              <option key={jobType} value={jobType}>
-                {jobType.replaceAll('_', ' ')}
-              </option>
-            ))}
-          </select>
+          {showJobTypeFilter && (
+            <select
+              value={filters.jobType}
+              onChange={(e) => updateFilter('job_type', e.target.value)}
+              className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#EAB308]"
+            >
+              <option value="all">All Job Types</option>
+              {visibleJobTypes.map((jobType) => (
+                <option key={jobType} value={jobType}>
+                  {jobType.replaceAll('_', ' ')}
+                </option>
+              ))}
+            </select>
+          )}
           <select
             value={filters.paymentStatus}
             onChange={(e) => updateFilter('payment_status', e.target.value)}
             className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#EAB308]"
           >
             <option value="all">All Payments</option>
-            {PAYMENT_STATUSES.map((paymentStatus) => (
+            {visiblePaymentStatuses.map((paymentStatus) => (
               <option key={paymentStatus.value} value={paymentStatus.value}>
                 {paymentStatus.label}
               </option>
