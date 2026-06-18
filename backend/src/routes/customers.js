@@ -1,7 +1,8 @@
 const router = require('express').Router();
-const { dbGet, dbAll, dbRun } = require('../db');
+const { pool, dbGet, dbAll, dbRun } = require('../db');
 const auth = require('../middleware/auth');
 const { requireTechnician } = require('../middleware/roles');
+const { sendCustomerOptInConfirmation } = require('../services/customerOptInConfirmation');
 const { v4: uuidv4 } = require('uuid');
 
 router.get('/', auth, async (req, res) => {
@@ -78,7 +79,7 @@ router.get('/:id/history', auth, async (req, res) => {
 router.get('/:id/autofill', auth, async (req, res) => {
   try {
     const customer = await dbGet(
-      'SELECT id, name, phone, email, insurance_company, policy_number FROM customers WHERE id = $1 AND shop_id = $2',
+      'SELECT id, name, phone, sms_consent, email, insurance_company, policy_number FROM customers WHERE id = $1 AND shop_id = $2',
       [req.params.id, req.user.shop_id]
     );
     if (!customer) return res.status(404).json({ error: 'Not found' });
@@ -140,15 +141,20 @@ router.get('/:id', auth, async (req, res) => {
 
 router.post('/', auth, requireTechnician, async (req, res) => {
   try {
-    const { name, phone, email, address, insurance_company, policy_number } = req.body;
+    const { name, phone, email, address, insurance_company, policy_number, sms_consent } = req.body;
     if (!name || !name.trim()) return res.status(400).json({ error: 'Customer name is required.' });
     const shop = await dbGet('SELECT id FROM shops WHERE id = $1', [req.user.shop_id]);
     if (!shop) return res.status(401).json({ error: 'Session expired. Please log out and back in.' });
     const id = uuidv4();
     await dbRun(
-      'INSERT INTO customers (id, shop_id, name, phone, email, address, insurance_company, policy_number) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
-      [id, req.user.shop_id, name.trim(), phone || null, email || null, address || null, insurance_company || null, policy_number || null]
+      'INSERT INTO customers (id, shop_id, name, phone, sms_consent, email, address, insurance_company, policy_number) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)',
+      [id, req.user.shop_id, name.trim(), phone || null, sms_consent !== false, email || null, address || null, insurance_company || null, policy_number || null]
     );
+    await sendCustomerOptInConfirmation({
+      phone,
+      smsConsent: sms_consent !== false,
+      shopId: req.user.shop_id,
+    });
     res.status(201).json(await dbGet('SELECT * FROM customers WHERE id = $1 AND shop_id = $2', [id, req.user.shop_id]));
   } catch (err) {
     console.error('Customer save error:', err.message);
@@ -158,10 +164,11 @@ router.post('/', auth, requireTechnician, async (req, res) => {
 
 router.put('/:id', auth, requireTechnician, async (req, res) => {
   try {
-    const { name, phone, email, address, insurance_company, policy_number } = req.body;
+    const { name, phone, email, address, insurance_company, policy_number, sms_consent } = req.body;
+    const nextSmsConsent = typeof sms_consent === 'boolean' ? sms_consent : null;
     await dbRun(
-      'UPDATE customers SET name=$1, phone=$2, email=$3, address=$4, insurance_company=$5, policy_number=$6 WHERE id=$7 AND shop_id=$8',
-      [name, phone, email, address, insurance_company, policy_number, req.params.id, req.user.shop_id]
+      'UPDATE customers SET name=$1, phone=$2, sms_consent=COALESCE($3, sms_consent), email=$4, address=$5, insurance_company=$6, policy_number=$7 WHERE id=$8 AND shop_id=$9',
+      [name, phone, nextSmsConsent, email, address, insurance_company, policy_number, req.params.id, req.user.shop_id]
     );
     res.json(await dbGet('SELECT * FROM customers WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]));
   } catch (err) {
@@ -170,12 +177,48 @@ router.put('/:id', auth, requireTechnician, async (req, res) => {
 });
 
 router.delete('/:id', auth, requireTechnician, async (req, res) => {
+  let client;
   try {
-    await dbRun('UPDATE users SET customer_id = NULL WHERE customer_id = $1', [req.params.id]);
-    await dbRun('DELETE FROM customers WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
+    client = await pool.connect();
+    await client.query('BEGIN');
+
+    const roCount = await client.query(
+      'SELECT COUNT(*)::int AS count FROM repair_orders WHERE customer_id = $1 AND shop_id = $2',
+      [req.params.id, req.user.shop_id]
+    );
+    const count = Number(roCount.rows?.[0]?.count || 0);
+    if (count > 0) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: `Cannot delete: customer has ${count} repair order(s). Archive instead.`,
+        code: 'HAS_REPAIR_ORDERS',
+        count,
+      });
+    }
+
+    await client.query('DELETE FROM vehicles WHERE customer_id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
+    await client.query('UPDATE users SET customer_id = NULL WHERE customer_id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
+    await client.query('DELETE FROM customers WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
+    await client.query('COMMIT');
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (client) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (rollbackErr) {
+        console.error('[Customer Delete] Rollback error:', rollbackErr?.message || rollbackErr, {
+          customerId: req.params.id,
+          shopId: req.user.shop_id,
+        });
+      }
+    }
+    console.error('[Customer Delete] Error:', err?.message || err, {
+      customerId: req.params.id,
+      shopId: req.user.shop_id,
+    });
+    res.status(500).json({ error: 'Failed to delete customer. Please try again.' });
+  } finally {
+    if (client) client.release();
   }
 });
 

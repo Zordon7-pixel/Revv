@@ -309,3 +309,523 @@ Start command: `cd backend && node src/db/seed.js; node src/app.js`
    - Files: `scripts/triage-bundle.sh`, `package.json`, `scripts/README.md`
    - Verification: `npm run triage:bundle -- --no-network --issue "self-test triage"` generated bundle + tarball in `~/triage-bundles`.
    - Status: DONE + VERIFIED
+
+---
+
+## Dispatch Log — 2026-05-27 Approval Link Clipboard Fallback
+
+**Status:** DONE + VERIFIED
+
+**Scope:** Fix false "Could not generate approval link" failures when the backend generated the link successfully but browser clipboard access was denied/unavailable.
+
+**Files changed**
+- `frontend/src/pages/RODetail.jsx` — approval-link generation now keeps the generated link visible and only downgrades the success alert if clipboard copy fails.
+- `frontend/src/lib/clipboard.js` — safe clipboard helper that returns false instead of throwing.
+- `frontend/src/lib/__tests__/clipboard.test.js` — regression coverage for success, denied clipboard access, and unavailable Clipboard API.
+
+**Verification**
+```
+cd frontend && npm run test:run  # 11/11 passed
+cd frontend && npm run build     # clean production build
+```
+
+---
+
+## Dispatch Log — 2026-05-27 Feedback b7f286d6 Assistant Access Required
+
+**Status:** Shipped. Fixed the Parts On Order route returning `assistant access required` for technician/employee-level roles by using the existing technician access gate instead of the assistant/admin gate.
+
+**Files changed**
+- `backend/src/routes/parts.js` — changed `/api/parts/all-pending` authorization from `requireAssistant` to `requireTechnician`, matching the page's intended owner/admin/technician/employee/staff access.
+
+**Verification**
+```
+node --check backend/src/routes/parts.js
+cd frontend && npm run test:run   # 11/11 passed
+cd frontend && npm run build      # clean production build
+```
+
+---
+
+## Dispatch Log — 2026-05-31 Phase 31 User Feedback Fixes
+
+**Status:** Shipped from clean `origin/main` worktree for Railway deployment.
+
+**Scope**
+- Total loss now moves into storage/pickup handling: `claim_status = total_loss` sets `status = total_loss`, enables `storage_hold`, and stamps `storage_start_date` only when empty.
+- Total-loss UI now says `Total Loss — Storage + Pickup / Release`, explains that repair labor/deductible are not collected, and opens the Storage Hold tab.
+- RO photos now resolve relative `/uploads/...` URLs against the app origin and show `Photo unavailable` on image load failure.
+- Estimate AI import now sanitizes provider/auth errors at the backend and again in frontend display code. The raw provider 401/key-help text from the user screenshot is no longer rendered or returned.
+
+**Files changed**
+- `backend/src/routes/ros.js`
+- `backend/src/routes/insuranceOcr.js`
+- `frontend/src/components/ClaimStatusCard.jsx`
+- `frontend/src/components/ROPhotos.jsx`
+- `frontend/src/components/InsurancePanel.jsx`
+- `frontend/src/pages/RODetail.jsx`
+- `frontend/src/pages/EstimateBuilder.jsx`
+- `frontend/src/lib/mediaUrls.js`
+- `frontend/src/lib/safeErrors.js`
+- Phase 31 regression tests under `frontend/src/**/__tests__`
+
+**Verification**
+```
+node --check backend/src/routes/ros.js backend/src/routes/photos.js backend/src/routes/insuranceOcr.js backend/src/app.js  # PASS
+cd frontend && npm run test:run  # 10 files, 18 tests passed
+cd frontend && npm run build     # PASS
+rg "sk-proj|platform.openai.com/account/api-keys|Incorrect API key provided" backend/src frontend/src  # zero matches
+rm -rf frontend/dist && git diff --check && git ls-files frontend/dist  # clean, no tracked dist
+```
+
+**Data safety**
+- No local backend boot against protected DB.
+- No seed/reset/delete commands.
+- Miles Automotive data untouched.
+
+**Railway verification**
+- Pushed commit `c1b2b5c` to `main`; Railway deployment `8490c6e5-0156-418d-ab16-26f9f3926aef` is SUCCESS for commit `c1b2b5cee823cc3e552bdbc6d7575b492d0da789`.
+- `curl https://revv-production-ffa9.up.railway.app/api/health` → HTTP 200.
+- `./scripts/smoke-test.sh https://revv-production-ffa9.up.railway.app` → 6 PASS + 1 WARN (`RESEND_API_KEY` not present in local shell env).
+- Live OCR probe with demo auth + synthetic image upload returns `503 {"success":false,"error":"AI estimate extraction is not configured correctly. Please contact support."}`.
+- Railway logs for the live probe show sanitized structured OCR logging only: `[InsuranceOCR] Error: { code: 'invalid_api_key' }`.
+
+## Dispatch Log — 2026-05-31 Phase 32 Pre-Launch Hardening
+
+**Status:** shipped; awaiting verification
+
+**Time**
+- 2026-05-31 20:59:13 EDT
+- 2026-06-01 00:59:13 UTC
+
+**Scope**
+- Assistant-role backend bypass patched for subscription and settings reset gates.
+- ADAS backend reads patched with admin authorization; frontend `/adas` route was already wrapped in `AdminRoute` at dispatch start.
+- `unscheduled_approved_at` schema drift patched with an idempotent TIMESTAMPTZ migration guard; `db/index.js` and `schema.pg.sql` already matched.
+- Claim-status banners patched to derive Total Loss and SIU warnings from either workflow status or claim status.
+- ROPhotos load failures now render visibly, stale failed-photo state resets on RO changes, and backend-derived photo alerts use sanitized external error messaging.
+- OCR provider failure monitoring shipped through `notifyOps`, with throttled Discord webhook delivery and sanitized context only.
+
+**Files changed**
+- `backend/src/middleware/roles.js`
+- `backend/src/routes/subscriptions.js`
+- `backend/src/routes/settings.js`
+- `backend/src/routes/adas.js`
+- `backend/src/db/migrate.js`
+- `backend/src/routes/insuranceOcr.js`
+- `backend/src/services/notifyOps.js`
+- `frontend/src/components/ClaimStatusCard.jsx`
+- `frontend/src/components/ROPhotos.jsx`
+- Backend tests under `backend/src/__tests__`
+- Frontend regression tests under `frontend/src/components/__tests__`
+
+**Verification**
+```
+node --check backend/src/routes/subscriptions.js backend/src/routes/settings.js backend/src/routes/adas.js backend/src/middleware/roles.js backend/src/db/index.js backend/src/db/migrate.js backend/src/routes/insuranceOcr.js backend/src/services/notifyOps.js  # passed
+node --test backend/src/__tests__/role-guards.test.js backend/src/__tests__/insuranceOcr.notifyOps.test.js  # 4 tests passed
+cd frontend && npm run test:run  # 11 files, 20 tests passed
+cd frontend && npm run build  # production build passed with existing chunk-size warnings
+rg "sk-proj|platform.openai.com/account/api-keys|Incorrect API key provided" backend/src frontend/src  # zero matches
+git diff --check  # passed
+```
+
+**Data safety**
+- No production DB writes, seed/reset commands, or destructive SQL were run.
+- Miles Automotive data untouched.
+- No push performed from this branch.
+
+## Dispatch Log — 2026-06-01 Feedback 6d314a80 OpenAI 401 Auto-Report Sanitization
+
+**Status:** built + verified; ready to ship
+
+**Time**
+- 2026-06-01 12:43:16 EDT
+- 2026-06-01 16:43:16 UTC
+
+**Scope**
+- Auto-feedback reporter now sanitizes provider credential errors before Sentry breadcrumbs, feedback payloads, and alert display.
+- Feedback API now sanitizes inbound OpenAI/API-key failure text before inserting feedback rows, preventing raw provider key fragments from being stored if a caller misses frontend wrapping.
+- Added frontend and backend regressions for the exact `[AUTO] 401 Incorrect API key provided: sk-proj-...` feedback shape.
+
+**Files changed**
+- `backend/src/routes/feedback.js`
+- `backend/src/__tests__/feedback.sanitize.test.js`
+- `frontend/src/lib/errorReporter.js`
+- `frontend/src/lib/__tests__/errorReporter.test.js`
+- `CLAUDE.md`
+
+**Verification**
+```
+node --test src/__tests__/feedback.sanitize.test.js src/__tests__/insuranceOcr.notifyOps.test.js src/__tests__/role-guards.test.js  # 5 tests passed
+cd frontend && npm run test:run -- src/lib/__tests__/errorReporter.test.js src/lib/__tests__/phase31Safety.test.js  # 2 files, 5 tests passed
+npm run build  # production build passed with existing chunk-size warnings
+node --check backend/src/routes/feedback.js && git diff --check  # passed
+rg "Incorrect API key provided|platform\\.openai\\.com/account/api-keys|sk-proj" backend/src frontend/src -g '!**/__tests__/**'  # zero production-code matches
+```
+
+**Data safety**
+- No production DB writes, seed/reset commands, or destructive SQL were run.
+- No customer/shop production data was mutated.
+
+## Dispatch Log — 2026-06-01 Dashboard Supplement Access + RO Resume Scoping
+
+**Status:** built + verified; commit blocked by sandbox `.git` write restriction
+
+**Time**
+- 2026-06-01 12:54:21 EDT
+- 2026-06-01 16:54:21 UTC
+
+**Scope**
+- Dashboard supplement monthly opportunity aggregate is restricted to `owner`, `admin`, and `superadmin`; authenticated non-admin roles receive 403.
+- SIU/total-loss resume read-back now includes `AND shop_id = $2` with `req.user.shop_id` after the shop-scoped update.
+
+**Files changed**
+- `backend/src/routes/dashboard.js`
+- `backend/src/routes/ros.js`
+- `CLAUDE.md`
+
+**Verification**
+```
+node --check backend/src/routes/dashboard.js backend/src/routes/ros.js
+cd backend && node --test src/__tests__/feedback.sanitize.test.js src/__tests__/insuranceOcr.notifyOps.test.js src/__tests__/role-guards.test.js  # 5/5 passed
+cd frontend && npm run test:run  # 11 files, 21/21 tests passed
+git diff --check
+```
+
+**Data safety**
+- No migrations, seed, reset, or destructive scripts were run.
+- No secrets were read, logged, or changed.
+
+## Dispatch Log — 2026-06-01 Phase 3 Floor Mode
+
+**Status:** built + verified
+
+**Time**
+- 2026-06-01 13:05:22 EDT
+- 2026-06-01 17:05:22 UTC
+
+**Scope**
+- Added `/floor` technician tablet route showing the logged-in tech's active assigned ROs grouped by parts, repair, paint, and QC.
+- Added one-tap optimistic status advance through parts -> repair -> paint -> QC -> delivery using the existing status-update endpoint with rollback/error handling.
+- Added floor clock in/out control via existing timeclock endpoints and quick photo access via `ROPhotos`.
+- Added technician-only nav entry and aligned technician role access for the existing tech route guard.
+
+**Files changed**
+- `frontend/src/pages/FloorMode.jsx`
+- `frontend/src/pages/__tests__/FloorMode.test.jsx`
+- `frontend/src/App.jsx`
+- `frontend/src/components/Layout.jsx`
+- `frontend/src/pages/TechView.jsx`
+- `CLAUDE.md`
+
+**Verification**
+```
+cd frontend && npm run test:run  # 12 files, 23/23 tests passed
+cd backend && node --test src/__tests__/*.test.js  # 5/5 tests passed
+cd frontend && npm run build  # production build passed with existing chunk-size warnings
+cd frontend && npm run test:run -- FloorMode.test.jsx  # 1 file, 2/2 tests passed after final text tweak
+git diff --check  # passed
+```
+
+**Data safety**
+- No migrations, seed, reset, or destructive scripts were run.
+- No secrets were read, logged, or changed.
+
+## Dispatch Log — 2026-06-01 Phase 4 Owner Truth / KPI Dashboard
+
+**Status:** built + verified
+
+**Time**
+- 2026-06-01 15:29:29 EDT
+- 2026-06-01 19:29:29 UTC
+
+**Scope**
+- Added owner/admin-gated `/api/dashboard/owner-kpis` aggregate for missing KPI data only: cycle time by stage from `job_status_log`, supplement captured/requested totals, and tech throughput.
+- Added `/owner-kpis` frontend view that composes the new aggregate with existing supplement opportunity, job-costing, carryover, and turnaround-estimator APIs.
+- Added owner/admin nav entry under Financial and route guard using existing `OwnerRoute`.
+
+**Files changed**
+- `backend/src/routes/dashboard.js`
+- `frontend/src/pages/OwnerKpis.jsx`
+- `frontend/src/App.jsx`
+- `frontend/src/components/Layout.jsx`
+- `CLAUDE.md`
+
+**Verification**
+```
+node --check backend/src/routes/dashboard.js  # passed
+cd backend && node --test src/__tests__/*.test.js  # 5/5 passed
+cd frontend && npm run test:run  # 12 files, 23/23 passed
+cd frontend && npm run build  # production build passed with existing chunk-size warnings
+git diff --check  # passed
+```
+
+**Data safety**
+- No migrations, seed, reset, or destructive scripts were run.
+- New backend queries are parameterized and scoped through `req.user.shop_id`.
+- No secrets were read, logged, or changed.
+
+## Dispatch Log — 2026-06-01 Phase 4 Owner KPI QA Fixes
+
+**Status:** DONE + VERIFIED
+
+**Time**
+- 2026-06-01 15:38:40 EDT
+- 2026-06-01 19:38:40 UTC
+
+**Scope**
+- Fixed Owner KPIs supplement capture card to render backend `supplement_capture.capture_rate` directly.
+- Allowed `superadmin` through the Owner KPI frontend route path to match the backend owner KPI guard.
+- Added explicit KPI period labels for the backend query windows.
+- Added frontend regression coverage for backend-provided supplement capture rate rendering.
+
+**Files changed**
+- `frontend/src/pages/OwnerKpis.jsx`
+- `frontend/src/pages/__tests__/OwnerKpis.test.jsx`
+- `frontend/src/App.jsx`
+- `CLAUDE.md`
+
+**Verification**
+```
+cd frontend && npm run test:run -- OwnerKpis.test.jsx  # 1 file, 1/1 passed
+cd frontend && npm run test:run  # 13 files, 24/24 passed
+cd backend && node --test src/__tests__/*.test.js  # 5/5 passed
+```
+
+**Data safety**
+- No migrations, seed, reset, or destructive scripts were run.
+- No backend query changes were made.
+- No secrets were read, logged, or changed.
+
+## Dispatch Log — 2026-06-01 Consolidated Hardening Backlog
+
+**Status:** DONE + VERIFIED
+
+**Time**
+- 2026-06-01 22:34:58 EDT
+- 2026-06-02 02:34:58 UTC
+
+**Scope**
+- Forced technician-rank `/ros` list callers to their own `assigned_to` filter while preserving owner/admin/manager/superadmin filtering within shop scope.
+- Updated insurance OCR rate-limit IP fallback to use express-rate-limit `ipKeyGenerator`, preserving the primary `shop_id:user_id` key path and eliminating the IPv6 key-generator validation warning.
+- Rewrote Owner KPI tech-efficiency join to cast guarded `job_status_log.changed_by` UUID values instead of casting `users.id`.
+- Added FloorMode regression coverage for failed optimistic `qc -> delivery` advancement restoring the card and surfacing the API error.
+- Skipped optional OwnerKpis dependency/i18n items to avoid behavior drift and broader string-scope changes.
+
+**Files changed**
+- `backend/src/routes/ros.js`
+- `backend/src/routes/insuranceOcr.js`
+- `backend/src/routes/dashboard.js`
+- `backend/src/__tests__/insuranceOcr.notifyOps.test.js`
+- `frontend/src/pages/__tests__/FloorMode.test.jsx`
+- `CLAUDE.md`
+
+**Verification**
+```
+cd backend && node --test src/__tests__/*.test.js  # 7/7 passed; no ERR_ERL_KEY_GEN_IPV6 output
+cd frontend && npm run test:run  # 14 files, 26/26 tests passed
+```
+
+**Data safety**
+- No migrations, seed, reset, or destructive scripts were run.
+- Backend query changes remain parameterized and scoped through `req.user.shop_id`.
+- No secrets were read, logged, or changed.
+
+## Dispatch Log — 2026-06-01 ROS Assigned-To Role-Rank QA Fix
+
+**Status:** DONE + VERIFIED
+
+**Time**
+- 2026-06-01 22:41:43 EDT
+- 2026-06-02 02:41:43 UTC
+
+**Scope**
+- Changed GET `/ros` assigned-to filtering permission from a hardcoded role list to role-rank based admin-tier access, preserving explicit `superadmin` filtering.
+- Added regression coverage that assistant callers can filter arbitrary `assigned_to` values within shop scope while technician callers are forced to their own user id.
+
+**Files changed**
+- `backend/src/middleware/roles.js`
+- `backend/src/routes/ros.js`
+- `backend/src/__tests__/ros.assignedToScope.test.js`
+- `CLAUDE.md`
+
+**Verification**
+```
+node --check src/routes/ros.js src/middleware/roles.js src/__tests__/ros.assignedToScope.test.js  # passed
+cd backend && node --test src/__tests__/*.test.js  # 9/9 passed
+cd frontend && npm run test:run  # 14 files, 26/26 tests passed
+```
+
+**Data safety**
+- No migrations, seed, reset, or destructive scripts were run.
+- GET `/ros` query remains parameterized and scoped through `req.user.shop_id`.
+- No secrets were read, logged, or changed.
+
+## Dispatch Log — 2026-06-01 Dashboard Live 500 Fixes
+
+**Status:** DONE + VERIFIED
+
+**Time**
+- 2026-06-01 23:36:44 EDT
+- 2026-06-02 03:36:44 UTC
+
+**Scope**
+- Fixed GET `/api/dashboard/weekly` top-tech query by casting legacy/text `actual_delivery` values to `timestamptz` before the fallback to `updated_at`.
+- Cast weekly `assigned_to`/`users.id` comparison through text to avoid schema-history UUID/text join failures.
+- Fixed GET `/api/dashboard/owner-kpis` cycle-time timestamp expressions by normalizing `job_status_log.created_at` and `repair_orders.updated_at` to `timestamptz`.
+- Changed owner KPI tech-efficiency user join to compare text IDs after UUID-format validation instead of casting `job_status_log.changed_by` to UUID.
+- Added backend dashboard smoke coverage for empty-shop JSON responses and Postgres-safe query shape.
+
+**Files changed**
+- `backend/src/routes/dashboard.js`
+- `backend/src/__tests__/dashboard.postgresShape.test.js`
+- `CLAUDE.md`
+
+**Verification**
+```
+node --check backend/src/routes/dashboard.js backend/src/__tests__/dashboard.postgresShape.test.js  # passed
+node --test backend/src/__tests__/*.test.js  # 11/11 passed
+cd frontend && npm run test:run  # 14 files, 26/26 passed
+```
+
+**Data safety**
+- No migrations, seed, reset, or destructive scripts were run.
+- Dashboard queries remain parameterized and scoped through `req.user.shop_id`.
+- Owner/admin and technician gating remain intact.
+- No secrets were read, logged, or changed.
+
+## Dispatch Log — 2026-06-01 Owner KPI Timestamp Cast QA Fix
+
+**Status:** DONE + VERIFIED
+
+**Time**
+- 2026-06-01 23:44:07 EDT
+- 2026-06-02 03:44:07 UTC
+
+**Scope**
+- Fixed GET `/api/dashboard/owner-kpis` tech-efficiency date window to cast `job_status_log.created_at` through `NULLIF(l.created_at::text, '')::timestamptz` before comparing to `DATE_TRUNC('month', NOW())`.
+- Extended dashboard Postgres shape coverage to assert the tech-efficiency predicates are cast and that no raw `l.created_at` comparisons remain in the owner KPI SQL captured by the route.
+
+**Files changed**
+- `backend/src/routes/dashboard.js`
+- `backend/src/__tests__/dashboard.postgresShape.test.js`
+- `CLAUDE.md`
+
+**Verification**
+```
+node --check backend/src/routes/dashboard.js backend/src/__tests__/dashboard.postgresShape.test.js  # passed
+node --test backend/src/__tests__/dashboard.postgresShape.test.js  # 2/2 passed
+node --test backend/src/__tests__/*.test.js  # 11/11 passed
+cd frontend && npm run test:run  # 14 files, 26/26 tests passed
+```
+
+**Data safety**
+- No migrations, seed, reset, or destructive scripts were run.
+- Dashboard queries remain parameterized and scoped through `req.user.shop_id`.
+- Owner/admin gating remains intact.
+- No secrets were read, logged, or changed.
+
+## Dispatch Log — 2026-06-02 SMS Compliance Footer + Consent Capture
+
+**Status:** DONE + VERIFIED
+
+**Time**
+- 2026-06-02 12:11:19 EDT
+- 2026-06-02 16:11:19 UTC
+
+**Scope**
+- Added centralized outbound customer-facing SMS opt-out footer handling in `sendSMS`, with dedupe-safe detection for existing STOP opt-out language.
+- Marked the late clock-in admin SMS as internal so it does not receive customer compliance language.
+- Added `customers.sms_consent BOOLEAN DEFAULT TRUE` through the idempotent PostgreSQL migration path and fresh schema.
+- Added RO intake consent capture in `AddROModal` for new and existing customers, persisting the value without changing SMS send gating.
+- Stored the final footer-appended outbound SMS body in SMS thread routes when messages are logged.
+
+**Files changed**
+- `backend/src/services/sms.js`
+- `backend/src/routes/sms.js`
+- `backend/src/routes/timeclock.js`
+- `backend/src/routes/customers.js`
+- `backend/src/routes/ros.js`
+- `backend/src/db/migrate.js`
+- `backend/src/db/schema.pg.sql`
+- `backend/src/__tests__/sms-compliance.test.js`
+- `frontend/src/components/AddROModal.jsx`
+- `CLAUDE.md`
+
+**Verification**
+```
+cd backend && node --test src/__tests__/*.test.js  # 15/15 passed
+cd frontend && npm run test:run  # 14 files, 26/26 tests passed
+```
+
+**Data safety**
+- No seed, reset, or destructive scripts were run.
+- Schema change is additive and idempotent: `ALTER TABLE customers ADD COLUMN IF NOT EXISTS sms_consent BOOLEAN DEFAULT TRUE`.
+- Customer consent updates remain parameterized and scoped through `req.user.shop_id`.
+- Existing SMS send behavior is unchanged except for required compliance footer content.
+
+## Dispatch Log — 2026-06-02 One-Time SMS Opt-In Confirmation
+
+**Status:** DONE + VERIFIED
+
+**Time**
+- 2026-06-02 13:34:46 EDT
+- 2026-06-02 17:34:46 UTC
+
+**Scope**
+- Added a reusable customer opt-in confirmation send helper using the existing SMS send path and shop-scoped Twilio lookup.
+- Sent the confirmation only when a newly created customer is opted in and has a non-empty phone number.
+- Routed estimate-import RO customer creation through the same helper after transaction commit.
+- Verified the exact confirmation text does not receive a duplicate STOP/HELP footer.
+
+**Files changed**
+- `backend/src/services/customerOptInConfirmation.js`
+- `backend/src/routes/customers.js`
+- `backend/src/routes/ros.js`
+- `backend/src/__tests__/customerOptInConfirmation.test.js`
+- `backend/src/__tests__/sms-compliance.test.js`
+- `CLAUDE.md`
+
+**Verification**
+```
+cd backend && node --test src/__tests__/*.test.js  # 20/20 passed
+cd frontend && npm run test:run  # 14 files, 26/26 tests passed
+```
+
+**Data safety**
+- No migrations, seed, reset, or destructive scripts were run.
+- New calls reuse existing parameterized customer insert paths and `req.user.shop_id`.
+- SMS send failures are logged with `[SMS Opt-In Confirmation]` and do not fail create requests.
+
+## Dispatch Log — 2026-06-03 Inspection Photo + Claim Evidence Fixes
+
+**Status:** DONE + VERIFIED
+
+**Scope**
+- Fixed claim tracker `users` joins by comparing `users.id::text` to text audit columns, resolving the live `operator does not exist: text = uuid` failure without schema changes.
+- Stopped claim tracker routes from returning raw internal database errors to the browser; user-facing responses now use safe messages while server logs keep the diagnostic context.
+- Resolved relative claim evidence media URLs with `resolveUploadedMediaUrl`, and added image/video fallback UI for missing Railway upload files.
+- Resolved relative pre-dropoff inspection photo URLs in RO Detail, including the full-screen lightbox, and replaced broken-image tiles with a clean `Photo unavailable` fallback.
+- Added a focused claim tracker regression test for relative upload URLs, broken evidence fallback, and no browser alerts.
+
+**Files changed**
+- `backend/src/routes/claimTracker.js`
+- `frontend/src/components/ClaimTrackerPanel.jsx`
+- `frontend/src/components/__tests__/ClaimTrackerPanel.phase32.test.jsx`
+- `frontend/src/pages/RODetail.jsx`
+- `CLAUDE.md`
+
+**Verification**
+```
+node --check backend/src/routes/claimTracker.js backend/src/app.js backend/src/db/index.js backend/src/services/email.js backend/src/lib/devSafety.js
+cd backend && node --test src/__tests__/*.test.js  # 20/20 passed
+cd frontend && npm run test:run  # 15 files, 28/28 tests passed
+cd frontend && npm run build
+rm -rf frontend/dist && git diff --check && git ls-files frontend/dist
+```
+
+**Data safety**
+- No migrations, seed, reset, or destructive scripts were run.
+- Miles Automotive data was not touched.
+- Fix is query/UI only; historical DB rows remain intact.
+- Historical upload rows whose local files were already lost by an earlier Railway container/deploy now render a clean unavailable state instead of a broken browser icon. Persistent media storage is still the durable prevention path for future deploys.

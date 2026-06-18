@@ -1,6 +1,6 @@
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { LayoutDashboard, ArrowLeft, ClipboardList, ClipboardCheck, Users, BarChart3, Settings, UserCog, LogOut, Menu, Wrench, Clock, CalendarDays, Package, CreditCard, Radar, TrendingUp, X, HelpCircle, Star, ChevronDown, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import { LayoutDashboard, ArrowLeft, ClipboardList, ClipboardCheck, Users, BarChart3, Settings, UserCog, LogOut, Menu, Wrench, Clock, CalendarDays, Package, CreditCard, Radar, TrendingUp, Gauge, X, HelpCircle, Star, ChevronDown, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import FeedbackButton from './FeedbackButton'
 import HelpPanel from './HelpPanel'
 import NotificationBell from './NotificationBell'
@@ -28,12 +28,14 @@ const allNav = [
   { to: '/inventory',    icon: Package,         labelKey: 'nav.inventory',    group: 'operations', adminOnly: false },
   { to: '/storage',      icon: Package,         labelKey: 'nav.storage',      group: 'operations', adminOnly: false },
   { to: '/timeclock',    icon: Clock,           labelKey: 'nav.timeclock',    group: 'core', adminOnly: false },
+  { to: '/floor',        icon: Wrench,          label: 'Floor Mode',          group: 'operations', techOnly: true },
   { to: '/tech',         icon: Wrench,          labelKey: 'nav.techView',     group: 'operations', nonAdminOnly: true },
   { to: '/adas',         icon: Radar,           labelKey: 'nav.adas',         group: 'operations', adminOnly: true, employeeAllowed: true },
   { to: '/vehicle-diagnostics', icon: ClipboardCheck, labelKey: 'nav.vehicleDiagnostics', group: 'operations', adminOnly: false },
 
   { to: '/payments',     icon: CreditCard,      labelKey: 'nav.payments',     group: 'financial', adminOnly: false },
   { to: '/job-costing',  icon: TrendingUp,      labelKey: 'nav.jobCosting',   group: 'financial', ownerOnly: true  },
+  { to: '/owner-kpis',   icon: Gauge,           label: 'Owner KPIs',          group: 'financial', ownerOnly: true  },
 
   { to: '/reviews',      icon: Star,            labelKey: 'nav.reviews',      group: 'insights', adminOnly: false },
   { to: '/reports',      icon: BarChart3,       labelKey: 'nav.reports',      group: 'insights', adminOnly: true  },
@@ -187,14 +189,16 @@ export default function Layout() {
   const nav = useMemo(() => {
     return allNav.filter((n) => {
       if (assistant) {
-        if (n.to === '/team' || n.to === '/users' || n.to === '/settings' || n.to === '/tech') return false
+        if (n.to === '/team' || n.to === '/users' || n.to === '/settings' || n.to === '/tech' || n.to === '/floor') return false
         return true
       }
       if (employeeRestrictedNav) {
+        if (n.techOnly) return true
         if (n.employeeAllowed) return true
         if (n.to === '/storage' || n.to === '/tech') return false
         if (n.group === 'financial' || n.group === 'insights') return false
       }
+      if (n.techOnly) return false
       if (n.nonAdminOnly) return !admin
       if (n.ownerOnly) return role === 'owner' || role === 'admin'
       if (n.adminOnly) return admin

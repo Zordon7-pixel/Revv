@@ -57,6 +57,7 @@ async function runMigrations() {
       `ALTER TABLE shops ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT`,
       `ALTER TABLE shops ADD COLUMN IF NOT EXISTS plan_expires_at TIMESTAMPTZ`,
       `ALTER TABLE shops ADD COLUMN IF NOT EXISTS trial_ends_at TIMESTAMPTZ DEFAULT (NOW() + INTERVAL '14 days')`,
+      `ALTER TABLE customers ADD COLUMN IF NOT EXISTS sms_consent BOOLEAN DEFAULT TRUE`,
       `ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT`,
       `ALTER TABLE users ADD COLUMN IF NOT EXISTS revoke_all_before TEXT`,
       `ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS payment_status TEXT DEFAULT 'unpaid'`,
@@ -521,6 +522,16 @@ async function runMigrations() {
       } catch (e) {
         console.warn('[migrate] alter warning:', e.message.split('\n')[0]);
       }
+    }
+
+    try {
+      await query(
+        `ALTER TABLE time_entries
+         ALTER COLUMN unscheduled_approved_at TYPE TIMESTAMPTZ
+         USING unscheduled_approved_at::timestamptz`
+      );
+    } catch (e) {
+      console.warn('[migrate] unscheduled_approved_at type warning:', e.message.split('\n')[0]);
     }
 
     console.log('[migrate] All idempotent migrations complete.');

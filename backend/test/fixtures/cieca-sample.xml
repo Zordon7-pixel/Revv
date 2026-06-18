@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<BMS:Estimate xmlns:BMS="http://www.cieca.com/BMS">
+  <BMS:Header>
+    <BMS:InsuranceCompanyName>Acme Mutual Insurance</BMS:InsuranceCompanyName>
+    <BMS:ClaimNumber>CLM-2026-00042</BMS:ClaimNumber>
+    <BMS:AdjusterName>Jordan Lee</BMS:AdjusterName>
+    <BMS:AdjusterPhone>555-0101</BMS:AdjusterPhone>
+    <BMS:AdjusterEmail>jordan.lee@example.test</BMS:AdjusterEmail>
+    <BMS:CustomerName>Casey Rivera</BMS:CustomerName>
+    <BMS:CustomerPhone>555-0199</BMS:CustomerPhone>
+  </BMS:Header>
+  <BMS:Vehicle>
+    <BMS:VehicleYear>2024</BMS:VehicleYear>
+    <BMS:VehicleMake>Toyota</BMS:VehicleMake>
+    <BMS:VehicleModel>Camry XSE</BMS:VehicleModel>
+    <BMS:VIN>4T1K61AK0RU123456</BMS:VIN>
+  </BMS:Vehicle>
+  <BMS:EstimateTotals>
+    <BMS:TotalAllowed>923.99</BMS:TotalAllowed>
+    <BMS:Parts>435.25</BMS:Parts>
+    <BMS:BodyLaborHours>2.5</BMS:BodyLaborHours>
+    <BMS:BodyLaborRate>65.00</BMS:BodyLaborRate>
+    <BMS:BodyLaborCost>162.50</BMS:BodyLaborCost>
+    <BMS:PaintLaborHours>1.4</BMS:PaintLaborHours>
+    <BMS:PaintLaborRate>68.00</BMS:PaintLaborRate>
+    <BMS:PaintLaborCost>95.20</BMS:PaintLaborCost>
+    <BMS:Subtotal>892.95</BMS:Subtotal>
+    <BMS:SalesTaxCost>31.04</BMS:SalesTaxCost>
+    <BMS:TotalCostOfRepairs>923.99</BMS:TotalCostOfRepairs>
+    <BMS:Deductible>500.00</BMS:Deductible>
+    <BMS:NetCostOfRepairs>423.99</BMS:NetCostOfRepairs>
+  </BMS:EstimateTotals>
+  <BMS:DamageLineInfo>
+    <BMS:LineItem>
+      <BMS:LineType>Labor</BMS:LineType>
+      <BMS:OperationCode>RPR</BMS:OperationCode>
+      <BMS:Description>RPR left quarter panel</BMS:Description>
+      <BMS:Quantity>2.5</BMS:Quantity>
+      <BMS:UnitPrice>65.00</BMS:UnitPrice>
+      <BMS:LaborUnits>2.5</BMS:LaborUnits>
+    </BMS:LineItem>
+    <BMS:LineItem>
+      <BMS:LineType>Part</BMS:LineType>
+      <BMS:OperationCode>REPL</BMS:OperationCode>
+      <BMS:Description>REPL rear bumper cover</BMS:Description>
+      <BMS:Quantity>1</BMS:Quantity>
+      <BMS:UnitPrice>435.25</BMS:UnitPrice>
+      <BMS:PartType>OEM</BMS:PartType>
+      <BMS:PartNumber>52159-06999</BMS:PartNumber>
+    </BMS:LineItem>
+    <BMS:LineItem>
+      <BMS:LineType>Sublet</BMS:LineType>
+      <BMS:OperationCode>SUBL</BMS:OperationCode>
+      <BMS:Description>Sublet wheel alignment</BMS:Description>
+      <BMS:Quantity>1</BMS:Quantity>
+      <BMS:UnitPrice>200.00</BMS:UnitPrice>
+    </BMS:LineItem>
+    <BMS:LineItem>
+      <BMS:LineType>Refinish</BMS:LineType>
+      <BMS:OperationCode>REFN</BMS:OperationCode>
+      <BMS:Description>REFN rear bumper cover</BMS:Description>
+      <BMS:Quantity>1.4</BMS:Quantity>
+      <BMS:UnitPrice>68.00</BMS:UnitPrice>
+      <BMS:LaborUnits>1.4</BMS:LaborUnits>
+    </BMS:LineItem>
+    <BMS:LineItem>
+      <BMS:LineType>Part</BMS:LineType>
+      <BMS:OperationCode>RNI</BMS:OperationCode>
+      <BMS:Description>RNI tail lamp assembly for access</BMS:Description>
+      <BMS:Quantity>0.3</BMS:Quantity>
+      <BMS:UnitPrice>65.00</BMS:UnitPrice>
+      <BMS:LaborUnits>0.3</BMS:LaborUnits>
+    </BMS:LineItem>
+  </BMS:DamageLineInfo>
+</BMS:Estimate>

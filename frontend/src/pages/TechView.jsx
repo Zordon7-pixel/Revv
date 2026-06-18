@@ -16,7 +16,7 @@ export default function TechView() {
   const me = getTokenPayload()?.id
   const role = getRole()
 
-  const isTechRole = ['employee', 'staff'].includes(role)
+  const isTechRole = ['technician', 'employee', 'staff'].includes(role)
 
   async function load() {
     if (!isTechRole) return

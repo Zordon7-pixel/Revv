@@ -102,7 +102,7 @@ router.post('/send', auth, async (req, res) => {
     await dbRun(
       `INSERT INTO sms_messages (id, shop_id, ro_id, direction, from_phone, to_phone, body, twilio_sid, status)
        VALUES ($1, $2, $3, 'outbound', $4, $5, $6, $7, 'sent')`,
-      [msgId, req.user.shop_id, ro_id || null, config.phoneNumber, to_phone, message, result.sid || null]
+      [msgId, req.user.shop_id, ro_id || null, config.phoneNumber, to_phone, result.body || message, result.sid || null]
     );
 
     // Keep customer phone populated for this RO if customer has no phone yet.
@@ -161,10 +161,10 @@ router.post('/send-status', auth, async (req, res) => {
     await dbRun(
       `INSERT INTO sms_messages (id, shop_id, ro_id, direction, from_phone, to_phone, body, twilio_sid, status)
        VALUES ($1, $2, $3, 'outbound', $4, $5, $6, $7, 'sent')`,
-      [msgId, req.user.shop_id, ro_id, config.phoneNumber, customer_phone, body, result.sid || null]
+      [msgId, req.user.shop_id, ro_id, config.phoneNumber, customer_phone, result.body || body, result.sid || null]
     );
 
-    return res.json({ success: true, sid: result.sid, body });
+    return res.json({ success: true, sid: result.sid, body: result.body || body });
   } catch (err) {
     console.error('[SMS/send-status] Error:', err.message);
     return res.status(500).json({ error: err.message });

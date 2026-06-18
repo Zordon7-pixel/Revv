@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import Layout from './components/Layout'
 import PublicOnlyRoute from './components/PublicOnlyRoute'
 import Login from './pages/Login'
@@ -26,6 +26,7 @@ import EstimateBuilder from './pages/EstimateBuilder'
 import TechWorkload from './pages/TechWorkload'
 import Payments from './pages/Payments'
 import TechView from './pages/TechView'
+import FloorMode from './pages/FloorMode'
 import ApprovalPortal from './pages/ApprovalPortal'
 import BookAppointment from './pages/BookAppointment'
 import SuperAdminLogin from './pages/SuperAdminLogin'
@@ -41,6 +42,7 @@ import { LanguageProvider } from './contexts/LanguageContext'
 import { ThemeProvider } from './contexts/ThemeContext'
 import JobCosting from './pages/JobCosting'
 import Goals from './pages/Goals'
+import OwnerKpis from './pages/OwnerKpis'
 import Landing from './pages/Landing'
 import InspectionEditor from './pages/InspectionEditor'
 import InspectionPublic from './pages/InspectionPublic'
@@ -55,9 +57,10 @@ import { getToken, getTokenPayload } from './lib/auth'
 import { watchViewportProfile } from './lib/viewport'
 
 function PrivateRoute({ children }) {
+  const location = useLocation()
   if (!getToken()) return <Navigate to="/login" />
   try {
-    if (getTokenPayload()?.role === 'superadmin') return <Navigate to="/superadmin" />
+    if (getTokenPayload()?.role === 'superadmin' && location.pathname !== '/owner-kpis') return <Navigate to="/superadmin" />
   } catch {}
   return children
 }
@@ -86,7 +89,7 @@ function OwnerRoute({ children }) {
   if (!getToken()) return <Navigate to="/login" />
   try {
     const role = getTokenPayload()?.role
-    if (role !== 'owner' && role !== 'admin') return <Navigate to="/" />
+    if (!['owner', 'admin', 'superadmin'].includes(role)) return <Navigate to="/" />
   } catch {}
   return children
 }
@@ -95,7 +98,7 @@ function EmployeeOnlyRoute({ children }) {
   if (!getToken()) return <Navigate to="/login" />
   try {
     const role = getTokenPayload()?.role
-    if (!['employee', 'staff'].includes(role)) return <Navigate to="/" />
+    if (!['technician', 'employee', 'staff'].includes(role)) return <Navigate to="/" />
   } catch {
     return <Navigate to="/" />
   }
@@ -151,6 +154,7 @@ export default function App() {
               <Route path="payments" element={<ManagementRoute><Payments /></ManagementRoute>} />
               <Route path="storage" element={<ManagementRoute><StorageHold /></ManagementRoute>} />
               <Route path="tech" element={<EmployeeOnlyRoute><TechView /></EmployeeOnlyRoute>} />
+              <Route path="floor" element={<EmployeeOnlyRoute><FloorMode /></EmployeeOnlyRoute>} />
               <Route path="ros/:id" element={<RODetail />} />
               <Route path="estimate-builder/:roId" element={<EstimateBuilder />} />
               <Route path="ros/:id/inspection/:inspectionId" element={<InspectionEditor />} />
@@ -170,6 +174,7 @@ export default function App() {
               <Route path="estimate-requests" element={<ManagementRoute><EstimateRequests /></ManagementRoute>} />
               <Route path="job-costing" element={<ManagementRoute><JobCosting /></ManagementRoute>} />
               <Route path="goals" element={<ManagementRoute><Goals /></ManagementRoute>} />
+              <Route path="owner-kpis" element={<OwnerRoute><OwnerKpis /></OwnerRoute>} />
               <Route path="admin/leads" element={<AdminRoute><LeadsDashboard /></AdminRoute>} />
             </Route>
           </Routes>

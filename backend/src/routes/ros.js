@@ -1,7 +1,7 @@
 const router = require('express').Router();
-const { dbGet, dbAll, dbRun } = require('../db');
+const { pool, dbGet, dbAll, dbRun } = require('../db');
 const auth = require('../middleware/auth');
-const { requireAdmin, requireTechnician } = require('../middleware/roles');
+const { ROLE_RANK, getRoleRank, requireAdmin, requireTechnician } = require('../middleware/roles');
 const { calculateProfit } = require('../services/profit');
 const { sendSMS, isConfiguredForShop } = require('../services/sms');
 const { sendMail } = require('../services/mailer');
@@ -14,10 +14,12 @@ const {
   sendClosedPaidInvoiceEmail,
 } = require('../services/customerBilling');
 const { syncInvoiceForRo } = require('../services/quickbooks');
+const { sendCustomerOptInConfirmation } = require('../services/customerOptInConfirmation');
 const roLimitGuard = require('../middleware/roLimitGuard');
 const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
+const { insuranceOcrLimiter } = require('./insuranceOcr');
 
 const STATUSES = ['intake','estimate','approval','parts','repair','paint','qc','delivery','closed','total_loss','siu_hold'];
 // Simple: status update + ready for pickup only. No approval/estimate SMS.
@@ -350,6 +352,129 @@ function toIntCents(value) {
   return Math.round(n);
 }
 
+function cleanText(value, max = 255) {
+  const next = String(value || '').trim();
+  return next ? next.slice(0, max) : null;
+}
+
+function cleanYear(value) {
+  const next = Number.parseInt(value, 10);
+  const currentYear = new Date().getUTCFullYear() + 1;
+  return Number.isFinite(next) && next >= 1900 && next <= currentYear ? next : null;
+}
+
+function normalizeMoney(value, fallback = 0) {
+  const n = Number(String(value ?? '').replace(/[$,]/g, ''));
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function normalizeImportedEstimateItems(items) {
+  if (!Array.isArray(items)) return [];
+  return items
+    .slice(0, 300)
+    .map((item) => {
+      const type = String(item?.type || '').trim().toLowerCase();
+      const description = cleanText(item?.description, 500);
+      if (!description) return null;
+      const quantity = normalizeMoney(item?.quantity, 1);
+      const unitPrice = normalizeMoney(item?.unit_price, 0);
+      return {
+        type: ['labor', 'parts', 'sublet', 'other'].includes(type) ? type : 'other',
+        description,
+        quantity: quantity > 0 ? quantity : 1,
+        unit_price: unitPrice >= 0 ? unitPrice : 0,
+        operation_code: cleanText(item?.operation_code, 40),
+        labor_units: item?.labor_units === null || item?.labor_units === undefined
+          ? null
+          : normalizeMoney(item.labor_units, null),
+        part_type: cleanText(item?.part_type, 80),
+        part_number: cleanText(item?.part_number, 120),
+      };
+    })
+    .filter(Boolean);
+}
+
+function operationTypeForImportedItem(item) {
+  const text = `${item.operation_code || ''} ${item.description || ''}`.toLowerCase();
+  if (item.type === 'sublet') return 'general';
+  if (/\bpaint|refn|refinish|blend|blnd\b/.test(text)) return 'paint';
+  if (/\bglass|windshield|lamp|light\b/.test(text)) return 'glass';
+  if (/\bmechanical|align|alignment|suspension|wheel\b/.test(text)) return 'mechanical';
+  if (/\bassembly|reassembl|rni|r\s*&\s*i|r\/i\b/.test(text)) return 'assembly';
+  return item.type === 'labor' ? 'body' : 'general';
+}
+
+function importedItemNotes(item) {
+  const notes = [];
+  if (item.operation_code) notes.push(`Operation: ${item.operation_code}`);
+  if (item.part_type) notes.push(`Part type: ${item.part_type}`);
+  if (item.part_number) notes.push(`Part number: ${item.part_number}`);
+  return notes.length ? notes.join(' | ') : null;
+}
+
+async function getEstimateSummaryForRo(roId, shopId, queryOne = dbGet) {
+  const row = await queryOne(
+    `SELECT
+       COALESCE(SUM(total), 0) AS subtotal,
+       COALESCE(SUM(CASE WHEN type = 'labor' THEN total ELSE 0 END), 0) AS labor_total,
+       COALESCE(SUM(CASE WHEN type = 'parts' THEN total ELSE 0 END), 0) AS parts_total,
+       COALESCE(SUM(CASE WHEN type = 'sublet' THEN total ELSE 0 END), 0) AS sublet_total,
+       COALESCE(SUM(CASE WHEN taxable THEN total ELSE 0 END), 0) AS taxable_subtotal,
+       COUNT(*)::int AS line_count
+     FROM estimate_line_items
+     WHERE ro_id = $1 AND shop_id = $2`,
+    [roId, shopId]
+  );
+  const shop = await queryOne('SELECT COALESCE(tax_rate, 0) AS tax_rate FROM shops WHERE id = $1', [shopId]);
+  const taxRate = normalizeMoney(shop?.tax_rate, 0);
+  const taxableSubtotal = normalizeMoney(row?.taxable_subtotal, 0);
+  const tax = taxableSubtotal * taxRate;
+  return {
+    parts_cost: normalizeMoney(row?.parts_total, 0),
+    labor_cost: normalizeMoney(row?.labor_total, 0),
+    sublet_cost: normalizeMoney(row?.sublet_total, 0),
+    tax,
+    total: normalizeMoney(row?.subtotal, 0) + tax,
+    line_count: Number.parseInt(row?.line_count, 10) || 0,
+  };
+}
+
+async function syncImportedRoFinancials(roId, shopId, queryOne = dbGet, queryRun = dbRun) {
+  const current = await queryOne(
+    `SELECT id, deductible_waived, referral_fee, goodwill_repair_cost
+     FROM repair_orders
+     WHERE id = $1 AND shop_id = $2`,
+    [roId, shopId]
+  );
+  if (!current) return null;
+  const summary = await getEstimateSummaryForRo(roId, shopId, queryOne);
+  const profit = calculateProfit({ ...current, ...summary });
+  await queryRun(
+    `UPDATE repair_orders
+     SET parts_cost = $1,
+         labor_cost = $2,
+         sublet_cost = $3,
+         tax = $4,
+         total = $5,
+         estimate_amount = $6,
+         true_profit = $7,
+         updated_at = NOW()
+     WHERE id = $8 AND shop_id = $9`,
+    [
+      summary.parts_cost,
+      summary.labor_cost,
+      summary.sublet_cost,
+      summary.tax,
+      summary.total,
+      summary.total,
+      normalizeMoney(profit?.trueProfit, 0),
+      roId,
+      shopId,
+    ]
+  );
+  return summary;
+}
+
 function normalizeLineText(value) {
   return String(value || '')
     .toLowerCase()
@@ -672,7 +797,10 @@ router.get('/', auth, async (req, res) => {
     const normalizedStatus = String(status || '').trim().toLowerCase();
     const normalizedTechId = String(tech_id || '').trim();
     const normalizedAssignedTo = String(assigned_to || '').trim();
-    const assignedFilter = normalizedTechId || normalizedAssignedTo;
+    const actorRole = String(req.user.role || '').toLowerCase();
+    const isTechnicianOnly = actorRole === 'technician';
+    const canFilterAssignedTo = getRoleRank(actorRole) >= ROLE_RANK.admin || actorRole === 'superadmin';
+    const assignedFilter = isTechnicianOnly ? req.user.id : canFilterAssignedTo ? (normalizedTechId || normalizedAssignedTo) : '';
     const normalizedType = String(type || '').trim().toLowerCase();
     const normalizedJobType = String(job_type || '').trim().toLowerCase() || normalizedType;
     const normalizedDateFrom = String(date_from || '').trim();
@@ -1546,7 +1674,7 @@ router.post('/approval/:token/respond', publicTokenLimiter, async (req, res) => 
 
 router.post('/', auth, requireTechnician, roLimitGuard, async (req, res) => {
   try {
-    const { customer_id, vehicle_id, job_type, payment_type, claim_number, insurer, adjuster_name, adjuster_phone, adjuster_email, deductible, notes, estimated_delivery, damaged_panels } = req.body;
+    const { customer_id, vehicle_id, job_type, payment_type, claim_number, insurer, adjuster_name, adjuster_phone, adjuster_email, deductible, notes, estimated_delivery, damaged_panels, sms_consent } = req.body;
     if (!customer_id || !vehicle_id) {
       return res.status(400).json({ error: 'customer_id and vehicle_id are required' });
     }
@@ -1557,6 +1685,12 @@ router.post('/', auth, requireTechnician, roLimitGuard, async (req, res) => {
       [vehicle_id, req.user.shop_id, customer_id]
     );
     if (!vehicle) return res.status(400).json({ error: 'Invalid vehicle_id for this customer/shop' });
+    if (typeof sms_consent === 'boolean') {
+      await dbRun(
+        'UPDATE customers SET sms_consent = $1 WHERE id = $2 AND shop_id = $3',
+        [sms_consent, customer_id, req.user.shop_id]
+      );
+    }
 
     const duplicateConditions = ['ro.customer_id = $2'];
     const duplicateParams = [req.user.shop_id, customer_id];
@@ -1695,6 +1829,220 @@ router.post('/', auth, requireTechnician, roLimitGuard, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+async function importEstimateHandler(req, res) {
+  let client;
+  let committed = false;
+  try {
+    const body = req.body || {};
+    const vehicle = body.vehicle || {};
+    const customer = body.customer || {};
+    const insurance = body.insurance || {};
+    const lineItems = normalizeImportedEstimateItems(body.line_items);
+
+    const customerName = cleanText(customer.name || body.customer_name, 160) || 'Imported Estimate Customer';
+    const customerPhone = cleanText(customer.phone || body.customer_phone, 50);
+    const customerSmsConsent = body.sms_consent === true || customer.sms_consent === true;
+    const vehicleYear = cleanYear(vehicle.year || body.vehicle_year);
+    const vehicleMake = cleanText(vehicle.make || body.vehicle_make, 80);
+    const vehicleModel = cleanText(vehicle.model || body.vehicle_model, 120);
+
+    if (!vehicleMake || !vehicleModel) {
+      return res.status(400).json({ error: 'Vehicle make and model are required' });
+    }
+    if (Array.isArray(body.line_items) && body.line_items.length > 300) {
+      return res.status(400).json({ error: 'Too many line items' });
+    }
+
+    const shop = await dbGet('SELECT id FROM shops WHERE id = $1', [req.user.shop_id]);
+    if (!shop) return res.status(401).json({ error: 'Session expired. Please log out and back in.' });
+
+    const customerId = uuidv4();
+    const vehicleId = uuidv4();
+    const today = new Date().toISOString().split('T')[0];
+    const claimNumber = cleanText(insurance.claim_number || body.claim_number, 120);
+    const insuranceCompany = cleanText(insurance.company || body.insurance_company, 160);
+    const deductible = normalizeMoney(insurance.deductible || body.deductible, 0);
+    client = await pool.connect();
+    const txGet = async (sql, params = []) => {
+      const result = await client.query(sql, params);
+      return result.rows[0] || null;
+    };
+    const txRun = (sql, params = []) => client.query(sql, params);
+
+    await client.query('BEGIN');
+
+    await txRun(
+      `INSERT INTO customers (id, shop_id, name, phone, sms_consent, email, address, insurance_company, policy_number)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [
+        customerId,
+        req.user.shop_id,
+        customerName,
+        customerPhone,
+        customerSmsConsent,
+        cleanText(customer.email || body.customer_email, 160),
+        cleanText(customer.address || body.customer_address, 255),
+        insuranceCompany,
+        cleanText(insurance.policy_number || body.policy_number, 120),
+      ]
+    );
+
+    await txRun(
+      `INSERT INTO vehicles (id, shop_id, customer_id, year, make, model, vin, color, plate, mileage)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      [
+        vehicleId,
+        req.user.shop_id,
+        customerId,
+        vehicleYear,
+        vehicleMake,
+        vehicleModel,
+        cleanText(vehicle.vin || body.vin, 40),
+        cleanText(vehicle.color, 80),
+        cleanText(vehicle.plate, 40),
+        null,
+      ]
+    );
+
+    let roNumber;
+    let roId;
+    let attempts = 0;
+    while (attempts < 5) {
+      roNumber = await getNextRoNumber(req.user.shop_id, attempts);
+      roId = uuidv4();
+      await txRun('SAVEPOINT import_estimate_ro_insert');
+      try {
+        await txRun(
+          `INSERT INTO repair_orders (
+             id, shop_id, ro_number, vehicle_id, customer_id, job_type, status, payment_type,
+             claim_number, insurer, insurance_claim_number, insurance_company,
+             adjuster_name, adjuster_phone, adjuster_email, deductible, intake_date, notes
+           )
+           VALUES ($1, $2, $3, $4, $5, 'collision', 'intake', 'insurance',
+                   $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+          [
+            roId,
+            req.user.shop_id,
+            roNumber,
+            vehicleId,
+            customerId,
+            claimNumber,
+            insuranceCompany,
+            claimNumber,
+            insuranceCompany,
+            cleanText(insurance.adjuster_name || body.adjuster_name, 160),
+            cleanText(insurance.adjuster_phone || body.adjuster_phone, 50),
+            cleanText(insurance.adjuster_email || body.adjuster_email, 160),
+            deductible,
+            today,
+            cleanText(body.notes, 1000) || 'Created from CCC/Mitchell estimate import',
+          ]
+        );
+        await txRun('RELEASE SAVEPOINT import_estimate_ro_insert');
+        break;
+      } catch (err) {
+        await txRun('ROLLBACK TO SAVEPOINT import_estimate_ro_insert');
+        await txRun('RELEASE SAVEPOINT import_estimate_ro_insert');
+        if (err?.code === '23505' || (err?.message && err.message.includes('duplicate key'))) {
+          attempts += 1;
+          continue;
+        }
+        throw err;
+      }
+    }
+    if (attempts >= 5) throw new Error('Failed to generate unique RO number after 5 attempts');
+
+    for (let i = 0; i < lineItems.length; i += 1) {
+      const item = lineItems[i];
+      await txRun(
+        `INSERT INTO estimate_line_items (id, ro_id, shop_id, type, description, quantity, unit_price, taxable, sort_order)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [uuidv4(), roId, req.user.shop_id, item.type, item.description, item.quantity, item.unit_price, item.type === 'parts', i]
+      );
+
+      if (item.type === 'parts') {
+        await txRun(
+          `INSERT INTO parts_requests (id, ro_id, requested_by, part_name, part_number, quantity, status, notes)
+           VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7)`,
+          [
+            uuidv4(),
+            roId,
+            req.user.id,
+            item.description,
+            item.part_number,
+            Math.max(1, Math.ceil(item.quantity || 1)),
+            importedItemNotes(item),
+          ]
+        );
+      }
+
+      if (item.type === 'labor' || item.type === 'sublet') {
+        const estimatedHours = item.labor_units ?? (item.type === 'labor' ? item.quantity : null);
+        await txRun(
+          `INSERT INTO ro_operations (id, ro_id, shop_id, title, operation_type, technician_id,
+             status, estimated_hours, labor_rate, notes, sort_order, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, 'queued', $7, $8, $9, $10, NOW(), NOW())`,
+          [
+            uuidv4(),
+            roId,
+            req.user.shop_id,
+            item.description,
+            operationTypeForImportedItem(item),
+            null,
+            estimatedHours,
+            item.type === 'labor' ? item.unit_price : null,
+            importedItemNotes(item),
+            i,
+          ]
+        );
+      }
+    }
+
+    const summary = await syncImportedRoFinancials(roId, req.user.shop_id, txGet, txRun);
+    await txRun(
+      'INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by, note) VALUES ($1, $2, $3, $4, $5, $6)',
+      [uuidv4(), roId, null, 'intake', req.user.id, `Created from estimate import (${lineItems.length} line items)`]
+    );
+    const ro = await txGet('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2', [roId, req.user.shop_id]);
+    await client.query('COMMIT');
+    committed = true;
+    await sendCustomerOptInConfirmation({
+      phone: customerPhone,
+      smsConsent: customerSmsConsent,
+      shopId: req.user.shop_id,
+    });
+    createNotification(
+      req.user.shop_id,
+      null,
+      'ro_created',
+      'New Repair Order Created',
+      `RO #${roNumber} created from estimate import`,
+      roId
+    ).catch(() => {});
+
+    return res.status(201).json({
+      success: true,
+      ro: await enrichRO(ro),
+      imported_line_count: lineItems.length,
+      summary,
+    });
+  } catch (err) {
+    if (client && !committed) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (rollbackErr) {
+        console.error('[RO Import Estimate] Rollback error:', rollbackErr?.message || rollbackErr);
+      }
+    }
+    console.error('[RO Import Estimate] Error:', err?.message || err);
+    return res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    if (client) client.release();
+  }
+}
+
+router.post('/import-estimate', auth, requireTechnician, insuranceOcrLimiter, roLimitGuard, importEstimateHandler);
 
 router.put('/:id', auth, requireTechnician, async (req, res) => {
   try {
@@ -1867,8 +2215,12 @@ router.patch('/:id', auth, requireTechnician, async (req, res) => {
         const now = new Date().toISOString();
         if (updates.claim_status === 'total_loss') {
           updates.status = 'total_loss';
+          updates.storage_hold = true;
+          if (!ro.storage_start_date) {
+            updates.storage_start_date = now.slice(0, 10);
+          }
           await dbRun('INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by, note) VALUES ($1, $2, $3, $4, $5, $6)',
-            [uuidv4(), req.params.id, ro.status, 'total_loss', req.user.id, 'Claim marked as Total Loss']);
+            [uuidv4(), req.params.id, ro.status, 'total_loss', req.user.id, 'Claim marked as Total Loss; storage hold enabled']);
           notifyStatusChange(req.user.shop_id, { ...ro, id: req.params.id }, 'total_loss');
           queueStatusSMS(req.params.id, req.user.shop_id, 'total_loss');
         } else if (updates.claim_status === 'siu') {
@@ -1879,8 +2231,19 @@ router.patch('/:id', auth, requireTechnician, async (req, res) => {
           notifyStatusChange(req.user.shop_id, { ...ro, id: req.params.id }, 'siu_hold');
           queueStatusSMS(req.params.id, req.user.shop_id, 'siu_hold');
         } else if (updates.claim_status === 'approved') {
-          // Resume from where we were before SIU, or fall back to 'approval'
-          const resumeStatus = ro.pre_siu_status || (ro.status === 'siu_hold' || ro.status === 'total_loss' ? 'approval' : ro.status);
+          const latestNonHoldStatus = !ro.pre_siu_status && (ro.status === 'siu_hold' || ro.status === 'total_loss')
+            ? await dbGet(
+                `SELECT l.to_status
+                 FROM job_status_log l
+                 JOIN repair_orders scoped_ro ON scoped_ro.id = l.ro_id AND scoped_ro.shop_id = $2
+                 WHERE l.ro_id = $1
+                   AND l.to_status NOT IN ('siu_hold', 'total_loss')
+                 ORDER BY l.created_at DESC
+                 LIMIT 1`,
+                [req.params.id, req.user.shop_id]
+              )
+            : null;
+          const resumeStatus = ro.pre_siu_status || latestNonHoldStatus?.to_status || (ro.status === 'siu_hold' || ro.status === 'total_loss' ? 'approval' : ro.status);
           updates.status = resumeStatus;
           updates.pre_siu_status = null;
           await dbRun('INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by, note) VALUES ($1, $2, $3, $4, $5, $6)',
@@ -1895,7 +2258,7 @@ router.patch('/:id', auth, requireTechnician, async (req, res) => {
       const updateVals = Object.values(updates);
       const setClauses = updateKeys.map((k, i) => `${k} = $${i + 1}`).join(', ');
       await dbRun(`UPDATE repair_orders SET ${setClauses} WHERE id = $${updateKeys.length + 1} AND shop_id = $${updateKeys.length + 2}`, [...updateVals, req.params.id, req.user.shop_id]);
-      return res.json(await enrichRO(await dbGet('SELECT * FROM repair_orders WHERE id = $1', [req.params.id])));
+      return res.json(await enrichRO(await dbGet('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id])));
     }
 
     if (!STATUSES.includes(status)) return res.status(400).json({ error: 'Invalid status' });
@@ -2069,3 +2432,4 @@ router.delete('/:id', auth, requireTechnician, async (req, res) => {
 });
 
 module.exports = router;
+module.exports.importEstimateHandler = importEstimateHandler;

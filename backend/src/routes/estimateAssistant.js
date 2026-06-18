@@ -440,7 +440,8 @@ router.post('/scan-photo', auth, scanUpload.single('photo'), async (req, res) =>
 // Multer error handler
 router.use((err, req, res, next) => {
   if (err.code === 'LIMIT_FILE_SIZE') return res.status(400).json({ error: 'File too large (max 10MB)' });
-  res.status(400).json({ error: err.message });
+  console.error('[EstimateAssistant] upload error:', err);
+  res.status(400).json({ error: 'Upload failed. Please try a different file.' });
 });
 
 module.exports = router;

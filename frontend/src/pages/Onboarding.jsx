@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Building2, ClipboardPlus, Users, ArrowRight, CheckCircle2 } from 'lucide-react'
+import { Building2, ClipboardPlus, Users, ArrowRight, CheckCircle2, FileText } from 'lucide-react'
 import api from '../lib/api'
+import EstimateImportWizard from '../components/EstimateImportWizard'
 
 const TOTAL_STEPS = 3
 
@@ -10,6 +11,7 @@ export default function Onboarding() {
   const [step, setStep] = useState(1)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [showImportWizard, setShowImportWizard] = useState(false)
   const [form, setForm] = useState({
     shop_name: '',
     phone: '',
@@ -114,6 +116,22 @@ export default function Onboarding() {
             <p className="text-sm text-slate-300">
               Repair orders are the heart of REVV. Add a customer vehicle to get started.
             </p>
+            <button
+              type="button"
+              onClick={() => setShowImportWizard(true)}
+              className="w-full flex items-center justify-between gap-4 bg-[#0f1117] border border-[#2c3345] hover:border-[#EAB308]/70 rounded-lg p-4 text-left transition-colors"
+            >
+              <span className="flex items-center gap-3">
+                <span className="h-10 w-10 rounded-lg bg-[#EAB308]/15 text-[#EAB308] flex items-center justify-center">
+                  <FileText size={20} />
+                </span>
+                <span>
+                  <span className="block text-sm font-semibold text-white">Import your existing estimate</span>
+                  <span className="block text-xs text-slate-400 mt-0.5">Upload a CCC or Mitchell PDF/image and create a pre-filled RO.</span>
+                </span>
+              </span>
+              <ArrowRight size={18} className="text-slate-500" />
+            </button>
             <div className="flex flex-wrap gap-3">
               <button
                 onClick={() => navigate('/dashboard')}
@@ -129,6 +147,17 @@ export default function Onboarding() {
               </button>
             </div>
           </div>
+        )}
+
+        {showImportWizard && (
+          <EstimateImportWizard
+            onClose={() => setShowImportWizard(false)}
+            onImported={(ro) => {
+              setShowImportWizard(false)
+              if (ro?.id) navigate(`/ros/${ro.id}`)
+              else navigate('/ros')
+            }}
+          />
         )}
 
         {step === 3 && (

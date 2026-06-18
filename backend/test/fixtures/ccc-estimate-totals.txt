@@ -1,0 +1,12 @@
+ESTIMATE TOTALS
+CategoryBasisRateCost $
+Parts2,976.73
+Body Labor48.2 hrs@$ 50.00 /hr2,410.00
+Paint Labor20.5 hrs@$ 50.00 /hr1,025.00
+Mechanical Labor2.2 hrs@$ 50.00 /hr110.00
+Paint Supplies20.5 hrs@$ 30.00 /hr615.00
+Subtotal7,136.73
+Sales Tax$ 7,136.73@8.8750 %633.38
+Total Cost of Repairs7,770.11
+Total Adjustments0.00
+Net Cost of Repairs7,770.11

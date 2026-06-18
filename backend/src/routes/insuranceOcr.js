@@ -1,6 +1,8 @@
 const router = require('express').Router();
 const multer = require('multer');
 const OpenAI = require('openai');
+const rateLimit = require('express-rate-limit');
+const { ipKeyGenerator } = rateLimit;
 const pdfParse = require('pdf-parse');
 const fs = require('fs/promises');
 const os = require('os');
@@ -10,11 +12,41 @@ const { execFile } = require('child_process');
 const { promisify } = require('util');
 const auth = require('../middleware/auth');
 const { dbGet } = require('../db');
+const { notifyOps } = require('../services/notifyOps');
 
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+const allowedEstimateMimeTypes = new Set(['application/pdf']);
+function isAllowedEstimateFile(file) {
+  const mimeType = String(file?.mimetype || '').toLowerCase();
+  const filename = String(file?.originalname || '').toLowerCase();
+  return mimeType.startsWith('image/') || allowedEstimateMimeTypes.has(mimeType) || filename.endsWith('.pdf');
+}
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (isAllowedEstimateFile(file)) return cb(null, true);
+    return cb(new Error('Unsupported estimate file type. Upload a PDF or image.'));
+  },
+});
+function insuranceOcrLimiterKeyGenerator(req) {
+  return req.user?.shop_id && req.user?.id
+    ? `${req.user.shop_id}:${req.user.id}`
+    : ipKeyGenerator(req.ip || 'unknown');
+}
+
+const insuranceOcrLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 15,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: insuranceOcrLimiterKeyGenerator,
+  message: { error: 'Too many requests. Try again in 10 minutes.' },
+});
 const execFileAsync = promisify(execFile);
 const PDF_TEXT_CHAR_LIMIT = 120000;
-const PDF_IMAGE_PAGE_LIMIT = 6;
+const PDF_IMAGE_PAGE_LIMIT = 12;
+const AI_CONFIG_ERROR = 'AI estimate extraction is not configured correctly. Please contact support.';
 
 const SYSTEM_PROMPT = `You are an insurance estimate parser for auto body shops. Extract all line items from this insurance estimate document.
 Return ONLY valid JSON in this exact format:
@@ -27,6 +59,7 @@ Return ONLY valid JSON in this exact format:
   "customer_name": "string or null",
   "customer_phone": "string or null",
   "vehicle": "string or null",
+  "vin": "string or null",
   "vehicle_year": "string or null",
   "vehicle_make": "string or null",
   "vehicle_model": "string or null",
@@ -38,6 +71,9 @@ Return ONLY valid JSON in this exact format:
     "paint_labor_hours": 0,
     "paint_labor_rate": 0,
     "paint_labor_cost": 0,
+    "mechanical_labor_hours": 0,
+    "mechanical_labor_rate": 0,
+    "mechanical_labor_cost": 0,
     "paint_supplies_hours": 0,
     "paint_supplies_rate": 0,
     "paint_supplies_cost": 0,
@@ -56,7 +92,8 @@ Return ONLY valid JSON in this exact format:
     "total_cost_of_repairs": 0,
     "deductible": 0,
     "total_adjustments": 0,
-    "net_cost_of_repairs": 0
+    "net_cost_of_repairs": 0,
+    "revenue": 0
   },
   "line_items": [
     {
@@ -79,6 +116,46 @@ Return only the JSON object, no markdown fences, no extra text.`;
 function normalizeItemType(type) {
   const next = String(type || '').trim().toLowerCase();
   return ['labor', 'parts', 'sublet', 'other'].includes(next) ? next : 'other';
+}
+
+function isAiProviderConfigError(err) {
+  const status = Number(err?.status || err?.response?.status || err?.code);
+  const code = String(err?.code || err?.error?.code || err?.type || '').toLowerCase();
+  const message = String(err?.message || '').toLowerCase();
+  return (
+    status === 401 ||
+    code.includes('invalid_api_key') ||
+    message.includes('incorrect api key') ||
+    message.includes('invalid api key') ||
+    /platform\.[a-z]+\.com\/account\/api-keys/i.test(message)
+  );
+}
+
+function safeInsuranceOcrError(err) {
+  if (isAiProviderConfigError(err)) return AI_CONFIG_ERROR;
+  const message = String(err?.message || '').trim();
+  if (!message) return 'Could not parse estimate file. Try again or upload a clearer file.';
+  if (/sk-(?:proj-)?[A-Za-z0-9_-]+/.test(message) || /openai|api key|platform\.[a-z]+\.com/i.test(message)) {
+    return AI_CONFIG_ERROR;
+  }
+  return message.replace(/sk-(?:proj-)?[A-Za-z0-9_-]+/g, '[redacted]');
+}
+
+function logInsuranceOcrError(err) {
+  console.error('[InsuranceOCR] Error:', {
+    status: err?.status || err?.response?.status || null,
+    code: err?.code || err?.error?.code || null,
+    type: err?.type || err?.error?.type || null,
+    request_id: err?.request_id || err?.headers?.['x-request-id'] || null,
+  });
+}
+
+function classifyAiProviderError(err) {
+  const status = Number(err?.status || err?.response?.status || err?.code);
+  if (status === 401 || status === 403) return 'invalid_api_key';
+  if (status === 429) return 'rate_limit_exceeded';
+  if (status >= 500 && status <= 599) return 'provider_5xx';
+  return null;
 }
 
 function classifyByOperationCodes(description, currentType) {
@@ -122,10 +199,12 @@ function parseEstimateTotalsFromPdfText(text) {
     return m ? toNumberOrNull(m[1]) : null;
   };
 
+  const startsWithValueLabel = (label) => new RegExp(`^${label}\\s*(?=[-$0-9])`, 'i');
+
   const parseHourRateLine = (labelRegex) => {
     const line = totalLines.find((row) => labelRegex.test(row));
     if (!line) return { hours: null, rate: null, cost: null };
-    const m = line.match(/([0-9]+(?:\.[0-9]+)?)\s*hrs\s*@\s*\$?\s*([0-9,]+(?:\.[0-9]+)?)\s*\/hr\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
+    const m = line.match(/([0-9]+(?:\.[0-9]+)?)\s*hrs\s*@\s*\$?\s*([0-9,]+(?:\.[0-9]+)?)\s*\/\s*hr\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
     if (!m) return { hours: null, rate: null, cost: takeTrailingMoney(line) };
     return {
       hours: toNumberOrNull(m[1]),
@@ -137,7 +216,7 @@ function parseEstimateTotalsFromPdfText(text) {
   const parseTaxLine = (labelRegex) => {
     const line = totalLines.find((row) => labelRegex.test(row));
     if (!line) return { basis: null, rate: null, cost: null };
-    const m = line.match(/\$\s*([0-9,]+(?:\.[0-9]+)?)\s*@\s*([0-9]+(?:\.[0-9]+)?)\s*%\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
+    const m = line.match(/\$?\s*([0-9,]+(?:\.[0-9]+)?)\s*@\s*([0-9]+(?:\.[0-9]+)?)\s*%\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
     if (!m) return { basis: null, rate: null, cost: takeTrailingMoney(line) };
     return {
       basis: toNumberOrNull(m[1]),
@@ -146,12 +225,13 @@ function parseEstimateTotalsFromPdfText(text) {
     };
   };
 
-  const bodyLabor = parseHourRateLine(/^Body Labor\b/i);
-  const paintLabor = parseHourRateLine(/^Paint Labor\b/i);
-  const paintSupplies = parseHourRateLine(/^Paint Supplies\b/i);
-  const salesTax = parseTaxLine(/^Sales Tax\b/i);
-  const countyTax = parseTaxLine(/^County Tax\b/i);
-  const otherTax1 = parseTaxLine(/^Other Tax 1\b/i);
+  const bodyLabor = parseHourRateLine(startsWithValueLabel('Body Labor'));
+  const paintLabor = parseHourRateLine(startsWithValueLabel('Paint Labor'));
+  const mechanicalLabor = parseHourRateLine(startsWithValueLabel('Mechanical Labor'));
+  const paintSupplies = parseHourRateLine(startsWithValueLabel('Paint Supplies'));
+  const salesTax = parseTaxLine(startsWithValueLabel('Sales Tax'));
+  const countyTax = parseTaxLine(startsWithValueLabel('County Tax'));
+  const otherTax1 = parseTaxLine(startsWithValueLabel('Other Tax 1'));
 
   const byLabelMoney = (labelRegex) => {
     const line = totalLines.find((row) => labelRegex.test(row));
@@ -159,19 +239,22 @@ function parseEstimateTotalsFromPdfText(text) {
   };
 
   const totals = {
-    parts: byLabelMoney(/^Parts\b/i),
+    parts: byLabelMoney(startsWithValueLabel('Parts')),
     body_labor_hours: bodyLabor.hours,
     body_labor_rate: bodyLabor.rate,
     body_labor_cost: bodyLabor.cost,
     paint_labor_hours: paintLabor.hours,
     paint_labor_rate: paintLabor.rate,
     paint_labor_cost: paintLabor.cost,
+    mechanical_labor_hours: mechanicalLabor.hours,
+    mechanical_labor_rate: mechanicalLabor.rate,
+    mechanical_labor_cost: mechanicalLabor.cost,
     paint_supplies_hours: paintSupplies.hours,
     paint_supplies_rate: paintSupplies.rate,
     paint_supplies_cost: paintSupplies.cost,
-    miscellaneous: byLabelMoney(/^Miscellaneous\b/i),
-    other_charges: byLabelMoney(/^Other Charges\b/i),
-    subtotal: byLabelMoney(/^Subtotal\b/i),
+    miscellaneous: byLabelMoney(startsWithValueLabel('Miscellaneous')),
+    other_charges: byLabelMoney(startsWithValueLabel('Other Charges')),
+    subtotal: byLabelMoney(startsWithValueLabel('Subtotal')),
     sales_tax_basis: salesTax.basis,
     sales_tax_rate: salesTax.rate,
     sales_tax_cost: salesTax.cost,
@@ -181,11 +264,12 @@ function parseEstimateTotalsFromPdfText(text) {
     other_tax_1_basis: otherTax1.basis,
     other_tax_1_rate: otherTax1.rate,
     other_tax_1_cost: otherTax1.cost,
-    total_cost_of_repairs: byLabelMoney(/^Total Cost of Repairs\b/i),
-    deductible: byLabelMoney(/^Deductible\b/i),
-    total_adjustments: byLabelMoney(/^Total Adjustments\b/i),
-    net_cost_of_repairs: byLabelMoney(/^Net Cost of Repairs\b/i),
+    total_cost_of_repairs: byLabelMoney(startsWithValueLabel('Total Cost of Repairs')),
+    deductible: byLabelMoney(startsWithValueLabel('Deductible')),
+    total_adjustments: byLabelMoney(startsWithValueLabel('Total Adjustments')),
+    net_cost_of_repairs: byLabelMoney(startsWithValueLabel('Net Cost of Repairs')),
   };
+  totals.revenue = totals.net_cost_of_repairs ?? totals.total_cost_of_repairs;
 
   const hasAnyValue = Object.values(totals).some((value) => value !== null);
   return hasAnyValue ? totals : null;
@@ -201,6 +285,9 @@ function normalizeEstimateTotals(raw) {
     'paint_labor_hours',
     'paint_labor_rate',
     'paint_labor_cost',
+    'mechanical_labor_hours',
+    'mechanical_labor_rate',
+    'mechanical_labor_cost',
     'paint_supplies_hours',
     'paint_supplies_rate',
     'paint_supplies_cost',
@@ -220,12 +307,14 @@ function normalizeEstimateTotals(raw) {
     'deductible',
     'total_adjustments',
     'net_cost_of_repairs',
+    'revenue',
   ];
 
   const normalized = {};
   for (const key of fields) {
     normalized[key] = toNumberOrNull(raw[key]);
   }
+  normalized.revenue = normalized.revenue ?? normalized.net_cost_of_repairs ?? normalized.total_cost_of_repairs;
   const hasAny = Object.values(normalized).some((value) => value !== null);
   return hasAny ? normalized : null;
 }
@@ -367,7 +456,7 @@ async function extractPdfPageImages(buffer, maxPages = PDF_IMAGE_PAGE_LIMIT) {
 }
 
 // ── Phase 1: OCR parse ───────────────────────────────────────────────────────
-router.post('/parse', auth, upload.single('estimate_image'), async (req, res) => {
+router.post('/parse', auth, insuranceOcrLimiter, upload.single('estimate_image'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ success: false, error: 'No file uploaded. Use field name: estimate_image' });
@@ -375,7 +464,7 @@ router.post('/parse', auth, upload.single('estimate_image'), async (req, res) =>
 
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
-      return res.status(500).json({ success: false, error: 'OpenAI API key not configured on this server' });
+      return res.status(503).json({ success: false, error: AI_CONFIG_ERROR });
     }
 
     const openai = new OpenAI({ apiKey });
@@ -506,6 +595,7 @@ router.post('/parse', auth, upload.single('estimate_image'), async (req, res) =>
         customer_name: parsed.customer_name || null,
         customer_phone: parsed.customer_phone || null,
         vehicle: parsed.vehicle || null,
+        vin: parsed.vin || null,
         vehicle_year: parsed.vehicle_year || null,
         vehicle_make: parsed.vehicle_make || null,
         vehicle_model: parsed.vehicle_model || null,
@@ -515,8 +605,17 @@ router.post('/parse', auth, upload.single('estimate_image'), async (req, res) =>
       },
     });
   } catch (err) {
-    console.error('[InsuranceOCR] Error:', err);
-    return res.status(500).json({ success: false, error: err.message || 'Internal server error' });
+    logInsuranceOcrError(err);
+    const providerCode = classifyAiProviderError(err);
+    if (providerCode) {
+      await notifyOps('high', providerCode, {
+        shop_id: req.user.shop_id,
+        ro_id: req.body?.ro_id || req.body?.roId || 'n/a',
+      });
+      return res.status(503).json({ success: false, error: AI_CONFIG_ERROR });
+    }
+    const status = isAiProviderConfigError(err) ? 503 : 500;
+    return res.status(status).json({ success: false, error: safeInsuranceOcrError(err) });
   }
 });
 
@@ -524,7 +623,7 @@ router.post('/parse', auth, upload.single('estimate_image'), async (req, res) =>
 // POST /api/insurance-ocr/analyze
 // Body: { line_items: [...] }  (same shape as /parse output)
 // Returns: { flags: [...], summary: { ... } }
-router.post('/analyze', auth, async (req, res) => {
+router.post('/analyze', auth, insuranceOcrLimiter, async (req, res) => {
   try {
     // FIX: guard against shop not found — return error instead of silently zeroing rates
     const shop = await dbGet(
@@ -641,8 +740,11 @@ router.post('/analyze', auth, async (req, res) => {
     });
   } catch (err) {
     console.error('[InsuranceOCR/analyze] Error:', err);
-    return res.status(500).json({ success: false, error: err.message || 'Internal server error' });
+    return res.status(500).json({ success: false, error: safeInsuranceOcrError(err) });
   }
 });
 
 module.exports = router;
+module.exports.insuranceOcrLimiter = insuranceOcrLimiter;
+module.exports.insuranceOcrLimiterKeyGenerator = insuranceOcrLimiterKeyGenerator;
+module.exports.parseEstimateTotalsFromPdfText = parseEstimateTotalsFromPdfText;
