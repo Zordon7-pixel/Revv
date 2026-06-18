@@ -47,8 +47,11 @@ describe('viewport profile detection', () => {
     expect(profile.deviceMode).toBe('phone')
     expect(profile.isIOS).toBe(true)
     expect(profile.height).toBe(690)
+    expect(profile.keyboardInset).toBe(154)
     expect(mockWindow.document.documentElement.dataset.deviceMode).toBe('phone')
+    expect(mockWindow.document.documentElement.dataset.keyboardOpen).toBe('true')
     expect(mockWindow.document.documentElement.style.getPropertyValue('--app-viewport-height')).toBe('690px')
+    expect(mockWindow.document.documentElement.style.getPropertyValue('--app-keyboard-inset')).toBe('154px')
   })
 
   it('keeps iPad-sized touch devices in tablet mode', () => {

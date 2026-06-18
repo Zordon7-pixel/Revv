@@ -55,6 +55,7 @@ import StorageHold from './pages/StorageHold'
 import LeadsDashboard from './pages/LeadsDashboard'
 import { getToken, getTokenPayload } from './lib/auth'
 import { watchViewportProfile } from './lib/viewport'
+import { installKeyboardFocusGuard } from './lib/keyboardFocus'
 
 function PrivateRoute({ children }) {
   const location = useLocation()
@@ -117,7 +118,14 @@ function NonEmployeeRoute({ children }) {
 }
 
 export default function App() {
-  useEffect(() => watchViewportProfile(), [])
+  useEffect(() => {
+    const stopViewport = watchViewportProfile()
+    const stopKeyboardGuard = installKeyboardFocusGuard()
+    return () => {
+      stopViewport()
+      stopKeyboardGuard()
+    }
+  }, [])
 
   return (
     <ThemeProvider>
