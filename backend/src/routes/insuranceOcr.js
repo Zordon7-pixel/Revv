@@ -371,7 +371,9 @@ function normalizeEstimateTotals(raw) {
     const implied = normalized.total_cost_of_repairs - normalized.net_cost_of_repairs;
     if (implied > 0) normalized.deductible = Number(implied.toFixed(2));
   }
-  normalized.revenue = normalized.revenue ?? normalized.net_cost_of_repairs ?? normalized.total_cost_of_repairs;
+  if (normalized.revenue === null || normalized.revenue <= 0) {
+    normalized.revenue = normalized.net_cost_of_repairs ?? normalized.total_cost_of_repairs;
+  }
   const hasAny = Object.values(normalized).some((value) => value !== null);
   return hasAny ? normalized : null;
 }

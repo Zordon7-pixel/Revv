@@ -108,4 +108,5 @@ test('parseEstimateTotalsFromPdfText maps Mitchell gross, net, deductible, and a
   assert.equal(totals.total_cost_of_repairs, 9969.25);
   assert.equal(totals.deductible, 1000);
   assert.equal(totals.net_cost_of_repairs, 8969.25);
+  assert.equal(totals.revenue, 8969.25);
 });
