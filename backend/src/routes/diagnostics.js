@@ -109,7 +109,9 @@ router.post('/heal', auth, requireAdmin, async (req, res) => {
         detail: actions.join('; ')
       });
       fs.writeFileSync(actPath, JSON.stringify(data, null, 2));
-    } catch (e) {}
+    } catch (e) {
+      console.error('[diagnostics] suppressed:', e.message);
+    }
 
     res.json({ ok: true, actions });
   } catch (err) {
