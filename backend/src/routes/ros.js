@@ -821,13 +821,13 @@ router.get('/', auth, async (req, res) => {
 
     if (normalizedStatus && normalizedStatus !== 'all') {
       if (normalizedStatus === 'open') {
-        where.push(`${normalizedStatusExpr} NOT IN ('closed', 'completed')`);
+        where.push(`${normalizedStatusExpr} NOT IN ('closed', 'completed', 'total_loss')`);
       } else if (normalizedStatus === 'in-progress') {
         where.push(`${normalizedStatusExpr} IN ('repair', 'paint', 'qc', 'in-progress')`);
       } else if (normalizedStatus === 'completed') {
-        where.push(`${normalizedStatusExpr} IN ('closed', 'completed')`);
+        where.push(`${normalizedStatusExpr} IN ('closed', 'completed', 'total_loss')`);
       } else if (normalizedStatus === 'closed') {
-        where.push(`${normalizedStatusExpr} IN ('closed', 'completed')`);
+        where.push(`${normalizedStatusExpr} IN ('closed', 'completed', 'total_loss')`);
       } else {
         params.push(normalizedStatus);
         where.push(`${normalizedStatusExpr} = $${params.length}`);
@@ -1105,7 +1105,7 @@ router.get('/turnaround-estimate', auth, async (req, res) => {
 
     // Active RO count (workload factor)
     const activeRow = await dbGet(
-      `SELECT COUNT(*) as cnt FROM repair_orders WHERE shop_id = $1 AND status NOT IN ('closed', 'total_loss')`,
+      `SELECT COUNT(*) as cnt FROM repair_orders WHERE shop_id = $1 AND COALESCE(NULLIF(LOWER(TRIM(status)), ''), 'intake') NOT IN ('closed', 'completed', 'total_loss')`,
       [shopId]
     );
     const activeCount = parseInt(activeRow?.cnt || 0);
@@ -1713,7 +1713,7 @@ router.post('/', auth, requireTechnician, roLimitGuard, async (req, res) => {
         FROM repair_orders ro
         LEFT JOIN vehicles v ON v.id = ro.vehicle_id
         WHERE ro.shop_id = $1
-          AND ro.status NOT IN ('closed', 'completed')
+          AND COALESCE(NULLIF(LOWER(TRIM(ro.status)), ''), 'intake') NOT IN ('closed', 'completed', 'total_loss')
           AND ro.created_at >= NOW() - INTERVAL '30 days'
           AND (${duplicateConditions.join(' OR ')})
         ORDER BY ro.created_at DESC
@@ -2122,7 +2122,7 @@ router.put('/:id/status', auth, requireTechnician, async (req, res) => {
     if (!ro) return res.status(404).json({ error: 'Not found' });
     const fromStatus = ro.status;
     const now = new Date().toISOString();
-    if (status === 'delivery') {
+    if (status === 'delivery' || status === 'total_loss') {
       await dbRun('UPDATE repair_orders SET status = $1, updated_at = $2, actual_delivery = $3 WHERE id = $4 AND shop_id = $5', [status, now, now.split('T')[0], req.params.id, req.user.shop_id]);
     } else {
       await dbRun('UPDATE repair_orders SET status = $1, updated_at = $2 WHERE id = $3 AND shop_id = $4', [status, now, req.params.id, req.user.shop_id]);
@@ -2269,11 +2269,6 @@ router.patch('/:id', auth, requireTechnician, async (req, res) => {
       return res.status(400).json({ error: 'This RO is under SIU investigation. Clear the SIU hold before changing status.' });
     }
 
-    // Total loss gate: block progression on total loss jobs
-    if (ro.status === 'total_loss' && normalStatuses.includes(status) && status !== 'closed') {
-      return res.status(400).json({ error: 'This vehicle is a total loss. Only closing is permitted.' });
-    }
-
     if (ro.status === 'closed' && status !== 'closed') {
       const actorRoleCheck = String(req.user.role || '').toLowerCase();
       if (!['owner', 'admin'].includes(actorRoleCheck)) {
@@ -2291,7 +2286,7 @@ router.patch('/:id', auth, requireTechnician, async (req, res) => {
 
     const fromStatus = ro.status;
     const now = new Date().toISOString();
-    if (status === 'delivery') {
+    if (status === 'delivery' || status === 'total_loss') {
       await dbRun('UPDATE repair_orders SET status = $1, updated_at = $2, actual_delivery = $3 WHERE id = $4 AND shop_id = $5', [status, now, now.split('T')[0], req.params.id, req.user.shop_id]);
     } else {
       await dbRun('UPDATE repair_orders SET status = $1, updated_at = $2 WHERE id = $3 AND shop_id = $4', [status, now, req.params.id, req.user.shop_id]);

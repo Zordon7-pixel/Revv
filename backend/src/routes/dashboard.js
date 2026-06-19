@@ -133,7 +133,7 @@ router.get('/owner-kpis', auth, requireOwnerAdminOnly, async (req, res) => {
            u.name AS tech_name,
            COUNT(*) FILTER (WHERE l.from_status IS NOT NULL)::int AS status_advances,
            COUNT(DISTINCT l.ro_id) FILTER (WHERE l.from_status IS NOT NULL)::int AS ros_advanced,
-           COUNT(DISTINCT l.ro_id) FILTER (WHERE LOWER(TRIM(l.to_status)) IN ('closed', 'completed'))::int AS ros_closed
+           COUNT(DISTINCT l.ro_id) FILTER (WHERE LOWER(TRIM(l.to_status)) IN ('closed', 'completed', 'total_loss'))::int AS ros_closed
          FROM job_status_log l
          JOIN repair_orders ro ON ro.id = l.ro_id
          JOIN users u ON u.id::text = CASE
@@ -148,7 +148,7 @@ router.get('/owner-kpis', auth, requireOwnerAdminOnly, async (req, res) => {
            AND u.role IN ('owner', 'admin', 'technician', 'employee', 'staff')
          GROUP BY u.id, u.name
          HAVING COUNT(*) FILTER (WHERE l.from_status IS NOT NULL) > 0
-             OR COUNT(DISTINCT l.ro_id) FILTER (WHERE LOWER(TRIM(l.to_status)) IN ('closed', 'completed')) > 0
+             OR COUNT(DISTINCT l.ro_id) FILTER (WHERE LOWER(TRIM(l.to_status)) IN ('closed', 'completed', 'total_loss')) > 0
          ORDER BY ros_closed DESC, ros_advanced DESC, u.name ASC
          LIMIT 10`,
         [shopId]
@@ -238,7 +238,7 @@ router.get('/weekly', auth, requireTechnician, async (req, res) => {
        FROM repair_orders ro
        JOIN parts_orders p ON p.ro_id = ro.id
        WHERE ro.shop_id = $1
-         AND ro.status NOT IN ('closed')
+         AND COALESCE(NULLIF(LOWER(TRIM(ro.status)), ''), 'intake') NOT IN ('closed', 'completed', 'total_loss')
          AND LOWER(COALESCE(p.status, '')) IN ('ordered', 'awaiting', 'pending', 'backordered')`,
       [shopId]
     );

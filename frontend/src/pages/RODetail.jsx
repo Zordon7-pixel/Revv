@@ -107,6 +107,9 @@ export default function RODetail() {
   const [showMarkPaidModal, setShowMarkPaidModal] = useState(false)
   const [paymentMethod, setPaymentMethod] = useState('cash')
   const [markingPaid, setMarkingPaid] = useState(false)
+  const [showTotalLossModal, setShowTotalLossModal] = useState(false)
+  const [totalLossNote, setTotalLossNote] = useState('')
+  const [markingTotalLoss, setMarkingTotalLoss] = useState(false)
   const [comms, setComms] = useState([])
   const [showCommForm, setShowCommForm] = useState(false)
   const [commForm, setCommForm] = useState({ channel: 'call', direction: 'outbound', summary: '' })
@@ -441,6 +444,26 @@ export default function RODetail() {
       if (!window.confirm(`Move back to "${STATUS_LABELS[STAGES[idx-1]]}"?`)) return
       await api.put(`/ros/${id}/status`, { status: STAGES[idx-1] })
       load()
+    }
+  }
+
+  async function markTotalLoss() {
+    setMarkingTotalLoss(true)
+    try {
+      const note = totalLossNote.trim()
+      const { data } = await api.put(`/ros/${id}/status`, {
+        status: 'total_loss',
+        note: note || undefined,
+      })
+      setRo(data)
+      setForm(buildFormFromRo(data))
+      setShowTotalLossModal(false)
+      setTotalLossNote('')
+      load()
+    } catch (err) {
+      alert(err?.response?.data?.error || 'Could not mark this RO as total loss')
+    } finally {
+      setMarkingTotalLoss(false)
     }
   }
 
@@ -893,6 +916,11 @@ export default function RODetail() {
             {ro.status === 'closed' && (
               <span className="flex items-center gap-1.5 text-slate-300 text-xs font-bold bg-slate-700/60 border border-slate-600 px-3 py-1.5 rounded-lg tracking-wide">TICKET CLOSED</span>
             )}
+            {ro.status === 'total_loss' && (
+              <span className="flex items-center gap-1.5 text-red-300 text-xs font-bold bg-red-950/50 border border-red-700/60 px-3 py-1.5 rounded-lg tracking-wide">
+                <AlertTriangle size={12} /> TOTAL LOSS CLOSED
+              </span>
+            )}
             {!hideHeaderFinancialForTech && <StatusBadge status={ro.status} />}
             {!hideHeaderFinancialForTech && <PaymentStatusBadge status={paymentStatus} paymentReceived={ro.payment_received} />}
             {ro.payment_received === 1 && (
@@ -939,6 +967,14 @@ export default function RODetail() {
                 className="w-full sm:w-auto flex items-center justify-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
               >
                 <CheckCircle size={12} /> Mark Delivered &amp; Close Ticket
+              </button>
+            )}
+            {ro.status !== 'total_loss' && !userIsAssistant && (
+              <button
+                onClick={() => setShowTotalLossModal(true)}
+                className="w-full sm:w-auto flex items-center justify-center gap-1 bg-red-700 hover:bg-red-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
+              >
+                <AlertTriangle size={12} /> Mark Total Loss
               </button>
             )}
             <button onClick={() => window.open(`/invoice/${id}`, '_blank')}
@@ -1175,6 +1211,12 @@ export default function RODetail() {
 
       {overviewTab === 'core' && (
         <>
+      {ro.status === 'total_loss' && (
+        <div className="bg-red-950/30 border border-red-700/50 rounded-xl p-4 text-sm text-red-100">
+          This RO is closed as a total loss. Repair workflow steps are skipped, and financials remain editable for teardown, storage, and administrative billing.
+        </div>
+      )}
+
       {approvalLink && (
         <div className="bg-yellow-900/20 border border-yellow-700/40 rounded-xl p-3 text-xs text-yellow-200">
           Approval link ready: <span className="font-mono break-all">{approvalLink}</span>
@@ -2598,6 +2640,49 @@ export default function RODetail() {
               >
                 {markingPaid ? 'Processing...' : <>
                   <DollarSign size={14} /> Mark Paid
+                </>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showTotalLossModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-[#1a1d2e] border border-red-800/60 rounded-xl p-6 max-w-md w-full mx-4 space-y-4">
+            <div className="flex items-center gap-2">
+              <AlertTriangle size={20} className="text-red-400" />
+              <h2 className="text-lg font-bold text-white">Mark Total Loss</h2>
+            </div>
+            <p className="text-sm text-slate-300">
+              This closes the RO immediately and skips parts, repair, paint, QC, and delivery. Financials stay editable for teardown, storage, and administrative charges.
+            </p>
+            <div className="space-y-2">
+              <label htmlFor="total-loss-note" className="text-xs text-slate-500 block">Internal Note</label>
+              <textarea
+                id="total-loss-note"
+                value={totalLossNote}
+                onChange={e => setTotalLossNote(e.target.value)}
+                rows={3}
+                className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-red-500"
+                placeholder="Optional reason or claim note"
+              />
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowTotalLossModal(false)}
+                disabled={markingTotalLoss}
+                className="flex-1 bg-[#2a2d3e] text-slate-300 text-sm font-medium px-4 py-2 rounded-lg hover:bg-[#3a3d4e] transition-colors disabled:opacity-50"
+              >
+                {t('common.cancel')}
+              </button>
+              <button
+                onClick={markTotalLoss}
+                disabled={markingTotalLoss}
+                className="flex-1 bg-red-700 hover:bg-red-600 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-1"
+              >
+                {markingTotalLoss ? 'Closing...' : <>
+                  <AlertTriangle size={14} /> Confirm Total Loss
                 </>}
               </button>
             </div>

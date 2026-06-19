@@ -23,14 +23,14 @@ router.get('/summary', auth, requireTechnician, requireAdmin, async (req, res) =
       `SELECT COUNT(*)::int as n
        FROM repair_orders
        WHERE shop_id = $1${monthFilter}
-         AND ${normalizedStatusExpr} NOT IN ('closed', 'completed')`,
+         AND ${normalizedStatusExpr} NOT IN ('closed', 'completed', 'total_loss')`,
       [sid]
     );
     const completedRow = await dbGet(
       `SELECT COUNT(*)::int as n
        FROM repair_orders
        WHERE shop_id = $1${monthFilter}
-         AND ${normalizedStatusExpr} IN ('closed', 'completed')`,
+         AND ${normalizedStatusExpr} IN ('closed', 'completed', 'total_loss')`,
       [sid]
     );
     const revenueRow  = await dbGet(`SELECT COALESCE(SUM(total),0) as r FROM repair_orders WHERE shop_id = $1${monthFilter}`, [sid]);
@@ -156,8 +156,8 @@ router.get('/monthly/:yearMonth', auth, requireTechnician, requireAdmin, async (
     );
 
     const totalRevenue = ros.reduce((sum, ro) => sum + Number(ro.total_cost || 0), 0);
-    const completedRos = ros.filter(ro => ['completed', 'delivery', 'closed'].includes(ro.status)).length;
-    const inProgressRos = ros.filter(ro => !['completed', 'delivery', 'closed', 'cancelled'].includes(ro.status)).length;
+    const completedRos = ros.filter(ro => ['completed', 'delivery', 'closed', 'total_loss'].includes(ro.status)).length;
+    const inProgressRos = ros.filter(ro => !['completed', 'delivery', 'closed', 'total_loss', 'cancelled'].includes(ro.status)).length;
     const statusCounts = ros.reduce((acc, ro) => {
       acc[ro.status] = (acc[ro.status] || 0) + 1;
       return acc;
@@ -282,7 +282,7 @@ router.get('/tech-workload', auth, requireTechnician, requireAdmin, async (req, 
           LEFT JOIN customers c ON c.id = ro.customer_id
           LEFT JOIN vehicles v ON v.id = ro.vehicle_id
           WHERE ro.shop_id = $1
-            AND ro.status NOT IN ('closed', 'delivery')
+            AND COALESCE(NULLIF(LOWER(TRIM(ro.status)), ''), 'intake') NOT IN ('closed', 'completed', 'total_loss', 'delivery')
           ORDER BY ro.updated_at DESC
         `,
         [sid]
