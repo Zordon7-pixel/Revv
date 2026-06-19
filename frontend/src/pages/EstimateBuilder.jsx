@@ -399,15 +399,15 @@ export default function EstimateBuilder() {
 
   // ── OCR handlers ────────────────────────────────────────────────────────────
   async function handleOcrFile(e) {
-    const file = e.target.files?.[0]
-    if (!file) return
+    const files = Array.from(e.target.files || []).slice(0, 12)
+    if (!files.length) return
     e.target.value = ''
     setOcrLoading(true)
     setOcrError('')
     try {
       // Phase 1: parse
       const form = new FormData()
-      form.append('estimate_image', file)
+      files.forEach((file) => form.append('estimate_images', file))
       const { data } = await api.post('/insurance-ocr/parse', form, {
         headers: { 'Content-Type': 'multipart/form-data' },
       })
@@ -664,6 +664,7 @@ export default function EstimateBuilder() {
         ref={fileInputRef}
         type="file"
         accept="image/*,.pdf,application/pdf"
+        multiple
         className="hidden"
         onChange={handleOcrFile}
       />
