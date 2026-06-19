@@ -923,3 +923,43 @@ POST /api/insurance-ocr/parse with synthetic totals-only estimate image  # succe
 - No migrations, seed, reset, or destructive scripts were run.
 - Miles Automotive data was not touched.
 - Live OCR probes used synthetic estimate images and demo auth only.
+
+## Dispatch Log — 2026-06-18 Multi-Photo Estimate Import
+
+**Status:** DONE + VERIFIED + DEPLOYED
+
+**Scope**
+- Updated `/api/insurance-ocr/parse` to accept up to 12 files via `estimate_image` and `estimate_images`, while preserving the old single-file field name.
+- Combined multiple estimate photos/PDF pages into one AI extraction request so multi-page estimates can be captured/imported together.
+- Updated estimate import surfaces to allow multi-select uploads:
+  - RO Insurance import panel
+  - Supplement Finder upload
+  - Estimate Builder import
+  - Estimate Import Wizard
+- Added an "Add another photo / PDF" loop in the RO Insurance import panel for iPad/Safari camera capture flows that return one photo at a time.
+
+**Files changed**
+- `backend/src/routes/insuranceOcr.js`
+- `backend/src/__tests__/insuranceOcr.notifyOps.test.js`
+- `frontend/src/components/InsurancePanel.jsx`
+- `frontend/src/components/SupplementFinderPanel.jsx`
+- `frontend/src/pages/EstimateBuilder.jsx`
+- `frontend/src/components/EstimateImportWizard.jsx`
+- `CLAUDE.md`
+
+**Verification**
+```
+node --check backend/src/routes/insuranceOcr.js backend/src/app.js backend/src/db/index.js backend/src/services/email.js backend/src/lib/devSafety.js
+cd backend && node --test src/__tests__/*.test.js  # 28/28 tests passed
+cd frontend && npm run test:run  # 16 files, 33/33 tests passed
+cd frontend && npm run build
+rm -rf frontend/dist && git diff --check
+curl https://revvshop.app/api/health  # commit 58d063c3efcf410ae9fe0552eeed54cf62dc06d0
+./scripts/smoke-test.sh  # 6 PASS + 1 documented RESEND_API_KEY local-env WARN
+POST /api/insurance-ocr/parse with two synthetic estimate page photos in one request  # success:true, 4 line items, claim/vehicle parsed
+```
+
+**Data safety**
+- No migrations, seed, reset, or destructive scripts were run.
+- Miles Automotive data was not touched.
+- Live OCR probe used synthetic estimate images and demo auth only.
