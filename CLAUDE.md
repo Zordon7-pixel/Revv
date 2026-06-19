@@ -858,3 +858,35 @@ curl https://revvshop.app/api/health  # commit 6ca49ab1a7a8753d228734787b9d3c8b0
 - No migrations, seed, reset, or destructive scripts were run.
 - Miles Automotive data was not touched.
 - The change is CSS-only for modal keyboard visibility.
+
+## Dispatch Log — 2026-06-18 Estimate OCR Provider Fallback
+
+**Status:** DONE + VERIFIED + DEPLOYED
+
+**Scope**
+- Confirmed Railway had `OPENAI_API_KEY` present, but provider validation returned 401 invalid key.
+- Added Anthropic fallback for estimate OCR when OpenAI is unavailable or misconfigured.
+- The fallback covers all estimate extraction paths in `backend/src/routes/insuranceOcr.js`: PDF text extraction, PDF image extraction, and direct image/photo uploads.
+- Both user-facing upload flows use this route, so Estimate Builder import and RO Insurance import now share the same fallback behavior.
+
+**Files changed**
+- `backend/src/routes/insuranceOcr.js`
+- `backend/src/__tests__/insuranceOcr.notifyOps.test.js`
+- `CLAUDE.md`
+
+**Verification**
+```
+node --check backend/src/routes/insuranceOcr.js backend/src/app.js backend/src/db/index.js backend/src/services/email.js backend/src/lib/devSafety.js
+cd backend && node --test src/__tests__/*.test.js  # 27/27 tests passed
+cd frontend && npm run test:run  # 16 files, 33/33 tests passed
+cd frontend && npm run build
+rm -rf frontend/dist && git diff --check
+curl https://revvshop.app/api/health  # commit 05ea7e3324e93a97af44df69e9bc36934572ed3a
+./scripts/smoke-test.sh  # 6 PASS + 1 documented RESEND_API_KEY local-env WARN
+POST /api/insurance-ocr/parse with synthetic estimate image  # success:true, 3 line items, claim/vehicle/VIN parsed
+```
+
+**Data safety**
+- No migrations, seed, reset, or destructive scripts were run.
+- Miles Automotive data was not touched.
+- Live OCR probe used a synthetic estimate image and demo auth only.
