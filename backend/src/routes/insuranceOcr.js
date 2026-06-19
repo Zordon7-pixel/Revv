@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const multer = require('multer');
 const OpenAI = require('openai');
+const Anthropic = require('@anthropic-ai/sdk');
 const rateLimit = require('express-rate-limit');
 const { ipKeyGenerator } = rateLimit;
 const pdfParse = require('pdf-parse');
@@ -47,6 +48,7 @@ const execFileAsync = promisify(execFile);
 const PDF_TEXT_CHAR_LIMIT = 120000;
 const PDF_IMAGE_PAGE_LIMIT = 12;
 const AI_CONFIG_ERROR = 'AI estimate extraction is not configured correctly. Please contact support.';
+const ANTHROPIC_ESTIMATE_MODEL = process.env.ANTHROPIC_ESTIMATE_MODEL || process.env.ANTHROPIC_MODEL || 'claude-haiku-4-5';
 
 const SYSTEM_PROMPT = `You are an insurance estimate parser for auto body shops. Extract all line items from this insurance estimate document.
 Return ONLY valid JSON in this exact format:
@@ -324,6 +326,53 @@ function isOpenAiJsonBodyParseError(err) {
   return msg.includes('could not parse the json body');
 }
 
+function getAnthropicClient() {
+  if (!process.env.ANTHROPIC_API_KEY) return null;
+  return new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+}
+
+function getAnthropicText(response) {
+  return (response?.content || [])
+    .filter((part) => part?.type === 'text' && part.text)
+    .map((part) => part.text)
+    .join('\n')
+    .trim();
+}
+
+function isAnthropicProviderConfigError(err) {
+  const status = Number(err?.status || err?.response?.status || err?.code);
+  const type = String(err?.error?.type || err?.type || err?.code || '').toLowerCase();
+  const message = String(err?.message || err?.error?.message || '').toLowerCase();
+  return (
+    status === 401 ||
+    status === 403 ||
+    type.includes('authentication') ||
+    type.includes('permission') ||
+    message.includes('api key') ||
+    message.includes('x-api-key')
+  );
+}
+
+function toAnthropicImageSource(dataUrl) {
+  const match = String(dataUrl || '').match(/^data:([^;,]+);base64,(.+)$/);
+  if (!match) return null;
+  return {
+    type: 'base64',
+    media_type: match[1],
+    data: match[2],
+  };
+}
+
+function mediaTypeForUpload(mimeType, filename = '') {
+  const normalized = String(mimeType || '').toLowerCase();
+  if (normalized.startsWith('image/')) return normalized;
+  const lowerName = String(filename || '').toLowerCase();
+  if (lowerName.endsWith('.png')) return 'image/png';
+  if (lowerName.endsWith('.webp')) return 'image/webp';
+  if (lowerName.endsWith('.gif')) return 'image/gif';
+  return 'image/jpeg';
+}
+
 function sanitizeTextForOpenAI(input, { aggressive = false } = {}) {
   const str = String(input || '');
   const out = [];
@@ -384,6 +433,141 @@ async function parseEstimateTextWithOpenAI(openai, extractedText) {
     const aggressive = sanitizeTextForOpenAI(extractedText, { aggressive: true });
     if (!aggressive) throw err;
     return callParser(aggressive);
+  }
+}
+
+async function parseEstimateTextWithAnthropic(extractedText) {
+  const client = getAnthropicClient();
+  if (!client) return '';
+
+  const cleaned = sanitizeTextForOpenAI(extractedText);
+  if (!cleaned) return '';
+
+  const response = await client.messages.create({
+    model: ANTHROPIC_ESTIMATE_MODEL,
+    max_tokens: 4096,
+    messages: [{
+      role: 'user',
+      content: `${SYSTEM_PROMPT}\n\nEstimate document text:\n${cleaned.slice(0, PDF_TEXT_CHAR_LIMIT)}`,
+    }],
+  });
+  return getAnthropicText(response);
+}
+
+async function parseEstimateImagesWithAnthropic(imageDataUrls) {
+  const client = getAnthropicClient();
+  if (!client) return '';
+
+  const imageBlocks = imageDataUrls
+    .map(toAnthropicImageSource)
+    .filter(Boolean)
+    .map((source) => ({ type: 'image', source }));
+
+  if (!imageBlocks.length) return '';
+
+  const response = await client.messages.create({
+    model: ANTHROPIC_ESTIMATE_MODEL,
+    max_tokens: 4096,
+    messages: [{
+      role: 'user',
+      content: [
+        ...imageBlocks,
+        { type: 'text', text: SYSTEM_PROMPT },
+      ],
+    }],
+  });
+  return getAnthropicText(response);
+}
+
+async function parseEstimateUploadImageWithAnthropic(file, mimeType) {
+  const mediaType = mediaTypeForUpload(mimeType, file?.originalname);
+  const dataUrl = `data:${mediaType};base64,${file.buffer.toString('base64')}`;
+  return parseEstimateImagesWithAnthropic([dataUrl]);
+}
+
+async function parseEstimateTextWithFallback(openai, extractedText) {
+  if (!openai) return parseEstimateTextWithAnthropic(extractedText);
+  try {
+    return await parseEstimateTextWithOpenAI(openai, extractedText);
+  } catch (err) {
+    if (!isAiProviderConfigError(err)) throw err;
+    console.warn('[InsuranceOCR] OpenAI estimate text parse unavailable; falling back to Anthropic.');
+    try {
+      return await parseEstimateTextWithAnthropic(extractedText);
+    } catch (fallbackErr) {
+      if (isAnthropicProviderConfigError(fallbackErr)) throw err;
+      throw fallbackErr;
+    }
+  }
+}
+
+async function parseEstimateImageUrlsWithOpenAI(openai, imageDataUrls) {
+  const response = await openai.chat.completions.create({
+    model: 'gpt-4o',
+    max_tokens: 4096,
+    messages: [
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: SYSTEM_PROMPT },
+          ...imageDataUrls.map((url) => ({ type: 'image_url', image_url: { url, detail: 'high' } })),
+        ],
+      },
+    ],
+  });
+  return response.choices?.[0]?.message?.content || '';
+}
+
+async function parseEstimateImageUrlsWithFallback(openai, imageDataUrls) {
+  if (!openai) return parseEstimateImagesWithAnthropic(imageDataUrls);
+  try {
+    return await parseEstimateImageUrlsWithOpenAI(openai, imageDataUrls);
+  } catch (err) {
+    if (!isAiProviderConfigError(err)) throw err;
+    console.warn('[InsuranceOCR] OpenAI estimate image parse unavailable; falling back to Anthropic.');
+    try {
+      return await parseEstimateImagesWithAnthropic(imageDataUrls);
+    } catch (fallbackErr) {
+      if (isAnthropicProviderConfigError(fallbackErr)) throw err;
+      throw fallbackErr;
+    }
+  }
+}
+
+async function parseEstimateUploadImageWithOpenAI(openai, file, mimeType) {
+  const base64 = file.buffer.toString('base64');
+  const response = await openai.chat.completions.create({
+    model: 'gpt-4o',
+    max_tokens: 4096,
+    messages: [
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: SYSTEM_PROMPT },
+          {
+            type: 'image_url',
+            image_url: { url: `data:${mimeType};base64,${base64}`, detail: 'high' },
+          },
+        ],
+      },
+    ],
+  });
+  return response.choices?.[0]?.message?.content || '';
+}
+
+async function parseEstimateUploadImageWithFallback(openai, file, mimeType) {
+  if (!openai) return parseEstimateUploadImageWithAnthropic(file, mimeType);
+  try {
+    return await parseEstimateUploadImageWithOpenAI(openai, file, mimeType);
+  } catch (err) {
+    if (!isAiProviderConfigError(err)) throw err;
+    console.warn('[InsuranceOCR] OpenAI estimate upload image parse unavailable; falling back to Anthropic.');
+    try {
+      return await parseEstimateUploadImageWithAnthropic(file, mimeType);
+    } catch (fallbackErr) {
+      if (isAnthropicProviderConfigError(fallbackErr)) throw err;
+      throw fallbackErr;
+    }
   }
 }
 
@@ -463,11 +647,11 @@ router.post('/parse', auth, insuranceOcrLimiter, upload.single('estimate_image')
     }
 
     const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) {
+    if (!apiKey && !process.env.ANTHROPIC_API_KEY) {
       return res.status(503).json({ success: false, error: AI_CONFIG_ERROR });
     }
 
-    const openai = new OpenAI({ apiKey });
+    const openai = apiKey ? new OpenAI({ apiKey }) : null;
     const mimeType = req.file.mimetype || 'application/octet-stream';
     const filename = String(req.file.originalname || '').toLowerCase();
     const isPdf = mimeType === 'application/pdf' || filename.endsWith('.pdf');
@@ -485,7 +669,7 @@ router.post('/parse', auth, insuranceOcrLimiter, upload.single('estimate_image')
 
       if (extractedText) {
         try {
-          raw = await parseEstimateTextWithOpenAI(openai, extractedText);
+          raw = await parseEstimateTextWithFallback(openai, extractedText);
         } catch (parseErr) {
           if (isOpenAiJsonBodyParseError(parseErr)) {
             console.warn('[InsuranceOCR] OpenAI rejected PDF-text payload; falling back to PDF image OCR.');
@@ -514,40 +698,10 @@ router.post('/parse', auth, insuranceOcrLimiter, upload.single('estimate_image')
           });
         }
 
-        const response = await openai.chat.completions.create({
-          model: 'gpt-4o',
-          max_tokens: 4096,
-          messages: [
-            {
-              role: 'user',
-              content: [
-                { type: 'text', text: SYSTEM_PROMPT },
-                ...images.map((url) => ({ type: 'image_url', image_url: { url, detail: 'high' } })),
-              ],
-            },
-          ],
-        });
-        raw = response.choices?.[0]?.message?.content || '';
+        raw = await parseEstimateImageUrlsWithFallback(openai, images);
       }
     } else {
-      const base64 = req.file.buffer.toString('base64');
-      const response = await openai.chat.completions.create({
-        model: 'gpt-4o',
-        max_tokens: 4096,
-        messages: [
-          {
-            role: 'user',
-            content: [
-              { type: 'text', text: SYSTEM_PROMPT },
-              {
-                type: 'image_url',
-                image_url: { url: `data:${mimeType};base64,${base64}`, detail: 'high' },
-              },
-            ],
-          },
-        ],
-      });
-      raw = response.choices?.[0]?.message?.content || '';
+      raw = await parseEstimateUploadImageWithFallback(openai, req.file, mimeType);
     }
 
     let parsed;

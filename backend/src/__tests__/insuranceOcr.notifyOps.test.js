@@ -6,6 +6,7 @@ const test = require('node:test');
 test('insurance OCR imports notifyOps and handles provider failure branches', () => {
   const source = fs.readFileSync(path.join(__dirname, '../routes/insuranceOcr.js'), 'utf8');
 
+  assert.match(source, /require\('@anthropic-ai\/sdk'\)/);
   assert.match(source, /require\('\.\.\/services\/notifyOps'\)/);
   assert.match(source, /notifyOps\('high', providerCode/);
   assert.match(source, /status === 401 \|\| status === 403/);
@@ -14,6 +15,21 @@ test('insurance OCR imports notifyOps and handles provider failure branches', ()
   assert.match(source, /invalid_api_key/);
   assert.match(source, /rate_limit_exceeded/);
   assert.match(source, /provider_5xx/);
+});
+
+test('insurance OCR falls back to Anthropic when OpenAI estimate parsing is misconfigured', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../routes/insuranceOcr.js'), 'utf8');
+
+  assert.match(source, /ANTHROPIC_ESTIMATE_MODEL/);
+  assert.match(source, /function getAnthropicClient\(\)/);
+  assert.match(source, /parseEstimateTextWithAnthropic/);
+  assert.match(source, /parseEstimateImagesWithAnthropic/);
+  assert.match(source, /parseEstimateTextWithFallback/);
+  assert.match(source, /parseEstimateImageUrlsWithFallback/);
+  assert.match(source, /parseEstimateUploadImageWithFallback/);
+  assert.match(source, /OpenAI estimate text parse unavailable; falling back to Anthropic/);
+  assert.match(source, /OpenAI estimate image parse unavailable; falling back to Anthropic/);
+  assert.match(source, /!apiKey && !process\.env\.ANTHROPIC_API_KEY/);
 });
 
 test('insurance OCR parse and analyze routes are rate limited and accept PDF imports', () => {
