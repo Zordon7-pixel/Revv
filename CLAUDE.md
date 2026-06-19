@@ -890,3 +890,36 @@ POST /api/insurance-ocr/parse with synthetic estimate image  # success:true, 3 l
 - No migrations, seed, reset, or destructive scripts were run.
 - Miles Automotive data was not touched.
 - Live OCR probe used a synthetic estimate image and demo auth only.
+
+## Dispatch Log — 2026-06-18 Estimate OCR Zero-Line Retry
+
+**Status:** DONE + VERIFIED + DEPLOYED
+
+**Scope**
+- Added a second-pass estimate OCR prompt when the first extraction returns zero line items.
+- Added backend normalization for AI line-item output so empty descriptions are dropped and operation-code classification still applies.
+- Added totals-derived fallback rows when the detailed estimate table is unreadable but totals are visible, preventing the frontend from immediately showing "No line items were extracted" for summary-only or hard-to-read uploads.
+- Covers both Supplement Finder upload and RO Insurance import because both use `/api/insurance-ocr/parse`.
+
+**Files changed**
+- `backend/src/routes/insuranceOcr.js`
+- `backend/src/__tests__/insuranceOcr.notifyOps.test.js`
+- `CLAUDE.md`
+
+**Verification**
+```
+node --check backend/src/routes/insuranceOcr.js backend/src/app.js backend/src/db/index.js backend/src/services/email.js backend/src/lib/devSafety.js
+cd backend && node --test src/__tests__/*.test.js  # 28/28 tests passed
+cd frontend && npm run test:run  # 16 files, 33/33 tests passed
+cd frontend && npm run build
+rm -rf frontend/dist && git diff --check
+curl https://revvshop.app/api/health  # commit de7ba1b1cbcfbb71e2e41a506dc0ad1db0b035e4
+./scripts/smoke-test.sh  # 6 PASS + 1 documented RESEND_API_KEY local-env WARN
+POST /api/insurance-ocr/parse with synthetic detailed estimate image  # success:true, 3 line items
+POST /api/insurance-ocr/parse with synthetic totals-only estimate image  # success:true, 5 line items
+```
+
+**Data safety**
+- No migrations, seed, reset, or destructive scripts were run.
+- Miles Automotive data was not touched.
+- Live OCR probes used synthetic estimate images and demo auth only.
