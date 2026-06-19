@@ -77,7 +77,7 @@ function normalizeItems(parsed) {
 
 export default function EstimateImportWizard({ onClose, onImported }) {
   const inputRef = useRef(null)
-  const [file, setFile] = useState(null)
+  const [files, setFiles] = useState([])
   const [step, setStep] = useState('upload')
   const [parsing, setParsing] = useState(false)
   const [creating, setCreating] = useState(false)
@@ -124,12 +124,12 @@ export default function EstimateImportWizard({ onClose, onImported }) {
   }
 
   async function parseEstimate() {
-    if (!file) return
+    if (!files.length) return
     setParsing(true)
     setError('')
     try {
       const fd = new FormData()
-      fd.append('estimate_image', file)
+      files.forEach((file) => fd.append('estimate_images', file))
       const { data } = await api.post('/insurance-ocr/parse', fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
       })
@@ -217,23 +217,27 @@ export default function EstimateImportWizard({ onClose, onImported }) {
                 className="w-full min-h-48 rounded-lg border border-dashed border-[#3a4257] bg-[#0f1117] hover:border-[#EAB308]/70 transition-colors flex flex-col items-center justify-center gap-3 px-6 text-center"
               >
                 <Upload className="text-[#EAB308]" size={30} />
-                <span className="text-sm font-semibold text-white">{file ? file.name : 'Upload estimate PDF or image'}</span>
+                <span className="text-sm font-semibold text-white">
+                  {files.length ? `${files.length} file${files.length === 1 ? '' : 's'} selected` : 'Upload estimate PDFs or images'}
+                </span>
                 <span className="text-xs text-slate-500">CCC, Mitchell, Audatex, scanned PDF, JPG, or PNG</span>
               </button>
               <input
                 ref={inputRef}
                 type="file"
                 accept="application/pdf,image/*"
+                multiple
                 className="hidden"
                 onChange={(e) => {
-                  setFile(e.target.files?.[0] || null)
+                  setFiles(Array.from(e.target.files || []).slice(0, 12))
                   setError('')
+                  e.target.value = ''
                 }}
               />
               {error && <p role="alert" className="text-sm text-red-400">{error}</p>}
               <button
                 type="button"
-                disabled={!file || parsing}
+                disabled={!files.length || parsing}
                 onClick={parseEstimate}
                 className="inline-flex items-center gap-2 bg-[#EAB308] hover:bg-[#facc15] text-black font-semibold rounded-lg px-4 py-2.5 text-sm transition-colors disabled:opacity-60"
               >
@@ -348,7 +352,7 @@ export default function EstimateImportWizard({ onClose, onImported }) {
                   {creating ? 'Creating RO...' : 'Create Repair Order'}
                 </button>
                 <button type="button" onClick={() => setStep('upload')} className="bg-[#232a3b] hover:bg-[#2c3345] text-slate-200 rounded-lg px-4 py-2.5 text-sm transition-colors">
-                  Choose another file
+                  Choose other files
                 </button>
               </div>
             </div>

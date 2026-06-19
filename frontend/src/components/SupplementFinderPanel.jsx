@@ -132,13 +132,14 @@ export default function SupplementFinderPanel({ roId, importedItems = [], import
     }
   }
 
-  async function parseAndAnalyze(file) {
-    if (!file) return
+  async function parseAndAnalyze(files) {
+    const selectedFiles = Array.from(files || []).slice(0, 12)
+    if (!selectedFiles.length) return
     setUploading(true)
     setError('')
     try {
       const form = new FormData()
-      form.append('estimate_image', file)
+      selectedFiles.forEach((file) => form.append('estimate_images', file))
       const { data } = await api.post('/insurance-ocr/parse', form, {
         headers: { 'Content-Type': 'multipart/form-data' },
       })
@@ -190,9 +191,10 @@ export default function SupplementFinderPanel({ roId, importedItems = [], import
               ref={fileInputRef}
               type="file"
               accept="image/*,.pdf"
+              multiple
               className="hidden"
               disabled={busy}
-              onChange={(event) => parseAndAnalyze(event.target.files?.[0])}
+              onChange={(event) => parseAndAnalyze(event.target.files)}
             />
           </label>
         </div>

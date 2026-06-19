@@ -46,7 +46,7 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
 
   // OCR import state
   const fileInputRef = useRef(null)
-  const [ocrFile, setOcrFile] = useState(null)
+  const [ocrFiles, setOcrFiles] = useState([])
   const [ocrPreview, setOcrPreview] = useState(null)
   const [ocrParsing, setOcrParsing] = useState(false)
   const [ocrItems, setOcrItems] = useState(null)     // parsed line items
@@ -59,9 +59,10 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
   const [ocrImportedCount, setOcrImportedCount] = useState(0)
 
   function handleFileChange(e) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setOcrFile(file)
+    const nextFiles = Array.from(e.target.files || [])
+    if (!nextFiles.length) return
+    const mergedFiles = [...ocrFiles, ...nextFiles].slice(0, 12)
+    setOcrFiles(mergedFiles)
     setOcrItems(null)
     setOcrParsedMeta(null)
     setOcrCrossCheck(null)
@@ -69,22 +70,24 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
     setOcrError(null)
     setOcrNotice(null)
     setOcrImportedCount(0)
-    if (file.type.startsWith('image/')) {
+    const previewFile = mergedFiles.find((file) => file.type.startsWith('image/'))
+    if (previewFile) {
       const reader = new FileReader()
       reader.onload = (ev) => setOcrPreview(ev.target.result)
-      reader.readAsDataURL(file)
+      reader.readAsDataURL(previewFile)
     } else {
       setOcrPreview(null)
     }
+    e.target.value = ''
   }
 
   async function parseEstimate() {
-    if (!ocrFile) return
+    if (!ocrFiles.length) return
     setOcrParsing(true)
     setOcrError(null)
     try {
       const form = new FormData()
-      form.append('estimate_image', ocrFile)
+      ocrFiles.forEach((file) => form.append('estimate_images', file))
       const { data } = await api.post('/insurance-ocr/parse', form, {
         headers: { 'Content-Type': 'multipart/form-data' },
       })
@@ -185,7 +188,7 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
         imported += 1
       }
       onUpdated?.()
-      setOcrFile(null)
+      setOcrFiles([])
       setOcrPreview(null)
       setOcrItems(null)
       setOcrSelected({})
@@ -318,9 +321,9 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
               <h3 className="text-xs font-semibold text-white flex items-center gap-1.5">
                 <FileImage size={12} /> Import Insurance Estimate
               </h3>
-              {ocrFile && (
+              {ocrFiles.length > 0 && (
                 <button type="button" onClick={() => {
-                  setOcrFile(null)
+                  setOcrFiles([])
                   setOcrPreview(null)
                   setOcrItems(null)
                   setOcrParsedMeta(null)
@@ -354,27 +357,37 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
               </a>
             )}
 
-            {!ocrFile && (
+            {!ocrFiles.length && (
               <>
-                <input ref={fileInputRef} type="file" accept="image/*,.pdf" className="hidden" onChange={handleFileChange} />
+                <input ref={fileInputRef} type="file" accept="image/*,.pdf" multiple className="hidden" onChange={handleFileChange} />
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
                   className="w-full flex items-center justify-center gap-2 border border-[#2a2d3e] rounded-lg py-3 text-sm text-slate-400 hover:text-white hover:border-indigo-500 transition-colors"
                 >
-                  <Upload size={15} /> Upload estimate photo / PDF
+                  <Upload size={15} /> Upload estimate photos / PDF
                 </button>
               </>
             )}
 
-            {ocrFile && !ocrItems && (
+            {ocrFiles.length > 0 && !ocrItems && (
               <div className="space-y-2">
                 {ocrPreview && (
                   <img src={ocrPreview} alt="Estimate preview" className="w-full max-h-40 object-contain rounded-lg border border-[#2a2d3e]" />
                 )}
                 {!ocrPreview && (
-                  <p className="text-xs text-slate-400 italic">{ocrFile.name}</p>
+                  <p className="text-xs text-slate-400 italic">{ocrFiles.map((file) => file.name).join(', ')}</p>
                 )}
+                <p className="text-[10px] text-slate-500">{ocrFiles.length} file{ocrFiles.length === 1 ? '' : 's'} selected</p>
+                <input ref={fileInputRef} type="file" accept="image/*,.pdf" multiple className="hidden" onChange={handleFileChange} />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={ocrParsing || ocrFiles.length >= 12}
+                  className="w-full border border-[#2a2d3e] hover:border-[#EAB308]/60 disabled:opacity-50 text-slate-300 text-xs font-semibold py-2 rounded-lg"
+                >
+                  Add another photo / PDF
+                </button>
                 {ocrError && <p role="alert" className="text-xs text-red-400">{ocrError}</p>}
                 <button
                   type="button"

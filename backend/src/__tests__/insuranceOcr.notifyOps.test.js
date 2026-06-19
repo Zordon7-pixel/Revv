@@ -56,7 +56,10 @@ test('insurance OCR parse and analyze routes are rate limited and accept PDF imp
   assert.match(source, /keyGenerator: insuranceOcrLimiterKeyGenerator/);
   assert.match(source, /req\.user\.shop_id/);
   assert.match(source, /message: \{ error: 'Too many requests\. Try again in 10 minutes\.' \}/);
-  assert.match(source, /router\.post\('\/parse', auth, insuranceOcrLimiter, upload\.single\('estimate_image'\)/);
+  assert.match(source, /MAX_ESTIMATE_UPLOAD_FILES = 12/);
+  assert.match(source, /function collectEstimateUploadFiles\(req\)/);
+  assert.match(source, /estimate_images/);
+  assert.match(source, /router\.post\('\/parse', auth, insuranceOcrLimiter, upload\.fields\(\[/);
   assert.match(source, /router\.post\('\/analyze', auth, insuranceOcrLimiter/);
   assert.match(source, /application\/pdf/);
   assert.match(source, /filename\.endsWith\('\.pdf'\)/);

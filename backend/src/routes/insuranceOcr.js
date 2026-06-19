@@ -15,6 +15,7 @@ const auth = require('../middleware/auth');
 const { dbGet } = require('../db');
 const { notifyOps } = require('../services/notifyOps');
 
+const MAX_ESTIMATE_UPLOAD_FILES = 12;
 const allowedEstimateMimeTypes = new Set(['application/pdf']);
 function isAllowedEstimateFile(file) {
   const mimeType = String(file?.mimetype || '').toLowerCase();
@@ -24,7 +25,7 @@ function isAllowedEstimateFile(file) {
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 },
+  limits: { fileSize: 10 * 1024 * 1024, files: MAX_ESTIMATE_UPLOAD_FILES },
   fileFilter: (_req, file, cb) => {
     if (isAllowedEstimateFile(file)) return cb(null, true);
     return cb(new Error('Unsupported estimate file type. Upload a PDF or image.'));
@@ -384,6 +385,21 @@ function mediaTypeForUpload(mimeType, filename = '') {
   return 'image/jpeg';
 }
 
+function collectEstimateUploadFiles(req) {
+  if (req.file) return [req.file];
+  if (!req.files) return [];
+  if (Array.isArray(req.files)) return req.files.slice(0, MAX_ESTIMATE_UPLOAD_FILES);
+  return [
+    ...(Array.isArray(req.files.estimate_image) ? req.files.estimate_image : []),
+    ...(Array.isArray(req.files.estimate_images) ? req.files.estimate_images : []),
+  ].slice(0, MAX_ESTIMATE_UPLOAD_FILES);
+}
+
+function uploadFileToDataUrl(file) {
+  const mediaType = mediaTypeForUpload(file?.mimetype, file?.originalname);
+  return `data:${mediaType};base64,${file.buffer.toString('base64')}`;
+}
+
 function parseModelJson(raw) {
   let cleaned = String(raw || '').replace(/^```[a-z]*\n?/i, '').replace(/```\s*$/i, '').trim();
   try {
@@ -702,9 +718,13 @@ async function extractPdfPageImages(buffer, maxPages = PDF_IMAGE_PAGE_LIMIT) {
 }
 
 // ── Phase 1: OCR parse ───────────────────────────────────────────────────────
-router.post('/parse', auth, insuranceOcrLimiter, upload.single('estimate_image'), async (req, res) => {
+router.post('/parse', auth, insuranceOcrLimiter, upload.fields([
+  { name: 'estimate_image', maxCount: MAX_ESTIMATE_UPLOAD_FILES },
+  { name: 'estimate_images', maxCount: MAX_ESTIMATE_UPLOAD_FILES },
+]), async (req, res) => {
   try {
-    if (!req.file) {
+    const files = collectEstimateUploadFiles(req);
+    if (!files.length) {
       return res.status(400).json({ success: false, error: 'No file uploaded. Use field name: estimate_image' });
     }
 
@@ -714,60 +734,85 @@ router.post('/parse', auth, insuranceOcrLimiter, upload.single('estimate_image')
     }
 
     const openai = apiKey ? new OpenAI({ apiKey }) : null;
-    const mimeType = req.file.mimetype || 'application/octet-stream';
-    const filename = String(req.file.originalname || '').toLowerCase();
-    const isPdf = mimeType === 'application/pdf' || filename.endsWith('.pdf');
     let raw = '';
     let extractedTextForTotals = '';
     let retryWithRelaxedPrompt = null;
+    const imageDataUrls = [];
+    const pdfTextParts = [];
 
-    if (isPdf) {
+    for (const file of files) {
+      const mimeType = file.mimetype || 'application/octet-stream';
+      const filename = String(file.originalname || '').toLowerCase();
+      const isPdf = mimeType === 'application/pdf' || filename.endsWith('.pdf');
+      if (!isPdf) {
+        imageDataUrls.push(uploadFileToDataUrl(file));
+        continue;
+      }
+
       let extractedText = '';
       try {
-        extractedText = await extractPdfText(req.file.buffer);
-        extractedTextForTotals = extractedText;
+        extractedText = await extractPdfText(file.buffer);
       } catch (pdfErr) {
         console.error('[InsuranceOCR] PDF text extraction failed:', pdfErr);
       }
 
       if (extractedText) {
-        retryWithRelaxedPrompt = () => parseEstimateTextWithFallback(openai, extractedText, RELAXED_LINE_ITEM_PROMPT);
-        try {
-          raw = await parseEstimateTextWithFallback(openai, extractedText);
-        } catch (parseErr) {
-          if (isOpenAiJsonBodyParseError(parseErr)) {
-            console.warn('[InsuranceOCR] OpenAI rejected PDF-text payload; falling back to PDF image OCR.');
-          } else {
-            throw parseErr;
-          }
+        pdfTextParts.push(extractedText);
+        continue;
+      }
+
+      try {
+        imageDataUrls.push(...await extractPdfPageImages(file.buffer, PDF_IMAGE_PAGE_LIMIT));
+      } catch (imgErr) {
+        console.error('[InsuranceOCR] PDF image conversion failed:', imgErr);
+      }
+    }
+
+    extractedTextForTotals = pdfTextParts.join('\n\n');
+
+    if (imageDataUrls.length) {
+      retryWithRelaxedPrompt = () => parseEstimateImageUrlsWithFallback(openai, imageDataUrls, RELAXED_LINE_ITEM_PROMPT);
+      raw = await parseEstimateImageUrlsWithFallback(openai, imageDataUrls);
+    } else if (extractedTextForTotals) {
+      retryWithRelaxedPrompt = () => parseEstimateTextWithFallback(openai, extractedTextForTotals, RELAXED_LINE_ITEM_PROMPT);
+      try {
+        raw = await parseEstimateTextWithFallback(openai, extractedTextForTotals);
+      } catch (parseErr) {
+        if (isOpenAiJsonBodyParseError(parseErr)) {
+          console.warn('[InsuranceOCR] OpenAI rejected PDF-text payload; falling back to PDF image OCR.');
+        } else {
+          throw parseErr;
         }
       }
 
       if (!raw) {
-        let images = [];
-        try {
-          images = await extractPdfPageImages(req.file.buffer, PDF_IMAGE_PAGE_LIMIT);
-        } catch (imgErr) {
-          console.error('[InsuranceOCR] PDF image conversion failed:', imgErr);
-          return res.status(500).json({
-            success: false,
-            error: 'PDF parsing is temporarily unavailable on this server. Try again or upload an image.',
-          });
+        for (const file of files) {
+          const mimeType = file.mimetype || 'application/octet-stream';
+          const filename = String(file.originalname || '').toLowerCase();
+          const isPdf = mimeType === 'application/pdf' || filename.endsWith('.pdf');
+          if (!isPdf) continue;
+          try {
+            imageDataUrls.push(...await extractPdfPageImages(file.buffer, PDF_IMAGE_PAGE_LIMIT));
+          } catch (imgErr) {
+            console.error('[InsuranceOCR] PDF image conversion failed:', imgErr);
+          }
         }
 
-        if (!images.length) {
+        if (!imageDataUrls.length) {
           return res.status(422).json({
             success: false,
             error: 'Could not read pages from this PDF. Please upload a clearer PDF or a photo/screenshot.',
           });
         }
 
-        retryWithRelaxedPrompt = () => parseEstimateImageUrlsWithFallback(openai, images, RELAXED_LINE_ITEM_PROMPT);
-        raw = await parseEstimateImageUrlsWithFallback(openai, images);
+        retryWithRelaxedPrompt = () => parseEstimateImageUrlsWithFallback(openai, imageDataUrls, RELAXED_LINE_ITEM_PROMPT);
+        raw = await parseEstimateImageUrlsWithFallback(openai, imageDataUrls);
       }
     } else {
-      retryWithRelaxedPrompt = () => parseEstimateUploadImageWithFallback(openai, req.file, mimeType, RELAXED_LINE_ITEM_PROMPT);
-      raw = await parseEstimateUploadImageWithFallback(openai, req.file, mimeType);
+      return res.status(422).json({
+        success: false,
+        error: 'Could not read estimate pages. Please upload a clearer PDF or photo.',
+      });
     }
 
     let parsed;
