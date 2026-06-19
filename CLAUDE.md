@@ -1035,7 +1035,7 @@ POST /api/insurance-ocr/parse with synthetic Mitchell totals image  # success:tr
 
 ## Dispatch Log — 2026-06-19 Claim Tracker + Bulk Status ID Cast Fixes
 
-**Status:** DONE + VERIFIED LOCALLY
+**Status:** DONE + VERIFIED + DEPLOYED
 
 **Scope**
 - Fixed Claim Tracker load failures caused by mixed TEXT/UUID production columns by comparing RO, shop, user, evidence, contact, and dispute IDs as text on both sides.
@@ -1057,4 +1057,8 @@ node --test backend/test/*.test.js  # 12/12 passed
 cd frontend && npm run test:run  # 16 files, 34/34 tests passed
 cd frontend && npm run build
 rm -rf frontend/dist && git diff --check
+curl https://revv-production-ffa9.up.railway.app/api/health  # commit 004c6f12e86c5d8d340fac334cadc877b2fbfc11
+./scripts/smoke-test.sh  # 6 PASS + 1 documented RESEND_API_KEY local-env WARN
+GET /api/claim-tracker/ro/<demo-ro-id>  # 200 JSON with evidence/contacts/disputes arrays
+POST /api/repair-orders/bulk-status with fake non-UUID id  # 200 JSON, no uuid/text operator error, no real RO mutation
 ```
