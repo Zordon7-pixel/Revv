@@ -39,6 +39,19 @@ function dollarsToCents(dollars) {
   return Math.round(n * 100)
 }
 
+function dollarsValue(value) {
+  if (value === null || value === undefined || value === '') return ''
+  const n = Number(value)
+  if (!Number.isFinite(n)) return ''
+  return n.toFixed(2)
+}
+
+function parseDollars(value) {
+  if (value === null || value === undefined || value === '') return null
+  const n = Number(value)
+  return Number.isFinite(n) ? n : null
+}
+
 export default function InsurancePanel({ roId, ro, onUpdated }) {
   const [open, setOpen] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -230,7 +243,7 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
       adjuster_name: ro?.adjuster_name || '',
       adjuster_phone: ro?.adjuster_phone || '',
       adjuster_email: ro?.adjuster_email || '',
-      deductible: centsToDollars(ro?.deductible),
+      deductible: dollarsValue(ro?.deductible),
       is_drp: !!ro?.is_drp,
       insurance_approved_amount: centsToDollars(ro?.insurance_approved_amount),
       supplement_status: ro?.supplement_status || 'none',
@@ -263,7 +276,7 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
         adjuster_name: form.adjuster_name || null,
         adjuster_phone: form.adjuster_phone || null,
         adjuster_email: form.adjuster_email || null,
-        deductible: dollarsToCents(form.deductible),
+        deductible: parseDollars(form.deductible),
         is_drp: !!form.is_drp,
         insurance_approved_amount: dollarsToCents(form.insurance_approved_amount),
         supplement_status: form.supplement_status || 'none',
@@ -476,7 +489,7 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
             </div>
             <div>
               <label className="text-[10px] text-slate-500 block mb-1">Deductible ($)</label>
-              <input type="number" step="0.01" className={inp} value={form.deductible} onChange={(e) => set('deductible', e.target.value)} />
+              <input aria-label="Deductible ($)" type="number" step="0.01" className={inp} value={form.deductible} onChange={(e) => set('deductible', e.target.value)} />
             </div>
           </div>
 
@@ -597,7 +610,7 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
                 type="button"
                 onClick={saveInsurance}
                 disabled={saving}
-                className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold px-3 py-2 rounded-lg disabled:opacity-50"
+                className="bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] text-xs font-semibold px-3 py-2 rounded-lg disabled:opacity-50"
               >
                 {saving ? 'Saving...' : 'Save Insurance'}
               </button>

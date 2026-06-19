@@ -1450,7 +1450,7 @@ router.patch('/:id/insurance', auth, requireTechnician, async (req, res) => {
       updates.supplement_amount = toIntCents(updates.supplement_amount);
     }
     if (Object.prototype.hasOwnProperty.call(updates, 'deductible')) {
-      updates.deductible = toIntCents(updates.deductible);
+      updates.deductible = normalizeMoney(updates.deductible, 0);
     }
 
     if (!Object.prototype.hasOwnProperty.call(updates, 'total_insurer_owed')) {

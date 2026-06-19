@@ -451,6 +451,9 @@ export default function RODetail() {
         parts_cost: +form.parts_cost || 0,
         labor_cost: +form.labor_cost || 0,
         sublet_cost: +form.sublet_cost || 0,
+        tax: +form.tax || 0,
+        total: +form.total || 0,
+        deductible: +form.deductible || 0,
         deductible_waived: +form.deductible_waived || 0,
         referral_fee: +form.referral_fee || 0,
         goodwill_repair_cost: +form.goodwill_repair_cost || 0,
@@ -1651,6 +1654,9 @@ export default function RODetail() {
                   ['Parts Cost ($)', 'parts_cost'],
                   ['Labor Cost ($)', 'labor_cost'],
                   ['Sublet Cost ($)', 'sublet_cost'],
+                  ['Tax ($)', 'tax'],
+                  ['Gross Estimate ($)', 'total'],
+                  ['Deductible ($)', 'deductible'],
                   ['Deductible Waived ($)', 'deductible_waived'],
                   ['Referral Fee ($)', 'referral_fee'],
                   ['Goodwill Repair ($)', 'goodwill_repair_cost'],
@@ -1667,7 +1673,10 @@ export default function RODetail() {
                   ['Parts Cost', `$${parseFloat(ro.parts_cost||0).toFixed(2)}`],
                   [t('ro.labor'), `$${parseFloat(ro.labor_cost||0).toFixed(2)}`],
                   ['Sublet', `$${parseFloat(ro.sublet_cost||0).toFixed(2)}`],
-                  ['Total Billed', `$${parseFloat(ro.total||0).toFixed(2)}`],
+                  ['Tax', `$${parseFloat(ro.tax||0).toFixed(2)}`],
+                  ['Gross Estimate', `$${parseFloat(ro.total||0).toFixed(2)}`],
+                  ['Deductible', `-$${parseFloat(ro.deductible||0).toFixed(2)}`],
+                  ['Net Estimate', `$${Math.max(0, parseFloat(ro.total||0) - parseFloat(ro.deductible||0)).toFixed(2)}`],
                 ].map(([k,v]) => (
                   <div key={k} className="flex justify-between text-xs">
                     <span className="text-slate-500">{k}</span><span className="text-white">{v}</span>
@@ -1675,13 +1684,15 @@ export default function RODetail() {
                 ))}
                 {/* Editable profit adjustment fields */}
                 {[
+                  ['Gross Estimate', 'total', ro.total],
+                  ['Deductible', 'deductible', ro.deductible],
                   ['Deductible Waived', 'deductible_waived', ro.deductible_waived],
                   ['Referral Fee', 'referral_fee', ro.referral_fee],
                   ['Goodwill Repair', 'goodwill_repair_cost', ro.goodwill_repair_cost],
                 ].map(([label, fieldKey, val]) => (
                   parseFloat(val || 0) > 0 || inlineEdit.field === fieldKey ? (
                     <div key={fieldKey} className="flex justify-between items-center text-xs">
-                      <span className="text-red-400">{label}</span>
+                      <span className={fieldKey === 'total' ? 'text-slate-300' : 'text-red-400'}>{label}</span>
                       {inlineEdit.field === fieldKey ? (
                         <span className="flex items-center gap-1">
                           <input
@@ -1693,12 +1704,12 @@ export default function RODetail() {
                             onChange={e => setInlineEdit(v => ({ ...v, value: e.target.value }))}
                             onKeyDown={e => { if (e.key === 'Enter') saveInlineField(fieldKey, parseFloat(inlineEdit.value) || 0); else if (e.key === 'Escape') setInlineEdit({ field: null, value: '' }) }}
                             onBlur={() => saveInlineField(fieldKey, parseFloat(inlineEdit.value) || 0)}
-                            className="bg-[#0f1117] border border-[#2a2d3e] rounded px-2 py-0.5 text-xs text-white focus:outline-none focus:border-indigo-500 w-24"
+                            className="bg-[#0f1117] border border-[#2a2d3e] rounded px-2 py-0.5 text-xs text-white focus:outline-none focus:border-[#EAB308] w-24"
                           />
                         </span>
                       ) : (
                         <span className="flex items-center gap-1">
-                          <span className="text-red-400">-${parseFloat(val || 0).toFixed(2)}</span>
+                          <span className={fieldKey === 'total' ? 'text-white' : 'text-red-400'}>{fieldKey === 'total' ? '' : '-'}${parseFloat(val || 0).toFixed(2)}</span>
                           {userIsAdmin && <button type="button" onClick={() => setInlineEdit({ field: fieldKey, value: String(parseFloat(val || 0)) })} className="text-slate-600 hover:text-slate-300"><Pencil size={10} /></button>}
                         </span>
                       )}

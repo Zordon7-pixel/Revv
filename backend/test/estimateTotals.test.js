@@ -23,11 +23,18 @@ test('parseEstimateTotalsFromPdfText parses CCC totals with labels glued to valu
     mechanical_labor_hours: 2.2,
     mechanical_labor_rate: 50,
     mechanical_labor_cost: 110,
+    frame_labor_hours: null,
+    frame_labor_rate: null,
+    frame_labor_cost: null,
+    glass_labor_hours: null,
+    glass_labor_rate: null,
+    glass_labor_cost: null,
     paint_supplies_hours: 20.5,
     paint_supplies_rate: 30,
     paint_supplies_cost: 615,
     miscellaneous: null,
     other_charges: null,
+    costs_total: null,
     subtotal: 7136.73,
     sales_tax_basis: 7136.73,
     sales_tax_rate: 8.875,
@@ -70,4 +77,35 @@ test('parseEstimateTotalsFromPdfText parses CCC totals with labels glued to valu
   ]) {
     assert.notEqual(totals[key], null, `${key} should not be null`);
   }
+});
+
+test('parseEstimateTotalsFromPdfText maps Mitchell gross, net, deductible, and all labor buckets', () => {
+  const totals = parseEstimateTotalsFromPdfText(`
+    Estimate Totals
+    Body Labor        24.6   $60.00   $1,476.00
+    Refinish Labor    17.9   $60.00   $1,074.00
+    Glass Labor        0.5   $60.00      $30.00
+    Frame Labor        2.0   $60.00     $120.00
+    Mechanical Labor   1.5   $60.00      $90.00
+    Total Labor       46.5             $2,790.00
+    Taxable Parts                      $5,038.72
+    Paint Materials                    $1,322.88
+    Other Additional Costs                 $5.00
+    Costs Total                        $1,445.73
+    Gross Total                        $9,969.25
+    Deductible                        -$1,000.00
+    Net Estimate Total                 $8,969.25
+    This is not an authorization to repair.
+  `);
+
+  assert.equal(totals.body_labor_cost, 1476);
+  assert.equal(totals.paint_labor_cost, 1074);
+  assert.equal(totals.glass_labor_cost, 30);
+  assert.equal(totals.frame_labor_cost, 120);
+  assert.equal(totals.mechanical_labor_cost, 90);
+  assert.equal(totals.parts, 5038.72);
+  assert.equal(totals.costs_total, 1445.73);
+  assert.equal(totals.total_cost_of_repairs, 9969.25);
+  assert.equal(totals.deductible, 1000);
+  assert.equal(totals.net_cost_of_repairs, 8969.25);
 });

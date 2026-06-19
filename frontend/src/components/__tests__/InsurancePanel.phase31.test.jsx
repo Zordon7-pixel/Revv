@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 vi.mock('../../lib/api', () => ({
@@ -18,6 +18,10 @@ describe('InsurancePanel OCR import', () => {
     api.post.mockReset()
     api.patch.mockReset()
     window.alert = vi.fn()
+  })
+
+  afterEach(() => {
+    cleanup()
   })
 
   it('shows a safe message for provider auth failures without leaking key text', async () => {
@@ -55,5 +59,28 @@ describe('InsurancePanel OCR import', () => {
     await waitFor(() => expect(api.post).toHaveBeenCalledWith('/insurance-ocr/parse', expect.any(FormData), expect.any(Object)))
     expect(screen.queryByText(/sk-(?:proj-)?|platform\.[a-z]+\.com|api key/i)).not.toBeInTheDocument()
     expect(window.alert).not.toHaveBeenCalled()
+  })
+
+  it('saves deductible as dollars instead of cents', async () => {
+    const user = userEvent.setup()
+    api.patch.mockResolvedValue({ data: { deductible: 1000 } })
+
+    render(
+      <InsurancePanel
+        roId="ro-1"
+        ro={{ insurance_company: 'Progressive', insurance_claim_number: 'CLM-1', deductible: 500 }}
+        onUpdated={vi.fn()}
+      />
+    )
+
+    const deductible = screen.getByLabelText(/Deductible/i)
+    await user.clear(deductible)
+    await user.type(deductible, '1000')
+    await user.click(screen.getByRole('button', { name: /Save Insurance/i }))
+
+    await waitFor(() => expect(api.patch).toHaveBeenCalledWith('/ros/ro-1/insurance', expect.objectContaining({
+      deductible: 1000,
+    })))
+    expect(api.patch.mock.calls[0][1].deductible).not.toBe(100000)
   })
 })
