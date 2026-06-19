@@ -963,3 +963,30 @@ POST /api/insurance-ocr/parse with two synthetic estimate page photos in one req
 - No migrations, seed, reset, or destructive scripts were run.
 - Miles Automotive data was not touched.
 - Live OCR probe used synthetic estimate images and demo auth only.
+
+## Dispatch Log — 2026-06-18 Estimate Import Modal Sidebar Visibility
+
+**Status:** DONE + VERIFIED + DEPLOYED
+
+**Scope**
+- Fixed the Estimate Builder insurance import review modal rendering underneath the desktop sidebar on iPad/tablet landscape.
+- Raised that modal overlay above app chrome so the full line-item selection modal is visible, including the left side hidden in Miles Automotive's screenshot.
+
+**Files changed**
+- `frontend/src/pages/EstimateBuilder.jsx`
+- `CLAUDE.md`
+
+**Verification**
+```
+cd frontend && npm run test:run -- src/pages/__tests__/EstimateBuilder.phase31.test.jsx  # 1/1 test passed
+cd frontend && npm run build
+node --check backend/src/app.js backend/src/db/index.js backend/src/services/email.js backend/src/lib/devSafety.js
+rm -rf frontend/dist && git diff --check
+curl https://revvshop.app/api/health  # commit beb3f191879814db743b84806d6bac9eb248f422
+./scripts/smoke-test.sh  # 6 PASS + 1 documented RESEND_API_KEY local-env WARN
+```
+
+**Data safety**
+- No migrations, seed, reset, or destructive scripts were run.
+- Miles Automotive data was not touched.
+- UI-only z-index fix.
