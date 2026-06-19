@@ -104,7 +104,7 @@ async function ensureClaimTrackerTables() {
 async function ensureRoAccess(roId, shopId) {
   if (!roId || !shopId) return null;
   return dbGet(
-    'SELECT id FROM repair_orders WHERE id = $1 AND shop_id = $2',
+    'SELECT id FROM repair_orders WHERE id::text = $1::text AND shop_id::text = $2::text',
     [roId, shopId]
   );
 }
@@ -138,8 +138,8 @@ router.get('/ro/:roId', auth, async (req, res) => {
          e.created_at,
          COALESCE(u.name, 'Unknown') AS uploaded_by_name
        FROM ro_claim_evidence e
-       LEFT JOIN users u ON u.id::text = e.uploaded_by
-       WHERE e.ro_id = $1 AND e.shop_id = $2
+       LEFT JOIN users u ON u.id::text = e.uploaded_by::text
+       WHERE e.ro_id::text = $1::text AND e.shop_id::text = $2::text
        ORDER BY e.created_at DESC`,
       [req.params.roId, req.user.shop_id]
     );
@@ -158,8 +158,8 @@ router.get('/ro/:roId', auth, async (req, res) => {
          c.created_at,
          COALESCE(u.name, 'Unknown') AS logged_by_name
        FROM ro_claim_contacts c
-       LEFT JOIN users u ON u.id::text = c.logged_by
-       WHERE c.ro_id = $1 AND c.shop_id = $2
+       LEFT JOIN users u ON u.id::text = c.logged_by::text
+       WHERE c.ro_id::text = $1::text AND c.shop_id::text = $2::text
        ORDER BY c.contact_at DESC, c.created_at DESC`,
       [req.params.roId, req.user.shop_id]
     );
@@ -172,8 +172,8 @@ router.get('/ro/:roId', auth, async (req, res) => {
          d.created_at,
          COALESCE(u.name, 'Unknown') AS created_by_name
        FROM ro_claim_disputes d
-       LEFT JOIN users u ON u.id::text = d.created_by
-       WHERE d.ro_id = $1 AND d.shop_id = $2
+       LEFT JOIN users u ON u.id::text = d.created_by::text
+       WHERE d.ro_id::text = $1::text AND d.shop_id::text = $2::text
        ORDER BY d.created_at DESC`,
       [req.params.roId, req.user.shop_id]
     );
@@ -230,8 +230,8 @@ router.post('/ro/:roId/evidence', auth, requireTechnician, upload.single('media'
          e.created_at,
          COALESCE(u.name, 'Unknown') AS uploaded_by_name
        FROM ro_claim_evidence e
-       LEFT JOIN users u ON u.id::text = e.uploaded_by
-       WHERE e.id = $1`,
+       LEFT JOIN users u ON u.id::text = e.uploaded_by::text
+       WHERE e.id::text = $1::text`,
       [evidenceId]
     );
 
@@ -246,12 +246,12 @@ router.delete('/evidence/:id', auth, requireTechnician, async (req, res) => {
     await ensureClaimTrackerTables();
 
     const existing = await dbGet(
-      'SELECT id, media_url FROM ro_claim_evidence WHERE id = $1 AND shop_id = $2',
+      'SELECT id, media_url FROM ro_claim_evidence WHERE id::text = $1::text AND shop_id::text = $2::text',
       [req.params.id, req.user.shop_id]
     );
     if (!existing) return res.status(404).json({ error: 'Evidence item not found' });
 
-    await dbRun('DELETE FROM ro_claim_evidence WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
+    await dbRun('DELETE FROM ro_claim_evidence WHERE id::text = $1::text AND shop_id::text = $2::text', [req.params.id, req.user.shop_id]);
 
     if (existing.media_url) {
       const relativePath = String(existing.media_url).replace(/^\//, '');
@@ -330,8 +330,8 @@ router.post('/ro/:roId/contacts', auth, requireTechnician, async (req, res) => {
          c.created_at,
          COALESCE(u.name, 'Unknown') AS logged_by_name
        FROM ro_claim_contacts c
-       LEFT JOIN users u ON u.id::text = c.logged_by
-       WHERE c.id = $1`,
+       LEFT JOIN users u ON u.id::text = c.logged_by::text
+       WHERE c.id::text = $1::text`,
       [contactId]
     );
 
@@ -346,12 +346,12 @@ router.delete('/contacts/:id', auth, requireTechnician, async (req, res) => {
     await ensureClaimTrackerTables();
 
     const existing = await dbGet(
-      'SELECT id FROM ro_claim_contacts WHERE id = $1 AND shop_id = $2',
+      'SELECT id FROM ro_claim_contacts WHERE id::text = $1::text AND shop_id::text = $2::text',
       [req.params.id, req.user.shop_id]
     );
     if (!existing) return res.status(404).json({ error: 'Contact log entry not found' });
 
-    await dbRun('DELETE FROM ro_claim_contacts WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
+    await dbRun('DELETE FROM ro_claim_contacts WHERE id::text = $1::text AND shop_id::text = $2::text', [req.params.id, req.user.shop_id]);
     return res.json({ ok: true });
   } catch (err) {
     return logAndRespond(res, 'Delete contact failed', err, 'Could not delete contact log entry');
@@ -383,8 +383,8 @@ router.post('/ro/:roId/disputes', auth, requireTechnician, async (req, res) => {
          d.created_at,
          COALESCE(u.name, 'Unknown') AS created_by_name
        FROM ro_claim_disputes d
-       LEFT JOIN users u ON u.id::text = d.created_by
-       WHERE d.id = $1`,
+       LEFT JOIN users u ON u.id::text = d.created_by::text
+       WHERE d.id::text = $1::text`,
       [disputeId]
     );
 
@@ -399,12 +399,12 @@ router.delete('/disputes/:id', auth, requireTechnician, async (req, res) => {
     await ensureClaimTrackerTables();
 
     const existing = await dbGet(
-      'SELECT id FROM ro_claim_disputes WHERE id = $1 AND shop_id = $2',
+      'SELECT id FROM ro_claim_disputes WHERE id::text = $1::text AND shop_id::text = $2::text',
       [req.params.id, req.user.shop_id]
     );
     if (!existing) return res.status(404).json({ error: 'Dispute note not found' });
 
-    await dbRun('DELETE FROM ro_claim_disputes WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
+    await dbRun('DELETE FROM ro_claim_disputes WHERE id::text = $1::text AND shop_id::text = $2::text', [req.params.id, req.user.shop_id]);
     return res.json({ ok: true });
   } catch (err) {
     return logAndRespond(res, 'Delete dispute failed', err, 'Could not delete dispute note');

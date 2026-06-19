@@ -1180,13 +1180,14 @@ async function bulkStatusUpdateHandler(req, res) {
     await dbRun(
       `UPDATE repair_orders
        SET status = $1, updated_at = NOW()
-       WHERE shop_id = $2::uuid
-         AND id = ANY($3::uuid[])`,
+       WHERE shop_id::text = $2::text
+         AND id::text = ANY($3::text[])`,
       [normalizedStatus, req.user.shop_id, ids]
     );
     res.json({ updated: ids.length });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[RO Bulk Status] failed:', err);
+    res.status(500).json({ error: 'Bulk status update failed' });
   }
 }
 

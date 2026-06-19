@@ -1032,3 +1032,29 @@ curl https://revv-production-ffa9.up.railway.app/api/health  # commit 2c5afd60a4
 ./scripts/smoke-test.sh  # 6 PASS + 1 documented RESEND_API_KEY local-env WARN
 POST /api/insurance-ocr/parse with synthetic Mitchell totals image  # success:true, gross 9969.25, deductible 1000, net/revenue 8969.25, labor_sum 2790
 ```
+
+## Dispatch Log — 2026-06-19 Claim Tracker + Bulk Status ID Cast Fixes
+
+**Status:** DONE + VERIFIED LOCALLY
+
+**Scope**
+- Fixed Claim Tracker load failures caused by mixed TEXT/UUID production columns by comparing RO, shop, user, evidence, contact, and dispute IDs as text on both sides.
+- Fixed Repair Orders bulk status update failures by removing `::uuid[]` casts and comparing selected RO IDs as text.
+- Stopped bulk status failures from leaking raw PostgreSQL operator errors into the frontend toast; the API now logs the internal error and returns `Bulk status update failed`.
+- No data changes, migrations, seed, reset, or destructive scripts were run. Miles Automotive data was not touched.
+
+**Files changed**
+- `backend/src/routes/claimTracker.js`
+- `backend/src/routes/ros.js`
+- `backend/test/typeCastRoutes.test.js`
+- `CLAUDE.md`
+
+**Verification**
+```
+node --check backend/src/routes/claimTracker.js
+node --check backend/src/routes/ros.js
+node --test backend/test/*.test.js  # 12/12 passed
+cd frontend && npm run test:run  # 16 files, 34/34 tests passed
+cd frontend && npm run build
+rm -rf frontend/dist && git diff --check
+```
