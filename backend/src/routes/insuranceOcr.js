@@ -115,6 +115,17 @@ Important operation code mapping:
 Include all numbered estimate rows (exclude section headers) and include the estimate totals block.
 Return only the JSON object, no markdown fences, no extra text.`;
 
+const RELAXED_LINE_ITEM_PROMPT = `${SYSTEM_PROMPT}
+
+Second-pass instructions:
+- The first extraction returned zero line items. Re-read the document more aggressively.
+- Extract any visible estimate row, even if the photo is angled, partially blurry, or columns are imperfect.
+- Do not require perfect confidence. If the description is partially visible, preserve the visible words.
+- If a row has hours and rate, set quantity to hours and unit_price to rate.
+- If a row has only a line total, set quantity to 1 and unit_price to the line total.
+- Include summary/totals-derived rows when the detailed table is unreadable, using descriptions like "Estimate totals - parts" or "Estimate totals - body labor".
+- Return ONLY valid JSON with the same schema.`;
+
 function normalizeItemType(type) {
   const next = String(type || '').trim().toLowerCase();
   return ['labor', 'parts', 'sublet', 'other'].includes(next) ? next : 'other';
@@ -373,6 +384,57 @@ function mediaTypeForUpload(mimeType, filename = '') {
   return 'image/jpeg';
 }
 
+function parseModelJson(raw) {
+  let cleaned = String(raw || '').replace(/^```[a-z]*\n?/i, '').replace(/```\s*$/i, '').trim();
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    const match = cleaned.match(/\{[\s\S]*\}/);
+    if (match) return JSON.parse(match[0]);
+    throw new Error('no JSON object found');
+  }
+}
+
+function normalizeLineItems(rawItems) {
+  return (Array.isArray(rawItems) ? rawItems : [])
+    .map((item) => {
+      const description = String(item?.description || '').trim();
+      return {
+        description,
+        type: classifyByOperationCodes(description, normalizeItemType(item?.type)),
+        quantity: Number.isFinite(Number(item?.quantity)) ? Number(item.quantity) : 1,
+        unit_price: Number.isFinite(Number(item?.unit_price)) ? Number(item.unit_price) : 0,
+      };
+    })
+    .filter((item) => item.description);
+}
+
+function addTotalsLine(items, description, type, quantity, rate, fallbackTotal) {
+  const qty = toNumberOrNull(quantity);
+  const unit = toNumberOrNull(rate);
+  const total = toNumberOrNull(fallbackTotal);
+  if (qty !== null && unit !== null && qty > 0 && unit > 0) {
+    items.push({ description, type, quantity: qty, unit_price: unit });
+    return;
+  }
+  if (total !== null && total > 0) {
+    items.push({ description, type, quantity: 1, unit_price: total });
+  }
+}
+
+function buildLineItemsFromTotals(totals) {
+  if (!totals) return [];
+  const items = [];
+  addTotalsLine(items, 'Estimate totals - parts', 'parts', 1, totals.parts, totals.parts);
+  addTotalsLine(items, 'Estimate totals - body labor', 'labor', totals.body_labor_hours, totals.body_labor_rate, totals.body_labor_cost);
+  addTotalsLine(items, 'Estimate totals - paint labor', 'labor', totals.paint_labor_hours, totals.paint_labor_rate, totals.paint_labor_cost);
+  addTotalsLine(items, 'Estimate totals - mechanical labor', 'labor', totals.mechanical_labor_hours, totals.mechanical_labor_rate, totals.mechanical_labor_cost);
+  addTotalsLine(items, 'Estimate totals - paint supplies', 'other', totals.paint_supplies_hours, totals.paint_supplies_rate, totals.paint_supplies_cost);
+  addTotalsLine(items, 'Estimate totals - miscellaneous', 'other', 1, totals.miscellaneous, totals.miscellaneous);
+  addTotalsLine(items, 'Estimate totals - other charges', 'other', 1, totals.other_charges, totals.other_charges);
+  return items;
+}
+
 function sanitizeTextForOpenAI(input, { aggressive = false } = {}) {
   const str = String(input || '');
   const out = [];
@@ -407,7 +469,7 @@ function sanitizeTextForOpenAI(input, { aggressive = false } = {}) {
   return cleaned;
 }
 
-async function parseEstimateTextWithOpenAI(openai, extractedText) {
+async function parseEstimateTextWithOpenAI(openai, extractedText, prompt = SYSTEM_PROMPT) {
   const callParser = async (cleanedText) => {
     const response = await openai.chat.completions.create({
       model: 'gpt-4o',
@@ -415,7 +477,7 @@ async function parseEstimateTextWithOpenAI(openai, extractedText) {
       messages: [
         {
           role: 'user',
-          content: `${SYSTEM_PROMPT}\n\nEstimate document text:\n${cleanedText.slice(0, PDF_TEXT_CHAR_LIMIT)}`,
+          content: `${prompt}\n\nEstimate document text:\n${cleanedText.slice(0, PDF_TEXT_CHAR_LIMIT)}`,
         },
       ],
     });
@@ -436,7 +498,7 @@ async function parseEstimateTextWithOpenAI(openai, extractedText) {
   }
 }
 
-async function parseEstimateTextWithAnthropic(extractedText) {
+async function parseEstimateTextWithAnthropic(extractedText, prompt = SYSTEM_PROMPT) {
   const client = getAnthropicClient();
   if (!client) return '';
 
@@ -448,13 +510,13 @@ async function parseEstimateTextWithAnthropic(extractedText) {
     max_tokens: 4096,
     messages: [{
       role: 'user',
-      content: `${SYSTEM_PROMPT}\n\nEstimate document text:\n${cleaned.slice(0, PDF_TEXT_CHAR_LIMIT)}`,
+      content: `${prompt}\n\nEstimate document text:\n${cleaned.slice(0, PDF_TEXT_CHAR_LIMIT)}`,
     }],
   });
   return getAnthropicText(response);
 }
 
-async function parseEstimateImagesWithAnthropic(imageDataUrls) {
+async function parseEstimateImagesWithAnthropic(imageDataUrls, prompt = SYSTEM_PROMPT) {
   const client = getAnthropicClient();
   if (!client) return '';
 
@@ -472,28 +534,28 @@ async function parseEstimateImagesWithAnthropic(imageDataUrls) {
       role: 'user',
       content: [
         ...imageBlocks,
-        { type: 'text', text: SYSTEM_PROMPT },
+        { type: 'text', text: prompt },
       ],
     }],
   });
   return getAnthropicText(response);
 }
 
-async function parseEstimateUploadImageWithAnthropic(file, mimeType) {
+async function parseEstimateUploadImageWithAnthropic(file, mimeType, prompt = SYSTEM_PROMPT) {
   const mediaType = mediaTypeForUpload(mimeType, file?.originalname);
   const dataUrl = `data:${mediaType};base64,${file.buffer.toString('base64')}`;
-  return parseEstimateImagesWithAnthropic([dataUrl]);
+  return parseEstimateImagesWithAnthropic([dataUrl], prompt);
 }
 
-async function parseEstimateTextWithFallback(openai, extractedText) {
-  if (!openai) return parseEstimateTextWithAnthropic(extractedText);
+async function parseEstimateTextWithFallback(openai, extractedText, prompt = SYSTEM_PROMPT) {
+  if (!openai) return parseEstimateTextWithAnthropic(extractedText, prompt);
   try {
-    return await parseEstimateTextWithOpenAI(openai, extractedText);
+    return await parseEstimateTextWithOpenAI(openai, extractedText, prompt);
   } catch (err) {
     if (!isAiProviderConfigError(err)) throw err;
     console.warn('[InsuranceOCR] OpenAI estimate text parse unavailable; falling back to Anthropic.');
     try {
-      return await parseEstimateTextWithAnthropic(extractedText);
+      return await parseEstimateTextWithAnthropic(extractedText, prompt);
     } catch (fallbackErr) {
       if (isAnthropicProviderConfigError(fallbackErr)) throw err;
       throw fallbackErr;
@@ -501,7 +563,7 @@ async function parseEstimateTextWithFallback(openai, extractedText) {
   }
 }
 
-async function parseEstimateImageUrlsWithOpenAI(openai, imageDataUrls) {
+async function parseEstimateImageUrlsWithOpenAI(openai, imageDataUrls, prompt = SYSTEM_PROMPT) {
   const response = await openai.chat.completions.create({
     model: 'gpt-4o',
     max_tokens: 4096,
@@ -509,7 +571,7 @@ async function parseEstimateImageUrlsWithOpenAI(openai, imageDataUrls) {
       {
         role: 'user',
         content: [
-          { type: 'text', text: SYSTEM_PROMPT },
+          { type: 'text', text: prompt },
           ...imageDataUrls.map((url) => ({ type: 'image_url', image_url: { url, detail: 'high' } })),
         ],
       },
@@ -518,15 +580,15 @@ async function parseEstimateImageUrlsWithOpenAI(openai, imageDataUrls) {
   return response.choices?.[0]?.message?.content || '';
 }
 
-async function parseEstimateImageUrlsWithFallback(openai, imageDataUrls) {
-  if (!openai) return parseEstimateImagesWithAnthropic(imageDataUrls);
+async function parseEstimateImageUrlsWithFallback(openai, imageDataUrls, prompt = SYSTEM_PROMPT) {
+  if (!openai) return parseEstimateImagesWithAnthropic(imageDataUrls, prompt);
   try {
-    return await parseEstimateImageUrlsWithOpenAI(openai, imageDataUrls);
+    return await parseEstimateImageUrlsWithOpenAI(openai, imageDataUrls, prompt);
   } catch (err) {
     if (!isAiProviderConfigError(err)) throw err;
     console.warn('[InsuranceOCR] OpenAI estimate image parse unavailable; falling back to Anthropic.');
     try {
-      return await parseEstimateImagesWithAnthropic(imageDataUrls);
+      return await parseEstimateImagesWithAnthropic(imageDataUrls, prompt);
     } catch (fallbackErr) {
       if (isAnthropicProviderConfigError(fallbackErr)) throw err;
       throw fallbackErr;
@@ -534,7 +596,7 @@ async function parseEstimateImageUrlsWithFallback(openai, imageDataUrls) {
   }
 }
 
-async function parseEstimateUploadImageWithOpenAI(openai, file, mimeType) {
+async function parseEstimateUploadImageWithOpenAI(openai, file, mimeType, prompt = SYSTEM_PROMPT) {
   const base64 = file.buffer.toString('base64');
   const response = await openai.chat.completions.create({
     model: 'gpt-4o',
@@ -543,7 +605,7 @@ async function parseEstimateUploadImageWithOpenAI(openai, file, mimeType) {
       {
         role: 'user',
         content: [
-          { type: 'text', text: SYSTEM_PROMPT },
+          { type: 'text', text: prompt },
           {
             type: 'image_url',
             image_url: { url: `data:${mimeType};base64,${base64}`, detail: 'high' },
@@ -555,15 +617,15 @@ async function parseEstimateUploadImageWithOpenAI(openai, file, mimeType) {
   return response.choices?.[0]?.message?.content || '';
 }
 
-async function parseEstimateUploadImageWithFallback(openai, file, mimeType) {
-  if (!openai) return parseEstimateUploadImageWithAnthropic(file, mimeType);
+async function parseEstimateUploadImageWithFallback(openai, file, mimeType, prompt = SYSTEM_PROMPT) {
+  if (!openai) return parseEstimateUploadImageWithAnthropic(file, mimeType, prompt);
   try {
-    return await parseEstimateUploadImageWithOpenAI(openai, file, mimeType);
+    return await parseEstimateUploadImageWithOpenAI(openai, file, mimeType, prompt);
   } catch (err) {
     if (!isAiProviderConfigError(err)) throw err;
     console.warn('[InsuranceOCR] OpenAI estimate upload image parse unavailable; falling back to Anthropic.');
     try {
-      return await parseEstimateUploadImageWithAnthropic(file, mimeType);
+      return await parseEstimateUploadImageWithAnthropic(file, mimeType, prompt);
     } catch (fallbackErr) {
       if (isAnthropicProviderConfigError(fallbackErr)) throw err;
       throw fallbackErr;
@@ -657,6 +719,7 @@ router.post('/parse', auth, insuranceOcrLimiter, upload.single('estimate_image')
     const isPdf = mimeType === 'application/pdf' || filename.endsWith('.pdf');
     let raw = '';
     let extractedTextForTotals = '';
+    let retryWithRelaxedPrompt = null;
 
     if (isPdf) {
       let extractedText = '';
@@ -668,6 +731,7 @@ router.post('/parse', auth, insuranceOcrLimiter, upload.single('estimate_image')
       }
 
       if (extractedText) {
+        retryWithRelaxedPrompt = () => parseEstimateTextWithFallback(openai, extractedText, RELAXED_LINE_ITEM_PROMPT);
         try {
           raw = await parseEstimateTextWithFallback(openai, extractedText);
         } catch (parseErr) {
@@ -698,45 +762,50 @@ router.post('/parse', auth, insuranceOcrLimiter, upload.single('estimate_image')
           });
         }
 
+        retryWithRelaxedPrompt = () => parseEstimateImageUrlsWithFallback(openai, images, RELAXED_LINE_ITEM_PROMPT);
         raw = await parseEstimateImageUrlsWithFallback(openai, images);
       }
     } else {
+      retryWithRelaxedPrompt = () => parseEstimateUploadImageWithFallback(openai, req.file, mimeType, RELAXED_LINE_ITEM_PROMPT);
       raw = await parseEstimateUploadImageWithFallback(openai, req.file, mimeType);
     }
 
     let parsed;
     try {
-      // Strip markdown fences if present
-      let cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```\s*$/i, '').trim();
-      // If still not parseable, try to find the first {...} block in the response
-      try {
-        parsed = JSON.parse(cleaned);
-      } catch {
-        const match = cleaned.match(/\{[\s\S]*\}/);
-        if (match) {
-          parsed = JSON.parse(match[0]);
-        } else {
-          throw new Error('no JSON object found');
-        }
-      }
+      parsed = parseModelJson(raw);
     } catch {
       console.error('[InsuranceOCR] Failed to parse OpenAI response. raw length:', raw?.length, '| preview:', raw?.slice(0, 300));
       return res.status(422).json({ success: false, error: 'Could not extract estimate data from file. Try a clearer upload.' });
     }
 
-    const items = (parsed.line_items || []).map((item) => ({
-      description: String(item.description || '').trim(),
-      type: classifyByOperationCodes(
-        String(item.description || '').trim(),
-        normalizeItemType(item.type)
-      ),
-      quantity: Number.isFinite(Number(item.quantity)) ? Number(item.quantity) : 1,
-      unit_price: Number.isFinite(Number(item.unit_price)) ? Number(item.unit_price) : 0,
-    }));
-
-    const modelTotals = normalizeEstimateTotals(parsed.estimate_totals);
+    let items = normalizeLineItems(parsed.line_items);
+    let modelTotals = normalizeEstimateTotals(parsed.estimate_totals);
     const textTotals = extractedTextForTotals ? parseEstimateTotalsFromPdfText(extractedTextForTotals) : null;
-    const estimateTotals = textTotals || modelTotals || null;
+    let estimateTotals = textTotals || modelTotals || null;
+
+    if (!items.length && retryWithRelaxedPrompt) {
+      try {
+        console.warn('[InsuranceOCR] No line items extracted; retrying with relaxed line-item prompt.');
+        const retryRaw = await retryWithRelaxedPrompt();
+        const retryParsed = parseModelJson(retryRaw);
+        const retryItems = normalizeLineItems(retryParsed.line_items);
+        if (retryItems.length) {
+          parsed = { ...parsed, ...retryParsed };
+          items = retryItems;
+        }
+        modelTotals = normalizeEstimateTotals(retryParsed.estimate_totals) || modelTotals;
+        estimateTotals = textTotals || modelTotals || estimateTotals;
+      } catch (retryErr) {
+        console.warn('[InsuranceOCR] Relaxed line-item retry failed:', retryErr?.message || retryErr);
+      }
+    }
+
+    if (!items.length && estimateTotals) {
+      items = buildLineItemsFromTotals(estimateTotals);
+      if (items.length) {
+        console.warn('[InsuranceOCR] Built estimate line items from totals because detailed rows were unreadable.');
+      }
+    }
 
     return res.json({
       success: true,
