@@ -990,3 +990,42 @@ curl https://revvshop.app/api/health  # commit beb3f191879814db743b84806d6bac9eb
 - No migrations, seed, reset, or destructive scripts were run.
 - Miles Automotive data was not touched.
 - UI-only z-index fix.
+
+## Dispatch Log — 2026-06-18 Estimate Profit + Deductible Fixes
+
+**Status:** DONE + VERIFIED LOCALLY
+
+**Scope**
+- Fixed Mitchell/NY-market estimate totals parsing so `Gross Total`, `Net Estimate Total`, negative deductible adjustments, taxable parts, paint materials, and body/refinish/frame/glass/mechanical labor map into the correct OCR totals.
+- Updated imported estimate financials to prefer stored adjuster totals when present, writing RO `parts_cost`, `labor_cost`, `sublet_cost`, `tax`, gross `total`, `estimate_amount`, and `deductible` from the estimate totals page instead of relying only on line-item rollups.
+- Fixed deductible save from the RO insurance panel: deductible is now sent/stored as dollars, not multiplied into cents.
+- Added Profit (NY Market) edit/display fields for tax, gross estimate, deductible, and net estimate directly on the RO.
+- Kept Miles Automotive data untouched; no seed/reset/destructive scripts were run.
+
+**Expected screenshot case**
+- Labor: `$2,790.00`
+- Gross estimate: `$9,969.25`
+- Deductible: `$1,000.00`
+- Net estimate: `$8,969.25`
+
+**Files changed**
+- `backend/src/routes/insuranceOcr.js`
+- `backend/src/routes/estimateLineItems.js`
+- `backend/src/routes/ros.js`
+- `backend/test/estimateTotals.test.js`
+- `backend/test/estimateFinancials.test.js`
+- `frontend/src/components/InsurancePanel.jsx`
+- `frontend/src/components/__tests__/InsurancePanel.phase31.test.jsx`
+- `frontend/src/pages/RODetail.jsx`
+- `CLAUDE.md`
+
+**Verification**
+```
+node --check backend/src/routes/insuranceOcr.js
+node --check backend/src/routes/estimateLineItems.js
+node --check backend/src/routes/ros.js
+node --test backend/test/*.test.js  # 10/10 passed
+cd frontend && npm run test:run  # 16 files, 34/34 tests passed
+cd frontend && npm run build
+rm -rf frontend/dist && git diff --check
+```

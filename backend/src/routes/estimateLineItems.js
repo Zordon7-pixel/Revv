@@ -28,6 +28,74 @@ function toBool(value) {
   return false;
 }
 
+function parseJsonMaybe(value) {
+  if (!value) return null;
+  if (typeof value === 'object') return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
+function firstMoney(...values) {
+  for (const value of values) {
+    if (value === null || value === undefined || value === '') continue;
+    const num = toNumber(value, NaN);
+    if (Number.isFinite(num)) return num;
+  }
+  return 0;
+}
+
+function sumMoney(...values) {
+  return values.reduce((sum, value) => sum + firstMoney(value), 0);
+}
+
+function buildFinancialsFromAdjusterTotals(summary, rawTotals) {
+  const totals = parseJsonMaybe(rawTotals);
+  if (!totals || typeof totals !== 'object') return null;
+
+  const partsCost = firstMoney(totals.parts, totals.parts_total);
+  const laborCost = sumMoney(
+    totals.body_labor_cost,
+    totals.paint_labor_cost,
+    totals.refinish_labor_cost,
+    totals.mechanical_labor_cost,
+    totals.frame_labor_cost,
+    totals.glass_labor_cost
+  );
+  const subletCost = sumMoney(
+    totals.sublet,
+    totals.sublet_cost,
+    totals.paint_supplies_cost,
+    totals.miscellaneous,
+    totals.other_charges
+  );
+  const grossTotal = firstMoney(totals.total_cost_of_repairs, totals.gross_total, totals.estimate_gross_total);
+  const netTotal = firstMoney(totals.net_cost_of_repairs, totals.net_estimate_total, totals.total_customer_responsibility);
+  const deductibleFromTotals = Math.abs(firstMoney(totals.deductible));
+  const deductible = deductibleFromTotals || (grossTotal > 0 && netTotal > 0 ? Math.max(0, grossTotal - netTotal) : 0);
+
+  const lineTax = toNumber(summary?.tax_amount, 0);
+  const impliedTax = grossTotal > 0
+    ? grossTotal - partsCost - laborCost - subletCost
+    : 0;
+  const tax = impliedTax >= 0 ? impliedTax : lineTax;
+  const total = grossTotal || (partsCost + laborCost + subletCost + tax);
+
+  if (!total && !partsCost && !laborCost && !subletCost && !tax && !deductible) return null;
+
+  return {
+    parts_cost: Number(partsCost.toFixed(2)),
+    labor_cost: Number(laborCost.toFixed(2)),
+    sublet_cost: Number(subletCost.toFixed(2)),
+    tax: Number(tax.toFixed(2)),
+    total: Number(total.toFixed(2)),
+    deductible: Number(deductible.toFixed(2)),
+    net_estimate_total: Number((netTotal || Math.max(0, total - deductible)).toFixed(2)),
+  };
+}
+
 async function ensureRepairOrder(roId, shopId) {
   return dbGet(
     `SELECT ro.id, ro.shop_id, COALESCE(s.tax_rate, 0) AS tax_rate
@@ -163,15 +231,24 @@ async function getProfitOpportunities(roId, shopId) {
 }
 
 async function syncRepairOrderFinancials(roId, shopId, summary) {
-  const ro = await dbGet(
-    `SELECT id, deductible_waived, referral_fee, goodwill_repair_cost
+  const [ro, metadata] = await Promise.all([
+    dbGet(
+      `SELECT id, deductible_waived, referral_fee, goodwill_repair_cost
      FROM repair_orders
      WHERE id = $1 AND shop_id = $2`,
-    [roId, shopId]
-  );
+      [roId, shopId]
+    ),
+    dbGet(
+      `SELECT adjuster_totals
+       FROM estimate_metadata
+       WHERE ro_id = $1 AND shop_id = $2`,
+      [roId, shopId]
+    ),
+  ]);
   if (!ro) return;
 
-  const nextValues = {
+  const adjusterFinancials = buildFinancialsFromAdjusterTotals(summary, metadata?.adjuster_totals);
+  const nextValues = adjusterFinancials || {
     parts_cost: toNumber(summary?.parts_total, 0),
     labor_cost: toNumber(summary?.labor_total, 0),
     sublet_cost: toNumber(summary?.sublet_total, 0),
@@ -189,8 +266,9 @@ async function syncRepairOrderFinancials(roId, shopId, summary) {
          total = $5,
          estimate_amount = $6,
          true_profit = $7,
+         deductible = COALESCE($8, deductible),
          updated_at = NOW()
-     WHERE id = $8 AND shop_id = $9`,
+     WHERE id = $9 AND shop_id = $10`,
     [
       nextValues.parts_cost,
       nextValues.labor_cost,
@@ -199,10 +277,13 @@ async function syncRepairOrderFinancials(roId, shopId, summary) {
       nextValues.total,
       nextValues.total,
       toNumber(profit?.trueProfit, 0),
+      Object.prototype.hasOwnProperty.call(nextValues, 'deductible') ? nextValues.deductible : null,
       roId,
       shopId,
     ]
   );
+
+  return adjusterFinancials;
 }
 
 router.get('/:roId/opportunities', auth, async (req, res) => {
@@ -224,16 +305,20 @@ router.post('/:roId/import-financials', auth, async (req, res) => {
     if (!ro) return res.status(404).json({ error: 'Repair order not found' });
 
     const summary = await getSummary(req.params.roId, req.user.shop_id);
-    await syncRepairOrderFinancials(req.params.roId, req.user.shop_id, summary);
+    const adjusterFinancials = await syncRepairOrderFinancials(req.params.roId, req.user.shop_id, summary);
 
     const financials = await dbGet(
-      `SELECT parts_cost, labor_cost, sublet_cost, tax, total, estimate_amount, true_profit
+      `SELECT parts_cost, labor_cost, sublet_cost, tax, total, estimate_amount, deductible, true_profit
        FROM repair_orders
        WHERE id = $1 AND shop_id = $2`,
       [req.params.roId, req.user.shop_id]
     );
 
-    return res.json({ success: true, summary, financials });
+    return res.json({
+      success: true,
+      summary: adjusterFinancials ? { ...summary, source: 'adjuster_totals', ...adjusterFinancials } : summary,
+      financials,
+    });
   } catch (err) {
     console.error('[Estimate Items] import financials error:', err);
     return res.status(500).json({ error: 'Internal server error' });
@@ -460,3 +545,4 @@ router.post('/metadata/:roId', auth, async (req, res) => {
 });
 
 module.exports = router;
+module.exports.buildFinancialsFromAdjusterTotals = buildFinancialsFromAdjusterTotals;

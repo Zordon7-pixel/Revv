@@ -77,11 +77,18 @@ Return ONLY valid JSON in this exact format:
     "mechanical_labor_hours": 0,
     "mechanical_labor_rate": 0,
     "mechanical_labor_cost": 0,
+    "frame_labor_hours": 0,
+    "frame_labor_rate": 0,
+    "frame_labor_cost": 0,
+    "glass_labor_hours": 0,
+    "glass_labor_rate": 0,
+    "glass_labor_cost": 0,
     "paint_supplies_hours": 0,
     "paint_supplies_rate": 0,
     "paint_supplies_cost": 0,
     "miscellaneous": 0,
     "other_charges": 0,
+    "costs_total": 0,
     "subtotal": 0,
     "sales_tax_basis": 0,
     "sales_tax_rate": 0,
@@ -109,6 +116,13 @@ Return ONLY valid JSON in this exact format:
   "total_allowed": null
 }
 Classify each item: labor operations = "labor", parts/materials = "parts", sublet work = "sublet", everything else = "other".
+Estimate totals rules:
+- Map "Gross Total" to total_cost_of_repairs.
+- Map "Net Estimate Total", "Net Cost of Repairs", or "Total Customer Responsibility" to net_cost_of_repairs.
+- Return deductible as a positive dollar amount, even when the estimate prints it as a negative adjustment.
+- Body Labor, Refinish Labor/Paint Labor, Glass Labor, Frame Labor, and Mechanical Labor are all labor. Do not classify paint/material/cost totals as labor.
+- Paint Materials, Shop Materials, and Other Additional Costs belong in paint_supplies_cost/miscellaneous/other_charges or costs_total, not labor.
+- Do not duplicate the Estimate Totals summary rows as line_items when detailed numbered rows are readable.
 Important operation code mapping:
 - RNI / R&I / Remove and Install = labor operation (do NOT treat as parts replacement)
 - RPR = labor repair operation (do NOT treat as parts replacement)
@@ -218,7 +232,8 @@ function parseEstimateTotalsFromPdfText(text) {
   const parseHourRateLine = (labelRegex) => {
     const line = totalLines.find((row) => labelRegex.test(row));
     if (!line) return { hours: null, rate: null, cost: null };
-    const m = line.match(/([0-9]+(?:\.[0-9]+)?)\s*hrs\s*@\s*\$?\s*([0-9,]+(?:\.[0-9]+)?)\s*\/\s*hr\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
+    const m = line.match(/([0-9]+(?:\.[0-9]+)?)\s*hrs\s*@\s*\$?\s*([0-9,]+(?:\.[0-9]+)?)\s*\/\s*hr\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i)
+      || line.match(/[A-Za-z ]+\s+([0-9]+(?:\.[0-9]+)?)\s+\$?\s*([0-9,]+(?:\.[0-9]+)?)\s+\$?\s*([0-9,]+\.[0-9]{2})\s*$/i);
     if (!m) return { hours: null, rate: null, cost: takeTrailingMoney(line) };
     return {
       hours: toNumberOrNull(m[1]),
@@ -240,7 +255,9 @@ function parseEstimateTotalsFromPdfText(text) {
   };
 
   const bodyLabor = parseHourRateLine(startsWithValueLabel('Body Labor'));
-  const paintLabor = parseHourRateLine(startsWithValueLabel('Paint Labor'));
+  const paintLabor = parseHourRateLine(/^(?:Paint|Refinish)\s+Labor\s*(?=[-$0-9])/i);
+  const frameLabor = parseHourRateLine(startsWithValueLabel('Frame Labor'));
+  const glassLabor = parseHourRateLine(startsWithValueLabel('Glass Labor'));
   const mechanicalLabor = parseHourRateLine(startsWithValueLabel('Mechanical Labor'));
   const paintSupplies = parseHourRateLine(startsWithValueLabel('Paint Supplies'));
   const salesTax = parseTaxLine(startsWithValueLabel('Sales Tax'));
@@ -253,7 +270,7 @@ function parseEstimateTotalsFromPdfText(text) {
   };
 
   const totals = {
-    parts: byLabelMoney(startsWithValueLabel('Parts')),
+    parts: byLabelMoney(/^(?:Parts|Taxable Parts)\s*(?=[-$0-9])/i),
     body_labor_hours: bodyLabor.hours,
     body_labor_rate: bodyLabor.rate,
     body_labor_cost: bodyLabor.cost,
@@ -263,11 +280,18 @@ function parseEstimateTotalsFromPdfText(text) {
     mechanical_labor_hours: mechanicalLabor.hours,
     mechanical_labor_rate: mechanicalLabor.rate,
     mechanical_labor_cost: mechanicalLabor.cost,
+    frame_labor_hours: frameLabor.hours,
+    frame_labor_rate: frameLabor.rate,
+    frame_labor_cost: frameLabor.cost,
+    glass_labor_hours: glassLabor.hours,
+    glass_labor_rate: glassLabor.rate,
+    glass_labor_cost: glassLabor.cost,
     paint_supplies_hours: paintSupplies.hours,
     paint_supplies_rate: paintSupplies.rate,
-    paint_supplies_cost: paintSupplies.cost,
+    paint_supplies_cost: paintSupplies.cost ?? byLabelMoney(/^(?:Paint Materials|Paint Supplies)\s*(?=[-$0-9])/i),
     miscellaneous: byLabelMoney(startsWithValueLabel('Miscellaneous')),
-    other_charges: byLabelMoney(startsWithValueLabel('Other Charges')),
+    other_charges: byLabelMoney(/^(?:Other Charges|Other Additional Costs)\s*(?=[-$0-9])/i),
+    costs_total: byLabelMoney(startsWithValueLabel('Costs Total')),
     subtotal: byLabelMoney(startsWithValueLabel('Subtotal')),
     sales_tax_basis: salesTax.basis,
     sales_tax_rate: salesTax.rate,
@@ -278,11 +302,12 @@ function parseEstimateTotalsFromPdfText(text) {
     other_tax_1_basis: otherTax1.basis,
     other_tax_1_rate: otherTax1.rate,
     other_tax_1_cost: otherTax1.cost,
-    total_cost_of_repairs: byLabelMoney(startsWithValueLabel('Total Cost of Repairs')),
+    total_cost_of_repairs: byLabelMoney(/^(?:Total Cost of Repairs|Gross Total)\s*(?=[-$0-9])/i),
     deductible: byLabelMoney(startsWithValueLabel('Deductible')),
     total_adjustments: byLabelMoney(startsWithValueLabel('Total Adjustments')),
-    net_cost_of_repairs: byLabelMoney(startsWithValueLabel('Net Cost of Repairs')),
+    net_cost_of_repairs: byLabelMoney(/^(?:Net Cost of Repairs|Net Estimate Total|Total Customer Responsibility)\s*(?=[-$0-9])/i),
   };
+  if (totals.deductible !== null) totals.deductible = Math.abs(totals.deductible);
   totals.revenue = totals.net_cost_of_repairs ?? totals.total_cost_of_repairs;
 
   const hasAnyValue = Object.values(totals).some((value) => value !== null);
@@ -302,11 +327,18 @@ function normalizeEstimateTotals(raw) {
     'mechanical_labor_hours',
     'mechanical_labor_rate',
     'mechanical_labor_cost',
+    'frame_labor_hours',
+    'frame_labor_rate',
+    'frame_labor_cost',
+    'glass_labor_hours',
+    'glass_labor_rate',
+    'glass_labor_cost',
     'paint_supplies_hours',
     'paint_supplies_rate',
     'paint_supplies_cost',
     'miscellaneous',
     'other_charges',
+    'costs_total',
     'subtotal',
     'sales_tax_basis',
     'sales_tax_rate',
@@ -327,6 +359,17 @@ function normalizeEstimateTotals(raw) {
   const normalized = {};
   for (const key of fields) {
     normalized[key] = toNumberOrNull(raw[key]);
+  }
+  normalized.total_cost_of_repairs = normalized.total_cost_of_repairs
+    ?? toNumberOrNull(raw.gross_total)
+    ?? toNumberOrNull(raw.estimate_gross_total);
+  normalized.net_cost_of_repairs = normalized.net_cost_of_repairs
+    ?? toNumberOrNull(raw.net_estimate_total)
+    ?? toNumberOrNull(raw.total_customer_responsibility);
+  if (normalized.deductible !== null) normalized.deductible = Math.abs(normalized.deductible);
+  if (normalized.deductible === null && normalized.total_cost_of_repairs !== null && normalized.net_cost_of_repairs !== null) {
+    const implied = normalized.total_cost_of_repairs - normalized.net_cost_of_repairs;
+    if (implied > 0) normalized.deductible = Number(implied.toFixed(2));
   }
   normalized.revenue = normalized.revenue ?? normalized.net_cost_of_repairs ?? normalized.total_cost_of_repairs;
   const hasAny = Object.values(normalized).some((value) => value !== null);
@@ -445,6 +488,8 @@ function buildLineItemsFromTotals(totals) {
   addTotalsLine(items, 'Estimate totals - body labor', 'labor', totals.body_labor_hours, totals.body_labor_rate, totals.body_labor_cost);
   addTotalsLine(items, 'Estimate totals - paint labor', 'labor', totals.paint_labor_hours, totals.paint_labor_rate, totals.paint_labor_cost);
   addTotalsLine(items, 'Estimate totals - mechanical labor', 'labor', totals.mechanical_labor_hours, totals.mechanical_labor_rate, totals.mechanical_labor_cost);
+  addTotalsLine(items, 'Estimate totals - frame labor', 'labor', totals.frame_labor_hours, totals.frame_labor_rate, totals.frame_labor_cost);
+  addTotalsLine(items, 'Estimate totals - glass labor', 'labor', totals.glass_labor_hours, totals.glass_labor_rate, totals.glass_labor_cost);
   addTotalsLine(items, 'Estimate totals - paint supplies', 'other', totals.paint_supplies_hours, totals.paint_supplies_rate, totals.paint_supplies_cost);
   addTotalsLine(items, 'Estimate totals - miscellaneous', 'other', 1, totals.miscellaneous, totals.miscellaneous);
   addTotalsLine(items, 'Estimate totals - other charges', 'other', 1, totals.other_charges, totals.other_charges);
