@@ -829,3 +829,32 @@ rm -rf frontend/dist && git diff --check && git ls-files frontend/dist
 - Miles Automotive data was not touched.
 - Fix is query/UI only; historical DB rows remain intact.
 - Historical upload rows whose local files were already lost by an earlier Railway container/deploy now render a clean unavailable state instead of a broken browser icon. Persistent media storage is still the durable prevention path for future deploys.
+
+## Dispatch Log — 2026-06-18 iPad Landscape Keyboard Visibility
+
+**Status:** DONE + VERIFIED + DEPLOYED
+
+**Scope**
+- Added a touch-device landscape fallback for sheet modals so focused RO-entry fields stay visible when iPad Safari's keyboard leaves only a narrow usable viewport.
+- When a modal field is focused on touch landscape screens, REVV now compacts the modal, top-aligns the sheet, and pins the active input/select/textarea as a visible typing strip above the keyboard.
+- This targets the Add Repair Order workflow shown in Miles Automotive iPad screenshots without changing RO data, customer data, or backend behavior.
+
+**Files changed**
+- `frontend/src/index.css`
+- `CLAUDE.md`
+
+**Verification**
+```
+cd frontend && npm run test:run -- src/lib/__tests__/viewport.test.js src/lib/__tests__/keyboardFocus.test.js  # 2 files, 4/4 tests passed
+cd frontend && npm run test:run  # 16 files, 33/33 tests passed
+cd frontend && npm run build
+node --check backend/src/app.js backend/src/db/index.js backend/src/services/email.js backend/src/lib/devSafety.js
+rm -rf frontend/dist && git diff --check
+curl https://revvshop.app/api/health  # commit 6ca49ab1a7a8753d228734787b9d3c8b03049c77
+./scripts/smoke-test.sh  # 6 PASS + 1 documented RESEND_API_KEY local-env WARN
+```
+
+**Data safety**
+- No migrations, seed, reset, or destructive scripts were run.
+- Miles Automotive data was not touched.
+- The change is CSS-only for modal keyboard visibility.
