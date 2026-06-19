@@ -832,7 +832,7 @@ rm -rf frontend/dist && git diff --check && git ls-files frontend/dist
 
 ## Dispatch Log — 2026-06-18 Estimate Profit + Deductible Fixes
 
-**Status:** DONE + VERIFIED LOCALLY
+**Status:** DONE + VERIFIED + DEPLOYED
 
 **Scope**
 - Fixed Mitchell/NY-market estimate totals parsing so `Gross Total`, `Net Estimate Total`, negative deductible adjustments, taxable parts, paint materials, and body/refinish/frame/glass/mechanical labor map into the correct OCR totals.
@@ -867,4 +867,7 @@ node --test backend/test/*.test.js  # 10/10 passed
 cd frontend && npm run test:run  # 16 files, 34/34 tests passed
 cd frontend && npm run build
 rm -rf frontend/dist && git diff --check
+curl https://revv-production-ffa9.up.railway.app/api/health  # commit 2c5afd60a40fc283afda2ccc574b8f5bb95d113b
+./scripts/smoke-test.sh  # 6 PASS + 1 documented RESEND_API_KEY local-env WARN
+POST /api/insurance-ocr/parse with synthetic Mitchell totals image  # success:true, gross 9969.25, deductible 1000, net/revenue 8969.25, labor_sum 2790
 ```
