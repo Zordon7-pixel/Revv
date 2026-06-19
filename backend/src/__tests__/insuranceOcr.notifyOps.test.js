@@ -32,6 +32,20 @@ test('insurance OCR falls back to Anthropic when OpenAI estimate parsing is misc
   assert.match(source, /!apiKey && !process\.env\.ANTHROPIC_API_KEY/);
 });
 
+test('insurance OCR retries zero-line-item results and can build rows from totals', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../routes/insuranceOcr.js'), 'utf8');
+
+  assert.match(source, /RELAXED_LINE_ITEM_PROMPT/);
+  assert.match(source, /retryWithRelaxedPrompt/);
+  assert.match(source, /No line items extracted; retrying with relaxed line-item prompt/);
+  assert.match(source, /normalizeLineItems\(parsed\.line_items\)/);
+  assert.match(source, /buildLineItemsFromTotals\(estimateTotals\)/);
+  assert.match(source, /Estimate totals - parts/);
+  assert.match(source, /Estimate totals - body labor/);
+  assert.match(source, /Estimate totals - paint labor/);
+  assert.match(source, /Built estimate line items from totals because detailed rows were unreadable/);
+});
+
 test('insurance OCR parse and analyze routes are rate limited and accept PDF imports', () => {
   const source = fs.readFileSync(path.join(__dirname, '../routes/insuranceOcr.js'), 'utf8');
 
