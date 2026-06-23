@@ -854,6 +854,47 @@ curl https://revvshop.app/api/health  # commit 6ca49ab1a7a8753d228734787b9d3c8b0
 ./scripts/smoke-test.sh  # 6 PASS + 1 documented RESEND_API_KEY local-env WARN
 ```
 
+## Dispatch Log — 2026-06-23 Estimate Import Reconciliation
+
+**Status:** DONE + VERIFIED
+
+**Scope**
+- Reconciled production `main` against the earlier Phase 31 estimate/OCR work before adding more estimate-import code.
+- Confirmed the production line already contains the core estimate stack:
+  - `/api/insurance-ocr/parse` multi-photo upload via `estimate_image` and `estimate_images`.
+  - PDF text extraction with PDF-to-image fallback.
+  - Safe AI configuration errors that do not expose provider keys.
+  - Mitchell/CCC totals parsing with gross estimate, net estimate, deductible, tax, parts, and labor buckets.
+  - Totals fallback line-item generation when detailed OCR rows are unreadable.
+  - CIECA BMS XML parse/create flow through `/api/estimate-import`.
+  - Import-financials path that maps stored adjuster totals back into RO financial fields.
+- No duplicate estimate-import spec/code was added. Next estimate work should extend these existing files/tests instead of rebuilding parallel import paths.
+- No backend data changes, migrations, seed, reset, or destructive scripts were run. Miles Automotive data was not touched.
+
+**Files reviewed**
+- `backend/src/routes/insuranceOcr.js`
+- `backend/src/routes/estimateImport.js`
+- `backend/src/routes/estimateLineItems.js`
+- `backend/src/routes/ros.js`
+- `backend/src/lib/bmsParser.js`
+- `backend/test/bmsParser.test.js`
+- `backend/test/estimateImport.test.js`
+- `backend/test/estimateTotals.test.js`
+- `backend/test/estimateFinancials.test.js`
+- `frontend/src/components/EstimateImportWizard.jsx`
+- `frontend/src/components/InsurancePanel.jsx`
+- `frontend/src/pages/EstimateBuilder.jsx`
+
+**Verification**
+```
+node --check backend/src/routes/insuranceOcr.js
+node --check backend/src/routes/estimateImport.js
+node --check backend/src/routes/estimateLineItems.js
+node --check backend/src/routes/ros.js
+node --test backend/test/*.test.js  # 16/16 passed
+cd frontend && npm run test:run  # 18 files, 37/37 tests passed
+```
+
 **Data safety**
 - No migrations, seed, reset, or destructive scripts were run.
 - Miles Automotive data was not touched.
