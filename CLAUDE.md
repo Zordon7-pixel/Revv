@@ -897,7 +897,7 @@ cd frontend && npm run test:run  # 18 files, 37/37 tests passed
 
 ## Dispatch Log — 2026-06-23 Master Feedback Agent Workflow
 
-**Status:** DONE + VERIFIED LOCALLY
+**Status:** DONE + VERIFIED + DEPLOYED
 
 **Scope**
 - Turned the `master@revv` help desk from a read-only inbox into a workflow board.
@@ -937,6 +937,9 @@ node --test backend/src/__tests__/superadmin.feedbackWorkflow.test.js backend/sr
 node --test backend/test/*.test.js  # 16/16 passed
 cd frontend && npm run test:run  # 18 files, 37/37 tests passed
 cd frontend && npm run build
+curl https://revv-production-ffa9.up.railway.app/api/health  # commit 18b1bdf79646ac7126d9f271978741bb5034d029
+curl https://revvshop.app/api/health  # commit 18b1bdf79646ac7126d9f271978741bb5034d029
+./scripts/smoke-test.sh  # 6 PASS + 1 documented RESEND_API_KEY local-env WARN
 ```
 
 **Data safety**
