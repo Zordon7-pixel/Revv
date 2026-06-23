@@ -812,6 +812,7 @@ export default function RODetail() {
   if (!ro) return <div className="flex items-center justify-center h-64 text-slate-500">{t('common.loading')}</div>
 
   const currentIdx = STAGES.indexOf(ro.status)
+  const isClosedTotalLoss = ro.status === 'closed' && String(ro.claim_status || '').toLowerCase() === 'total_loss'
   const closedRoAdminOverride = userIsAdmin && ro.status === 'closed'
   const isTerminalStatus = ['total_loss', 'siu_hold'].includes(ro.status) || (ro.status === 'closed' && !userIsAdmin)
   const canStepBack = currentIdx > 0 && !isTerminalStatus
@@ -913,15 +914,15 @@ export default function RODetail() {
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <span className={`text-xs font-bold px-2.5 py-1 rounded-lg border border-[#334155] bg-[#0f1322] ${daysColor}`}>{daysIn}d in shop</span>
-            {ro.status === 'closed' && (
+            {ro.status === 'closed' && !isClosedTotalLoss && (
               <span className="flex items-center gap-1.5 text-slate-300 text-xs font-bold bg-slate-700/60 border border-slate-600 px-3 py-1.5 rounded-lg tracking-wide">TICKET CLOSED</span>
             )}
-            {ro.status === 'total_loss' && (
+            {(ro.status === 'total_loss' || isClosedTotalLoss) && (
               <span className="flex items-center gap-1.5 text-red-300 text-xs font-bold bg-red-950/50 border border-red-700/60 px-3 py-1.5 rounded-lg tracking-wide">
                 <AlertTriangle size={12} /> TOTAL LOSS CLOSED
               </span>
             )}
-            {!hideHeaderFinancialForTech && <StatusBadge status={ro.status} />}
+            {!hideHeaderFinancialForTech && <StatusBadge status={ro.status} claimStatus={ro.claim_status} />}
             {!hideHeaderFinancialForTech && <PaymentStatusBadge status={paymentStatus} paymentReceived={ro.payment_received} />}
             {ro.payment_received === 1 && (
               <span className="flex items-center gap-1 text-emerald-400 text-xs font-medium bg-emerald-900/30 border border-emerald-700/40 px-3 py-1.5 rounded-lg">
@@ -969,7 +970,7 @@ export default function RODetail() {
                 <CheckCircle size={12} /> Mark Delivered &amp; Close Ticket
               </button>
             )}
-            {ro.status !== 'total_loss' && !userIsAssistant && (
+            {ro.status !== 'total_loss' && !isClosedTotalLoss && !userIsAssistant && (
               <button
                 onClick={() => setShowTotalLossModal(true)}
                 className="w-full sm:w-auto flex items-center justify-center gap-1 bg-red-700 hover:bg-red-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
@@ -1211,7 +1212,7 @@ export default function RODetail() {
 
       {overviewTab === 'core' && (
         <>
-      {ro.status === 'total_loss' && (
+      {(ro.status === 'total_loss' || isClosedTotalLoss) && (
         <div className="bg-red-950/30 border border-red-700/50 rounded-xl p-4 text-sm text-red-100">
           This RO is closed as a total loss. Repair workflow steps are skipped, and financials remain editable for teardown, storage, and administrative billing.
         </div>

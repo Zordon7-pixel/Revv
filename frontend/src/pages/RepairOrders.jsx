@@ -378,7 +378,7 @@ export default function RepairOrders() {
                       return null
                     })()}
                   </td>
-                  <td className="px-3 py-2"><StatusBadge status={ro.status} /></td>
+                  <td className="px-3 py-2"><StatusBadge status={ro.status} claimStatus={ro.claim_status} /></td>
                   <td className="px-3 py-2 text-xs text-slate-400">{techById[ro.assigned_to] || 'Unassigned'}</td>
                   <td className="px-3 py-2 text-right">
                     <div className="inline-flex items-center gap-2">
@@ -441,7 +441,7 @@ export default function RepairOrders() {
                       </p>
                     )}
                   </div>
-                  <StatusBadge status={ro.status} />
+                  <StatusBadge status={ro.status} claimStatus={ro.claim_status} />
                 </div>
                 <div className="mt-3">
                   <div className="flex gap-2">

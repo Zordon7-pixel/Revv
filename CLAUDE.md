@@ -1062,3 +1062,31 @@ curl https://revv-production-ffa9.up.railway.app/api/health  # commit 004c6f12e8
 GET /api/claim-tracker/ro/<demo-ro-id>  # 200 JSON with evidence/contacts/disputes arrays
 POST /api/repair-orders/bulk-status with fake non-UUID id  # 200 JSON, no uuid/text operator error, no real RO mutation
 ```
+
+## Dispatch Log — 2026-06-23 Closed Total Loss Display
+
+**Status:** DONE + VERIFIED LOCALLY
+
+**Scope**
+- Added a derived display status for ROs whose workflow status is `closed` and claim status is `total_loss`.
+- Repair Orders and RO Detail now show `Total Loss Closed` for closed total-loss ROs, so closed totals are visually distinct from normal closed repair jobs.
+- Normal closed repair jobs still show `Closed`; active total-loss ROs still show `Total Loss`.
+- Hid the Mark Total Loss action for already-closed total-loss ROs and kept the total-loss explanatory panel visible after closeout.
+- No backend data changes, migrations, seed, reset, or destructive scripts were run. Miles Automotive data was not touched.
+
+**Files changed**
+- `frontend/src/components/StatusBadge.jsx`
+- `frontend/src/components/__tests__/StatusBadge.totalLoss.test.jsx`
+- `frontend/src/pages/RepairOrders.jsx`
+- `frontend/src/pages/RODetail.jsx`
+- `CLAUDE.md`
+
+**Verification**
+```
+cd frontend && npm run test:run -- src/components/__tests__/StatusBadge.totalLoss.test.jsx  # 2/2 passed
+cd frontend && npm run test:run  # 18 files, 37/37 tests passed
+cd frontend && npm run build
+node --check backend/src/routes/ros.js
+node --test backend/test/*.test.js  # 16/16 passed
+rm -rf frontend/dist && git diff --check
+```
