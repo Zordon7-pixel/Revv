@@ -1065,7 +1065,7 @@ POST /api/repair-orders/bulk-status with fake non-UUID id  # 200 JSON, no uuid/t
 
 ## Dispatch Log — 2026-06-23 Closed Total Loss Display
 
-**Status:** DONE + VERIFIED LOCALLY
+**Status:** DONE + VERIFIED + DEPLOYED
 
 **Scope**
 - Added a derived display status for ROs whose workflow status is `closed` and claim status is `total_loss`.
@@ -1089,4 +1089,7 @@ cd frontend && npm run build
 node --check backend/src/routes/ros.js
 node --test backend/test/*.test.js  # 16/16 passed
 rm -rf frontend/dist && git diff --check
+curl https://revv-production-ffa9.up.railway.app/api/health  # commit 6092f77ce92a57ae9504f5f3d07949c48427265f
+curl https://revvshop.app/api/health  # commit 6092f77ce92a57ae9504f5f3d07949c48427265f
+./scripts/smoke-test.sh  # 6 PASS + 1 documented RESEND_API_KEY local-env WARN
 ```
