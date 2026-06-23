@@ -7,6 +7,52 @@ const { v4: uuidv4 } = require('uuid');
 
 router.use(superadmin);
 
+const FEEDBACK_STATUSES = new Set(['new', 'triaged', 'assigned', 'in_progress', 'fixed', 'qa_passed', 'closed', 'wont_fix']);
+const RESOLVED_FEEDBACK_STATUSES = new Set(['closed', 'wont_fix']);
+const ASSIGNED_FEEDBACK_STATUSES = new Set(['assigned', 'in_progress']);
+const FEEDBACK_AGENTS = new Set(['Codex', 'Claude Code', 'Hermes', 'Bryan', 'Linear']);
+
+function normalizeFeedbackStatus(value, fallback = 'new') {
+  const normalized = String(value || '').trim().toLowerCase();
+  return FEEDBACK_STATUSES.has(normalized) ? normalized : fallback;
+}
+
+function normalizeAgent(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  const match = [...FEEDBACK_AGENTS].find((agent) => agent.toLowerCase() === raw.toLowerCase());
+  return match || null;
+}
+
+function buildFeedbackAgentPrompt(issue) {
+  const safe = (value, fallback = 'n/a') => String(value || '').trim() || fallback;
+  return [
+    `TASK: REVV feedback issue ${safe(issue.id)}`,
+    '',
+    'Read-only triage unless explicitly asked to edit code.',
+    '',
+    `Shop: ${safe(issue.shop_name)} (${safe(issue.shop_id)})`,
+    `Type: ${safe(issue.issue_type || issue.category)}`,
+    `Priority: ${safe(issue.priority, 'medium')}`,
+    `Status: ${safe(issue.status, 'new')}`,
+    `Assigned agent: ${safe(issue.routed_to, 'unassigned')}`,
+    `Page: ${safe(issue.page)}`,
+    `Tester: ${safe(issue.tester_name, 'Anonymous')}`,
+    '',
+    'User report:',
+    safe(issue.message, 'No message provided.'),
+    '',
+    'Expected behavior:',
+    safe(issue.expected, 'Not provided.'),
+    '',
+    'Deliverable:',
+    '- Verify whether this is already fixed.',
+    '- If not fixed, identify exact files/routes/components involved.',
+    '- Do not mutate shop/customer data.',
+    '- Report recommended fix, risk, and QA steps.',
+  ].join('\n');
+}
+
 function issueImpersonationToken(targetUser, requestedBySuperadminId) {
   const payload = {
     id: targetUser.id,
@@ -78,6 +124,7 @@ router.get('/helpdesk', async (req, res) => {
     const limit = Number.isFinite(parsedLimit) ? Math.max(25, Math.min(500, Math.trunc(parsedLimit))) : 200;
 
     const issueTypeSql = `(COALESCE(f.tester_name, '') = 'Auto-Reporter' OR f.message ILIKE '[AUTO]%')`;
+    const activeIssueSql = `(COALESCE(NULLIF(LOWER(TRIM(f.status)), ''), 'new') NOT IN ('closed', 'wont_fix'))`;
 
     const ownerAccounts = await dbAll(
       `SELECT * FROM (
@@ -93,6 +140,9 @@ router.get('/helpdesk', async (req, res) => {
            COALESCE(stats.issue_count, 0) AS issue_count,
            COALESCE(stats.error_count, 0) AS error_count,
            COALESCE(stats.feedback_count, 0) AS feedback_count,
+           COALESCE(stats.open_issue_count, 0) AS open_issue_count,
+           COALESCE(stats.assigned_issue_count, 0) AS assigned_issue_count,
+           COALESCE(stats.closed_issue_count, 0) AS closed_issue_count,
            stats.last_issue_at
          FROM users u
          INNER JOIN shops s ON s.id = u.shop_id
@@ -100,8 +150,11 @@ router.get('/helpdesk', async (req, res) => {
            SELECT
              f.shop_id,
              COUNT(*)::int AS issue_count,
-             COUNT(*) FILTER (WHERE ${issueTypeSql})::int AS error_count,
-             COUNT(*) FILTER (WHERE NOT ${issueTypeSql})::int AS feedback_count,
+             COUNT(*) FILTER (WHERE ${issueTypeSql} AND ${activeIssueSql})::int AS error_count,
+             COUNT(*) FILTER (WHERE NOT ${issueTypeSql} AND ${activeIssueSql})::int AS feedback_count,
+             COUNT(*) FILTER (WHERE ${activeIssueSql})::int AS open_issue_count,
+             COUNT(*) FILTER (WHERE COALESCE(NULLIF(LOWER(TRIM(f.status)), ''), 'new') IN ('assigned', 'in_progress'))::int AS assigned_issue_count,
+             COUNT(*) FILTER (WHERE NOT ${activeIssueSql})::int AS closed_issue_count,
              MAX(f.created_at) AS last_issue_at
            FROM feedback f
            WHERE f.shop_id IS NOT NULL AND f.shop_id <> ''
@@ -124,6 +177,12 @@ router.get('/helpdesk', async (req, res) => {
          f.category,
          f.priority,
          f.status,
+         f.routed_to,
+         f.support_note,
+         f.linked_ref,
+         f.assigned_at,
+         f.resolved_at,
+         f.updated_at,
          f.page,
          f.message,
          f.expected,
@@ -141,7 +200,12 @@ router.get('/helpdesk', async (req, res) => {
       `SELECT
          COUNT(*)::int AS total_issues,
          COUNT(*) FILTER (WHERE ${issueTypeSql})::int AS total_errors,
-         COUNT(*) FILTER (WHERE NOT ${issueTypeSql})::int AS total_feedback
+         COUNT(*) FILTER (WHERE NOT ${issueTypeSql})::int AS total_feedback,
+         COUNT(*) FILTER (WHERE ${activeIssueSql})::int AS open_issues,
+         COUNT(*) FILTER (WHERE COALESCE(NULLIF(LOWER(TRIM(f.status)), ''), 'new') IN ('assigned', 'in_progress'))::int AS assigned_issues,
+         COUNT(*) FILTER (WHERE COALESCE(NULLIF(LOWER(TRIM(f.status)), ''), 'new') = 'fixed')::int AS fixed_issues,
+         COUNT(*) FILTER (WHERE COALESCE(NULLIF(LOWER(TRIM(f.status)), ''), 'new') = 'qa_passed')::int AS qa_passed_issues,
+         COUNT(*) FILTER (WHERE NOT ${activeIssueSql})::int AS closed_issues
        FROM feedback f
        WHERE ($1 = '' OR f.shop_id = $1)`,
       [shopId]
@@ -182,7 +246,97 @@ router.get('/helpdesk', async (req, res) => {
         total_issues: summary?.total_issues || 0,
         total_errors: summary?.total_errors || 0,
         total_feedback: summary?.total_feedback || 0,
+        open_issues: summary?.open_issues || 0,
+        assigned_issues: summary?.assigned_issues || 0,
+        fixed_issues: summary?.fixed_issues || 0,
+        qa_passed_issues: summary?.qa_passed_issues || 0,
+        closed_issues: summary?.closed_issues || 0,
       },
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+router.patch('/feedback/:feedbackId', async (req, res) => {
+  try {
+    const { feedbackId } = req.params;
+    const existing = await dbGet(
+      `SELECT
+         f.id,
+         f.shop_id,
+         COALESCE(s.name, 'Unknown Shop') AS shop_name,
+         f.tester_name,
+         f.category,
+         f.priority,
+         f.status,
+         f.routed_to,
+         f.support_note,
+         f.linked_ref,
+         f.assigned_at,
+         f.resolved_at,
+         f.page,
+         f.message,
+         f.expected,
+         f.created_at
+       FROM feedback f
+       LEFT JOIN shops s ON s.id::text = f.shop_id
+       WHERE f.id = $1`,
+      [feedbackId]
+    );
+    if (!existing) return res.status(404).json({ error: 'Feedback issue not found' });
+
+    const nextStatus = Object.prototype.hasOwnProperty.call(req.body || {}, 'status')
+      ? normalizeFeedbackStatus(req.body.status, null)
+      : normalizeFeedbackStatus(existing.status);
+    if (!nextStatus) return res.status(400).json({ error: 'Invalid feedback status' });
+
+    const nextAgent = Object.prototype.hasOwnProperty.call(req.body || {}, 'routed_to')
+      ? normalizeAgent(req.body.routed_to)
+      : (existing.routed_to || null);
+    if (Object.prototype.hasOwnProperty.call(req.body || {}, 'routed_to') && req.body.routed_to && !nextAgent) {
+      return res.status(400).json({ error: 'Invalid agent' });
+    }
+
+    const supportNote = Object.prototype.hasOwnProperty.call(req.body || {}, 'support_note')
+      ? String(req.body.support_note || '').trim().slice(0, 2000)
+      : existing.support_note;
+    const linkedRef = Object.prototype.hasOwnProperty.call(req.body || {}, 'linked_ref')
+      ? String(req.body.linked_ref || '').trim().slice(0, 500)
+      : existing.linked_ref;
+
+    const shouldStampAssigned = nextAgent && ASSIGNED_FEEDBACK_STATUSES.has(nextStatus) && !existing.assigned_at;
+    const shouldStampResolved = RESOLVED_FEEDBACK_STATUSES.has(nextStatus) && !existing.resolved_at;
+
+    const updated = await dbGet(
+      `UPDATE feedback
+       SET status = $1,
+           routed_to = $2,
+           support_note = $3,
+           linked_ref = $4,
+           assigned_at = CASE WHEN $5 THEN NOW() ELSE assigned_at END,
+           resolved_at = CASE WHEN $6 THEN NOW() WHEN $7 THEN NULL ELSE resolved_at END,
+           updated_at = NOW()
+       WHERE id = $8
+       RETURNING *`,
+      [
+        nextStatus,
+        nextAgent,
+        supportNote || null,
+        linkedRef || null,
+        shouldStampAssigned,
+        shouldStampResolved,
+        !RESOLVED_FEEDBACK_STATUSES.has(nextStatus),
+        feedbackId,
+      ]
+    );
+
+    const issueType = (existing.tester_name === 'Auto-Reporter' || String(existing.message || '').startsWith('[AUTO]')) ? 'error' : 'feedback';
+    const issue = { ...existing, ...updated, issue_type: issueType };
+    return res.json({
+      ok: true,
+      issue,
+      agent_prompt: buildFeedbackAgentPrompt(issue),
     });
   } catch (err) {
     return res.status(500).json({ error: err.message });

@@ -319,6 +319,11 @@ async function initDb() {
       page TEXT,
       status TEXT DEFAULT 'new',
       routed_to TEXT,
+      support_note TEXT,
+      linked_ref TEXT,
+      assigned_at TIMESTAMP WITH TIME ZONE,
+      resolved_at TIMESTAMP WITH TIME ZONE,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     );
 
@@ -415,8 +420,15 @@ async function initDb() {
   await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS quickbooks_sync_enabled BOOLEAN DEFAULT FALSE`);
   await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS quickbooks_environment TEXT DEFAULT 'production'`);
   await pool.query(`ALTER TABLE feedback ADD COLUMN IF NOT EXISTS shop_id TEXT`);
+  await pool.query(`ALTER TABLE feedback ADD COLUMN IF NOT EXISTS support_note TEXT`);
+  await pool.query(`ALTER TABLE feedback ADD COLUMN IF NOT EXISTS linked_ref TEXT`);
+  await pool.query(`ALTER TABLE feedback ADD COLUMN IF NOT EXISTS assigned_at TIMESTAMP WITH TIME ZONE`);
+  await pool.query(`ALTER TABLE feedback ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMP WITH TIME ZONE`);
+  await pool.query(`ALTER TABLE feedback ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_feedback_shop_created_at ON feedback(shop_id, created_at DESC)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_feedback_created_at ON feedback(created_at DESC)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_feedback_status_created_at ON feedback(status, created_at DESC)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_feedback_routed_to ON feedback(routed_to)`);
   await pool.query(`ALTER TABLE time_entries ADD COLUMN IF NOT EXISTS unscheduled_approved_by TEXT`).catch(() => {});
   await pool.query(`ALTER TABLE time_entries ADD COLUMN IF NOT EXISTS unscheduled_approved_at TIMESTAMP WITH TIME ZONE`).catch(() => {});
 

@@ -895,6 +895,50 @@ node --test backend/test/*.test.js  # 16/16 passed
 cd frontend && npm run test:run  # 18 files, 37/37 tests passed
 ```
 
+## Dispatch Log — 2026-06-23 Master Feedback Agent Workflow
+
+**Status:** DONE + VERIFIED LOCALLY
+
+**Scope**
+- Turned the `master@revv` help desk from a read-only inbox into a workflow board.
+- Added feedback workflow fields for support notes, linked fix/reference, assignment timestamps, resolution timestamps, and update timestamps.
+- Added superadmin PATCH workflow endpoint for feedback issues:
+  - assign/reassign agent via `routed_to`
+  - move status through `new`, `triaged`, `assigned`, `in_progress`, `fixed`, `qa_passed`, `closed`, `wont_fix`
+  - store support notes and linked fix references
+  - return a paste-ready agent prompt for Codex/Claude/Hermes review
+- Updated the master dashboard:
+  - open/assigned/closed summary counts
+  - open issue alerts instead of all historical feedback
+  - status and issue-type filters
+  - agent picker
+  - Send button that assigns and copies an agent prompt
+  - Copy Prompt button
+  - Close button
+  - support note and linked fix fields
+- Completed/closed feedback remains searchable but no longer counts as active owner alerts.
+- No customer, shop, RO, seed, reset, or destructive data scripts were run. Miles Automotive data was not touched.
+
+**Files changed**
+- `backend/src/db/index.js`
+- `backend/src/db/migrate.js`
+- `backend/src/routes/superadmin.js`
+- `backend/src/__tests__/superadmin.feedbackWorkflow.test.js`
+- `frontend/src/pages/SuperAdminDashboard.jsx`
+- `CLAUDE.md`
+
+**Verification**
+```
+node --check backend/src/routes/superadmin.js
+node --check backend/src/db/index.js
+node --check backend/src/db/migrate.js
+node --check backend/src/__tests__/superadmin.feedbackWorkflow.test.js
+node --test backend/src/__tests__/superadmin.feedbackWorkflow.test.js backend/src/__tests__/feedback.sanitize.test.js  # 3/3 passed
+node --test backend/test/*.test.js  # 16/16 passed
+cd frontend && npm run test:run  # 18 files, 37/37 tests passed
+cd frontend && npm run build
+```
+
 **Data safety**
 - No migrations, seed, reset, or destructive scripts were run.
 - Miles Automotive data was not touched.
