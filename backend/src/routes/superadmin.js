@@ -7,8 +7,8 @@ const { v4: uuidv4 } = require('uuid');
 
 router.use(superadmin);
 
-const FEEDBACK_STATUSES = new Set(['new', 'triaged', 'assigned', 'in_progress', 'fixed', 'qa_passed', 'closed', 'wont_fix']);
-const RESOLVED_FEEDBACK_STATUSES = new Set(['closed', 'wont_fix']);
+const FEEDBACK_STATUSES = new Set(['new', 'triaged', 'assigned', 'in_progress', 'fixed', 'qa_passed', 'shipped', 'closed', 'wont_fix']);
+const RESOLVED_FEEDBACK_STATUSES = new Set(['shipped', 'closed', 'wont_fix']);
 const ASSIGNED_FEEDBACK_STATUSES = new Set(['assigned', 'in_progress']);
 const FEEDBACK_AGENTS = new Set(['Codex', 'Claude Code', 'Hermes', 'Bryan', 'Linear']);
 
@@ -124,7 +124,7 @@ router.get('/helpdesk', async (req, res) => {
     const limit = Number.isFinite(parsedLimit) ? Math.max(25, Math.min(500, Math.trunc(parsedLimit))) : 200;
 
     const issueTypeSql = `(COALESCE(f.tester_name, '') = 'Auto-Reporter' OR f.message ILIKE '[AUTO]%')`;
-    const activeIssueSql = `(COALESCE(NULLIF(LOWER(TRIM(f.status)), ''), 'new') NOT IN ('closed', 'wont_fix'))`;
+    const activeIssueSql = `(COALESCE(NULLIF(LOWER(TRIM(f.status)), ''), 'new') NOT IN ('shipped', 'closed', 'wont_fix'))`;
 
     const ownerAccounts = await dbAll(
       `SELECT * FROM (

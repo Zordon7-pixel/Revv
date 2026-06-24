@@ -9,6 +9,7 @@ const ISSUE_STATUSES = [
   { value: 'in_progress', label: 'In Progress' },
   { value: 'fixed', label: 'Fixed' },
   { value: 'qa_passed', label: 'QA Passed' },
+  { value: 'shipped', label: 'Shipped' },
   { value: 'closed', label: 'Closed' },
   { value: 'wont_fix', label: "Won't Fix" },
 ]
@@ -34,7 +35,7 @@ function statusLabel(value) {
 
 function statusClass(value) {
   const normalized = String(value || 'new').toLowerCase()
-  if (['closed', 'wont_fix'].includes(normalized)) return 'text-slate-300 border-slate-700 bg-slate-900/40'
+  if (['shipped', 'closed', 'wont_fix'].includes(normalized)) return 'text-slate-300 border-slate-700 bg-slate-900/40'
   if (normalized === 'qa_passed') return 'text-emerald-300 border-emerald-700 bg-emerald-950/35'
   if (normalized === 'fixed') return 'text-lime-300 border-lime-700 bg-lime-950/30'
   if (['assigned', 'in_progress'].includes(normalized)) return 'text-[#EAB308] border-[#EAB308]/50 bg-[#EAB308]/10'
@@ -125,8 +126,8 @@ export default function SuperAdminDashboard() {
     return issues.filter((issue) => {
       if (issueFilter !== 'all' && issue.issue_type !== issueFilter) return false
       const status = String(issue.status || 'new').toLowerCase()
-      if (statusFilter === 'open' && ['closed', 'wont_fix'].includes(status)) return false
-      if (statusFilter === 'closed' && !['closed', 'wont_fix'].includes(status)) return false
+      if (statusFilter === 'open' && ['shipped', 'closed', 'wont_fix'].includes(status)) return false
+      if (statusFilter === 'closed' && !['shipped', 'closed', 'wont_fix'].includes(status)) return false
       if (!['all', 'open', 'closed'].includes(statusFilter) && status !== statusFilter) return false
       if (!query) return true
       const haystack = [

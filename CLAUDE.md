@@ -917,6 +917,7 @@ cd frontend && npm run test:run  # 18 files, 37/37 tests passed
   - Close button
   - support note and linked fix fields
 - Completed/closed feedback remains searchable but no longer counts as active owner alerts.
+- Legacy feedback rows with status `shipped` are also treated as resolved, preventing already-handled historical items from reappearing as open work.
 - No customer, shop, RO, seed, reset, or destructive data scripts were run. Miles Automotive data was not touched.
 
 **Files changed**
