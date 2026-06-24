@@ -53,6 +53,8 @@ async function runMigrations() {
       `ALTER TABLE shops ADD COLUMN IF NOT EXISTS quickbooks_environment TEXT DEFAULT 'production'`,
       `ALTER TABLE shops ADD COLUMN IF NOT EXISTS monthly_revenue_target INTEGER DEFAULT 85000`,
       `ALTER TABLE shops ADD COLUMN IF NOT EXISTS plan TEXT DEFAULT 'free'`,
+      `ALTER TABLE shops ADD COLUMN IF NOT EXISTS sms_comp BOOLEAN DEFAULT FALSE`,
+      `UPDATE shops SET sms_comp = TRUE WHERE twilio_phone_number = '+18668259523' AND sms_comp IS DISTINCT FROM TRUE`,
       `ALTER TABLE shops ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT`,
       `ALTER TABLE shops ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT`,
       `ALTER TABLE shops ADD COLUMN IF NOT EXISTS plan_expires_at TIMESTAMPTZ`,

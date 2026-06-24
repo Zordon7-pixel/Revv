@@ -34,35 +34,69 @@ function getTwilioConfig() {
   return getEnvTwilioConfig();
 }
 
+function smsEntitled(shop) {
+  return Boolean(shop && (
+    shop.plan === 'pro' ||
+    shop.plan === 'agency' ||
+    shop.sms_comp === true
+  ));
+}
+
+async function getSmsShop(shopId) {
+  if (!shopId) return null;
+  return dbGet(
+    `SELECT twilio_account_sid, twilio_auth_token, twilio_phone_number, twilio_api_key, twilio_api_secret,
+            plan, sms_comp
+     FROM shops
+     WHERE id = $1`,
+    [shopId]
+  );
+}
+
+function twilioConfigFromShop(shop, shopId) {
+  const hasApiKeyCreds = !!(shop?.twilio_account_sid && shop?.twilio_api_key && shop?.twilio_api_secret && shop?.twilio_phone_number);
+  const hasAuthTokenCreds = !!(shop?.twilio_account_sid && shop?.twilio_auth_token && shop?.twilio_phone_number);
+  const hasDbCreds = hasApiKeyCreds || hasAuthTokenCreds;
+
+  if (shopId) {
+    console.log(`[SMS] getTwilioConfigForShop(${shopId}): DB has account_sid=${!!shop?.twilio_account_sid}, api_key=${!!shop?.twilio_api_key}, auth_token=${!!shop?.twilio_auth_token}, phone=${!!shop?.twilio_phone_number} → using ${hasDbCreds ? 'DB creds' : 'env vars'}`);
+  }
+
+  if (hasApiKeyCreds) {
+    return {
+      accountSid: shop.twilio_account_sid,
+      apiKey: shop.twilio_api_key,
+      apiSecret: shop.twilio_api_secret,
+      phoneNumber: shop.twilio_phone_number,
+      plan: shop.plan,
+      sms_comp: shop.sms_comp,
+      _source: 'db',
+    };
+  }
+  if (hasAuthTokenCreds) {
+    return {
+      accountSid: shop.twilio_account_sid,
+      authToken: shop.twilio_auth_token,
+      phoneNumber: shop.twilio_phone_number,
+      plan: shop.plan,
+      sms_comp: shop.sms_comp,
+      _source: 'db',
+    };
+  }
+
+  const envConfig = getEnvTwilioConfig();
+  if (envConfig) {
+    console.log(`[SMS] Using env var config: account_sid=${!!envConfig.accountSid}, api_key=${!!envConfig.apiKey}, auth_token=${!!envConfig.authToken}, phone=${!!envConfig.phoneNumber}`);
+  } else {
+    console.warn(`[SMS] No Twilio config found in DB or env vars for shop ${shopId}`);
+  }
+  return envConfig ? { ...envConfig, plan: shop?.plan, sms_comp: shop?.sms_comp, _source: 'env' } : null;
+}
+
 async function getTwilioConfigForShop(shopId) {
   if (shopId) {
-    const shop = await dbGet(
-      `SELECT twilio_account_sid, twilio_auth_token, twilio_phone_number, twilio_api_key, twilio_api_secret
-       FROM shops
-       WHERE id = $1`,
-      [shopId]
-    );
-    const hasApiKeyCreds = !!(shop?.twilio_account_sid && shop?.twilio_api_key && shop?.twilio_api_secret && shop?.twilio_phone_number);
-    const hasAuthTokenCreds = !!(shop?.twilio_account_sid && shop?.twilio_auth_token && shop?.twilio_phone_number);
-    const hasDbCreds = hasApiKeyCreds || hasAuthTokenCreds;
-    console.log(`[SMS] getTwilioConfigForShop(${shopId}): DB has account_sid=${!!shop?.twilio_account_sid}, api_key=${!!shop?.twilio_api_key}, auth_token=${!!shop?.twilio_auth_token}, phone=${!!shop?.twilio_phone_number} → using ${hasDbCreds ? 'DB creds' : 'env vars'}`);
-    if (hasApiKeyCreds) {
-      return {
-        accountSid: shop.twilio_account_sid,
-        apiKey: shop.twilio_api_key,
-        apiSecret: shop.twilio_api_secret,
-        phoneNumber: shop.twilio_phone_number,
-        _source: 'db',
-      };
-    }
-    if (hasAuthTokenCreds) {
-      return {
-        accountSid: shop.twilio_account_sid,
-        authToken: shop.twilio_auth_token,
-        phoneNumber: shop.twilio_phone_number,
-        _source: 'db',
-      };
-    }
+    const shop = await getSmsShop(shopId);
+    return twilioConfigFromShop(shop, shopId);
   }
   const envConfig = getEnvTwilioConfig();
   if (envConfig) {
@@ -97,7 +131,27 @@ async function sendSMS(phone, message, options = {}) {
     }
   }
 
-  const config = providedConfig || await getTwilioConfigForShop(shopId);
+  let shop = null;
+  let config = providedConfig;
+  if (shopId) {
+    const configIncludesEntitlement = providedConfig && (
+      Object.prototype.hasOwnProperty.call(providedConfig, 'plan') ||
+      Object.prototype.hasOwnProperty.call(providedConfig, 'sms_comp')
+    );
+    if (configIncludesEntitlement) {
+      shop = providedConfig;
+    } else {
+      shop = await getSmsShop(shopId);
+      if (!config) config = twilioConfigFromShop(shop, shopId);
+    }
+
+    if (!smsEntitled(shop)) {
+      console.warn(`[SMS] Suppressed send for non-entitled shop ${shopId}.`);
+      return { ok: false, reason: 'sms_not_entitled', body: finalMessage };
+    }
+  }
+
+  if (!config) config = await getTwilioConfigForShop(shopId);
   if (!config) {
     console.warn(`[SMS] Twilio is not configured${shopId ? ` for shop ${shopId}` : ''}. Skipping SMS send.`);
     return { ok: false, reason: 'not configured', body: finalMessage };
@@ -127,6 +181,7 @@ async function sendSMS(phone, message, options = {}) {
 
 module.exports = {
   sendSMS,
+  smsEntitled,
   messageWithComplianceFooter,
   isConfigured,
   isConfiguredForShop,

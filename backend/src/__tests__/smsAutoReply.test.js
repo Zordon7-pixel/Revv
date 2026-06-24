@@ -10,6 +10,7 @@ const {
 const SHOP = {
   id: 'shop-1',
   name: 'Miles Collision',
+  plan: 'pro',
   twilio_account_sid: 'AC123',
   twilio_auth_token: 'token',
   twilio_phone_number: '+18668259523',

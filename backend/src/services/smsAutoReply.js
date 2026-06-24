@@ -1,6 +1,6 @@
 const { v4: uuidv4 } = require('uuid');
 const { dbGet, dbRun } = require('../db');
-const { sendSMS } = require('./sms');
+const { sendSMS, smsEntitled } = require('./sms');
 
 const INBOUND_AUTO_REPLY_TEMPLATE = 'Thanks — ${shopName} received your message. A team member will review it and follow up during business hours.';
 
@@ -84,6 +84,8 @@ async function maybeSendInboundAutoReply({
     if (classification === 'help') {
       return { action: 'help', reason: 'help_keyword' };
     }
+
+    if (!smsEntitled(shop)) return { action: 'suppressed', reason: 'not_entitled' };
 
     if (!hasShopSmsConfig(shop)) return { action: 'suppressed', reason: 'sms_unconfigured' };
 

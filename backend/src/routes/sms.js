@@ -3,7 +3,7 @@ const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const auth = require('../middleware/auth');
 const { requireAdmin } = require('../middleware/roles');
-const { sendSMS, isConfiguredForShop, getTwilioConfigForShop } = require('../services/sms');
+const { sendSMS, getTwilioConfigForShop, smsEntitled } = require('../services/sms');
 const { maybeSendInboundAutoReply } = require('../services/smsAutoReply');
 const { dbAll, dbGet, dbRun } = require('../db');
 
@@ -12,12 +12,14 @@ router.get('/status', auth, requireAdmin, async (req, res) => {
   try {
     // Also check raw DB state for diagnostics
     const shopRow = await dbGet(
-      `SELECT twilio_account_sid, twilio_auth_token, twilio_phone_number FROM shops WHERE id = $1`,
+      `SELECT twilio_account_sid, twilio_auth_token, twilio_phone_number, plan, sms_comp FROM shops WHERE id = $1`,
       [req.user.shop_id]
     );
     const creds = await getTwilioConfigForShop(req.user.shop_id);
     res.json({
       configured: !!creds,
+      entitled: smsEntitled(shopRow),
+      plan: shopRow?.plan || 'free',
       phone: creds?.phoneNumber || null,
       auth_method: creds?.apiKey ? 'api_key' : creds?.authToken ? 'auth_token' : null,
       config_source: creds?._source || null,
@@ -35,6 +37,10 @@ router.get('/status', auth, requireAdmin, async (req, res) => {
 router.post('/test', auth, requireAdmin, async (req, res) => {
   const { phone, message } = req.body || {};
   if (!phone || !message) return res.status(400).json({ error: 'phone and message are required' });
+  const shop = await dbGet('SELECT plan, sms_comp FROM shops WHERE id = $1', [req.user.shop_id]);
+  if (!smsEntitled(shop)) {
+    return res.status(403).json({ error: 'SMS requires the Pro or Agency plan.' });
+  }
   const result = await sendSMS(phone, message, { shopId: req.user.shop_id });
   if (!result.ok) {
     const reason = result.reason === 'not configured'
@@ -184,7 +190,8 @@ router.post('/webhook', express.urlencoded({ extended: false }), async (req, res
     if (from && body) {
       // Find the shop that owns this Twilio number
       const shop = await dbGet(
-        `SELECT id, name, twilio_account_sid, twilio_auth_token, twilio_phone_number, twilio_api_key, twilio_api_secret
+        `SELECT id, name, twilio_account_sid, twilio_auth_token, twilio_phone_number, twilio_api_key, twilio_api_secret,
+                plan, sms_comp
          FROM shops
          WHERE twilio_phone_number = $1`,
         [to]
