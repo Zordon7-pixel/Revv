@@ -947,6 +947,37 @@ curl https://revv-production-ffa9.up.railway.app/api/health  # commit d1e9f1ae07
 Live read-only feedback audit  # 12 resolved shipped rows, 10 open new rows
 ```
 
+## Dispatch Log — 2026-06-23 Daily Feedback Audit Automation
+
+**Status:** DONE + VERIFIED LOCALLY
+
+**Scope**
+- Added a daily feedback audit job that runs once after backend startup and then every 24 hours.
+- Daily audit auto-closes false-positive estimate-import success notifications that were stored as bug feedback.
+- Daily audit auto-assigns remaining unassigned open feedback:
+  - feature/idea/question rows route to `Hermes`
+  - bug/missing/general rows route to `Codex`
+- The job only updates `feedback` workflow fields (`status`, `routed_to`, `support_note`, `linked_ref`, `assigned_at`, `resolved_at`, `updated_at`).
+- No shop, customer, vehicle, RO, estimate, payment, seed, reset, or destructive data scripts are touched.
+- This keeps the `master@revv` command center refreshed daily and prevents open feedback from sitting unassigned.
+
+**Files changed**
+- `backend/src/app.js`
+- `backend/src/jobs/feedbackDailyAudit.js`
+- `backend/src/__tests__/feedbackDailyAudit.test.js`
+- `CLAUDE.md`
+
+**Verification**
+```
+node --check backend/src/app.js
+node --check backend/src/jobs/feedbackDailyAudit.js
+node --check backend/src/__tests__/feedbackDailyAudit.test.js
+node --test backend/src/__tests__/feedbackDailyAudit.test.js backend/src/__tests__/superadmin.feedbackWorkflow.test.js backend/src/__tests__/feedback.sanitize.test.js  # 4/4 passed
+node --test backend/test/*.test.js  # 16/16 passed
+cd frontend && npm run test:run  # 18 files, 37/37 tests passed
+cd frontend && npm run build
+```
+
 **Data safety**
 - No migrations, seed, reset, or destructive scripts were run.
 - Miles Automotive data was not touched.

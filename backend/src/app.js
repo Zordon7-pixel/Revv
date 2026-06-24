@@ -127,6 +127,9 @@ const PORT = process.env.PORT || 4000;
 
 const { initDb, dbAll } = require('./db');
 const { runMonthCarryover } = require('./jobs/monthCarryover');
+const { runFeedbackDailyAudit } = require('./jobs/feedbackDailyAudit');
+
+const DAILY_FEEDBACK_AUDIT_MS = 24 * 60 * 60 * 1000;
 
 async function runCarryoverForActiveShops() {
   try {
@@ -139,6 +142,19 @@ async function runCarryoverForActiveShops() {
     }
   } catch (err) {
     console.error('[Carryover] Startup carryover task failed:', err.message);
+  }
+}
+
+async function runDailyFeedbackAudit() {
+  try {
+    const result = await runFeedbackDailyAudit();
+    if (result.closedNoise || result.assigned) {
+      console.log(`[FeedbackAudit] closed ${result.closedNoise} noise row(s), assigned ${result.assigned} open row(s)`);
+    } else {
+      console.log('[FeedbackAudit] no feedback workflow updates needed');
+    }
+  } catch (err) {
+    console.error('[FeedbackAudit] Daily feedback audit failed:', err.message);
   }
 }
 
@@ -165,6 +181,8 @@ initDb()
       console.log(`🔧 REVV running on http://localhost:${PORT}`);
       console.log(`   PostgreSQL: ${process.env.DATABASE_URL ? 'connected' : 'local'}`);
       setImmediate(runCarryoverForActiveShops);
+      setImmediate(runDailyFeedbackAudit);
+      setInterval(runDailyFeedbackAudit, DAILY_FEEDBACK_AUDIT_MS).unref();
     });
   })
   .catch(err => {
