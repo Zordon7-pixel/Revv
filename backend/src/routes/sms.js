@@ -4,6 +4,7 @@ const { v4: uuidv4 } = require('uuid');
 const auth = require('../middleware/auth');
 const { requireAdmin } = require('../middleware/roles');
 const { sendSMS, isConfiguredForShop, getTwilioConfigForShop } = require('../services/sms');
+const { maybeSendInboundAutoReply } = require('../services/smsAutoReply');
 const { dbAll, dbGet, dbRun } = require('../db');
 
 // ── Status / test ────────────────────────────────────────────────────────────
@@ -183,7 +184,9 @@ router.post('/webhook', express.urlencoded({ extended: false }), async (req, res
     if (from && body) {
       // Find the shop that owns this Twilio number
       const shop = await dbGet(
-        `SELECT id FROM shops WHERE twilio_phone_number = $1`,
+        `SELECT id, name, twilio_account_sid, twilio_auth_token, twilio_phone_number, twilio_api_key, twilio_api_secret
+         FROM shops
+         WHERE twilio_phone_number = $1`,
         [to]
       );
 
@@ -206,6 +209,18 @@ router.post('/webhook', express.urlencoded({ extended: false }), async (req, res
         );
 
         console.log(`[SMS Webhook] Saved inbound from ${from} → shop ${shop.id}, ro ${ro?.id || 'unmatched'}`);
+
+        try {
+          await maybeSendInboundAutoReply({
+            shop,
+            from,
+            to,
+            body,
+            db: { dbGet, dbRun },
+          });
+        } catch (autoReplyErr) {
+          console.error('[SMS Webhook] Auto-reply error:', autoReplyErr?.message || autoReplyErr);
+        }
       } else {
         console.warn(`[SMS Webhook] No shop found for Twilio number ${to}`);
       }

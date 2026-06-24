@@ -84,7 +84,19 @@ async function isConfiguredForShop(shopId) {
 async function sendSMS(phone, message, options = {}) {
   const shopId = typeof options === 'string' ? options : options.shopId;
   const providedConfig = typeof options === 'object' ? options.twilioConfig : null;
+  const skipOptOutCheck = typeof options === 'object' && options.skipOptOutCheck === true;
   const finalMessage = messageWithComplianceFooter(message, typeof options === 'object' ? options : {});
+  if (shopId && !skipOptOutCheck) {
+    const optedOut = await dbGet(
+      `SELECT 1 FROM sms_opt_outs WHERE shop_id = $1 AND phone = $2 LIMIT 1`,
+      [shopId, phone]
+    );
+    if (optedOut) {
+      console.warn(`[SMS] Suppressed send to opted-out number for shop ${shopId}.`);
+      return { ok: false, reason: 'opted_out', body: finalMessage };
+    }
+  }
+
   const config = providedConfig || await getTwilioConfigForShop(shopId);
   if (!config) {
     console.warn(`[SMS] Twilio is not configured${shopId ? ` for shop ${shopId}` : ''}. Skipping SMS send.`);

@@ -414,6 +414,12 @@ async function runMigrations() {
         status TEXT DEFAULT 'sent',
         created_at TIMESTAMPTZ DEFAULT NOW()
       )`,
+      `CREATE TABLE IF NOT EXISTS sms_opt_outs (
+        shop_id TEXT NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+        phone TEXT NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        PRIMARY KEY (shop_id, phone)
+      )`,
       `CREATE INDEX IF NOT EXISTS idx_sms_messages_ro_id ON sms_messages(ro_id)`,
       `CREATE INDEX IF NOT EXISTS idx_sms_messages_shop_id ON sms_messages(shop_id)`,
       `CREATE INDEX IF NOT EXISTS idx_sms_messages_from_phone ON sms_messages(from_phone)`,
