@@ -314,7 +314,7 @@ Start command: `cd backend && node src/db/seed.js; node src/app.js`
 
 ## Dispatch Log — 2026-05-27 Approval Link Clipboard Fallback
 
-**Status:** DONE + VERIFIED
+**Status:** DONE + VERIFIED + DEPLOYED
 
 **Scope:** Fix false "Could not generate approval link" failures when the backend generated the link successfully but browser clipboard access was denied/unavailable.
 
@@ -1233,6 +1233,7 @@ curl https://revvshop.app/api/health  # commit 6092f77ce92a57ae9504f5f3d07949c48
 - Add RO customer-selection validation now renders inside the modal with `role="alert"` instead of blocking the user with a browser alert.
 - Supplement requests validate amount before hitting the API, avoid exposing the internal "in cents" wording, and compare mixed RO/shop IDs as text on the backend.
 - No customer, shop, RO, seed, reset, or destructive data mutation was performed. Miles Automotive data was not touched.
+- Live feedback records for the 4 Codex-assigned rows were marked `shipped` with linked ref `4ce405f`; the feedback inbox now has 0 `new`/`assigned` rows.
 
 **Files changed**
 - `backend/src/routes/customers.js`
@@ -1254,4 +1255,8 @@ node --test backend/test/*.test.js  # 16/16 passed
 cd frontend && npm run test:run  # 19 files, 40/40 passed
 cd frontend && npm run build
 rm -rf frontend/dist && git diff --check && git ls-files frontend/dist | wc -l  # 0
+curl https://revvshop.app/api/health  # commit 4ce405f01418a62d05408f629db7e4dd412fa4ee
+curl https://revv-production-ffa9.up.railway.app/api/health  # commit 4ce405f01418a62d05408f629db7e4dd412fa4ee
+./scripts/smoke-test.sh  # 6 PASS + 1 documented RESEND_API_KEY local-env WARN
+Live feedback audit  # shipped: Codex 4, closed: Codex 6, shipped legacy routed rows 12, open/assigned 0
 ```
