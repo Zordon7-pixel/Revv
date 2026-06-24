@@ -1,5 +1,6 @@
 import React from 'react';
 import { AlertTriangle, Wrench } from 'lucide-react';
+import { captureException } from '../lib/sentry';
 
 export default class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -11,7 +12,9 @@ export default class ErrorBoundary extends React.Component {
   }
   componentDidCatch(error, info) {
     console.error('[REVV Error]', error, info);
-    import('../lib/sentry').then(({ captureException }) => captureException(error, { extra: { componentStack: (info?.componentStack || '').slice(0, 600) } })).catch(() => {});
+    try {
+      captureException(error, { extra: { componentStack: (info?.componentStack || '').slice(0, 600) } });
+    } catch (_) {}
     // Auto-report React render errors to feedback
     try {
       const payload = {
