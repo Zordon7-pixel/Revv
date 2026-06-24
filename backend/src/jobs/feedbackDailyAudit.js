@@ -39,7 +39,11 @@ async function assignOpenUnassignedFeedback() {
          ),
          updated_at = NOW()
      WHERE COALESCE(NULLIF(LOWER(TRIM(status)), ''), 'new') NOT IN ${RESOLVED_STATUSES_SQL}
-       AND COALESCE(NULLIF(TRIM(routed_to), ''), '') = ''`
+       AND (
+         COALESCE(NULLIF(TRIM(routed_to), ''), '') = ''
+         OR COALESCE(NULLIF(LOWER(TRIM(status)), ''), 'new') = 'new'
+         OR LOWER(TRIM(COALESCE(routed_to, ''))) IN ('codex', 'codex 5.3', 'colonel zordon')
+       )`
   );
   return result.rowCount || 0;
 }

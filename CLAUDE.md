@@ -957,6 +957,7 @@ Live read-only feedback audit  # 12 resolved shipped rows, 10 open new rows
 - Daily audit auto-assigns remaining unassigned open feedback:
   - feature/idea/question rows route to `Hermes`
   - bug/missing/general rows route to `Codex`
+- Daily audit also normalizes legacy agent labels such as lowercase `codex` and moves pre-routed `new` rows into `assigned`, preventing stale routed-but-unworked feedback from sitting open.
 - The job only updates `feedback` workflow fields (`status`, `routed_to`, `support_note`, `linked_ref`, `assigned_at`, `resolved_at`, `updated_at`).
 - No shop, customer, vehicle, RO, estimate, payment, seed, reset, or destructive data scripts are touched.
 - This keeps the `master@revv` command center refreshed daily and prevents open feedback from sitting unassigned.

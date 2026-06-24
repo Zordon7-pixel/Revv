@@ -41,6 +41,7 @@ test('daily feedback audit closes success-notification noise then assigns remain
   assert.match(calls[0], /items imported from insurance estimate/);
   assert.match(calls[0], /daily-feedback-audit/);
   assert.match(calls[1], /routed_to = CASE/);
+  assert.match(calls[1], /LOWER\(TRIM\(COALESCE\(routed_to, ''\)\)\) IN \('codex', 'codex 5\.3', 'colonel zordon'\)/);
   assert.match(calls[1], /THEN 'Hermes'/);
   assert.match(calls[1], /ELSE 'Codex'/);
 });
