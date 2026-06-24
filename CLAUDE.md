@@ -918,6 +918,7 @@ cd frontend && npm run test:run  # 18 files, 37/37 tests passed
   - support note and linked fix fields
 - Completed/closed feedback remains searchable but no longer counts as active owner alerts.
 - Legacy feedback rows with status `shipped` are also treated as resolved, preventing already-handled historical items from reappearing as open work.
+- Live read-only audit after deployment found 12 resolved `shipped` rows and 10 remaining open `new` rows. The remaining open rows are six estimate-import success notifications stored as bug reports, two customer-delete errors, one supplement-amount validation error, and one Add RO customer-selection validation item.
 - No customer, shop, RO, seed, reset, or destructive data scripts were run. Miles Automotive data was not touched.
 
 **Files changed**
@@ -941,6 +942,9 @@ cd frontend && npm run build
 curl https://revv-production-ffa9.up.railway.app/api/health  # commit 18b1bdf79646ac7126d9f271978741bb5034d029
 curl https://revvshop.app/api/health  # commit 18b1bdf79646ac7126d9f271978741bb5034d029
 ./scripts/smoke-test.sh  # 6 PASS + 1 documented RESEND_API_KEY local-env WARN
+curl https://revv-production-ffa9.up.railway.app/api/health  # commit d1e9f1ae0756c680c298f9d7f1be48065b8e642b
+./scripts/smoke-test.sh  # 6 PASS + 1 documented RESEND_API_KEY local-env WARN
+Live read-only feedback audit  # 12 resolved shipped rows, 10 open new rows
 ```
 
 **Data safety**
