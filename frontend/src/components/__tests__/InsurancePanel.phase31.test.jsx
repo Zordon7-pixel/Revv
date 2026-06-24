@@ -83,4 +83,22 @@ describe('InsurancePanel OCR import', () => {
     })))
     expect(api.patch.mock.calls[0][1].deductible).not.toBe(100000)
   })
+
+  it('validates supplement amount before requesting a supplement', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <InsurancePanel
+        roId="ro-1"
+        ro={{ insurance_company: 'Progressive', insurance_claim_number: 'CLM-1', supplement_amount: 0 }}
+        onUpdated={vi.fn()}
+      />
+    )
+
+    await user.click(screen.getByRole('button', { name: /Request Supplement/i }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Enter a supplement amount greater than $0.00.')
+    expect(api.post).not.toHaveBeenCalled()
+    expect(window.alert).not.toHaveBeenCalled()
+  })
 })

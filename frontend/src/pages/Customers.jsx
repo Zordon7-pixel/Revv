@@ -492,7 +492,8 @@ export default function Customers() {
       if (e?.response?.status === 409) {
         setDeleteError(message)
       } else {
-        alert(message)
+        console.error('[Customers] delete failed:', e)
+        setDeleteError(message)
       }
       return false
     }
@@ -522,7 +523,7 @@ export default function Customers() {
       </div>
 
       {deleteError && (
-        <div className="bg-red-900/40 border border-red-700/50 text-red-100 text-sm px-3 py-2 rounded-lg">
+        <div role="alert" className="bg-red-900/40 border border-red-700/50 text-red-100 text-sm px-3 py-2 rounded-lg">
           {deleteError}
         </div>
       )}

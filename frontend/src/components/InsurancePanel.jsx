@@ -56,6 +56,7 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
   const [open, setOpen] = useState(true)
   const [saving, setSaving] = useState(false)
   const [requesting, setRequesting] = useState(false)
+  const [requestError, setRequestError] = useState('')
 
   // OCR import state
   const fileInputRef = useRef(null)
@@ -264,6 +265,7 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
 
   function set(key, value) {
     setForm((prev) => ({ ...prev, [key]: value }))
+    if (requestError) setRequestError('')
   }
 
   async function saveInsurance() {
@@ -293,7 +295,13 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
   }
 
   async function requestSupplement() {
+    const amount = Number(form.supplement_amount)
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setRequestError('Enter a supplement amount greater than $0.00.')
+      return
+    }
     setRequesting(true)
+    setRequestError('')
     try {
       await api.post(`/ros/${roId}/supplement`, {
         amount: dollarsToCents(form.supplement_amount),
@@ -301,7 +309,8 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
       })
       onUpdated?.()
     } catch (err) {
-      alert(err?.response?.data?.error || 'Could not request supplement')
+      console.error('[InsurancePanel] request supplement failed:', err)
+      setRequestError(err?.response?.data?.error || 'Could not request supplement.')
     } finally {
       setRequesting(false)
     }
@@ -596,6 +605,12 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
                 placeholder="Additional damage found, teardown photos attached, etc."
               />
             </div>
+
+            {requestError && (
+              <p role="alert" className="text-xs text-red-300">
+                {requestError}
+              </p>
+            )}
 
             <div className="flex gap-2">
               <button

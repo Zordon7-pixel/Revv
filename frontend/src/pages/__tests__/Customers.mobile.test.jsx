@@ -85,4 +85,21 @@ describe('Customers mobile form flow', () => {
     expect(await screen.findByText('Name is required.')).toBeInTheDocument()
     expect(api.post).not.toHaveBeenCalled()
   })
+
+  it('shows failed deletes inline instead of using a browser alert', async () => {
+    const user = userEvent.setup()
+    customers = [{ id: 'cust-1', name: 'Miles Automotive', phone: '2125550100' }]
+    api.delete.mockRejectedValue({ response: { data: { error: 'Failed to delete customer. Please try again.' } } })
+    window.confirm = vi.fn(() => true)
+    window.alert = vi.fn()
+
+    render(<Customers />)
+
+    expect(await screen.findByText('Miles Automotive')).toBeInTheDocument()
+    await user.click(screen.getByTitle('Delete customer'))
+
+    expect(window.confirm).toHaveBeenCalledWith('Delete customer "Miles Automotive"? This action cannot be undone.')
+    expect(await screen.findByRole('alert')).toHaveTextContent('Failed to delete customer. Please try again.')
+    expect(window.alert).not.toHaveBeenCalled()
+  })
 })

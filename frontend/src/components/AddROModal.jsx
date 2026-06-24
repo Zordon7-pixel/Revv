@@ -27,6 +27,7 @@ export default function AddROModal({ onClose, onSaved }) {
   const [loading, setLoading] = useState(false)
   const [scanLoading, setScanLoading] = useState(false)
   const [scanToast, setScanToast] = useState(null) // { type: 'success'|'error', msg: string }
+  const [formError, setFormError] = useState('')
   const [duplicateWarning, setDuplicateWarning] = useState(null)
   const [newRoCustomerId, setNewRoCustomerId] = useState('')
   const [form, setForm] = useState({
@@ -135,7 +136,10 @@ export default function AddROModal({ onClose, onSaved }) {
     setAddedCodes([])
   }, [form.damage_type, form.make, form.model, form.year])
 
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+  const set = (k, v) => {
+    setForm(f => ({ ...f, [k]: v }))
+    if (formError) setFormError('')
+  }
   const inp = 'w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500'
   const lbl = 'block text-xs font-medium text-slate-400 mb-1'
 
@@ -221,27 +225,28 @@ export default function AddROModal({ onClose, onSaved }) {
   async function submit() {
     // Validate before hitting the API
     if (autoFillLoading) {
-      alert('Still loading customer vehicle defaults. Please try again in a moment.')
+      setFormError('Still loading customer vehicle defaults. Please try again in a moment.')
       return
     }
     if (!form.new_customer && !form.customer_id) {
-      alert('Please select an existing customer or switch to new customer.')
+      setFormError('Please select an existing customer or switch to New customer.')
       return
     }
     if (form.new_customer && !form.customer_name.trim()) {
-      alert(`${t('common.name')} is required.`)
+      setFormError(`${t('common.name')} is required.`)
       return
     }
     if (form.new_vehicle && (!form.make.trim() || !form.model.trim() || !form.year)) {
-      alert(`${t('common.vehicle')} ${t('common.year').toLowerCase()}, ${t('common.make').toLowerCase()}, and ${t('common.model').toLowerCase()} are required.`)
+      setFormError(`${t('common.vehicle')} ${t('common.year').toLowerCase()}, ${t('common.make').toLowerCase()}, and ${t('common.model').toLowerCase()} are required.`)
       return
     }
     if (!form.new_vehicle && !form.vehicle_id) {
-      alert('Please select a saved vehicle or switch to New vehicle.')
+      setFormError('Please select a saved vehicle or switch to New vehicle.')
       return
     }
 
     setLoading(true)
+    setFormError('')
     setDuplicateWarning(null)
     try {
       let customer_id = form.customer_id
@@ -275,8 +280,24 @@ export default function AddROModal({ onClose, onSaved }) {
       onSaved()
     } catch(e) {
       const msg = e?.response?.data?.error || e?.message || 'Unknown error'
-      alert(`Error creating RO: ${msg}`)
+      console.error('[AddROModal] create failed:', e)
+      setFormError(`Error creating RO: ${msg}`)
     } finally { setLoading(false) }
+  }
+
+  function validateCurrentStep() {
+    if (step === 1) {
+      if (!form.new_customer && !form.customer_id) return 'Please select a customer or choose New.'
+      if (form.new_customer && !form.customer_name.trim()) return `${t('common.name')} is required.`
+    }
+    if (step === 2) {
+      if (autoFillLoading) return 'Still loading customer vehicle defaults. Please try again in a moment.'
+      if (!form.new_vehicle && !form.vehicle_id) return 'Select a saved vehicle or switch to New vehicle.'
+      if (form.new_vehicle && (!form.year || !form.make.trim() || !form.model.trim())) {
+        return `${t('common.year')}, ${t('common.make').toLowerCase()}, and ${t('common.model').toLowerCase()} are required.`
+      }
+    }
+    return ''
   }
 
   return (
@@ -311,6 +332,11 @@ export default function AddROModal({ onClose, onSaved }) {
                   Keep New RO
                 </button>
               </div>
+            </div>
+          )}
+          {formError && (
+            <div role="alert" className="rounded-lg border border-red-700/50 bg-red-950/30 px-3 py-2 text-sm text-red-100">
+              {formError}
             </div>
           )}
           {step === 1 && (
@@ -563,15 +589,9 @@ export default function AddROModal({ onClose, onSaved }) {
           </div>
           {step < 3 ? (
             <button onClick={() => {
-              if (step === 1) {
-                if (!form.new_customer && !form.customer_id) { alert('Please select a customer or choose New.'); return }
-                if (form.new_customer && !form.customer_name.trim()) { alert(`${t('common.name')} is required.`); return }
-              }
-              if (step === 2) {
-                if (autoFillLoading) { alert('Still loading customer vehicle defaults. Please try again in a moment.'); return }
-                if (!form.new_vehicle && !form.vehicle_id) { alert('Select a saved vehicle or switch to New vehicle.'); return }
-                if (form.new_vehicle && (!form.year || !form.make.trim() || !form.model.trim())) { alert(`${t('common.year')}, ${t('common.make').toLowerCase()}, and ${t('common.model').toLowerCase()} are required.`); return }
-              }
+              const message = validateCurrentStep()
+              if (message) { setFormError(message); return }
+              setFormError('')
               setStep(s=>s+1)
             }} className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">Next →</button>
           ) : (

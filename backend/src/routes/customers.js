@@ -183,7 +183,7 @@ router.delete('/:id', auth, requireTechnician, async (req, res) => {
     await client.query('BEGIN');
 
     const roCount = await client.query(
-      'SELECT COUNT(*)::int AS count FROM repair_orders WHERE customer_id = $1 AND shop_id = $2',
+      'SELECT COUNT(*)::int AS count FROM repair_orders WHERE customer_id::text = $1::text AND shop_id::text = $2::text',
       [req.params.id, req.user.shop_id]
     );
     const count = Number(roCount.rows?.[0]?.count || 0);
@@ -196,9 +196,9 @@ router.delete('/:id', auth, requireTechnician, async (req, res) => {
       });
     }
 
-    await client.query('DELETE FROM vehicles WHERE customer_id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
-    await client.query('UPDATE users SET customer_id = NULL WHERE customer_id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
-    await client.query('DELETE FROM customers WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
+    await client.query('DELETE FROM vehicles WHERE customer_id::text = $1::text AND shop_id::text = $2::text', [req.params.id, req.user.shop_id]);
+    await client.query('UPDATE users SET customer_id = NULL WHERE customer_id::text = $1::text AND shop_id::text = $2::text', [req.params.id, req.user.shop_id]);
+    await client.query('DELETE FROM customers WHERE id::text = $1::text AND shop_id::text = $2::text', [req.params.id, req.user.shop_id]);
     await client.query('COMMIT');
     res.json({ ok: true });
   } catch (err) {

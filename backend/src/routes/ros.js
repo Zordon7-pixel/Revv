@@ -1503,14 +1503,14 @@ router.patch('/:id/insurance', auth, requireTechnician, async (req, res) => {
 router.post('/:id/supplement', auth, requireTechnician, async (req, res) => {
   try {
     const ro = await dbGet(
-      'SELECT id, shop_id, ro_number, insurance_approved_amount FROM repair_orders WHERE id = $1 AND shop_id = $2',
+      'SELECT id, shop_id, ro_number, insurance_approved_amount FROM repair_orders WHERE id::text = $1::text AND shop_id::text = $2::text',
       [req.params.id, req.user.shop_id]
     );
     if (!ro) return res.status(404).json({ error: 'Not found' });
 
     const amount = toIntCents(req.body?.amount);
     const notes = typeof req.body?.notes === 'string' ? req.body.notes.trim() : '';
-    if (amount === null || amount < 0) return res.status(400).json({ error: 'Valid supplement amount is required (in cents)' });
+    if (amount === null || amount <= 0) return res.status(400).json({ error: 'Enter a supplement amount greater than $0.00.' });
 
     const approved = Number(ro.insurance_approved_amount) || 0;
     const totalInsurerOwed = approved + amount;
@@ -1523,7 +1523,7 @@ router.post('/:id/supplement', auth, requireTechnician, async (req, res) => {
            supplement_notes = $3,
            total_insurer_owed = $4,
            updated_at = $5
-       WHERE id = $6 AND shop_id = $7`,
+       WHERE id::text = $6::text AND shop_id::text = $7::text`,
       ['requested', amount, notes || null, totalInsurerOwed, now, req.params.id, req.user.shop_id]
     );
 
@@ -1554,7 +1554,7 @@ router.post('/:id/supplement', auth, requireTechnician, async (req, res) => {
     const updated = await dbGet(
       `SELECT supplement_status, supplement_amount, supplement_notes, insurance_approved_amount, total_insurer_owed
        FROM repair_orders
-       WHERE id = $1 AND shop_id = $2`,
+       WHERE id::text = $1::text AND shop_id::text = $2::text`,
       [req.params.id, req.user.shop_id]
     );
     return res.json(updated);

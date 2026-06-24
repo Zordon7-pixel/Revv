@@ -1222,3 +1222,36 @@ curl https://revv-production-ffa9.up.railway.app/api/health  # commit 6092f77ce9
 curl https://revvshop.app/api/health  # commit 6092f77ce92a57ae9504f5f3d07949c48427265f
 ./scripts/smoke-test.sh  # 6 PASS + 1 documented RESEND_API_KEY local-env WARN
 ```
+
+## Dispatch Log — 2026-06-24 Codex Feedback Inbox Fixes
+
+**Status:** DONE + VERIFIED
+
+**Scope**
+- Addressed the 4 remaining real open feedback rows assigned to Codex by the daily feedback audit.
+- Customer delete failures now stay inline in Customers instead of falling back to a browser alert, and the delete route compares mixed UUID/TEXT customer/shop IDs as text to avoid production operator-mismatch failures.
+- Add RO customer-selection validation now renders inside the modal with `role="alert"` instead of blocking the user with a browser alert.
+- Supplement requests validate amount before hitting the API, avoid exposing the internal "in cents" wording, and compare mixed RO/shop IDs as text on the backend.
+- No customer, shop, RO, seed, reset, or destructive data mutation was performed. Miles Automotive data was not touched.
+
+**Files changed**
+- `backend/src/routes/customers.js`
+- `backend/src/routes/ros.js`
+- `frontend/src/components/AddROModal.jsx`
+- `frontend/src/components/InsurancePanel.jsx`
+- `frontend/src/components/__tests__/AddROModal.feedback.test.jsx`
+- `frontend/src/components/__tests__/InsurancePanel.phase31.test.jsx`
+- `frontend/src/pages/Customers.jsx`
+- `frontend/src/pages/__tests__/Customers.mobile.test.jsx`
+- `CLAUDE.md`
+
+**Verification**
+```
+node --check backend/src/routes/customers.js
+node --check backend/src/routes/ros.js
+cd frontend && npm run test:run -- src/pages/__tests__/Customers.mobile.test.jsx src/components/__tests__/InsurancePanel.phase31.test.jsx src/components/__tests__/AddROModal.feedback.test.jsx  # 3 files, 7/7 passed
+node --test backend/test/*.test.js  # 16/16 passed
+cd frontend && npm run test:run  # 19 files, 40/40 passed
+cd frontend && npm run build
+rm -rf frontend/dist && git diff --check && git ls-files frontend/dist | wc -l  # 0
+```
