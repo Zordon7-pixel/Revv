@@ -949,7 +949,7 @@ Live read-only feedback audit  # 12 resolved shipped rows, 10 open new rows
 
 ## Dispatch Log — 2026-06-23 Daily Feedback Audit Automation
 
-**Status:** DONE + VERIFIED LOCALLY
+**Status:** DONE + VERIFIED + DEPLOYED
 
 **Scope**
 - Added a daily feedback audit job that runs once after backend startup and then every 24 hours.
@@ -977,12 +977,16 @@ node --test backend/src/__tests__/feedbackDailyAudit.test.js backend/src/__tests
 node --test backend/test/*.test.js  # 16/16 passed
 cd frontend && npm run test:run  # 18 files, 37/37 tests passed
 cd frontend && npm run build
+curl https://revv-production-ffa9.up.railway.app/api/health  # commit 77154d939fd4331ffc7c5334a3a7548d8d752c0a
+curl https://revvshop.app/api/health  # commit 77154d939fd4331ffc7c5334a3a7548d8d752c0a
+./scripts/smoke-test.sh  # 6 PASS + 1 documented RESEND_API_KEY local-env WARN
+Live read-only feedback audit  # 6 estimate-import noise rows closed, 4 open rows assigned to Codex
 ```
 
 **Data safety**
 - No migrations, seed, reset, or destructive scripts were run.
 - Miles Automotive data was not touched.
-- The change is CSS-only for modal keyboard visibility.
+- Daily automation only updates `feedback` workflow fields.
 
 ## Dispatch Log — 2026-06-18 Estimate OCR Provider Fallback
 
