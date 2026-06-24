@@ -5,6 +5,7 @@ import {
   CreditCard,
   Link2,
   ShieldCheck,
+  MessageSquare,
   Camera,
   Users,
   Lightbulb,
@@ -91,6 +92,21 @@ const sections = [
         <li>Customers do not create REVV accounts.</li>
         <li>Open RO → send tracking link and payment link directly by SMS/email.</li>
         <li>After RO is closed and paid, invoice email sends automatically when customer email is on file.</li>
+      </ul>
+    )
+  },
+  {
+    id: 'texting-customers',
+    title: 'Texting Customers (SMS)',
+    icon: MessageSquare,
+    content: (
+      <ul className="space-y-2 text-sm text-slate-300">
+        <li><span className="text-indigo-400 font-medium">One-time setup:</span> add Twilio credentials in Shop Settings before SMS can send.</li>
+        <li>Create the RO with the customer phone number filled in.</li>
+        <li>Open the RO and scroll to the SMS / Messages section; the customer phone auto-fills.</li>
+        <li>Type your message and hit <span className="text-indigo-400 font-medium">Send</span>. The full text thread lives on the RO.</li>
+        <li>Status texts auto-send on every RO status change (In Progress, Ready, Delivered).</li>
+        <li>Customers consent in person at intake; if they reply <span className="text-indigo-400 font-medium">STOP</span> they are auto-opted out.</li>
       </ul>
     )
   },
