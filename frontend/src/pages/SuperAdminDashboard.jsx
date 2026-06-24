@@ -16,6 +16,7 @@ const ISSUE_STATUSES = [
 ]
 
 const AGENTS = ['Codex', 'Claude Code', 'Hermes', 'Bryan', 'Linear']
+const CLAUDE_QA_ELIGIBLE_STATUSES = new Set(['new', 'assigned', 'triaging', 'triaged'])
 
 function formatDate(value) {
   if (!value) return '-'
@@ -333,6 +334,11 @@ export default function SuperAdminDashboard() {
                         {issue.issue_type === 'error' ? 'Error' : 'Feedback'}
                       </span>
                       <span className={`px-2 py-0.5 rounded-full border ${statusClass(issue.status)}`}>{statusLabel(issue.status || 'new')}</span>
+                      {issue.status === 'shipped' ? (
+                        <span className={`px-2 py-0.5 rounded-full border ${issue.linked_ref ? 'text-cyan-200 border-cyan-700 bg-cyan-950/35' : 'text-slate-500 border-slate-700 bg-slate-900/40'}`}>
+                          QA-PASS: {issue.linked_ref || '(no ref)'}
+                        </span>
+                      ) : null}
                       {issue.routed_to ? <span className="px-2 py-0.5 rounded-full border border-[#EAB308]/40 bg-[#EAB308]/10 text-[#EAB308]">{issue.routed_to}</span> : null}
                       <span className="text-slate-300 font-medium">{issue.shop_name || 'Unknown Shop'}</span>
                       <span className="text-slate-500">{formatDate(issue.created_at)}</span>
@@ -380,6 +386,17 @@ export default function SuperAdminDashboard() {
                         <button type="button" onClick={() => sendToAgent(issue)} disabled={actionIssueId === issue.id} className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] px-2 py-2 text-xs font-semibold disabled:opacity-50">
                           <Send size={12} /> Send
                         </button>
+                        {CLAUDE_QA_ELIGIBLE_STATUSES.has(issue.status || 'new') ? (
+                          <button
+                            type="button"
+                            onClick={() => updateIssue(issue, { status: 'ready_for_qa' }, 'Sent to Claude QA.')}
+                            disabled={actionIssueId === issue.id}
+                            className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg border border-cyan-700 bg-cyan-950/35 hover:bg-cyan-900/40 text-cyan-200 px-2 py-2 text-xs font-semibold disabled:opacity-50"
+                            aria-label={`Send issue ${issue.id} to Claude QA`}
+                          >
+                            <Send size={12} /> Claude QA
+                          </button>
+                        ) : null}
                         <button type="button" onClick={() => copyAgentPrompt(issue)} disabled={actionIssueId === issue.id} className="inline-flex items-center justify-center rounded-lg border border-[#EAB308]/40 bg-[#EAB308]/10 hover:bg-[#EAB308]/15 text-[#EAB308] px-2 py-2 disabled:opacity-50" aria-label={`Copy prompt for issue ${issue.id}`}>
                           <Clipboard size={13} />
                         </button>
