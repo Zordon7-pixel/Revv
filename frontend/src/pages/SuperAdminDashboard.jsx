@@ -7,6 +7,7 @@ const ISSUE_STATUSES = [
   { value: 'triaged', label: 'Triaged' },
   { value: 'assigned', label: 'Assigned' },
   { value: 'in_progress', label: 'In Progress' },
+  { value: 'ready_for_qa', label: 'Ready for QA' },
   { value: 'fixed', label: 'Fixed' },
   { value: 'qa_passed', label: 'QA Passed' },
   { value: 'shipped', label: 'Shipped' },
@@ -36,6 +37,7 @@ function statusLabel(value) {
 function statusClass(value) {
   const normalized = String(value || 'new').toLowerCase()
   if (['shipped', 'closed', 'wont_fix'].includes(normalized)) return 'text-slate-300 border-slate-700 bg-slate-900/40'
+  if (normalized === 'ready_for_qa') return 'text-cyan-200 border-cyan-700 bg-cyan-950/35'
   if (normalized === 'qa_passed') return 'text-emerald-300 border-emerald-700 bg-emerald-950/35'
   if (normalized === 'fixed') return 'text-lime-300 border-lime-700 bg-lime-950/30'
   if (['assigned', 'in_progress'].includes(normalized)) return 'text-[#EAB308] border-[#EAB308]/50 bg-[#EAB308]/10'

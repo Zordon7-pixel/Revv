@@ -170,3 +170,54 @@ test('superadmin feedback workflow rejects invalid agents', async () => {
   assert.equal(res.status, 400);
   assert.equal(res.json.error, 'Invalid agent');
 });
+
+test('superadmin feedback workflow accepts ready_for_qa status', async () => {
+  clearRouteCache();
+  installMock(require.resolve('../db'), {
+    async dbAll() { return []; },
+    async dbRun() { return { rowCount: 1 }; },
+    async dbGet(sql, params = []) {
+      if (/SELECT\s+f\.id/i.test(sql)) {
+        return {
+          id: params[0],
+          shop_id: 'shop-1',
+          shop_name: 'Miles Automotive',
+          category: 'bug',
+          priority: 'high',
+          status: 'assigned',
+          routed_to: 'Codex',
+          message: 'Needs Claude QA',
+        };
+      }
+      if (/UPDATE feedback/i.test(sql)) {
+        assert.equal(params[0], 'ready_for_qa');
+        return {
+          id: params[7],
+          shop_id: 'shop-1',
+          status: params[0],
+          routed_to: params[1],
+          support_note: params[2],
+          linked_ref: params[3],
+          assigned_at: '2026-06-24T00:01:00.000Z',
+          resolved_at: null,
+          updated_at: '2026-06-24T00:01:00.000Z',
+        };
+      }
+      return null;
+    },
+  });
+
+  const app = express();
+  app.use(express.json());
+  app.use('/api/superadmin', require('../routes/superadmin'));
+
+  const res = await inject(app, {
+    method: 'PATCH',
+    url: '/api/superadmin/feedback/feedback-qa',
+    headers: { ...authHeader(), 'content-type': 'application/json' },
+    body: Buffer.from(JSON.stringify({ status: 'ready_for_qa', support_note: 'Claude QA required before ship.' })),
+  });
+
+  assert.equal(res.status, 200);
+  assert.equal(res.json.issue.status, 'ready_for_qa');
+});

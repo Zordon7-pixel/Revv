@@ -7,9 +7,9 @@ const { v4: uuidv4 } = require('uuid');
 
 router.use(superadmin);
 
-const FEEDBACK_STATUSES = new Set(['new', 'triaged', 'assigned', 'in_progress', 'fixed', 'qa_passed', 'shipped', 'closed', 'wont_fix']);
+const FEEDBACK_STATUSES = new Set(['new', 'triaged', 'assigned', 'in_progress', 'ready_for_qa', 'fixed', 'qa_passed', 'shipped', 'closed', 'wont_fix']);
 const RESOLVED_FEEDBACK_STATUSES = new Set(['shipped', 'closed', 'wont_fix']);
-const ASSIGNED_FEEDBACK_STATUSES = new Set(['assigned', 'in_progress']);
+const ASSIGNED_FEEDBACK_STATUSES = new Set(['assigned', 'in_progress', 'ready_for_qa']);
 const FEEDBACK_AGENTS = new Set(['Codex', 'Claude Code', 'Hermes', 'Bryan', 'Linear']);
 
 function normalizeFeedbackStatus(value, fallback = 'new') {
@@ -153,7 +153,7 @@ router.get('/helpdesk', async (req, res) => {
              COUNT(*) FILTER (WHERE ${issueTypeSql} AND ${activeIssueSql})::int AS error_count,
              COUNT(*) FILTER (WHERE NOT ${issueTypeSql} AND ${activeIssueSql})::int AS feedback_count,
              COUNT(*) FILTER (WHERE ${activeIssueSql})::int AS open_issue_count,
-             COUNT(*) FILTER (WHERE COALESCE(NULLIF(LOWER(TRIM(f.status)), ''), 'new') IN ('assigned', 'in_progress'))::int AS assigned_issue_count,
+             COUNT(*) FILTER (WHERE COALESCE(NULLIF(LOWER(TRIM(f.status)), ''), 'new') IN ('assigned', 'in_progress', 'ready_for_qa'))::int AS assigned_issue_count,
              COUNT(*) FILTER (WHERE NOT ${activeIssueSql})::int AS closed_issue_count,
              MAX(f.created_at) AS last_issue_at
            FROM feedback f
@@ -202,7 +202,7 @@ router.get('/helpdesk', async (req, res) => {
          COUNT(*) FILTER (WHERE ${issueTypeSql})::int AS total_errors,
          COUNT(*) FILTER (WHERE NOT ${issueTypeSql})::int AS total_feedback,
          COUNT(*) FILTER (WHERE ${activeIssueSql})::int AS open_issues,
-         COUNT(*) FILTER (WHERE COALESCE(NULLIF(LOWER(TRIM(f.status)), ''), 'new') IN ('assigned', 'in_progress'))::int AS assigned_issues,
+         COUNT(*) FILTER (WHERE COALESCE(NULLIF(LOWER(TRIM(f.status)), ''), 'new') IN ('assigned', 'in_progress', 'ready_for_qa'))::int AS assigned_issues,
          COUNT(*) FILTER (WHERE COALESCE(NULLIF(LOWER(TRIM(f.status)), ''), 'new') = 'fixed')::int AS fixed_issues,
          COUNT(*) FILTER (WHERE COALESCE(NULLIF(LOWER(TRIM(f.status)), ''), 'new') = 'qa_passed')::int AS qa_passed_issues,
          COUNT(*) FILTER (WHERE NOT ${activeIssueSql})::int AS closed_issues

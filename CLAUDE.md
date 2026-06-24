@@ -1260,3 +1260,87 @@ curl https://revv-production-ffa9.up.railway.app/api/health  # commit 4ce405f014
 ./scripts/smoke-test.sh  # 6 PASS + 1 documented RESEND_API_KEY local-env WARN
 Live feedback audit  # shipped: Codex 4, closed: Codex 6, shipped legacy routed rows 12, open/assigned 0
 ```
+
+## Dispatch Log — 2026-06-24 Feedback Worker Claude QA Gate
+
+**Status:** READY FOR CLAUDE CODE QA — NOT DEPLOYED
+
+**Scope**
+- Closed the QA gap found in Claude's feedback-fixes QA: the feedback marker now has a runtime `QA-PASS-GATE`.
+- Updated `/Users/zordon/.openclaw/bin/revv-feedback-mark.sh` and `/Users/zordon/.openclaw/bin/revv-feedback-mark.js` so `shipped` requires a `qa_pass_ref` found near a Claude Code QA PASS entry in this file.
+- Added `ready_for_qa` as a bounded feedback status in the marker and triage dispatch flow.
+- Updated `/Users/zordon/.openclaw/bin/revv-feedback-triage.sh` so Codex dispatches stop at `ready_for_qa`, post BUILD READY for Claude QA, and do not mark feedback shipped directly.
+- Updated REVV SuperAdmin status handling so `ready_for_qa` is accepted by the API, counted with assigned work, and visible in the dashboard.
+- No customer, shop, RO, seed, reset, migration, or destructive data mutation was performed. Miles Automotive data was not touched.
+
+**Files changed**
+- `/Users/zordon/.openclaw/bin/revv-feedback-mark.sh`
+- `/Users/zordon/.openclaw/bin/revv-feedback-mark.js`
+- `/Users/zordon/.openclaw/bin/revv-feedback-triage.sh`
+- `backend/src/routes/superadmin.js`
+- `backend/src/__tests__/superadmin.feedbackWorkflow.test.js`
+- `frontend/src/pages/SuperAdminDashboard.jsx`
+- `CLAUDE.md`
+
+**Verification**
+```
+bash -n /Users/zordon/.openclaw/bin/revv-feedback-mark.sh
+bash -n /Users/zordon/.openclaw/bin/revv-feedback-triage.sh
+node --check /Users/zordon/.openclaw/bin/revv-feedback-mark.js
+/Users/zordon/.openclaw/bin/revv-feedback-mark.sh 00000000-0000-0000-0000-000000000000 shipped Codex  # exits 4 with QA-PASS-GATE before DB update
+node --check backend/src/routes/superadmin.js
+node --test backend/src/__tests__/superadmin.feedbackWorkflow.test.js backend/src/__tests__/feedbackDailyAudit.test.js  # 4/4 passed
+node --test backend/test/*.test.js  # 16/16 passed
+cd frontend && npm run test:run  # 19 files, 40/40 passed
+cd frontend && npm run build
+rm -rf frontend/dist && git diff --check && git ls-files frontend/dist | wc -l  # 0
+```
+
+**Claude Code QA Prompt**
+```text
+TASK: REVV — QA feedback worker Claude-QA gate
+
+CONTEXT
+Repo: /Users/zordon/.openclaw/workspace/Revv
+
+This change responds to Claude QA's Area 3 partial verification finding: the feedback automation policy said Codex must not mark shipped without Claude QA PASS, but the runtime marker did not enforce that gate.
+
+SCOPE — read-only QA. Do not edit code. Do not mutate customer/shop/RO data. Do not run seed/reset/destructive scripts.
+
+Review these changed files:
+- /Users/zordon/.openclaw/bin/revv-feedback-mark.sh
+- /Users/zordon/.openclaw/bin/revv-feedback-mark.js
+- /Users/zordon/.openclaw/bin/revv-feedback-triage.sh
+- backend/src/routes/superadmin.js
+- backend/src/__tests__/superadmin.feedbackWorkflow.test.js
+- frontend/src/pages/SuperAdminDashboard.jsx
+- CLAUDE.md
+
+Verify:
+1. `revv-feedback-mark.sh` allows only `ready_for_qa|shipped|new|blocked`.
+2. `revv-feedback-mark.js` rejects `NEW_STATUS=shipped` unless `QA_PASS_REF` is provided and appears near a Claude Code QA PASS entry in CLAUDE.md.
+3. The no-ref shipped negative test exits with code 4 before any DB update.
+4. `revv-feedback-mark.js` compares feedback IDs as text (`id::text = $2::text`).
+5. `revv-feedback-triage.sh` tells Codex to stop at `ready_for_qa`, post BUILD READY for Claude QA, and only lets the QA/ship lane call shipped with a QA ref.
+6. SuperAdmin backend accepts `ready_for_qa` and counts it with assigned/in-progress work.
+7. SuperAdmin dashboard shows `Ready for QA` as a selectable/status badge.
+8. No deploy/main push is required until this QA passes.
+
+Commands:
+- bash -n /Users/zordon/.openclaw/bin/revv-feedback-mark.sh
+- bash -n /Users/zordon/.openclaw/bin/revv-feedback-triage.sh
+- node --check /Users/zordon/.openclaw/bin/revv-feedback-mark.js
+- /Users/zordon/.openclaw/bin/revv-feedback-mark.sh 00000000-0000-0000-0000-000000000000 shipped Codex ; echo $?
+- node --check backend/src/routes/superadmin.js
+- node --test backend/src/__tests__/superadmin.feedbackWorkflow.test.js backend/src/__tests__/feedbackDailyAudit.test.js
+- node --test backend/test/*.test.js
+- cd frontend && npm run test:run
+- cd frontend && npm run build
+- rm -rf frontend/dist && git diff --check && git ls-files frontend/dist
+
+Expected:
+- All checks pass.
+- The no-ref shipped command prints QA-PASS-GATE and exits 4.
+- No production customer/shop/RO data is touched.
+- Verdict should say whether this closes the Area 3 enforcement gap and whether Hermes can review after QA.
+```
