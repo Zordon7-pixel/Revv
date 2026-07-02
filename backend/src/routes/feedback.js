@@ -2,10 +2,42 @@ const router = require('express').Router();
 const { dbGet, dbAll, dbRun } = require('../db');
 const { v4: uuidv4 } = require('uuid');
 const jwt = require('jsonwebtoken');
+const rateLimit = require('express-rate-limit');
+const auth = require('../middleware/auth');
+const { requireAdmin } = require('../middleware/roles');
 
 // Feedback table is created in db/index.js initDb()
 
 const SAFE_AI_CONFIG_ERROR = 'AI estimate extraction is not configured correctly. Please contact support.';
+const FEEDBACK_SELECT = `
+  SELECT
+    id,
+    app,
+    tester_name,
+    category,
+    priority,
+    message,
+    expected,
+    page,
+    routed_to,
+    shop_id,
+    status,
+    support_note,
+    linked_ref,
+    assigned_at,
+    resolved_at,
+    updated_at,
+    created_at
+  FROM feedback
+`;
+
+const feedbackPostLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many feedback submissions. Please try again shortly.' },
+});
 
 function sanitizeFeedbackText(value) {
   const text = String(value || '').trim();
@@ -34,7 +66,25 @@ function getShopIdFromAuthHeader(authHeader) {
   }
 }
 
-router.post('/', async (req, res) => {
+function isSuperadmin(user) {
+  return String(user?.role || '').toLowerCase() === 'superadmin';
+}
+
+function requireSuperadmin(req, res, next) {
+  if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+  if (!isSuperadmin(req.user)) return res.status(403).json({ error: 'Superadmin access required' });
+  return next();
+}
+
+function paginationParams(query) {
+  const requestedLimit = Number.parseInt(query.limit, 10);
+  const requestedOffset = Number.parseInt(query.offset, 10);
+  const limit = Number.isFinite(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 500) : 100;
+  const offset = Number.isFinite(requestedOffset) ? Math.max(requestedOffset, 0) : 0;
+  return { limit, offset };
+}
+
+router.post('/', feedbackPostLimiter, async (req, res) => {
   try {
     const { app, tester_name, category, priority, message, expected, page, routed_to } = req.body;
     const safeMessage = sanitizeFeedbackText(message);
@@ -54,9 +104,27 @@ router.post('/', async (req, res) => {
   }
 });
 
-router.get('/', async (req, res) => {
+router.get('/all', auth, requireSuperadmin, async (req, res) => {
   try {
-    const feedback = await dbAll('SELECT * FROM feedback ORDER BY created_at DESC', []);
+    const { limit, offset } = paginationParams(req.query);
+    const feedback = await dbAll(`${FEEDBACK_SELECT} ORDER BY created_at DESC LIMIT $1 OFFSET $2`, [limit, offset]);
+    res.json({ feedback });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/', auth, requireAdmin, async (req, res) => {
+  try {
+    const shopId = req.user?.shop_id;
+    if (!shopId) {
+      return res.status(403).json({ error: 'Shop context required' });
+    }
+    const { limit, offset } = paginationParams(req.query);
+    const feedback = await dbAll(
+      `${FEEDBACK_SELECT} WHERE shop_id::text = $1::text ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+      [String(shopId), limit, offset]
+    );
     res.json({ feedback });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -64,5 +132,6 @@ router.get('/', async (req, res) => {
 });
 
 router.sanitizeFeedbackText = sanitizeFeedbackText;
+router.feedbackPostLimiter = feedbackPostLimiter;
 
 module.exports = router;

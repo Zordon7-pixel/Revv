@@ -1,4 +1,5 @@
 const ROLE_RANK = {
+  superadmin: 5,
   owner: 4,
   admin: 3,
   assistant: 3,

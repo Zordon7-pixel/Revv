@@ -4,6 +4,10 @@ function isConfigured() {
   return !!(process.env.EMAIL_HOST && process.env.EMAIL_USER && process.env.EMAIL_PASS);
 }
 
+function isProduction() {
+  return process.env.NODE_ENV === 'production';
+}
+
 function getTransporter() {
   return nodemailer.createTransport({
     host: process.env.EMAIL_HOST,
@@ -18,8 +22,11 @@ function getTransporter() {
 
 async function sendEmail(to, subject, html) {
   if (!isConfigured()) {
-    console.log(`[EMAIL] To: ${to} | Subject: ${subject}`);
-    console.log(`[EMAIL] Body: ${html.replace(/<[^>]+>/g, ' ').trim().slice(0, 300)}`);
+    if (isProduction()) {
+      console.error('[EMAIL] Provider is not configured; refusing to simulate email in production.');
+      return { ok: false, provider: 'none', error: 'no_provider_configured' };
+    }
+    console.log('[EMAIL] simulated (no provider configured)');
     return { ok: true, simulated: true };
   }
   try {
@@ -96,4 +103,4 @@ async function sendReviewRequest(customerEmail, customerName, shopName, googleRe
   return sendEmail(customerEmail, `Thanks for choosing ${shopName} — share your experience!`, html);
 }
 
-module.exports = { sendEmail, sendStatusUpdate, sendEstimateLink, sendReviewRequest };
+module.exports = { sendEmail, sendStatusUpdate, sendEstimateLink, sendReviewRequest, isConfigured };

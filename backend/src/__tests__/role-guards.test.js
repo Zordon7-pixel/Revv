@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
 
-const { disallowAssistant } = require('../middleware/roles');
+const { disallowAssistant, getRoleRank } = require('../middleware/roles');
 
 function runMiddleware(req) {
   let statusCode = null;
@@ -39,6 +39,11 @@ test('disallowAssistant blocks assistant users with the public error contract', 
 test('disallowAssistant allows owner and admin users through', () => {
   assert.equal(runMiddleware({ user: { role: 'owner' } }).nextCalled, true);
   assert.equal(runMiddleware({ user: { role: 'admin' } }).nextCalled, true);
+});
+
+test('superadmin outranks owner for admin-gated maintenance surfaces', () => {
+  assert.ok(getRoleRank('superadmin') > getRoleRank('owner'));
+  assert.ok(getRoleRank('superadmin') > getRoleRank('admin'));
 });
 
 test('billing and reset routes include the assistant guard after admin auth', () => {
