@@ -56,6 +56,125 @@ const ro = await dbGet('SELECT * FROM ros WHERE id = $1 AND shop_id = $2', [id, 
 await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 ```
 
+---
+
+## Dispatch Log — 2026-07-02 Security Review: Feedback API + Email Simulation
+
+**Status**
+- Ready for Claude Code QA.
+- Not deployed and not pushed after this dispatch until Claude Code returns QA PASS.
+- No customer/shop/RO data was read, written, seeded, reset, or migrated. Miles Automotive data was not touched.
+
+**Context**
+- Source request: security/QA review pasted into `/Users/zordon/.codex/attachments/959af616-7294-478b-8350-aadb3aedc89b/pasted-text.txt`.
+- Confirmed blockers:
+  1. `GET /api/feedback` was unauthenticated and returned `SELECT * FROM feedback`.
+  2. `backend/src/services/email.js` simulated successful email sends in production when no provider was configured and logged recipient/body previews.
+  3. `superadmin` was missing from `ROLE_RANK`, creating inconsistent behavior across admin-gated surfaces.
+
+**Files changed**
+- `backend/src/routes/feedback.js`
+- `backend/src/services/email.js`
+- `backend/src/middleware/roles.js`
+- `backend/src/__tests__/feedback.auth.test.js`
+- `backend/src/__tests__/email.production.test.js`
+- `backend/src/__tests__/role-guards.test.js`
+- `CLAUDE.md`
+
+**Behavior shipped locally**
+- `GET /api/feedback` now requires `auth + requireAdmin`.
+- Admin/owner/assistant-style admin-ranked users only receive feedback rows scoped to `req.user.shop_id` using `shop_id::text = $1::text`.
+- Superadmin has an explicit cross-shop read path at `GET /api/feedback/all`.
+- Feedback read queries use an allow-listed column projection instead of `SELECT *`.
+- Public feedback submission remains available at `POST /api/feedback`, but now has an express-rate-limit guard: 30 submissions per 15 minutes per client.
+- Production email with no configured provider now returns `{ ok:false, provider:'none', error:'no_provider_configured' }` and refuses simulated success.
+- Non-production email simulation still works but masks the recipient and does not log the HTML/body preview.
+- `ROLE_RANK.superadmin = 5`, above owner/admin, so admin gates treat master support accounts consistently.
+
+**Verification**
+```
+node --check backend/src/routes/feedback.js
+node --check backend/src/services/email.js
+node --check backend/src/middleware/roles.js
+
+node --test backend/src/__tests__/feedback.auth.test.js backend/src/__tests__/email.production.test.js backend/src/__tests__/role-guards.test.js backend/src/__tests__/feedback.sanitize.test.js
+# 12/12 passed
+
+node --test backend/src/__tests__/*.test.js backend/test/*.test.js
+# 77/77 passed
+
+cd frontend && npm run build
+# built clean; existing Vite chunk-size warning only
+
+rg -n "\\[EMAIL\\].*(To:|Body:)|console\\.(log|error)\\([^\\n]*(customer@example|reset token|html\\.replace|Body:)" backend/src/services backend/src/routes
+# One non-prod masked simulation log remains; no body preview or raw recipient logging.
+
+rg -n "(/feedback|feedback/all|api\\.get\\(['\\\"]/?feedback|api\\.post\\(['\\\"]/?feedback)" frontend/src backend/src -g "*.js" -g "*.jsx"
+# Frontend posts feedback only; current superadmin inbox reads through /api/superadmin.
+
+rg -n "router\\.get\\([^\\n]*(async|auth|require|\\()" backend/src/routes -g "*.js"
+# Reviewed feedback plus relevant false positives: superadmin/router.use(superadmin), storage/router.use(auth), catalog/router.use(auth), inspections public-token route before router.use(auth), apiV1/router.use(apiKeyAuth), market public rates, QuickBooks callback.
+
+rm -rf frontend/dist && git diff --check && git ls-files frontend/dist | wc -l
+# 0
+```
+
+**Claude Code QA Prompt**
+```text
+TASK: REVV — Security review fixes for feedback API + email simulation
+
+CONTEXT
+Repo: /Users/zordon/.openclaw/workspace/Revv
+Date: 2026-07-02
+
+This dispatch responds to the pasted security review that flagged:
+1. CRITICAL: unauthenticated GET /api/feedback leaking all tenant feedback.
+2. HIGH: email.js simulating successful sends in production and logging recipient/body PII.
+3. LOW/MED support issue: superadmin missing from ROLE_RANK.
+
+SCOPE — read-only QA. Do not edit code. Do not mutate customer/shop/RO data. Do not run seed/reset/destructive scripts. Do not deploy or push.
+
+Changed files to review:
+- backend/src/routes/feedback.js
+- backend/src/services/email.js
+- backend/src/middleware/roles.js
+- backend/src/__tests__/feedback.auth.test.js
+- backend/src/__tests__/email.production.test.js
+- backend/src/__tests__/role-guards.test.js
+- CLAUDE.md
+
+Verify:
+1. GET /api/feedback now requires auth + admin rank.
+2. Non-admin tokens cannot list feedback.
+3. Shop-scoped users only query rows with `shop_id::text = $1::text`.
+4. Feedback read queries no longer use `SELECT *`.
+5. Superadmin cross-shop listing is available only through a gated superadmin path (`GET /api/feedback/all`) and does not bypass JWT verification.
+6. POST /api/feedback remains publicly usable for in-app error reporting/feedback, but is rate-limited.
+7. Production unconfigured email returns a failure (`no_provider_configured`) and does not simulate success.
+8. Email simulation logs do not include raw recipient addresses or HTML/body previews.
+9. `superadmin` outranks owner/admin in `ROLE_RANK`.
+10. The current frontend does not depend on unauthenticated GET /api/feedback for the master inbox; it uses /api/superadmin paths.
+11. Static route sweep: confirm any unauthenticated GETs in backend/src/routes are either protected by router.use(...), API-key middleware, public-token/callback endpoints, or intentionally public metadata such as market rates/catalog makes/models. Flag any real newly-discovered issue separately; do not fix it in this QA pass.
+
+Commands:
+- node --check backend/src/routes/feedback.js
+- node --check backend/src/services/email.js
+- node --check backend/src/middleware/roles.js
+- node --test backend/src/__tests__/feedback.auth.test.js backend/src/__tests__/email.production.test.js backend/src/__tests__/role-guards.test.js backend/src/__tests__/feedback.sanitize.test.js
+- node --test backend/src/__tests__/*.test.js backend/test/*.test.js
+- cd frontend && npm run build
+- rg -n "\\[EMAIL\\].*(To:|Body:)|console\\.(log|error)\\([^\\n]*(customer@example|reset token|html\\.replace|Body:)" backend/src/services backend/src/routes
+- rg -n "(/feedback|feedback/all|api\\.get\\(['\\\"]/?feedback|api\\.post\\(['\\\"]/?feedback)" frontend/src backend/src -g "*.js" -g "*.jsx"
+- rg -n "router\\.get\\([^\\n]*(async|auth|require|\\()" backend/src/routes -g "*.js"
+- rm -rf frontend/dist && git diff --check && git ls-files frontend/dist
+
+Expected:
+- All node checks/tests/build pass.
+- No frontend/dist files are tracked.
+- No production data is touched.
+- Verdict should say whether this is safe to push/deploy, and list any remaining security recommendations separately from this scoped fix.
+```
+
 **This exact bug was found and fixed in runs.js and lifts.js. Don't reintroduce it.**
 
 ---
