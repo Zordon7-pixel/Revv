@@ -58,6 +58,111 @@ await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 
 ---
 
+## Dispatch Log — 2026-07-03 FABLE C2: Supplement Ledger Money Fix
+
+**Status**
+- Ready for Claude Code QA.
+- Not deployed and not pushed. Hermes ships only after Claude Code QA PASS.
+- No customer/shop/RO/supplement data was read, written, seeded, reset, or migrated. Miles Automotive data was not touched.
+
+**Context**
+- Source: `FABLE_AUDIT.md` finding C2.
+- Confirmed bug: `POST /api/ros/:id/supplement` overwrote `repair_orders.supplement_amount` and recomputed `total_insurer_owed` from only the newest supplement.
+- Risk: a second supplement silently dropped the first supplement from insurer-owed totals.
+
+**Decision**
+- Statuses counted toward `total_insurer_owed`: `requested`, `pending`, `approved`.
+- Statuses excluded from `total_insurer_owed`: `denied`, `withdrawn`.
+- Exact active duplicate guard: same RO, shop, amount cents, notes, and active counted status is treated as an idempotent retry and not inserted again.
+
+**Files changed**
+- `backend/src/db/index.js`
+- `backend/src/db/migrate.js`
+- `backend/src/routes/ros.js`
+- `backend/src/routes/supplements.js`
+- `backend/src/__tests__/supplements.ledger.test.js`
+- `CLAUDE.md`
+
+**Behavior shipped locally**
+- Added additive `ro_supplements.amount_cents INTEGER` and `updated_at` support in init/migration paths.
+- Did not modify existing supplement rows. Existing legacy `amount` values remain available as a fallback when `amount_cents` is null.
+- Singular `POST /api/ros/:id/supplement` now inserts an append-only `ro_supplements` row instead of treating `repair_orders.supplement_amount` as the source of truth.
+- `repair_orders.supplement_status`, `supplement_amount`, and `supplement_notes` are now denormalized latest-row display fields derived after ledger recompute.
+- `repair_orders.total_insurer_owed` is recomputed as `insurance_approved_amount + SUM(active supplement amount_cents)`.
+- New singular `PATCH /api/ros/:id/supplement/:supplementId` changes ledger status and recomputes insurer owed.
+- Existing plural `/api/ros/:id/supplements` create/status-update path also writes `amount_cents` and recomputes totals so the current RO Detail UI cannot regress the money math.
+- Existing `ro_comms` and notification side effects for singular supplement requests are preserved for new inserts.
+
+**Verification**
+```
+node --check backend/src/routes/ros.js backend/src/db/index.js
+node --check backend/src/routes/supplements.js backend/src/db/migrate.js
+
+node --test backend/src/__tests__/supplements.ledger.test.js
+# 3/3 passed
+
+node --test backend/src/__tests__/supplements.ledger.test.js backend/src/__tests__/*.test.js backend/test/*.test.js
+# 85/85 passed
+
+cd frontend && npm run build
+# built clean; existing Vite chunk-size warning only
+
+rg -n -U "supplement_amount\\s*=\\s*\\$|total_insurer_owed\\s*=.*approved \\+ amount|SET supplement_status = \\$1,\\s*\\n\\s*supplement_amount = \\$2" backend/src/routes -g "*.js"
+# No matches.
+
+rm -rf frontend/dist && git diff --check && git ls-files frontend/dist
+# No output; dist is not tracked.
+```
+
+**Claude Code QA Prompt**
+```text
+TASK: REVV — QA FABLE C2 supplement ledger money fix
+
+Repo: /Users/zordon/.openclaw/workspace/Revv
+Commit: use the final local SHA from the Codex handoff for this dispatch
+Finding: FABLE_AUDIT.md C2 — supplements overwrote insurer-owed money instead of accumulating.
+
+Mode: read-only QA. Do not edit code. Do not mutate customer/shop/RO/supplement data. Do not run seed/reset/migrations/destructive scripts. Do not push/deploy.
+
+Review changed files:
+- backend/src/db/index.js
+- backend/src/db/migrate.js
+- backend/src/routes/ros.js
+- backend/src/routes/supplements.js
+- backend/src/__tests__/supplements.ledger.test.js
+- CLAUDE.md
+
+Verify:
+1. `toIntCents` behavior is unchanged.
+2. Schema changes are additive only: no destructive DDL and no data backfill/mutation.
+3. `ro_supplements.amount_cents` is integer cents; old `amount` remains only as compatibility fallback.
+4. `POST /api/ros/:id/supplement` inserts into `ro_supplements` and does not overwrite the ledger.
+5. `total_insurer_owed = insurance_approved_amount + SUM(amount_cents)` for statuses `requested`, `pending`, `approved`.
+6. `denied` and `withdrawn` supplements are excluded from the sum.
+7. `repair_orders.supplement_amount/status/notes` are latest-row display fields only.
+8. Repeating the same active supplement submission is idempotent and does not double-count.
+9. Changing supplement status through the new singular status route recomputes totals.
+10. Existing plural `/api/ros/:id/supplements/:suppId` status changes also recompute totals.
+11. Existing ro_comms + notification side effects are preserved for new singular supplement requests.
+12. frontend/dist is not tracked and no live data was touched.
+
+Commands:
+- node --check backend/src/routes/ros.js backend/src/db/index.js
+- node --check backend/src/routes/supplements.js backend/src/db/migrate.js
+- node --test backend/src/__tests__/supplements.ledger.test.js
+- node --test backend/src/__tests__/supplements.ledger.test.js backend/src/__tests__/*.test.js backend/test/*.test.js
+- cd frontend && npm run build
+- rg -n -U "supplement_amount\\s*=\\s*\\$|total_insurer_owed\\s*=.*approved \\+ amount|SET supplement_status = \\$1,\\s*\\n\\s*supplement_amount = \\$2" backend/src/routes -g "*.js"
+- rm -rf frontend/dist && git diff --check && git ls-files frontend/dist
+
+Expected:
+- PASS.
+- If PASS, Hermes can push/deploy.
+- Hermes post-deploy verification: create $500 then $300 supplements on a test RO with $1,000 approved amount and confirm total_insurer_owed is $1,800; deny the $300 and confirm total_insurer_owed returns to $1,500.
+```
+
+---
+
 ## Dispatch Log — 2026-07-03 FABLE C1: Photo Read IDOR
 
 **Status**

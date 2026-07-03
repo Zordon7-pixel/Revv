@@ -342,7 +342,25 @@ async function initDb() {
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     );
+
+    CREATE TABLE IF NOT EXISTS ro_supplements (
+      id UUID PRIMARY KEY,
+      ro_id UUID NOT NULL REFERENCES repair_orders(id) ON DELETE CASCADE,
+      shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+      amount_cents INTEGER,
+      notes TEXT,
+      status TEXT DEFAULT 'requested',
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    );
   `);
+
+  await pool.query(`ALTER TABLE ro_supplements ADD COLUMN IF NOT EXISTS amount_cents INTEGER`);
+  await pool.query(`ALTER TABLE ro_supplements ADD COLUMN IF NOT EXISTS notes TEXT`);
+  await pool.query(`ALTER TABLE ro_supplements ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'requested'`);
+  await pool.query(`ALTER TABLE ro_supplements ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ro_supplements_ro_id ON ro_supplements(ro_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ro_supplements_shop_id ON ro_supplements(shop_id)`);
 
   // vehicle_diagnostic_scans — prefer FK-backed schema, but auto-fallback to a
   // compatibility table when legacy schema drift prevents FK creation.

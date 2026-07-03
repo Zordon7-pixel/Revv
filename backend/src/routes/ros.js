@@ -339,10 +339,77 @@ function notifyStatusChange(shopId, ro, toStatus) {
 }
 
 function normalizeSupplementStatus(value) {
-  const allowed = ['none', 'requested', 'pending', 'approved', 'denied'];
+  const allowed = ['none', 'requested', 'pending', 'approved', 'denied', 'withdrawn'];
   if (!value) return null;
   const normalized = String(value).trim().toLowerCase();
   return allowed.includes(normalized) ? normalized : null;
+}
+
+function normalizeLedgerSupplementStatus(value, fallback = 'requested') {
+  const normalized = normalizeSupplementStatus(value);
+  if (!normalized || normalized === 'none') return fallback;
+  return normalized;
+}
+
+async function recomputeSupplementLedgerTotals(roId, shopId) {
+  const totals = await dbGet(
+    `SELECT
+       COALESCE(ro.insurance_approved_amount, 0)::bigint AS insurance_approved_amount,
+       COALESCE(SUM(
+         CASE
+           WHEN LOWER(COALESCE(s.status, '')) IN ('requested', 'pending', 'approved')
+           THEN COALESCE(s.amount_cents, ROUND(COALESCE(s.amount, 0) * 100)::int, 0)
+           ELSE 0
+         END
+       ), 0)::bigint AS supplement_total_cents
+     FROM repair_orders ro
+     LEFT JOIN ro_supplements s
+       ON s.ro_id::text = ro.id::text
+      AND s.shop_id::text = ro.shop_id::text
+     WHERE ro.id::text = $1::text
+       AND ro.shop_id::text = $2::text
+     GROUP BY ro.insurance_approved_amount`,
+    [roId, shopId]
+  );
+
+  if (!totals) return null;
+
+  const latest = await dbGet(
+    `SELECT id, amount_cents, amount, status, notes
+     FROM ro_supplements
+     WHERE ro_id::text = $1::text
+       AND shop_id::text = $2::text
+     ORDER BY created_at DESC, id DESC
+     LIMIT 1`,
+    [roId, shopId]
+  );
+
+  const latestAmount = latest
+    ? Number(latest.amount_cents ?? Math.round(Number(latest.amount || 0) * 100))
+    : null;
+  const latestStatus = latest ? normalizeLedgerSupplementStatus(latest.status) : 'none';
+  const latestNotes = latest?.notes || null;
+  const totalInsurerOwed = Number(totals.insurance_approved_amount || 0) + Number(totals.supplement_total_cents || 0);
+  const now = new Date().toISOString();
+
+  await dbRun(
+    `UPDATE repair_orders
+     SET supplement_status = $1,
+         supplement_amount = $2,
+         supplement_notes = $3,
+         total_insurer_owed = $4,
+         updated_at = $5
+     WHERE id::text = $6::text AND shop_id::text = $7::text`,
+    [latestStatus, latestAmount, latestNotes, totalInsurerOwed, now, roId, shopId]
+  );
+
+  return {
+    supplement_status: latestStatus,
+    supplement_amount: latestAmount,
+    supplement_notes: latestNotes,
+    insurance_approved_amount: Number(totals.insurance_approved_amount || 0),
+    total_insurer_owed: totalInsurerOwed,
+  };
 }
 
 function toIntCents(value) {
@@ -1512,52 +1579,110 @@ router.post('/:id/supplement', auth, requireTechnician, async (req, res) => {
     const notes = typeof req.body?.notes === 'string' ? req.body.notes.trim() : '';
     if (amount === null || amount <= 0) return res.status(400).json({ error: 'Enter a supplement amount greater than $0.00.' });
 
-    const approved = Number(ro.insurance_approved_amount) || 0;
-    const totalInsurerOwed = approved + amount;
     const now = new Date().toISOString();
-
-    await dbRun(
-      `UPDATE repair_orders
-       SET supplement_status = $1,
-           supplement_amount = $2,
-           supplement_notes = $3,
-           total_insurer_owed = $4,
-           updated_at = $5
-       WHERE id::text = $6::text AND shop_id::text = $7::text`,
-      ['requested', amount, notes || null, totalInsurerOwed, now, req.params.id, req.user.shop_id]
+    const duplicate = await dbGet(
+      `SELECT id
+       FROM ro_supplements
+       WHERE ro_id::text = $1::text
+         AND shop_id::text = $2::text
+         AND COALESCE(amount_cents, ROUND(COALESCE(amount, 0) * 100)::int, 0) = $3
+         AND COALESCE(notes, '') = $4
+         AND LOWER(COALESCE(status, '')) IN ('requested', 'pending', 'approved')
+       ORDER BY created_at DESC, id DESC
+       LIMIT 1`,
+      [req.params.id, req.user.shop_id, amount, notes]
     );
+
+    let supplementId = duplicate?.id || null;
+    if (!duplicate) {
+      supplementId = uuidv4();
+      await dbRun(
+        `INSERT INTO ro_supplements (
+           id, ro_id, shop_id, description, amount, amount_cents, status, submitted_date, notes, created_at, updated_at
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_DATE, $8, $9, $9)`,
+        [
+          supplementId,
+          req.params.id,
+          req.user.shop_id,
+          notes || 'Supplement request',
+          (amount / 100).toFixed(2),
+          amount,
+          'requested',
+          notes || null,
+          now,
+        ]
+      );
+    }
+
+    const updated = await recomputeSupplementLedgerTotals(req.params.id, req.user.shop_id);
 
     await ensureRoCommsTable();
-    await dbRun(
-      `INSERT INTO ro_comms (id, ro_id, shop_id, user_id, channel, direction, summary)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [
-        uuidv4(),
-        req.params.id,
+    if (!duplicate) {
+      await dbRun(
+        `INSERT INTO ro_comms (id, ro_id, shop_id, user_id, channel, direction, summary)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [
+          uuidv4(),
+          req.params.id,
+          req.user.shop_id,
+          req.user.id,
+          'in-person',
+          'outbound',
+          `Supplement requested: $${(amount / 100).toFixed(2)}${notes ? ` — ${notes}` : ''}`,
+        ]
+      );
+
+      await createNotification(
         req.user.shop_id,
-        req.user.id,
-        'in-person',
-        'outbound',
-        `Supplement requested: $${(amount / 100).toFixed(2)}${notes ? ` — ${notes}` : ''}`,
-      ]
-    );
+        null,
+        'supplement_requested',
+        'Supplement Requested',
+        `RO #${ro.ro_number || 'N/A'} supplement requested for $${(amount / 100).toFixed(2)}`,
+        req.params.id
+      ).catch(() => {});
+    }
 
-    await createNotification(
-      req.user.shop_id,
-      null,
-      'supplement_requested',
-      'Supplement Requested',
-      `RO #${ro.ro_number || 'N/A'} supplement requested for $${(amount / 100).toFixed(2)}`,
-      req.params.id
-    ).catch(() => {});
+    return res.json({ ...updated, supplement_id: supplementId, duplicate: Boolean(duplicate) });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
 
-    const updated = await dbGet(
-      `SELECT supplement_status, supplement_amount, supplement_notes, insurance_approved_amount, total_insurer_owed
-       FROM repair_orders
-       WHERE id::text = $1::text AND shop_id::text = $2::text`,
+router.patch('/:id/supplement/:supplementId', auth, requireTechnician, async (req, res) => {
+  try {
+    const ro = await dbGet(
+      'SELECT id FROM repair_orders WHERE id::text = $1::text AND shop_id::text = $2::text',
       [req.params.id, req.user.shop_id]
     );
-    return res.json(updated);
+    if (!ro) return res.status(404).json({ error: 'Not found' });
+
+    const status = normalizeSupplementStatus(req.body?.status);
+    if (!status || status === 'none') {
+      return res.status(400).json({ error: 'Invalid supplement status' });
+    }
+
+    const supplement = await dbGet(
+      `SELECT id
+       FROM ro_supplements
+       WHERE id::text = $1::text
+         AND ro_id::text = $2::text
+         AND shop_id::text = $3::text`,
+      [req.params.supplementId, req.params.id, req.user.shop_id]
+    );
+    if (!supplement) return res.status(404).json({ error: 'Supplement not found' });
+
+    await dbRun(
+      `UPDATE ro_supplements
+       SET status = $1, updated_at = $2
+       WHERE id::text = $3::text
+         AND ro_id::text = $4::text
+         AND shop_id::text = $5::text`,
+      [status, new Date().toISOString(), req.params.supplementId, req.params.id, req.user.shop_id]
+    );
+
+    const updated = await recomputeSupplementLedgerTotals(req.params.id, req.user.shop_id);
+    return res.json({ ...updated, supplement_id: req.params.supplementId });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
