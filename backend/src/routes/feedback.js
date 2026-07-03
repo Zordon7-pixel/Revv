@@ -32,8 +32,8 @@ const FEEDBACK_SELECT = `
 `;
 
 const feedbackPostLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 30,
+  windowMs: 60 * 1000,
+  max: 10,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many feedback submissions. Please try again shortly.' },
@@ -117,15 +117,14 @@ router.get('/all', auth, requireSuperadmin, async (req, res) => {
 router.get('/', auth, requireAdmin, async (req, res) => {
   try {
     const shopId = req.user?.shop_id;
-    if (!shopId && !isSuperadmin(req.user)) {
+    if (!shopId) {
       return res.status(403).json({ error: 'Shop context required' });
     }
     const { limit, offset } = paginationParams(req.query);
-    const params = isSuperadmin(req.user) && !shopId ? [limit, offset] : [String(shopId), limit, offset];
-    const sql = isSuperadmin(req.user) && !shopId
-      ? `${FEEDBACK_SELECT} ORDER BY created_at DESC LIMIT $1 OFFSET $2`
-      : `${FEEDBACK_SELECT} WHERE shop_id::text = $1::text ORDER BY created_at DESC LIMIT $2 OFFSET $3`;
-    const feedback = await dbAll(sql, params);
+    const feedback = await dbAll(
+      `${FEEDBACK_SELECT} WHERE shop_id::text = $1::text ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+      [String(shopId), limit, offset]
+    );
     res.json({ feedback });
   } catch (err) {
     res.status(500).json({ error: err.message });

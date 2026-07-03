@@ -8,15 +8,6 @@ function isProduction() {
   return process.env.NODE_ENV === 'production';
 }
 
-function maskRecipient(to) {
-  const raw = String(to || '').trim();
-  if (!raw) return '[missing]';
-  const [local = '', domain = ''] = raw.split('@');
-  if (!domain) return '[redacted]';
-  const visible = local.slice(0, 1) || '*';
-  return `${visible}***@${domain}`;
-}
-
 function getTransporter() {
   return nodemailer.createTransport({
     host: process.env.EMAIL_HOST,
@@ -35,7 +26,7 @@ async function sendEmail(to, subject, html) {
       console.error('[EMAIL] Provider is not configured; refusing to simulate email in production.');
       return { ok: false, provider: 'none', error: 'no_provider_configured' };
     }
-    console.log(`[EMAIL] Simulated send | To: ${maskRecipient(to)} | Subject: ${String(subject || '').slice(0, 120)}`);
+    console.log('[EMAIL] simulated (no provider configured)');
     return { ok: true, simulated: true };
   }
   try {
@@ -112,4 +103,4 @@ async function sendReviewRequest(customerEmail, customerName, shopName, googleRe
   return sendEmail(customerEmail, `Thanks for choosing ${shopName} — share your experience!`, html);
 }
 
-module.exports = { sendEmail, sendStatusUpdate, sendEstimateLink, sendReviewRequest, isConfigured, maskRecipient };
+module.exports = { sendEmail, sendStatusUpdate, sendEstimateLink, sendReviewRequest, isConfigured };

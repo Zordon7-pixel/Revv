@@ -349,11 +349,15 @@ async function runMigrations() {
         shop_id TEXT NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
         description TEXT NOT NULL,
         amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+        amount_cents INTEGER,
         status TEXT NOT NULL DEFAULT 'Pending',
         submitted_date DATE NOT NULL DEFAULT CURRENT_DATE,
         notes TEXT,
-        created_at TIMESTAMPTZ DEFAULT NOW()
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
       )`,
+      `ALTER TABLE ro_supplements ADD COLUMN IF NOT EXISTS amount_cents INTEGER`,
+      `ALTER TABLE ro_supplements ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()`,
       `CREATE INDEX IF NOT EXISTS idx_ro_supplements_ro_id ON ro_supplements(ro_id)`,
       `CREATE INDEX IF NOT EXISTS idx_ro_supplements_shop_id ON ro_supplements(shop_id)`,
       `CREATE TABLE IF NOT EXISTS ro_internal_notes (

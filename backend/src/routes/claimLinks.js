@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { dbGet, dbRun } = require('../db');
 const auth = require('../middleware/auth');
+const { assertRoOwnership } = require('../middleware/roOwnership');
 const { v4: uuidv4 } = require('uuid');
 const multer = require('multer');
 const rateLimit = require('express-rate-limit');
@@ -21,10 +22,10 @@ const publicTokenLimiter = rateLimit({
 
 router.post('/:roId', auth, async (req, res) => {
   try {
-    const ro = await dbGet('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.roId, req.user.shop_id]);
+    const ro = await assertRoOwnership(req.params.roId, req.user.shop_id);
     if (!ro) return res.status(404).json({ error: 'RO not found' });
 
-    const existing = await dbGet('SELECT * FROM claim_links WHERE ro_id = $1 AND submitted_at IS NULL', [req.params.roId]);
+    const existing = await dbGet('SELECT * FROM claim_links WHERE ro_id = $1 AND shop_id = $2 AND submitted_at IS NULL', [req.params.roId, req.user.shop_id]);
     if (existing) return res.json({ token: existing.token, url: `/claim/${existing.token}` });
 
     const token = uuidv4().replace(/-/g, '');
@@ -126,7 +127,9 @@ router.post('/:token/submit', publicTokenLimiter, upload.single('assessment'), a
 
 router.get('/ro/:roId', auth, async (req, res) => {
   try {
-    const link = await dbGet('SELECT * FROM claim_links WHERE ro_id = $1 ORDER BY created_at DESC LIMIT 1', [req.params.roId]);
+    const ro = await assertRoOwnership(req.params.roId, req.user.shop_id);
+    if (!ro) return res.status(404).json({ error: 'Not found' });
+    const link = await dbGet('SELECT * FROM claim_links WHERE ro_id = $1 AND shop_id = $2 ORDER BY created_at DESC LIMIT 1', [req.params.roId, req.user.shop_id]);
     res.json(link || null);
   } catch (err) {
     res.status(500).json({ error: err.message });

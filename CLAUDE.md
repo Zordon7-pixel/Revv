@@ -56,9 +56,452 @@ const ro = await dbGet('SELECT * FROM ros WHERE id = $1 AND shop_id = $2', [id, 
 await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 ```
 
+## Dispatch Log — 2026-07-03 FABLE H1: Unified RO Status Gates
+
+**Status:** DONE + VERIFIED — BUILD ONLY, NOT PUSHED/DEPLOYED
+
+**Commit:** see final handoff SHA
+
+**Scope**
+- Fixed FABLE_AUDIT.md finding H1: `PUT /api/ros/:id/status` now enforces the same business gates as `PATCH /api/ros/:id`.
+- Added one shared `assertStatusTransitionAllowed(ro, toStatus, actor)` helper in `backend/src/routes/ros.js`.
+- Both status routes now block:
+  - normal workflow movement while `ro.status === 'siu_hold'`
+  - non-owner/admin attempts to reopen a closed RO
+  - closing an RO when `payment_received` is false
+- Closed side effects remain after the status write, so illegitimate close attempts return before `queueClosedReviewEmail`, `sendClosedPaidInvoiceEmail`, or `queueQuickBooksSync` can run.
+- Preserved existing status update behavior, `actual_delivery` handling, `job_status_log` writes, and claim-status total-loss/SIU/approved flows.
+- No customer, shop, RO, feedback, seed, reset, migration, destructive script, push, or deploy action was performed. Miles Automotive data was not touched.
+
+**Files changed**
+- `backend/src/routes/ros.js`
+- `backend/src/__tests__/status.gates.test.js`
+- `CLAUDE.md`
+
+**Verification**
+```
+
+## Dispatch Log — 2026-07-03 FABLE C3/H6: By-RO IDOR Read Scope
+
+**Status:** DONE + VERIFIED — BUILD ONLY, NOT PUSHED/DEPLOYED
+
+**Commit:** see final handoff SHA
+
+**Scope**
+- Fixed FABLE_AUDIT.md finding C3: `GET /api/claim-links/ro/:roId` now verifies the caller owns the RO before reading `claim_links`, and the claim-link read is scoped by both `ro_id` and `shop_id`.
+- Preserved the owning-shop response shape, including `token`, so the RO UI can still copy the adjuster link.
+- Tightened `POST /api/claim-links/:roId` existing-link lookup to include `shop_id` after the same ownership guard.
+- Fixed FABLE_AUDIT.md finding H6: `GET /api/parts-requests/:ro_id` now verifies RO ownership and reads `parts_requests` through a `repair_orders` join scope. Response shape remains `{ requests: [...] }`.
+- Added shared `assertRoOwnership(roId, shopId)` helper using the repo's text-cast convention: `id::text = $1::text AND shop_id::text = $2::text`.
+- Route sweep found one additional authenticated by-RO child read in `backend/src/routes/parts.js`; it now uses `assertRoOwnership` and scopes `parts_orders` by `shop_id`.
+- Public token-bearer adjuster routes (`/claim-link/:token`, `/claim-link/view/:token`, and submit routes) were left public by design.
+- No customer, shop, RO, claim, parts, feedback, seed, reset, migration, destructive script, push, or deploy action was performed. Miles Automotive data was not touched.
+
+**Files changed**
+- `backend/src/middleware/roOwnership.js`
+- `backend/src/routes/claimLinks.js`
+- `backend/src/routes/partsRequests.js`
+- `backend/src/routes/parts.js`
+- `backend/src/__tests__/claimLinks.scope.test.js`
+- `backend/src/__tests__/partsRequests.scope.test.js`
+- `CLAUDE.md`
+
+**Verification**
+```
+
+## Dispatch Log — 2026-07-03 FABLE H7: ro_supplements Fresh-DB Schema
+
+**Status:** DONE + VERIFIED — BUILD ONLY, NOT PUSHED/DEPLOYED
+
+**Commit:** see final handoff SHA
+
+**Scope**
+- Fixed FABLE_AUDIT.md finding H7: `backend/src/db/index.js` now creates `ro_supplements` with the insert-contract columns used by both supplement write paths.
+- Added `description TEXT NOT NULL DEFAULT ''`, `amount NUMERIC(12,2) NOT NULL DEFAULT 0`, and `submitted_date DATE NOT NULL DEFAULT CURRENT_DATE` to the `CREATE TABLE IF NOT EXISTS ro_supplements` block in `initDb()`.
+- Added idempotent additive backfills for existing partial fresh/dev DBs:
+  - `ALTER TABLE ro_supplements ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT ''`
+  - `ALTER TABLE ro_supplements ADD COLUMN IF NOT EXISTS amount NUMERIC(12,2) NOT NULL DEFAULT 0`
+  - `ALTER TABLE ro_supplements ADD COLUMN IF NOT EXISTS submitted_date DATE NOT NULL DEFAULT CURRENT_DATE`
+- Did not change `toIntCents`, `dollarsToCents`, ledger recompute behavior, C2 supplement logic, or `migrate.js`.
+- No customer, shop, RO, supplement data, seed, reset, destructive migration, push, or deploy action was performed. Miles Automotive data was not touched.
+
+**Files changed**
+- `backend/src/db/index.js`
+- `backend/src/__tests__/roSupplements.schema.test.js`
+- `CLAUDE.md`
+
+**Verification**
+```
+node --check backend/src/db/index.js backend/src/db/migrate.js
+node --test backend/src/__tests__/roSupplements.schema.test.js backend/src/__tests__/supplements.ledger.test.js  # 5/5 passed
+node --test backend/src/__tests__/roSupplements.schema.test.js backend/src/__tests__/supplements.ledger.test.js backend/src/__tests__/*.test.js backend/test/*.test.js  # 95/95 passed
+cd frontend && npm run build  # built in 2.09s; existing Vite chunk-size/Sentry warnings only
+rm -rf frontend/dist && git diff --check && git ls-files frontend/dist  # clean; dist not tracked
+```
+
+**Claude Code QA Prompt**
+```text
+TASK: REVV — Read-only QA for FABLE H7 ro_supplements fresh-DB schema
+
+Repo: /Users/zordon/.openclaw/workspace/Revv
+Commit under review: see final handoff SHA
+Ref: FABLE_AUDIT.md H7
+
+Read-only QA only. Do not edit code. Do not push/deploy. Do not mutate customer/shop/RO/supplement data. Do not run seed/reset/migration/destructive scripts.
+
+Changed files:
+- backend/src/db/index.js
+- backend/src/__tests__/roSupplements.schema.test.js
+- CLAUDE.md
+
+Verify:
+1. backend/src/db/index.js `CREATE TABLE IF NOT EXISTS ro_supplements` includes `description TEXT NOT NULL DEFAULT ''`.
+2. The same CREATE block includes `amount NUMERIC(12,2) NOT NULL DEFAULT 0`.
+3. The same CREATE block includes `submitted_date DATE NOT NULL DEFAULT CURRENT_DATE`.
+4. index.js has additive `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` backfills for all three columns.
+5. No DROP, destructive DDL, seed, reset, data backfill, or supplement row mutation was added.
+6. backend/src/db/migrate.js was not changed by this dispatch.
+7. `toIntCents`, `dollarsToCents`, and ledger recompute logic were not changed.
+8. `roSupplements.schema.test.js` locks the index.js fresh-DB schema against regression.
+9. Existing supplement ledger tests still pass.
+10. No push/deploy was performed.
+
+Commands:
+- node --check backend/src/db/index.js backend/src/db/migrate.js
+- node --test backend/src/__tests__/roSupplements.schema.test.js backend/src/__tests__/supplements.ledger.test.js backend/src/__tests__/*.test.js backend/test/*.test.js
+- cd frontend && npm run build
+- git diff --check && git ls-files frontend/dist
+
+Expected:
+- All commands pass.
+- frontend/dist remains untracked.
+- Verdict should explicitly say whether H7 is fixed and whether Hermes is clear to ship after QA PASS.
+
+Hermes post-deploy check on fresh scratch DB:
+- Boot app.
+- Submit a supplement -> succeeds with no `column "description" does not exist`.
+- With $1000 approved, submit $500 then $300 -> total_insurer_owed = $1,800.
+- Deny the $300 -> total_insurer_owed = $1,500.
+```
+node --check backend/src/routes/claimLinks.js backend/src/routes/partsRequests.js backend/src/routes/parts.js backend/src/middleware/roOwnership.js
+node --test backend/src/__tests__/claimLinks.scope.test.js backend/src/__tests__/partsRequests.scope.test.js  # 4/4 passed
+node --test backend/src/__tests__/claimLinks.scope.test.js backend/src/__tests__/partsRequests.scope.test.js backend/src/__tests__/*.test.js backend/test/*.test.js  # 93/93 passed
+cd frontend && npm run build  # built in 2.21s; existing Vite chunk-size/Sentry warnings only
+rm -rf frontend/dist && git diff --check && git ls-files frontend/dist  # clean; dist not tracked
+```
+
+**Claude Code QA Prompt**
+```text
+TASK: REVV — Read-only QA for FABLE C3/H6 by-RO IDOR read scope
+
+Repo: /Users/zordon/.openclaw/workspace/Revv
+Commit under review: see final handoff SHA
+Refs: FABLE_AUDIT.md C3 (claim-link token leak) + H6 (parts-requests read leak)
+
+Read-only QA only. Do not edit code. Do not push/deploy. Do not mutate customer/shop/RO/claim/parts/feedback data. Do not run seed/reset/migration/destructive scripts.
+
+Changed files:
+- backend/src/middleware/roOwnership.js
+- backend/src/routes/claimLinks.js
+- backend/src/routes/partsRequests.js
+- backend/src/routes/parts.js
+- backend/src/__tests__/claimLinks.scope.test.js
+- backend/src/__tests__/partsRequests.scope.test.js
+- CLAUDE.md
+
+Verify:
+1. `assertRoOwnership(roId, shopId)` uses text casts on both RO id and shop id.
+2. `GET /api/claim-links/ro/:roId` returns 404 before reading `claim_links` when the RO is not in the caller's shop.
+3. Owning-shop `GET /api/claim-links/ro/:roId` still returns the claim-link object with token intact for copy-link UX.
+4. Claim-link by-RO reads include `ro_id = $1 AND shop_id = $2`; no unscoped token read remains.
+5. Public adjuster token routes remain public and token-bearer; no `auth` was added to `/view/:token` or submit routes.
+6. `GET /api/parts-requests/:ro_id` returns 404 before reading child rows for another shop's RO.
+7. Parts-request reads scope through `JOIN repair_orders ro ON ro.id = pr.ro_id` and preserve `{ requests: [...] }`.
+8. The extra route-sweep fix in `backend/src/routes/parts.js` uses the same ownership guard and shop-scoped `parts_orders` read.
+9. New mocked tests cover cross-shop and same-shop claim-link and parts-request reads.
+10. No data mutation, seeds, migrations, pushes, or deploys were performed.
+
+Commands:
+- node --check backend/src/routes/claimLinks.js backend/src/routes/partsRequests.js backend/src/routes/parts.js backend/src/middleware/roOwnership.js
+- node --test backend/src/__tests__/claimLinks.scope.test.js backend/src/__tests__/partsRequests.scope.test.js backend/src/__tests__/*.test.js backend/test/*.test.js
+- cd frontend && npm run build
+- rm -rf frontend/dist && git diff --check && git ls-files frontend/dist
+
+Expected:
+- All commands pass.
+- `frontend/dist` remains untracked.
+- Verdict should explicitly say whether C3/H6 are fixed and whether Hermes is clear to ship after QA PASS.
+
+Hermes post-deploy checks:
+- As shop A token, GET /api/claim-links/ro/<shop-B-ro-id> -> 404/no token.
+- As shop A token, GET /api/parts-requests/<shop-B-ro-id> -> 404/no rows.
+```
+node --check backend/src/routes/ros.js
+node --test backend/src/__tests__/status.gates.test.js  # 4/4 passed
+node --test backend/src/__tests__/status.gates.test.js backend/src/__tests__/*.test.js backend/test/*.test.js  # 89/89 passed
+cd frontend && npm run build  # built in 2.13s; existing Vite chunk-size/Sentry warnings only
+rm -rf frontend/dist && git diff --check && git ls-files frontend/dist  # clean; dist not tracked
+```
+
+**Claude Code QA Prompt**
+```text
+TASK: REVV — Read-only QA for FABLE H1 status-transition gates
+
+Repo: /Users/zordon/.openclaw/workspace/Revv
+Commit under review: see final handoff SHA
+Ref: FABLE_AUDIT.md finding H1
+
+Context:
+This build fixes a production correctness/security gap where PUT /api/ros/:id/status could bypass the business gates enforced by PATCH /api/ros/:id, then still fire closed-RO side effects.
+
+Read-only QA only. Do not edit code. Do not push/deploy. Do not mutate customer/shop/RO/feedback data. Do not run seed/reset/migration/destructive scripts.
+
+Changed files:
+- backend/src/routes/ros.js
+- backend/src/__tests__/status.gates.test.js
+- CLAUDE.md
+
+Verify:
+1. backend/src/routes/ros.js has one shared status-transition gate helper, not copied checks in both routes.
+2. PUT /:id/status and PATCH /:id both call the shared helper before any status write.
+3. SIU hold blocks normal workflow movement with the existing PATCH message: "This RO is under SIU investigation. Clear the SIU hold before changing status."
+4. Reopening a closed RO is still owner/admin only and technicians get 403 "Only admins can reopen a closed RO".
+5. Closing an unpaid RO returns 400 "Payment must be received before closing this RO".
+6. Closed side effects only run after a legitimate gated close, not on blocked PUT attempts.
+7. Existing total_loss/delivery actual_delivery behavior and job_status_log writes are preserved.
+8. Claim-status total_loss / siu / approved logic was not broadened or refactored outside H1.
+9. The new mocked tests cover unpaid close, technician reopen, SIU movement, and legitimate paid close side effects.
+10. No data mutation, seeds, migrations, pushes, or deploys were performed.
+
+Commands:
+- node --check backend/src/routes/ros.js
+- node --test backend/src/__tests__/status.gates.test.js backend/src/__tests__/*.test.js backend/test/*.test.js
+- cd frontend && npm run build
+- rm -rf frontend/dist && git diff --check && git ls-files frontend/dist
+
+Expected:
+- All commands pass.
+- `frontend/dist` remains untracked.
+- Verdict should explicitly say whether H1 is fixed and whether Hermes is clear to ship after QA PASS.
+```
+
 ---
 
-## Dispatch Log — 2026-07-02 Security Review: Feedback API + Email Simulation
+## Dispatch Log — 2026-07-03 FABLE C2: Supplement Ledger Money Fix
+
+**Status**
+- Ready for Claude Code QA.
+- Not deployed and not pushed. Hermes ships only after Claude Code QA PASS.
+- No customer/shop/RO/supplement data was read, written, seeded, reset, or migrated. Miles Automotive data was not touched.
+
+**Context**
+- Source: `FABLE_AUDIT.md` finding C2.
+- Confirmed bug: `POST /api/ros/:id/supplement` overwrote `repair_orders.supplement_amount` and recomputed `total_insurer_owed` from only the newest supplement.
+- Risk: a second supplement silently dropped the first supplement from insurer-owed totals.
+
+**Decision**
+- Statuses counted toward `total_insurer_owed`: `requested`, `pending`, `approved`.
+- Statuses excluded from `total_insurer_owed`: `denied`, `withdrawn`.
+- Exact active duplicate guard: same RO, shop, amount cents, notes, and active counted status is treated as an idempotent retry and not inserted again.
+
+**Files changed**
+- `backend/src/db/index.js`
+- `backend/src/db/migrate.js`
+- `backend/src/routes/ros.js`
+- `backend/src/routes/supplements.js`
+- `backend/src/__tests__/supplements.ledger.test.js`
+- `CLAUDE.md`
+
+**Behavior shipped locally**
+- Added additive `ro_supplements.amount_cents INTEGER` and `updated_at` support in init/migration paths.
+- Did not modify existing supplement rows. Existing legacy `amount` values remain available as a fallback when `amount_cents` is null.
+- Singular `POST /api/ros/:id/supplement` now inserts an append-only `ro_supplements` row instead of treating `repair_orders.supplement_amount` as the source of truth.
+- `repair_orders.supplement_status`, `supplement_amount`, and `supplement_notes` are now denormalized latest-row display fields derived after ledger recompute.
+- `repair_orders.total_insurer_owed` is recomputed as `insurance_approved_amount + SUM(active supplement amount_cents)`.
+- New singular `PATCH /api/ros/:id/supplement/:supplementId` changes ledger status and recomputes insurer owed.
+- Existing plural `/api/ros/:id/supplements` create/status-update path also writes `amount_cents` and recomputes totals so the current RO Detail UI cannot regress the money math.
+- Existing `ro_comms` and notification side effects for singular supplement requests are preserved for new inserts.
+
+**Verification**
+```
+node --check backend/src/routes/ros.js backend/src/db/index.js
+node --check backend/src/routes/supplements.js backend/src/db/migrate.js
+
+node --test backend/src/__tests__/supplements.ledger.test.js
+# 3/3 passed
+
+node --test backend/src/__tests__/supplements.ledger.test.js backend/src/__tests__/*.test.js backend/test/*.test.js
+# 85/85 passed
+
+cd frontend && npm run build
+# built clean; existing Vite chunk-size warning only
+
+rg -n -U "supplement_amount\\s*=\\s*\\$|total_insurer_owed\\s*=.*approved \\+ amount|SET supplement_status = \\$1,\\s*\\n\\s*supplement_amount = \\$2" backend/src/routes -g "*.js"
+# No matches.
+
+rm -rf frontend/dist && git diff --check && git ls-files frontend/dist
+# No output; dist is not tracked.
+```
+
+**Claude Code QA Prompt**
+```text
+TASK: REVV — QA FABLE C2 supplement ledger money fix
+
+Repo: /Users/zordon/.openclaw/workspace/Revv
+Commit: use the final local SHA from the Codex handoff for this dispatch
+Finding: FABLE_AUDIT.md C2 — supplements overwrote insurer-owed money instead of accumulating.
+
+Mode: read-only QA. Do not edit code. Do not mutate customer/shop/RO/supplement data. Do not run seed/reset/migrations/destructive scripts. Do not push/deploy.
+
+Review changed files:
+- backend/src/db/index.js
+- backend/src/db/migrate.js
+- backend/src/routes/ros.js
+- backend/src/routes/supplements.js
+- backend/src/__tests__/supplements.ledger.test.js
+- CLAUDE.md
+
+Verify:
+1. `toIntCents` behavior is unchanged.
+2. Schema changes are additive only: no destructive DDL and no data backfill/mutation.
+3. `ro_supplements.amount_cents` is integer cents; old `amount` remains only as compatibility fallback.
+4. `POST /api/ros/:id/supplement` inserts into `ro_supplements` and does not overwrite the ledger.
+5. `total_insurer_owed = insurance_approved_amount + SUM(amount_cents)` for statuses `requested`, `pending`, `approved`.
+6. `denied` and `withdrawn` supplements are excluded from the sum.
+7. `repair_orders.supplement_amount/status/notes` are latest-row display fields only.
+8. Repeating the same active supplement submission is idempotent and does not double-count.
+9. Changing supplement status through the new singular status route recomputes totals.
+10. Existing plural `/api/ros/:id/supplements/:suppId` status changes also recompute totals.
+11. Existing ro_comms + notification side effects are preserved for new singular supplement requests.
+12. frontend/dist is not tracked and no live data was touched.
+
+Commands:
+- node --check backend/src/routes/ros.js backend/src/db/index.js
+- node --check backend/src/routes/supplements.js backend/src/db/migrate.js
+- node --test backend/src/__tests__/supplements.ledger.test.js
+- node --test backend/src/__tests__/supplements.ledger.test.js backend/src/__tests__/*.test.js backend/test/*.test.js
+- cd frontend && npm run build
+- rg -n -U "supplement_amount\\s*=\\s*\\$|total_insurer_owed\\s*=.*approved \\+ amount|SET supplement_status = \\$1,\\s*\\n\\s*supplement_amount = \\$2" backend/src/routes -g "*.js"
+- rm -rf frontend/dist && git diff --check && git ls-files frontend/dist
+
+Expected:
+- PASS.
+- If PASS, Hermes can push/deploy.
+- Hermes post-deploy verification: create $500 then $300 supplements on a test RO with $1,000 approved amount and confirm total_insurer_owed is $1,800; deny the $300 and confirm total_insurer_owed returns to $1,500.
+```
+
+---
+
+## Dispatch Log — 2026-07-03 FABLE C1: Photo Read IDOR
+
+**Status**
+- Ready for Claude Code QA.
+- Not deployed and not pushed. Hermes ships only after Claude Code QA PASS.
+- No customer/shop/RO/photo data was read, written, seeded, reset, or migrated. Miles Automotive data was not touched.
+
+**Context**
+- Source: `FABLE_AUDIT.md` finding C1.
+- Confirmed bug: authenticated `GET /api/photos/:ro_id` queried `ro_photos` by `ro_id` only even though `ro_photos` has no `shop_id`.
+- Risk: any authenticated shop user who knew another shop's RO id could read that RO's photo metadata/URLs.
+
+**Files changed**
+- `backend/src/routes/photos.js`
+- `backend/src/routes/export.js`
+- `backend/src/routes/portal.js`
+- `backend/src/__tests__/photos.scope.test.js`
+- `CLAUDE.md`
+
+**Behavior shipped locally**
+- `GET /api/photos/:ro_id` now reads photos through `JOIN repair_orders ro ON ro.id = p.ro_id` and `ro.shop_id = $2`.
+- `GET /api/photos/ro/:roId/predropoff` uses the same join-scoped `ro_photos` read.
+- `photos.js` read-after-insert and upload-count queries are also join-scoped through `repair_orders`.
+- `GET /api/export/ro/:id` photo export query is join-scoped through `repair_orders` using the authenticated shop id.
+- `GET /api/portal/track/:token` photo query is join-scoped through `repair_orders` using the portal token's shop id.
+- Orphaned/mismatched photos naturally return no rows because the inner join has no matching shop-scoped RO.
+- Existing response shapes are preserved: `{ photos: [...] }` for photo list routes.
+
+**ro_photos audit**
+- `backend/src/routes/photos.js`: all `ro_photos` reads now join `repair_orders`.
+- `backend/src/routes/export.js`: photo read now joins `repair_orders`.
+- `backend/src/routes/portal.js`: public portal photo read now joins `repair_orders`.
+- `backend/src/routes/settings.js` and `backend/src/routes/ros.js`: only scoped deletes matched the grep; no read leak found.
+- `backend/src/db/index.js` and `backend/src/db/migrate.js`: schema definitions only.
+- No unscopable `ro_photos` read remained.
+
+**Verification**
+```
+node --check backend/src/routes/photos.js
+node --check backend/src/routes/export.js
+node --check backend/src/routes/portal.js
+
+node --test backend/src/__tests__/photos.scope.test.js
+# 3/3 passed
+
+node --test backend/src/__tests__/photos.scope.test.js backend/src/__tests__/*.test.js backend/test/*.test.js
+# 82/82 passed
+
+cd frontend && npm run build
+# built clean; existing Vite chunk-size warning only
+
+rg -n "ro_photos" backend/src/routes backend/src/__tests__/photos.scope.test.js -g "*.js"
+# Reviewed all route hits.
+
+rg -n -U "SELECT \\* FROM ro_photos|FROM ro_photos\\s*\\n\\s*WHERE ro_id|FROM ro_photos WHERE ro_id" backend/src/routes -g "*.js"
+# Only scoped DELETE statements in ros.js/settings.js matched; no read leak remained.
+
+rm -rf frontend/dist && git diff --check && git ls-files frontend/dist
+# No output; dist is not tracked.
+```
+
+**Claude Code QA Prompt**
+```text
+TASK: REVV — QA FABLE C1 photo read IDOR fix
+
+Repo: /Users/zordon/.openclaw/workspace/Revv
+Commit: use the final local SHA from the Codex handoff for this dispatch
+Finding: FABLE_AUDIT.md C1 — cross-tenant ro_photos read via GET /api/photos/:ro_id
+
+Mode: read-only QA. Do not edit code. Do not mutate customer/shop/RO/photo data. Do not run seed/reset/migrations/destructive scripts. Do not push/deploy.
+
+Review changed files:
+- backend/src/routes/photos.js
+- backend/src/routes/export.js
+- backend/src/routes/portal.js
+- backend/src/__tests__/photos.scope.test.js
+- CLAUDE.md
+
+Verify:
+1. `GET /api/photos/:ro_id` uses `SELECT p.* FROM ro_photos p JOIN repair_orders ro ON ro.id = p.ro_id WHERE p.ro_id = $1 AND ro.shop_id = $2`.
+2. It passes `[req.params.ro_id, req.user.shop_id]`.
+3. The response shape remains `{ photos: [...] }`.
+4. A caller from shop A receives no rows for a shop B RO id.
+5. A caller from the owning shop receives that RO's photos.
+6. Predropoff reads are also join-scoped through `repair_orders`.
+7. `photos.js` upload count and read-after-insert queries do not read bare `ro_photos` rows.
+8. `export.js` photo reads are scoped with the authenticated shop id.
+9. `portal.js` token photo reads are scoped with the portal token's shop id.
+10. Grep all `ro_photos` usage and confirm no other read remains bare/unscoped. Deletes may remain if scoped through `repair_orders`.
+11. Orphaned photos / missing RO return no rows or 404, not a 500.
+12. No frontend/dist is tracked and no data was mutated.
+
+Commands:
+- node --check backend/src/routes/photos.js backend/src/routes/export.js backend/src/routes/portal.js
+- node --test backend/src/__tests__/photos.scope.test.js
+- node --test backend/src/__tests__/photos.scope.test.js backend/src/__tests__/*.test.js backend/test/*.test.js
+- cd frontend && npm run build
+- rg -n "ro_photos" backend/src/routes -g "*.js"
+- rg -n -U "SELECT \\* FROM ro_photos|FROM ro_photos\\s*\\n\\s*WHERE ro_id|FROM ro_photos WHERE ro_id" backend/src/routes -g "*.js"
+- rm -rf frontend/dist && git diff --check && git ls-files frontend/dist
+
+Expected:
+- PASS.
+- If PASS, Hermes can push/deploy.
+- Hermes post-deploy verification: as shop A token, GET /api/photos/<shop-B-ro-id> returns `{ photos: [] }` or 404, never shop B photo rows.
+```
+
+---
+
+## Dispatch Log — 2026-07-03 Security Review: Feedback API + Email Simulation
 
 **Status**
 - Ready for Claude Code QA.
@@ -86,9 +529,9 @@ await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 - Admin/owner/assistant-style admin-ranked users only receive feedback rows scoped to `req.user.shop_id` using `shop_id::text = $1::text`.
 - Superadmin has an explicit cross-shop read path at `GET /api/feedback/all`.
 - Feedback read queries use an allow-listed column projection instead of `SELECT *`.
-- Public feedback submission remains available at `POST /api/feedback`, but now has an express-rate-limit guard: 30 submissions per 15 minutes per client.
+- Public feedback submission remains available at `POST /api/feedback`, but now has an express-rate-limit guard: 10 submissions per minute per client.
 - Production email with no configured provider now returns `{ ok:false, provider:'none', error:'no_provider_configured' }` and refuses simulated success.
-- Non-production email simulation still works but masks the recipient and does not log the HTML/body preview.
+- Non-production email simulation still works but logs only `[EMAIL] simulated (no provider configured)` with no recipient, subject, or body preview.
 - `ROLE_RANK.superadmin = 5`, above owner/admin, so admin gates treat master support accounts consistently.
 
 **Verification**
@@ -98,16 +541,16 @@ node --check backend/src/services/email.js
 node --check backend/src/middleware/roles.js
 
 node --test backend/src/__tests__/feedback.auth.test.js backend/src/__tests__/email.production.test.js backend/src/__tests__/role-guards.test.js backend/src/__tests__/feedback.sanitize.test.js
-# 12/12 passed
+# 14/14 passed
 
 node --test backend/src/__tests__/*.test.js backend/test/*.test.js
-# 77/77 passed
+# 79/79 passed
 
 cd frontend && npm run build
 # built clean; existing Vite chunk-size warning only
 
-rg -n "\\[EMAIL\\].*(To:|Body:)|console\\.(log|error)\\([^\\n]*(customer@example|reset token|html\\.replace|Body:)" backend/src/services backend/src/routes
-# One non-prod masked simulation log remains; no body preview or raw recipient logging.
+rg -n "\\[EMAIL\\].*(To:|Body:)|console\\.(log|error)\\([^\\n]*(customer@example|reset token|html\\.replace|Body:|To:)" backend/src/services/email.js backend/src/routes -g "*.js"
+# No matches.
 
 rg -n "(/feedback|feedback/all|api\\.get\\(['\\\"]/?feedback|api\\.post\\(['\\\"]/?feedback)" frontend/src backend/src -g "*.js" -g "*.jsx"
 # Frontend posts feedback only; current superadmin inbox reads through /api/superadmin.
@@ -125,7 +568,7 @@ TASK: REVV — Security review fixes for feedback API + email simulation
 
 CONTEXT
 Repo: /Users/zordon/.openclaw/workspace/Revv
-Date: 2026-07-02
+Date: 2026-07-03
 
 This dispatch responds to the pasted security review that flagged:
 1. CRITICAL: unauthenticated GET /api/feedback leaking all tenant feedback.
@@ -151,7 +594,7 @@ Verify:
 5. Superadmin cross-shop listing is available only through a gated superadmin path (`GET /api/feedback/all`) and does not bypass JWT verification.
 6. POST /api/feedback remains publicly usable for in-app error reporting/feedback, but is rate-limited.
 7. Production unconfigured email returns a failure (`no_provider_configured`) and does not simulate success.
-8. Email simulation logs do not include raw recipient addresses or HTML/body previews.
+8. Email simulation logs do not include recipient addresses, subjects, or HTML/body previews.
 9. `superadmin` outranks owner/admin in `ROLE_RANK`.
 10. The current frontend does not depend on unauthenticated GET /api/feedback for the master inbox; it uses /api/superadmin paths.
 11. Static route sweep: confirm any unauthenticated GETs in backend/src/routes are either protected by router.use(...), API-key middleware, public-token/callback endpoints, or intentionally public metadata such as market rates/catalog makes/models. Flag any real newly-discovered issue separately; do not fix it in this QA pass.
@@ -163,7 +606,7 @@ Commands:
 - node --test backend/src/__tests__/feedback.auth.test.js backend/src/__tests__/email.production.test.js backend/src/__tests__/role-guards.test.js backend/src/__tests__/feedback.sanitize.test.js
 - node --test backend/src/__tests__/*.test.js backend/test/*.test.js
 - cd frontend && npm run build
-- rg -n "\\[EMAIL\\].*(To:|Body:)|console\\.(log|error)\\([^\\n]*(customer@example|reset token|html\\.replace|Body:)" backend/src/services backend/src/routes
+- rg -n "\\[EMAIL\\].*(To:|Body:)|console\\.(log|error)\\([^\\n]*(customer@example|reset token|html\\.replace|Body:|To:)" backend/src/services/email.js backend/src/routes -g "*.js"
 - rg -n "(/feedback|feedback/all|api\\.get\\(['\\\"]/?feedback|api\\.post\\(['\\\"]/?feedback)" frontend/src backend/src -g "*.js" -g "*.jsx"
 - rg -n "router\\.get\\([^\\n]*(async|auth|require|\\()" backend/src/routes -g "*.js"
 - rm -rf frontend/dist && git diff --check && git ls-files frontend/dist

@@ -87,7 +87,13 @@ router.post('/ro/:roId/predropoff', auth, upload.single('photo'), async (req, re
       [id, req.params.roId, req.user.id, photo_url, caption,
        ai?.severity || null, ai?.zones ? JSON.stringify(ai.zones) : null, ai?.description || null]
     );
-    return res.status(201).json(await dbGet('SELECT * FROM ro_photos WHERE id = $1', [id]));
+    return res.status(201).json(await dbGet(
+      `SELECT p.*
+       FROM ro_photos p
+       JOIN repair_orders ro ON ro.id = p.ro_id
+       WHERE p.id = $1 AND ro.shop_id = $2`,
+      [id, req.user.shop_id]
+    ));
   } catch (err) {
     console.error('[Photos] POST predropoff error:', err);
     return res.status(500).json({ error: 'Internal server error' });
@@ -103,11 +109,14 @@ router.get('/ro/:roId/predropoff', auth, async (req, res) => {
     if (!ro) return res.status(404).json({ error: 'Repair order not found' });
 
     const photos = await dbAll(
-      `SELECT *
-       FROM ro_photos
-       WHERE ro_id = $1 AND photo_type = 'predropoff'
+      `SELECT p.*
+       FROM ro_photos p
+       JOIN repair_orders ro ON ro.id = p.ro_id
+       WHERE p.ro_id = $1
+         AND ro.shop_id = $2
+         AND p.photo_type = 'predropoff'
        ORDER BY created_at ASC`,
-      [req.params.roId]
+      [req.params.roId, req.user.shop_id]
     );
     return res.json({ photos });
   } catch (err) {
@@ -127,8 +136,11 @@ router.post('/:ro_id', auth, upload.single('photo'), async (req, res) => {
     if (!ro) return res.status(404).json({ error: 'Repair order not found' });
 
     const existingCountRow = await dbGet(
-      'SELECT COUNT(*)::int AS count FROM ro_photos WHERE ro_id = $1',
-      [req.params.ro_id]
+      `SELECT COUNT(*)::int AS count
+       FROM ro_photos p
+       JOIN repair_orders ro ON ro.id = p.ro_id
+       WHERE p.ro_id = $1 AND ro.shop_id = $2`,
+      [req.params.ro_id, req.user.shop_id]
     );
     if ((existingCountRow?.count || 0) >= 5) {
       return res.status(400).json({ error: 'A maximum of 5 photos is allowed' });
@@ -145,7 +157,13 @@ router.post('/:ro_id', auth, upload.single('photo'), async (req, res) => {
       [id, req.params.ro_id, req.user.id, photo_url, caption || null, resolvedType,
        ai?.severity || null, ai?.zones ? JSON.stringify(ai.zones) : null, ai?.description || null]
     );
-    res.status(201).json(await dbGet('SELECT * FROM ro_photos WHERE id = $1', [id]));
+    res.status(201).json(await dbGet(
+      `SELECT p.*
+       FROM ro_photos p
+       JOIN repair_orders ro ON ro.id = p.ro_id
+       WHERE p.id = $1 AND ro.shop_id = $2`,
+      [id, req.user.shop_id]
+    ));
   } catch (err) {
     console.error('[Photos] POST upload error:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -154,7 +172,14 @@ router.post('/:ro_id', auth, upload.single('photo'), async (req, res) => {
 
 router.get('/:ro_id', auth, async (req, res) => {
   try {
-    const photos = await dbAll('SELECT * FROM ro_photos WHERE ro_id = $1 ORDER BY created_at ASC', [req.params.ro_id]);
+    const photos = await dbAll(
+      `SELECT p.*
+       FROM ro_photos p
+       JOIN repair_orders ro ON ro.id = p.ro_id
+       WHERE p.ro_id = $1 AND ro.shop_id = $2
+       ORDER BY p.created_at ASC`,
+      [req.params.ro_id, req.user.shop_id]
+    );
     res.json({ photos });
   } catch (err) {
     console.error('[Photos] GET by RO error:', err);

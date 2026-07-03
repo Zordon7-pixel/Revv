@@ -154,11 +154,12 @@ router.get('/track/:token', async (req, res) => {
     
     // Get photos
     const photos = await dbAll(`
-      SELECT id, photo_url, caption, photo_type, created_at
-      FROM ro_photos
-      WHERE ro_id = $1
-      ORDER BY created_at DESC
-    `, [ro.id]);
+      SELECT p.id, p.photo_url, p.caption, p.photo_type, p.created_at
+      FROM ro_photos p
+      JOIN repair_orders ro_scope ON ro_scope.id = p.ro_id
+      WHERE p.ro_id = $1 AND ro_scope.shop_id = $2
+      ORDER BY p.created_at DESC
+    `, [ro.id, tokenRecord.shop_id]);
     
     // Get status log for timeline
     const timeline = await dbAll(`

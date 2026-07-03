@@ -59,7 +59,7 @@ test('production email without provider fails instead of simulating success', as
   });
 });
 
-test('non-production email simulation masks recipients and drops body preview', async () => {
+test('non-production email simulation logs no recipient or body preview', async () => {
   await withEnv({
     NODE_ENV: 'development',
     EMAIL_HOST: undefined,
@@ -71,7 +71,7 @@ test('non-production email simulation masks recipients and drops body preview', 
     const originalLog = console.log;
     console.log = (...args) => logs.push(args.join(' '));
     try {
-      const { sendEmail, maskRecipient } = require('../services/email');
+      const { sendEmail } = require('../services/email');
       const result = await sendEmail(
         'customer@example.com',
         'Status update',
@@ -79,10 +79,9 @@ test('non-production email simulation masks recipients and drops body preview', 
       );
 
       assert.deepEqual(result, { ok: true, simulated: true });
-      assert.equal(maskRecipient('customer@example.com'), 'c***@example.com');
       assert.equal(logs.length, 1);
-      assert.match(logs[0], /c\*\*\*@example\.com/);
-      assert.doesNotMatch(logs[0], /customer@example\.com|Vehicle VIN|private body text/);
+      assert.equal(logs[0], '[EMAIL] simulated (no provider configured)');
+      assert.doesNotMatch(logs[0], /customer@example\.com|Status update|Vehicle VIN|private body text/);
     } finally {
       console.log = originalLog;
     }

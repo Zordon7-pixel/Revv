@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const { dbGet, dbAll, dbRun } = require('../db');
 const auth   = require('../middleware/auth');
+const { assertRoOwnership } = require('../middleware/roOwnership');
 const { requireTechnician } = require('../middleware/roles');
 const { v4: uuidv4 } = require('uuid');
 
@@ -9,9 +10,9 @@ const { detectCarrier } = require('./tracking');
 
 router.get('/ro/:roId', auth, async (req, res) => {
   try {
-    const ro = await dbGet('SELECT id FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.roId, req.user.shop_id]);
+    const ro = await assertRoOwnership(req.params.roId, req.user.shop_id);
     if (!ro) return res.status(404).json({ error: 'RO not found' });
-    const parts = await dbAll('SELECT * FROM parts_orders WHERE ro_id = $1 ORDER BY created_at ASC', [req.params.roId]);
+    const parts = await dbAll('SELECT * FROM parts_orders WHERE ro_id = $1 AND shop_id = $2 ORDER BY created_at ASC', [req.params.roId, req.user.shop_id]);
     res.json({ parts });
   } catch (err) {
     res.status(500).json({ error: err.message });
