@@ -58,6 +58,115 @@ await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 
 ---
 
+## Dispatch Log — 2026-07-03 FABLE C1: Photo Read IDOR
+
+**Status**
+- Ready for Claude Code QA.
+- Not deployed and not pushed. Hermes ships only after Claude Code QA PASS.
+- No customer/shop/RO/photo data was read, written, seeded, reset, or migrated. Miles Automotive data was not touched.
+
+**Context**
+- Source: `FABLE_AUDIT.md` finding C1.
+- Confirmed bug: authenticated `GET /api/photos/:ro_id` queried `ro_photos` by `ro_id` only even though `ro_photos` has no `shop_id`.
+- Risk: any authenticated shop user who knew another shop's RO id could read that RO's photo metadata/URLs.
+
+**Files changed**
+- `backend/src/routes/photos.js`
+- `backend/src/routes/export.js`
+- `backend/src/routes/portal.js`
+- `backend/src/__tests__/photos.scope.test.js`
+- `CLAUDE.md`
+
+**Behavior shipped locally**
+- `GET /api/photos/:ro_id` now reads photos through `JOIN repair_orders ro ON ro.id = p.ro_id` and `ro.shop_id = $2`.
+- `GET /api/photos/ro/:roId/predropoff` uses the same join-scoped `ro_photos` read.
+- `photos.js` read-after-insert and upload-count queries are also join-scoped through `repair_orders`.
+- `GET /api/export/ro/:id` photo export query is join-scoped through `repair_orders` using the authenticated shop id.
+- `GET /api/portal/track/:token` photo query is join-scoped through `repair_orders` using the portal token's shop id.
+- Orphaned/mismatched photos naturally return no rows because the inner join has no matching shop-scoped RO.
+- Existing response shapes are preserved: `{ photos: [...] }` for photo list routes.
+
+**ro_photos audit**
+- `backend/src/routes/photos.js`: all `ro_photos` reads now join `repair_orders`.
+- `backend/src/routes/export.js`: photo read now joins `repair_orders`.
+- `backend/src/routes/portal.js`: public portal photo read now joins `repair_orders`.
+- `backend/src/routes/settings.js` and `backend/src/routes/ros.js`: only scoped deletes matched the grep; no read leak found.
+- `backend/src/db/index.js` and `backend/src/db/migrate.js`: schema definitions only.
+- No unscopable `ro_photos` read remained.
+
+**Verification**
+```
+node --check backend/src/routes/photos.js
+node --check backend/src/routes/export.js
+node --check backend/src/routes/portal.js
+
+node --test backend/src/__tests__/photos.scope.test.js
+# 3/3 passed
+
+node --test backend/src/__tests__/photos.scope.test.js backend/src/__tests__/*.test.js backend/test/*.test.js
+# 82/82 passed
+
+cd frontend && npm run build
+# built clean; existing Vite chunk-size warning only
+
+rg -n "ro_photos" backend/src/routes backend/src/__tests__/photos.scope.test.js -g "*.js"
+# Reviewed all route hits.
+
+rg -n -U "SELECT \\* FROM ro_photos|FROM ro_photos\\s*\\n\\s*WHERE ro_id|FROM ro_photos WHERE ro_id" backend/src/routes -g "*.js"
+# Only scoped DELETE statements in ros.js/settings.js matched; no read leak remained.
+
+rm -rf frontend/dist && git diff --check && git ls-files frontend/dist
+# No output; dist is not tracked.
+```
+
+**Claude Code QA Prompt**
+```text
+TASK: REVV — QA FABLE C1 photo read IDOR fix
+
+Repo: /Users/zordon/.openclaw/workspace/Revv
+Commit: use the final local SHA from the Codex handoff for this dispatch
+Finding: FABLE_AUDIT.md C1 — cross-tenant ro_photos read via GET /api/photos/:ro_id
+
+Mode: read-only QA. Do not edit code. Do not mutate customer/shop/RO/photo data. Do not run seed/reset/migrations/destructive scripts. Do not push/deploy.
+
+Review changed files:
+- backend/src/routes/photos.js
+- backend/src/routes/export.js
+- backend/src/routes/portal.js
+- backend/src/__tests__/photos.scope.test.js
+- CLAUDE.md
+
+Verify:
+1. `GET /api/photos/:ro_id` uses `SELECT p.* FROM ro_photos p JOIN repair_orders ro ON ro.id = p.ro_id WHERE p.ro_id = $1 AND ro.shop_id = $2`.
+2. It passes `[req.params.ro_id, req.user.shop_id]`.
+3. The response shape remains `{ photos: [...] }`.
+4. A caller from shop A receives no rows for a shop B RO id.
+5. A caller from the owning shop receives that RO's photos.
+6. Predropoff reads are also join-scoped through `repair_orders`.
+7. `photos.js` upload count and read-after-insert queries do not read bare `ro_photos` rows.
+8. `export.js` photo reads are scoped with the authenticated shop id.
+9. `portal.js` token photo reads are scoped with the portal token's shop id.
+10. Grep all `ro_photos` usage and confirm no other read remains bare/unscoped. Deletes may remain if scoped through `repair_orders`.
+11. Orphaned photos / missing RO return no rows or 404, not a 500.
+12. No frontend/dist is tracked and no data was mutated.
+
+Commands:
+- node --check backend/src/routes/photos.js backend/src/routes/export.js backend/src/routes/portal.js
+- node --test backend/src/__tests__/photos.scope.test.js
+- node --test backend/src/__tests__/photos.scope.test.js backend/src/__tests__/*.test.js backend/test/*.test.js
+- cd frontend && npm run build
+- rg -n "ro_photos" backend/src/routes -g "*.js"
+- rg -n -U "SELECT \\* FROM ro_photos|FROM ro_photos\\s*\\n\\s*WHERE ro_id|FROM ro_photos WHERE ro_id" backend/src/routes -g "*.js"
+- rm -rf frontend/dist && git diff --check && git ls-files frontend/dist
+
+Expected:
+- PASS.
+- If PASS, Hermes can push/deploy.
+- Hermes post-deploy verification: as shop A token, GET /api/photos/<shop-B-ro-id> returns `{ photos: [] }` or 404, never shop B photo rows.
+```
+
+---
+
 ## Dispatch Log — 2026-07-03 Security Review: Feedback API + Email Simulation
 
 **Status**

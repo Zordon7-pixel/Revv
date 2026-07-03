@@ -93,11 +93,12 @@ router.get('/ro/:id', auth, async (req, res) => {
 
       // Photos
       dbAll(
-        `SELECT id, photo_url, caption, photo_type, created_at
-         FROM ro_photos
-         WHERE ro_id = $1
-         ORDER BY created_at ASC`,
-        [id]
+        `SELECT p.id, p.photo_url, p.caption, p.photo_type, p.created_at
+         FROM ro_photos p
+         JOIN repair_orders ro ON ro.id = p.ro_id
+         WHERE p.ro_id = $1 AND ro.shop_id = $2
+         ORDER BY p.created_at ASC`,
+        [id, shopId]
       ).catch(() => []),
 
       // SMS thread
