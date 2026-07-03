@@ -56,6 +56,79 @@ const ro = await dbGet('SELECT * FROM ros WHERE id = $1 AND shop_id = $2', [id, 
 await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 ```
 
+## Dispatch Log — 2026-07-03 FABLE H1: Unified RO Status Gates
+
+**Status:** DONE + VERIFIED — BUILD ONLY, NOT PUSHED/DEPLOYED
+
+**Commit:** see final handoff SHA
+
+**Scope**
+- Fixed FABLE_AUDIT.md finding H1: `PUT /api/ros/:id/status` now enforces the same business gates as `PATCH /api/ros/:id`.
+- Added one shared `assertStatusTransitionAllowed(ro, toStatus, actor)` helper in `backend/src/routes/ros.js`.
+- Both status routes now block:
+  - normal workflow movement while `ro.status === 'siu_hold'`
+  - non-owner/admin attempts to reopen a closed RO
+  - closing an RO when `payment_received` is false
+- Closed side effects remain after the status write, so illegitimate close attempts return before `queueClosedReviewEmail`, `sendClosedPaidInvoiceEmail`, or `queueQuickBooksSync` can run.
+- Preserved existing status update behavior, `actual_delivery` handling, `job_status_log` writes, and claim-status total-loss/SIU/approved flows.
+- No customer, shop, RO, feedback, seed, reset, migration, destructive script, push, or deploy action was performed. Miles Automotive data was not touched.
+
+**Files changed**
+- `backend/src/routes/ros.js`
+- `backend/src/__tests__/status.gates.test.js`
+- `CLAUDE.md`
+
+**Verification**
+```
+node --check backend/src/routes/ros.js
+node --test backend/src/__tests__/status.gates.test.js  # 4/4 passed
+node --test backend/src/__tests__/status.gates.test.js backend/src/__tests__/*.test.js backend/test/*.test.js  # 89/89 passed
+cd frontend && npm run build  # built in 2.13s; existing Vite chunk-size/Sentry warnings only
+rm -rf frontend/dist && git diff --check && git ls-files frontend/dist  # clean; dist not tracked
+```
+
+**Claude Code QA Prompt**
+```text
+TASK: REVV — Read-only QA for FABLE H1 status-transition gates
+
+Repo: /Users/zordon/.openclaw/workspace/Revv
+Commit under review: see final handoff SHA
+Ref: FABLE_AUDIT.md finding H1
+
+Context:
+This build fixes a production correctness/security gap where PUT /api/ros/:id/status could bypass the business gates enforced by PATCH /api/ros/:id, then still fire closed-RO side effects.
+
+Read-only QA only. Do not edit code. Do not push/deploy. Do not mutate customer/shop/RO/feedback data. Do not run seed/reset/migration/destructive scripts.
+
+Changed files:
+- backend/src/routes/ros.js
+- backend/src/__tests__/status.gates.test.js
+- CLAUDE.md
+
+Verify:
+1. backend/src/routes/ros.js has one shared status-transition gate helper, not copied checks in both routes.
+2. PUT /:id/status and PATCH /:id both call the shared helper before any status write.
+3. SIU hold blocks normal workflow movement with the existing PATCH message: "This RO is under SIU investigation. Clear the SIU hold before changing status."
+4. Reopening a closed RO is still owner/admin only and technicians get 403 "Only admins can reopen a closed RO".
+5. Closing an unpaid RO returns 400 "Payment must be received before closing this RO".
+6. Closed side effects only run after a legitimate gated close, not on blocked PUT attempts.
+7. Existing total_loss/delivery actual_delivery behavior and job_status_log writes are preserved.
+8. Claim-status total_loss / siu / approved logic was not broadened or refactored outside H1.
+9. The new mocked tests cover unpaid close, technician reopen, SIU movement, and legitimate paid close side effects.
+10. No data mutation, seeds, migrations, pushes, or deploys were performed.
+
+Commands:
+- node --check backend/src/routes/ros.js
+- node --test backend/src/__tests__/status.gates.test.js backend/src/__tests__/*.test.js backend/test/*.test.js
+- cd frontend && npm run build
+- rm -rf frontend/dist && git diff --check && git ls-files frontend/dist
+
+Expected:
+- All commands pass.
+- `frontend/dist` remains untracked.
+- Verdict should explicitly say whether H1 is fixed and whether Hermes is clear to ship after QA PASS.
+```
+
 ---
 
 ## Dispatch Log — 2026-07-03 FABLE C2: Supplement Ledger Money Fix

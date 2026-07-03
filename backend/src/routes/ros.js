@@ -22,6 +22,7 @@ const rateLimit = require('express-rate-limit');
 const { insuranceOcrLimiter } = require('./insuranceOcr');
 
 const STATUSES = ['intake','estimate','approval','parts','repair','paint','qc','delivery','closed','total_loss','siu_hold'];
+const NORMAL_WORKFLOW_STATUSES = ['intake','estimate','approval','parts','repair','paint','qc','delivery','closed'];
 // Simple: status update + ready for pickup only. No approval/estimate SMS.
 const STATUS_SMS_LABELS = {
   repair: 'In Progress',
@@ -74,6 +75,28 @@ function normalizedPaymentStatus(status, paymentReceived) {
   const normalized = String(status || '').trim().toLowerCase();
   if (normalized) return normalized;
   return paymentReceived ? 'succeeded' : 'unpaid';
+}
+
+function assertStatusTransitionAllowed(ro, toStatus, actor) {
+  if (ro.status === 'siu_hold' && NORMAL_WORKFLOW_STATUSES.includes(toStatus)) {
+    return {
+      status: 400,
+      error: 'This RO is under SIU investigation. Clear the SIU hold before changing status.',
+    };
+  }
+
+  if (ro.status === 'closed' && toStatus !== 'closed') {
+    const actorRoleCheck = String(actor?.role || '').toLowerCase();
+    if (!['owner', 'admin'].includes(actorRoleCheck)) {
+      return { status: 403, error: 'Only admins can reopen a closed RO' };
+    }
+  }
+
+  if (toStatus === 'closed' && !ro.payment_received) {
+    return { status: 400, error: 'Payment must be received before closing this RO' };
+  }
+
+  return null;
 }
 
 function shopRoSuffix(shopId) {
@@ -2246,6 +2269,8 @@ router.put('/:id/status', auth, requireTechnician, async (req, res) => {
     if (!STATUSES.includes(status)) return res.status(400).json({ error: 'Invalid status' });
     const ro = await dbGet('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
     if (!ro) return res.status(404).json({ error: 'Not found' });
+    const transitionViolation = assertStatusTransitionAllowed(ro, status, req.user);
+    if (transitionViolation) return res.status(transitionViolation.status).json({ error: transitionViolation.error });
     const fromStatus = ro.status;
     const now = new Date().toISOString();
     if (status === 'delivery' || status === 'total_loss') {
@@ -2389,26 +2414,8 @@ router.patch('/:id', auth, requireTechnician, async (req, res) => {
 
     if (!STATUSES.includes(status)) return res.status(400).json({ error: 'Invalid status' });
 
-    // SIU hold gate: block normal progression while under investigation
-    const normalStatuses = ['intake','estimate','approval','parts','repair','paint','qc','delivery','closed'];
-    if (ro.status === 'siu_hold' && normalStatuses.includes(status)) {
-      return res.status(400).json({ error: 'This RO is under SIU investigation. Clear the SIU hold before changing status.' });
-    }
-
-    if (ro.status === 'closed' && status !== 'closed') {
-      const actorRoleCheck = String(req.user.role || '').toLowerCase();
-      if (!['owner', 'admin'].includes(actorRoleCheck)) {
-        return res.status(403).json({ error: 'Only admins can reopen a closed RO' });
-      }
-    }
-
-    // Payment gate: prevent closing without payment
-    if (status === 'closed') {
-      const paymentCheck = await dbGet('SELECT payment_received FROM repair_orders WHERE id = $1', [req.params.id]);
-      if (!paymentCheck || !paymentCheck.payment_received) {
-        return res.status(400).json({ error: 'Payment must be received before closing this RO' });
-      }
-    }
+    const transitionViolation = assertStatusTransitionAllowed(ro, status, req.user);
+    if (transitionViolation) return res.status(transitionViolation.status).json({ error: transitionViolation.error });
 
     const fromStatus = ro.status;
     const now = new Date().toISOString();
