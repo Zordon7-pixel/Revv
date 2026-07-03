@@ -108,6 +108,81 @@ await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 
 **Verification**
 ```
+
+## Dispatch Log — 2026-07-03 FABLE H7: ro_supplements Fresh-DB Schema
+
+**Status:** DONE + VERIFIED — BUILD ONLY, NOT PUSHED/DEPLOYED
+
+**Commit:** see final handoff SHA
+
+**Scope**
+- Fixed FABLE_AUDIT.md finding H7: `backend/src/db/index.js` now creates `ro_supplements` with the insert-contract columns used by both supplement write paths.
+- Added `description TEXT NOT NULL DEFAULT ''`, `amount NUMERIC(12,2) NOT NULL DEFAULT 0`, and `submitted_date DATE NOT NULL DEFAULT CURRENT_DATE` to the `CREATE TABLE IF NOT EXISTS ro_supplements` block in `initDb()`.
+- Added idempotent additive backfills for existing partial fresh/dev DBs:
+  - `ALTER TABLE ro_supplements ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT ''`
+  - `ALTER TABLE ro_supplements ADD COLUMN IF NOT EXISTS amount NUMERIC(12,2) NOT NULL DEFAULT 0`
+  - `ALTER TABLE ro_supplements ADD COLUMN IF NOT EXISTS submitted_date DATE NOT NULL DEFAULT CURRENT_DATE`
+- Did not change `toIntCents`, `dollarsToCents`, ledger recompute behavior, C2 supplement logic, or `migrate.js`.
+- No customer, shop, RO, supplement data, seed, reset, destructive migration, push, or deploy action was performed. Miles Automotive data was not touched.
+
+**Files changed**
+- `backend/src/db/index.js`
+- `backend/src/__tests__/roSupplements.schema.test.js`
+- `CLAUDE.md`
+
+**Verification**
+```
+node --check backend/src/db/index.js backend/src/db/migrate.js
+node --test backend/src/__tests__/roSupplements.schema.test.js backend/src/__tests__/supplements.ledger.test.js  # 5/5 passed
+node --test backend/src/__tests__/roSupplements.schema.test.js backend/src/__tests__/supplements.ledger.test.js backend/src/__tests__/*.test.js backend/test/*.test.js  # 95/95 passed
+cd frontend && npm run build  # built in 2.09s; existing Vite chunk-size/Sentry warnings only
+rm -rf frontend/dist && git diff --check && git ls-files frontend/dist  # clean; dist not tracked
+```
+
+**Claude Code QA Prompt**
+```text
+TASK: REVV — Read-only QA for FABLE H7 ro_supplements fresh-DB schema
+
+Repo: /Users/zordon/.openclaw/workspace/Revv
+Commit under review: see final handoff SHA
+Ref: FABLE_AUDIT.md H7
+
+Read-only QA only. Do not edit code. Do not push/deploy. Do not mutate customer/shop/RO/supplement data. Do not run seed/reset/migration/destructive scripts.
+
+Changed files:
+- backend/src/db/index.js
+- backend/src/__tests__/roSupplements.schema.test.js
+- CLAUDE.md
+
+Verify:
+1. backend/src/db/index.js `CREATE TABLE IF NOT EXISTS ro_supplements` includes `description TEXT NOT NULL DEFAULT ''`.
+2. The same CREATE block includes `amount NUMERIC(12,2) NOT NULL DEFAULT 0`.
+3. The same CREATE block includes `submitted_date DATE NOT NULL DEFAULT CURRENT_DATE`.
+4. index.js has additive `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` backfills for all three columns.
+5. No DROP, destructive DDL, seed, reset, data backfill, or supplement row mutation was added.
+6. backend/src/db/migrate.js was not changed by this dispatch.
+7. `toIntCents`, `dollarsToCents`, and ledger recompute logic were not changed.
+8. `roSupplements.schema.test.js` locks the index.js fresh-DB schema against regression.
+9. Existing supplement ledger tests still pass.
+10. No push/deploy was performed.
+
+Commands:
+- node --check backend/src/db/index.js backend/src/db/migrate.js
+- node --test backend/src/__tests__/roSupplements.schema.test.js backend/src/__tests__/supplements.ledger.test.js backend/src/__tests__/*.test.js backend/test/*.test.js
+- cd frontend && npm run build
+- git diff --check && git ls-files frontend/dist
+
+Expected:
+- All commands pass.
+- frontend/dist remains untracked.
+- Verdict should explicitly say whether H7 is fixed and whether Hermes is clear to ship after QA PASS.
+
+Hermes post-deploy check on fresh scratch DB:
+- Boot app.
+- Submit a supplement -> succeeds with no `column "description" does not exist`.
+- With $1000 approved, submit $500 then $300 -> total_insurer_owed = $1,800.
+- Deny the $300 -> total_insurer_owed = $1,500.
+```
 node --check backend/src/routes/claimLinks.js backend/src/routes/partsRequests.js backend/src/routes/parts.js backend/src/middleware/roOwnership.js
 node --test backend/src/__tests__/claimLinks.scope.test.js backend/src/__tests__/partsRequests.scope.test.js  # 4/4 passed
 node --test backend/src/__tests__/claimLinks.scope.test.js backend/src/__tests__/partsRequests.scope.test.js backend/src/__tests__/*.test.js backend/test/*.test.js  # 93/93 passed

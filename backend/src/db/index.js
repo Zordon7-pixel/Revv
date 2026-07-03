@@ -347,17 +347,23 @@ async function initDb() {
       id UUID PRIMARY KEY,
       ro_id UUID NOT NULL REFERENCES repair_orders(id) ON DELETE CASCADE,
       shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+      description TEXT NOT NULL DEFAULT '',
+      amount NUMERIC(12,2) NOT NULL DEFAULT 0,
       amount_cents INTEGER,
       notes TEXT,
       status TEXT DEFAULT 'requested',
+      submitted_date DATE NOT NULL DEFAULT CURRENT_DATE,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     );
   `);
 
+  await pool.query(`ALTER TABLE ro_supplements ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT ''`);
+  await pool.query(`ALTER TABLE ro_supplements ADD COLUMN IF NOT EXISTS amount NUMERIC(12,2) NOT NULL DEFAULT 0`);
   await pool.query(`ALTER TABLE ro_supplements ADD COLUMN IF NOT EXISTS amount_cents INTEGER`);
   await pool.query(`ALTER TABLE ro_supplements ADD COLUMN IF NOT EXISTS notes TEXT`);
   await pool.query(`ALTER TABLE ro_supplements ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'requested'`);
+  await pool.query(`ALTER TABLE ro_supplements ADD COLUMN IF NOT EXISTS submitted_date DATE NOT NULL DEFAULT CURRENT_DATE`);
   await pool.query(`ALTER TABLE ro_supplements ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_ro_supplements_ro_id ON ro_supplements(ro_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_ro_supplements_shop_id ON ro_supplements(shop_id)`);
