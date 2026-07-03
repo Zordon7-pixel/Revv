@@ -80,6 +80,87 @@ await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 
 **Verification**
 ```
+
+## Dispatch Log — 2026-07-03 FABLE C3/H6: By-RO IDOR Read Scope
+
+**Status:** DONE + VERIFIED — BUILD ONLY, NOT PUSHED/DEPLOYED
+
+**Commit:** see final handoff SHA
+
+**Scope**
+- Fixed FABLE_AUDIT.md finding C3: `GET /api/claim-links/ro/:roId` now verifies the caller owns the RO before reading `claim_links`, and the claim-link read is scoped by both `ro_id` and `shop_id`.
+- Preserved the owning-shop response shape, including `token`, so the RO UI can still copy the adjuster link.
+- Tightened `POST /api/claim-links/:roId` existing-link lookup to include `shop_id` after the same ownership guard.
+- Fixed FABLE_AUDIT.md finding H6: `GET /api/parts-requests/:ro_id` now verifies RO ownership and reads `parts_requests` through a `repair_orders` join scope. Response shape remains `{ requests: [...] }`.
+- Added shared `assertRoOwnership(roId, shopId)` helper using the repo's text-cast convention: `id::text = $1::text AND shop_id::text = $2::text`.
+- Route sweep found one additional authenticated by-RO child read in `backend/src/routes/parts.js`; it now uses `assertRoOwnership` and scopes `parts_orders` by `shop_id`.
+- Public token-bearer adjuster routes (`/claim-link/:token`, `/claim-link/view/:token`, and submit routes) were left public by design.
+- No customer, shop, RO, claim, parts, feedback, seed, reset, migration, destructive script, push, or deploy action was performed. Miles Automotive data was not touched.
+
+**Files changed**
+- `backend/src/middleware/roOwnership.js`
+- `backend/src/routes/claimLinks.js`
+- `backend/src/routes/partsRequests.js`
+- `backend/src/routes/parts.js`
+- `backend/src/__tests__/claimLinks.scope.test.js`
+- `backend/src/__tests__/partsRequests.scope.test.js`
+- `CLAUDE.md`
+
+**Verification**
+```
+node --check backend/src/routes/claimLinks.js backend/src/routes/partsRequests.js backend/src/routes/parts.js backend/src/middleware/roOwnership.js
+node --test backend/src/__tests__/claimLinks.scope.test.js backend/src/__tests__/partsRequests.scope.test.js  # 4/4 passed
+node --test backend/src/__tests__/claimLinks.scope.test.js backend/src/__tests__/partsRequests.scope.test.js backend/src/__tests__/*.test.js backend/test/*.test.js  # 93/93 passed
+cd frontend && npm run build  # built in 2.21s; existing Vite chunk-size/Sentry warnings only
+rm -rf frontend/dist && git diff --check && git ls-files frontend/dist  # clean; dist not tracked
+```
+
+**Claude Code QA Prompt**
+```text
+TASK: REVV — Read-only QA for FABLE C3/H6 by-RO IDOR read scope
+
+Repo: /Users/zordon/.openclaw/workspace/Revv
+Commit under review: see final handoff SHA
+Refs: FABLE_AUDIT.md C3 (claim-link token leak) + H6 (parts-requests read leak)
+
+Read-only QA only. Do not edit code. Do not push/deploy. Do not mutate customer/shop/RO/claim/parts/feedback data. Do not run seed/reset/migration/destructive scripts.
+
+Changed files:
+- backend/src/middleware/roOwnership.js
+- backend/src/routes/claimLinks.js
+- backend/src/routes/partsRequests.js
+- backend/src/routes/parts.js
+- backend/src/__tests__/claimLinks.scope.test.js
+- backend/src/__tests__/partsRequests.scope.test.js
+- CLAUDE.md
+
+Verify:
+1. `assertRoOwnership(roId, shopId)` uses text casts on both RO id and shop id.
+2. `GET /api/claim-links/ro/:roId` returns 404 before reading `claim_links` when the RO is not in the caller's shop.
+3. Owning-shop `GET /api/claim-links/ro/:roId` still returns the claim-link object with token intact for copy-link UX.
+4. Claim-link by-RO reads include `ro_id = $1 AND shop_id = $2`; no unscoped token read remains.
+5. Public adjuster token routes remain public and token-bearer; no `auth` was added to `/view/:token` or submit routes.
+6. `GET /api/parts-requests/:ro_id` returns 404 before reading child rows for another shop's RO.
+7. Parts-request reads scope through `JOIN repair_orders ro ON ro.id = pr.ro_id` and preserve `{ requests: [...] }`.
+8. The extra route-sweep fix in `backend/src/routes/parts.js` uses the same ownership guard and shop-scoped `parts_orders` read.
+9. New mocked tests cover cross-shop and same-shop claim-link and parts-request reads.
+10. No data mutation, seeds, migrations, pushes, or deploys were performed.
+
+Commands:
+- node --check backend/src/routes/claimLinks.js backend/src/routes/partsRequests.js backend/src/routes/parts.js backend/src/middleware/roOwnership.js
+- node --test backend/src/__tests__/claimLinks.scope.test.js backend/src/__tests__/partsRequests.scope.test.js backend/src/__tests__/*.test.js backend/test/*.test.js
+- cd frontend && npm run build
+- rm -rf frontend/dist && git diff --check && git ls-files frontend/dist
+
+Expected:
+- All commands pass.
+- `frontend/dist` remains untracked.
+- Verdict should explicitly say whether C3/H6 are fixed and whether Hermes is clear to ship after QA PASS.
+
+Hermes post-deploy checks:
+- As shop A token, GET /api/claim-links/ro/<shop-B-ro-id> -> 404/no token.
+- As shop A token, GET /api/parts-requests/<shop-B-ro-id> -> 404/no rows.
+```
 node --check backend/src/routes/ros.js
 node --test backend/src/__tests__/status.gates.test.js  # 4/4 passed
 node --test backend/src/__tests__/status.gates.test.js backend/src/__tests__/*.test.js backend/test/*.test.js  # 89/89 passed

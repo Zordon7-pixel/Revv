@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const { dbGet, dbAll, dbRun } = require('../db');
 const auth = require('../middleware/auth');
+const { assertRoOwnership } = require('../middleware/roOwnership');
 const { requireAdmin, requireTechnician } = require('../middleware/roles');
 const { v4: uuidv4 } = require('uuid');
 const { createNotification } = require('../services/notifications');
@@ -9,7 +10,13 @@ router.post('/', auth, async (req, res) => {
   try {
     const { ro_id, part_name, part_number, quantity, notes } = req.body;
     if (!ro_id || !part_name) return res.status(400).json({ error: 'ro_id and part_name required' });
-    const ro = await dbGet('SELECT id, ro_number, shop_id FROM repair_orders WHERE id = $1 AND shop_id = $2', [ro_id, req.user.shop_id]);
+    const ro = await dbGet(
+      `SELECT id, ro_number, shop_id
+       FROM repair_orders
+       WHERE id::text = $1::text
+         AND shop_id::text = $2::text`,
+      [ro_id, req.user.shop_id]
+    );
     if (!ro) return res.status(404).json({ error: 'Repair order not found' });
     const id = uuidv4();
     await dbRun(
@@ -39,7 +46,16 @@ router.post('/', auth, async (req, res) => {
 
 router.get('/:ro_id', auth, async (req, res) => {
   try {
-    const requests = await dbAll('SELECT * FROM parts_requests WHERE ro_id = $1 ORDER BY created_at ASC', [req.params.ro_id]);
+    const ro = await assertRoOwnership(req.params.ro_id, req.user.shop_id);
+    if (!ro) return res.status(404).json({ error: 'Not found' });
+    const requests = await dbAll(
+      `SELECT pr.*
+       FROM parts_requests pr
+       JOIN repair_orders ro ON ro.id = pr.ro_id
+       WHERE pr.ro_id = $1 AND ro.shop_id = $2
+       ORDER BY pr.created_at ASC`,
+      [req.params.ro_id, req.user.shop_id]
+    );
     res.json({ requests });
   } catch (err) {
     res.status(500).json({ error: err.message });
