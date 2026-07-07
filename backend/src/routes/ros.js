@@ -3,6 +3,7 @@ const { pool, dbGet, dbAll, dbRun } = require('../db');
 const auth = require('../middleware/auth');
 const { ROLE_RANK, getRoleRank, requireAdmin, requireTechnician } = require('../middleware/roles');
 const { calculateProfit } = require('../services/profit');
+const { getRoMoneySummary, isPaidStatus } = require('../services/roMoney');
 const { sendSMS, isConfiguredForShop } = require('../services/sms');
 const { sendMail } = require('../services/mailer');
 const { statusChangeEmail } = require('../services/emailTemplates');
@@ -74,10 +75,10 @@ function toBase64Url(input) {
 function normalizedPaymentStatus(status, paymentReceived) {
   const normalized = String(status || '').trim().toLowerCase();
   if (normalized) return normalized;
-  return paymentReceived ? 'succeeded' : 'unpaid';
+  return paymentReceived ? 'paid' : 'unpaid';
 }
 
-function assertStatusTransitionAllowed(ro, toStatus, actor) {
+async function assertStatusTransitionAllowed(ro, toStatus, actor) {
   if (ro.status === 'siu_hold' && NORMAL_WORKFLOW_STATUSES.includes(toStatus)) {
     return {
       status: 400,
@@ -92,7 +93,7 @@ function assertStatusTransitionAllowed(ro, toStatus, actor) {
     }
   }
 
-  if (toStatus === 'closed' && !ro.payment_received) {
+  if (toStatus === 'closed' && !isPaidStatus(ro.payment_status)) {
     return { status: 400, error: 'Payment must be received before closing this RO' };
   }
 
@@ -176,7 +177,7 @@ function queueStatusSMS(roId, shopId, toStatus) {
       const shopName = ro.shop_name || 'the shop';
       const trackingLine = trackingToken ? `\nTrack it here: https://revvshop.app/track/${trackingToken}` : '';
       let paymentLine = '';
-      if (toStatus === 'ready' && normalizedPaymentStatus(ro.payment_status, ro.payment_received) !== 'succeeded') {
+      if (toStatus === 'ready' && !['paid', 'succeeded'].includes(normalizedPaymentStatus(ro.payment_status, ro.payment_received))) {
         const linkResult = await createPaymentCheckoutLinkForRo({
           roId: ro.id,
           shopId,
@@ -266,7 +267,7 @@ function queueStatusEmail(roId, shopId, toStatus) {
       });
 
       let finalHtml = html;
-      if (toStatus === 'ready' && normalizedPaymentStatus(emailContext.payment_status, emailContext.payment_received) !== 'succeeded') {
+      if (toStatus === 'ready' && !['paid', 'succeeded'].includes(normalizedPaymentStatus(emailContext.payment_status, emailContext.payment_received))) {
         const linkResult = await createPaymentCheckoutLinkForRo({
           roId,
           shopId,
@@ -2269,7 +2270,7 @@ router.put('/:id/status', auth, requireTechnician, async (req, res) => {
     if (!STATUSES.includes(status)) return res.status(400).json({ error: 'Invalid status' });
     const ro = await dbGet('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
     if (!ro) return res.status(404).json({ error: 'Not found' });
-    const transitionViolation = assertStatusTransitionAllowed(ro, status, req.user);
+    const transitionViolation = await assertStatusTransitionAllowed(ro, status, req.user);
     if (transitionViolation) return res.status(transitionViolation.status).json({ error: transitionViolation.error });
     const fromStatus = ro.status;
     const now = new Date().toISOString();
@@ -2348,7 +2349,7 @@ router.patch('/:id', auth, requireTechnician, async (req, res) => {
     if (!status) {
       const hasVinUpdate = Object.prototype.hasOwnProperty.call(otherFields, 'vin');
       const { vin, ...nonVinFields } = otherFields;
-      const ALLOWED_PATCH_FIELDS = ['tech_notes','damaged_panels','claim_status','parts_cost','labor_cost','sublet_cost','tax','total','notes','estimated_delivery','actual_delivery','pickup_type'];
+      const ALLOWED_PATCH_FIELDS = ['tech_notes','damaged_panels','claim_status','notes','estimated_delivery','actual_delivery','pickup_type'];
       const updates = Object.fromEntries(Object.entries(nonVinFields).filter(([k]) => ALLOWED_PATCH_FIELDS.includes(k)));
       if (!hasVinUpdate && Object.keys(updates).length === 0) return res.status(400).json({ error: 'No valid fields to update' });
 
@@ -2414,7 +2415,7 @@ router.patch('/:id', auth, requireTechnician, async (req, res) => {
 
     if (!STATUSES.includes(status)) return res.status(400).json({ error: 'Invalid status' });
 
-    const transitionViolation = assertStatusTransitionAllowed(ro, status, req.user);
+    const transitionViolation = await assertStatusTransitionAllowed(ro, status, req.user);
     if (transitionViolation) return res.status(transitionViolation.status).json({ error: transitionViolation.error });
 
     const fromStatus = ro.status;
@@ -2479,12 +2480,21 @@ router.post('/:id/mark-paid', auth, requireTechnician, async (req, res) => {
 
     const now = new Date().toISOString();
     const method = payment_method || 'cash';
+    const money = await getRoMoneySummary(req.params.id, req.user.shop_id);
 
     // Mark payment received only — do NOT auto-close the RO.
     // Admin/owner can manually close when ready.
     await dbRun(
-      'UPDATE repair_orders SET payment_received = 1, payment_received_at = $1, payment_method = $2, payment_status = $3, updated_at = $4 WHERE id = $5 AND shop_id = $6',
-      [now, method, 'succeeded', now, req.params.id, req.user.shop_id]
+      `UPDATE repair_orders
+       SET payment_received = 1,
+           payment_received_at = $1,
+           payment_method = $2,
+           payment_status = $3,
+           amount_paid_cents = $4,
+           amount_owed_cents = $5,
+           updated_at = $6
+       WHERE id = $7 AND shop_id = $8`,
+      [now, method, 'paid', money.totalCents, money.totalCents, now, req.params.id, req.user.shop_id]
     );
 
     // Log payment event (no status change)

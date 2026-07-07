@@ -69,6 +69,8 @@ async function runMigrations() {
       `ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS stripe_payment_intent_id TEXT`,
       `ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ`,
       `ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS paid_amount INTEGER`,
+      `ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS amount_paid_cents INTEGER DEFAULT 0`,
+      `ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS amount_owed_cents INTEGER DEFAULT 0`,
       `ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS invoice_emailed_at TEXT`,
       `ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS assigned_to UUID REFERENCES users(id) ON DELETE SET NULL`,
       `ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS tech_notes TEXT`,

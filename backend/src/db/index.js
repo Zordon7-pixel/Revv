@@ -96,6 +96,8 @@ async function initDb() {
       status TEXT DEFAULT 'intake',
       payment_type TEXT DEFAULT 'insurance',
       payment_status TEXT DEFAULT 'unpaid',
+      amount_paid_cents INTEGER DEFAULT 0,
+      amount_owed_cents INTEGER DEFAULT 0,
       claim_number TEXT,
       insurer TEXT,
       insurance_claim_number TEXT,
@@ -420,6 +422,8 @@ async function initDb() {
   await pool.query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS payment_received_at TEXT`);
   await pool.query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS payment_method TEXT`);
   await pool.query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS payment_status TEXT DEFAULT 'unpaid'`);
+  await pool.query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS amount_paid_cents INTEGER DEFAULT 0`);
+  await pool.query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS amount_owed_cents INTEGER DEFAULT 0`);
   await pool.query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS invoice_emailed_at TEXT`);
   await pool.query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS billing_month VARCHAR(7)`);
   await pool.query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS revenue_period VARCHAR(8) DEFAULT 'current'`);

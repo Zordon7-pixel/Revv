@@ -83,6 +83,8 @@ CREATE TABLE IF NOT EXISTS repair_orders (
   status TEXT DEFAULT 'intake',
   payment_type TEXT DEFAULT 'insurance',
   payment_status TEXT DEFAULT 'unpaid',
+  amount_paid_cents INTEGER DEFAULT 0,
+  amount_owed_cents INTEGER DEFAULT 0,
   invoice_emailed_at TIMESTAMPTZ,
   claim_number TEXT,
   insurer TEXT,

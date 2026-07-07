@@ -3,6 +3,7 @@ const { dbGet, dbRun } = require('../db');
 const { getStripeClient } = require('./stripe');
 const { sendMail } = require('./mailer');
 const { closedPaidInvoiceEmail } = require('./emailTemplates');
+const { getRoMoneySummary } = require('./roMoney');
 
 function appBaseUrl() {
   return String(process.env.APP_URL || process.env.PUBLIC_URL || 'https://revvshop.app').replace(/\/+$/, '');
@@ -11,21 +12,7 @@ function appBaseUrl() {
 function normalizedPaymentStatus(ro) {
   const raw = String(ro?.payment_status || '').trim().toLowerCase();
   if (raw) return raw;
-  return ro?.payment_received ? 'succeeded' : 'unpaid';
-}
-
-function dueAmountCents(ro) {
-  const explicitTotal = Number(ro?.total || 0);
-  if (Number.isFinite(explicitTotal) && explicitTotal > 0) {
-    return Math.round(explicitTotal * 100);
-  }
-  const parts = Number(ro?.parts_cost || 0);
-  const labor = Number(ro?.labor_cost || 0);
-  const sublet = Number(ro?.sublet_cost || 0);
-  const tax = Number(ro?.tax || 0);
-  const fallback = parts + labor + sublet + tax;
-  if (!Number.isFinite(fallback) || fallback <= 0) return 0;
-  return Math.round(fallback * 100);
+  return ro?.payment_received ? 'paid' : 'unpaid';
 }
 
 async function ensureTrackingToken(roId, shopId) {
@@ -50,7 +37,7 @@ async function createPaymentCheckoutLinkForRo({ roId, shopId, customerEmail = nu
   }
 
   const ro = await dbGet(
-    `SELECT id, shop_id, ro_number, total, parts_cost, labor_cost, sublet_cost, tax, payment_status, payment_received
+    `SELECT id, shop_id, ro_number, payment_status, payment_received
      FROM repair_orders
      WHERE id = $1 AND shop_id = $2`,
     [roId, shopId]
@@ -58,13 +45,14 @@ async function createPaymentCheckoutLinkForRo({ roId, shopId, customerEmail = nu
   if (!ro) return { ok: false, error: 'Repair order not found' };
 
   const paymentStatus = normalizedPaymentStatus(ro);
-  if (paymentStatus === 'succeeded') {
+  if (paymentStatus === 'paid') {
     return { ok: false, error: 'Repair order is already paid' };
   }
 
-  const amountCents = dueAmountCents(ro);
+  const money = await getRoMoneySummary(ro.id, ro.shop_id);
+  const amountCents = money.totalCents;
   if (!amountCents) {
-    return { ok: false, error: 'Repair order total must be greater than zero' };
+    return { ok: false, error: 'No payable estimate line items found for this RO' };
   }
 
   const token = trackingToken || (await ensureTrackingToken(ro.id, ro.shop_id));
@@ -126,7 +114,7 @@ async function sendClosedPaidInvoiceEmail({ roId, shopId, force = false }) {
   if (!ctx) return { sent: false, reason: 'not_found' };
   if (!ctx.customer_email) return { sent: false, reason: 'no_customer_email' };
   if (ctx.status !== 'closed') return { sent: false, reason: 'not_closed' };
-  if (normalizedPaymentStatus(ctx) !== 'succeeded') return { sent: false, reason: 'not_paid' };
+  if (normalizedPaymentStatus(ctx) !== 'paid') return { sent: false, reason: 'not_paid' };
   if (ctx.invoice_emailed_at && !force) return { sent: false, reason: 'already_sent' };
 
   const token = await ensureTrackingToken(ctx.id, ctx.shop_id);

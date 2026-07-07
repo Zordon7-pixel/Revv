@@ -8,12 +8,13 @@ const { createPaymentIntent, constructWebhookEvent } = require('../services/stri
 const { sendMail } = require('../services/mailer');
 const { paymentConfirmationEmail } = require('../services/emailTemplates');
 const { createPaymentCheckoutLinkForRo, sendClosedPaidInvoiceEmail } = require('../services/customerBilling');
+const { getPaidCents, getRoMoneySummary, reconcilePaymentStatus } = require('../services/roMoney');
 
 const router = express.Router();
 
 function normalizedPaymentStatus(ro) {
   if (ro?.payment_status) return ro.payment_status;
-  if (ro?.payment_received) return 'succeeded';
+  if (ro?.payment_received) return 'paid';
   return 'unpaid';
 }
 
@@ -41,15 +42,17 @@ async function ensurePaymentsTable() {
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     )
   `);
+  await dbRun(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS amount_paid_cents INTEGER DEFAULT 0`);
+  await dbRun(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS amount_owed_cents INTEGER DEFAULT 0`);
 }
 
 async function handleCreateIntent(req, res) {
   try {
     await ensurePaymentsTable();
 
-    const { ro_id: roId, amount } = req.body || {};
-    if (!roId || amount === undefined) {
-      return res.status(400).json({ error: 'ro_id and amount are required' });
+    const { ro_id: roId, amount, allow_partial } = req.body || {};
+    if (!roId) {
+      return res.status(400).json({ error: 'ro_id is required' });
     }
 
     const ro = await dbGet(
@@ -58,13 +61,23 @@ async function handleCreateIntent(req, res) {
     );
     if (!ro) return res.status(404).json({ error: 'Repair order not found' });
 
-    const amountCents = normalizeAmountCents(amount);
+    const money = await getRoMoneySummary(ro.id, req.user.shop_id);
+    if (!money.lineCount || money.totalCents <= 0) {
+      return res.status(400).json({ error: 'No payable estimate line items found for this RO' });
+    }
+
+    const amountCents = amount === undefined ? money.totalCents : normalizeAmountCents(amount);
     if (!amountCents) return res.status(400).json({ error: 'amount must be a positive integer in cents' });
+    if (amountCents !== money.totalCents && allow_partial !== true) {
+      return res.status(400).json({ error: 'Payment amount must match the server-calculated amount owed' });
+    }
 
     const paymentIntent = await createPaymentIntent(amountCents, 'usd', {
       roId: ro.id,
       shopId: req.user.shop_id,
       roNumber: ro.ro_number || '',
+      amountOwedCents: String(money.totalCents),
+      paymentKind: amountCents === money.totalCents ? 'full' : 'partial',
     });
 
     if (!paymentIntent) {
@@ -97,11 +110,21 @@ async function handleCreateIntent(req, res) {
     );
 
     await dbRun(
-      'UPDATE repair_orders SET payment_status = $1, stripe_payment_intent_id = $2, updated_at = $3 WHERE id = $4 AND shop_id = $5',
-      ['pending', paymentIntent.id, new Date().toISOString(), ro.id, req.user.shop_id]
+      `UPDATE repair_orders
+       SET payment_status = $1,
+           stripe_payment_intent_id = $2,
+           amount_owed_cents = $3,
+           updated_at = $4
+       WHERE id = $5 AND shop_id = $6`,
+      ['pending', paymentIntent.id, money.totalCents, new Date().toISOString(), ro.id, req.user.shop_id]
     );
 
-    return res.json({ clientSecret: paymentIntent.client_secret, paymentIntentId: paymentIntent.id });
+    return res.json({
+      clientSecret: paymentIntent.client_secret,
+      paymentIntentId: paymentIntent.id,
+      amountCents,
+      amountOwedCents: money.totalCents,
+    });
   } catch (err) {
     return res.status(500).json({ error: err.message || 'Failed to create payment intent' });
   }
@@ -114,6 +137,7 @@ router.post('/create-intent', auth, requireTechnician, async (req, res) => {
   req.body = {
     ro_id: req.body?.ro_id || req.body?.roId,
     amount: req.body?.amount,
+    allow_partial: req.body?.allow_partial === true,
   };
   return handleCreateIntent(req, res);
 });
@@ -193,18 +217,28 @@ router.post('/webhook', async (req, res) => {
       }
 
       if (roId && shopId) {
+        const money = await getRoMoneySummary(roId, shopId);
+        const paidCents = await getPaidCents(roId, shopId);
+        const nextPaymentStatus = reconcilePaymentStatus({
+          paidCents,
+          owedCents: money.totalCents,
+        });
+        const paymentReceived = nextPaymentStatus === 'paid' ? 1 : 0;
+
         await dbRun(
           `UPDATE repair_orders
            SET payment_status = $1,
                stripe_payment_intent_id = $2,
-               payment_received = 1,
-               payment_received_at = $3,
-               payment_method = $4,
-               paid_at = $5,
-               paid_amount = $6,
-               updated_at = $7
-           WHERE id = $8 AND shop_id = $9`,
-          ['succeeded', intent.id, paidAt, 'card', paidAt, amountPaid, new Date().toISOString(), roId, shopId]
+               payment_received = $3,
+               payment_received_at = $4,
+               payment_method = $5,
+               paid_at = $6,
+               paid_amount = $7,
+               amount_paid_cents = $8,
+               amount_owed_cents = $9,
+               updated_at = $10
+           WHERE id = $11 AND shop_id = $12`,
+          [nextPaymentStatus, intent.id, paymentReceived, paidAt, 'card', paidAt, amountPaid, paidCents, money.totalCents, new Date().toISOString(), roId, shopId]
         );
 
         const ro = await dbGet('SELECT ro_number FROM repair_orders WHERE id = $1 AND shop_id = $2', [roId, shopId]);

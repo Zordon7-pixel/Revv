@@ -56,6 +56,44 @@ const ro = await dbGet('SELECT * FROM ros WHERE id = $1 AND shop_id = $2', [id, 
 await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 ```
 
+---
+
+## Dispatch Log — 2026-07-07 Phase 1 Money Authority (H2 + H3)
+
+**Status:** BUILD READY for Claude Code QA. Local commit only; not pushed or deployed.
+
+**Scope**
+- Made RO invoice/payment totals server-authoritative from estimate line items plus shop tax.
+- Removed client control over scalar RO money fields in the PATCH route.
+- Reconciled payment state from integer cents paid vs integer cents owed.
+- Switched close gating to strict `payment_status = 'paid'` instead of the legacy boolean-only close path.
+- Added additive `amount_paid_cents` and `amount_owed_cents` columns for reconciliation snapshots.
+- No customer, shop, RO, seed, reset, migration, or destructive data mutation was performed. Miles Automotive data was not touched.
+
+**Files changed**
+- `backend/src/services/roMoney.js`
+- `backend/src/routes/ros.js`
+- `backend/src/routes/invoice.js`
+- `backend/src/routes/payments.js`
+- `backend/src/services/customerBilling.js`
+- `backend/src/db/index.js`
+- `backend/src/db/migrate.js`
+- `backend/src/db/schema.pg.sql`
+- `backend/src/__tests__/moneyAuthority.phase1.test.js`
+
+**Verification**
+```
+node --check backend/src/services/roMoney.js backend/src/routes/ros.js backend/src/routes/invoice.js backend/src/routes/payments.js backend/src/services/customerBilling.js backend/src/db/index.js backend/src/db/migrate.js
+node --test backend/src/__tests__/moneyAuthority.phase1.test.js  # 4/4 passed
+node --test backend/src/__tests__/moneyAuthority.phase1.test.js backend/src/__tests__/*.test.js backend/test/*.test.js  # 99/99 passed
+cd frontend && npm run build  # passed; existing Vite/Sentry and chunk-size warnings only
+rm -rf frontend/dist && git diff --check && git ls-files frontend/dist  # clean; no dist tracked
+```
+
+**Notes for QA**
+- Phase 1 is intentionally build-only. Hermes should ship only after Claude Code QA PASS.
+- Existing unrelated local edits in `backend/src/routes/auth.js`, `frontend/src/pages/ShopRegister.jsx`, and legal/marketing files were left untouched.
+
 ## Dispatch Log — 2026-07-03 FABLE H1: Unified RO Status Gates
 
 **Status:** DONE + VERIFIED — BUILD ONLY, NOT PUSHED/DEPLOYED
