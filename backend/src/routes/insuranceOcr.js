@@ -14,6 +14,7 @@ const { promisify } = require('util');
 const auth = require('../middleware/auth');
 const { dbGet } = require('../db');
 const { notifyOps } = require('../services/notifyOps');
+const { detectEstimateFormat, FORMATS } = require('../services/estimateFormat');
 
 const MAX_ESTIMATE_UPLOAD_FILES = 12;
 const allowedEstimateMimeTypes = new Set(['application/pdf']);
@@ -816,6 +817,20 @@ router.post('/parse', auth, insuranceOcrLimiter, upload.fields([
     }
 
     extractedTextForTotals = pdfTextParts.join('\n\n');
+    const formatDetection = extractedTextForTotals ? detectEstimateFormat(extractedTextForTotals) : {
+      format: FORMATS.UNKNOWN,
+      confidence: 0,
+      signals: [],
+    };
+
+    if (extractedTextForTotals && formatDetection.format === FORMATS.UNKNOWN) {
+      return res.status(409).json({
+        success: false,
+        needs_review: true,
+        error: 'Estimate format needs review before import.',
+        detected_format: formatDetection.format,
+      });
+    }
 
     if (imageDataUrls.length) {
       retryWithRelaxedPrompt = () => parseEstimateImageUrlsWithFallback(openai, imageDataUrls, RELAXED_LINE_ITEM_PROMPT);
@@ -914,6 +929,7 @@ router.post('/parse', auth, insuranceOcrLimiter, upload.fields([
         vehicle_year: parsed.vehicle_year || null,
         vehicle_make: parsed.vehicle_make || null,
         vehicle_model: parsed.vehicle_model || null,
+        detected_format: formatDetection.format,
         total_allowed: parsed.total_allowed || null,
         estimate_totals: estimateTotals,
         line_items: items,

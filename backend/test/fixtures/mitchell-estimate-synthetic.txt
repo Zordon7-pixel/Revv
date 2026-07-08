@@ -1,0 +1,30 @@
+Mitchell Cloud Estimating
+UltraMate Estimate Report
+Estimate Profile
+Repair Facility: Example Collision Works
+Owner: Jordan Ellis
+Claim Number: SYN-MIT-2002
+Insurance Company: Sample Casualty
+Vehicle: 2021 Toyota Camry SE
+VIN: 4T1G11AK0MU000002
+
+Line  Oper  Description                         Labor  Refinish  Extended
+1     R&I   Remove/install front bumper cover     1.4      0.0       84.00
+2     REPL  Front bumper cover                    0.0      0.0      512.40
+3     RPR   Repair left fender                    2.2      1.6      228.00
+4     BLND  Blend left front door                 0.0      1.2       72.00
+5           Pre-repair scan                       0.0      0.0      165.00
+
+Estimate Totals
+Body Labor        24.6   $60.00   $1,476.00
+Refinish Labor    17.9   $60.00   $1,074.00
+Glass Labor        0.5   $60.00      $30.00
+Frame Labor        2.0   $60.00     $120.00
+Mechanical Labor   1.5   $60.00      $90.00
+Taxable Parts                      $5,038.72
+Paint Materials                    $1,322.88
+Other Additional Costs                 $5.00
+Costs Total                        $1,445.73
+Gross Total                        $9,969.25
+Deductible                        -$1,000.00
+Net Estimate Total                 $8,969.25

@@ -1,3 +1,20 @@
+CCC ONE
+Preliminary Estimate
+Estimate of Record
+Shop: Example Collision Center
+Owner: Riley Parker
+Claim Number: SYN-CCC-1001
+Insurance Company: Example Mutual Insurance
+Vehicle: 2022 Honda Accord EX
+VIN: 1HGCV1F30NA000001
+
+Line  Op   Description                         Qty    Labor  Paint    Price
+1     R&I  Front bumper cover                  1.0     1.2    0.0      0.00
+2     RPR  Refinish front bumper cover         1.0     0.0    2.5      0.00
+3     REPL Grille assembly                     1.0     0.0    0.0    425.10
+4     RNI  Aim front radar sensor              1.0     0.8    0.0      0.00
+5          Hazardous waste disposal            1.0     0.0    0.0     35.00
+
 ESTIMATE TOTALS
 CategoryBasisRateCost $
 Parts2,976.73
@@ -10,3 +27,5 @@ Sales Tax$ 7,136.73@8.8750 %633.38
 Total Cost of Repairs7,770.11
 Total Adjustments0.00
 Net Cost of Repairs7,770.11
+
+This is not an authorization to repair.
