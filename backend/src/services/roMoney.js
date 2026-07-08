@@ -15,7 +15,7 @@ function normalizePaymentStatus(status) {
 }
 
 function isPaidStatus(status) {
-  return normalizePaymentStatus(status) === 'paid';
+  return ['paid', 'succeeded'].includes(normalizePaymentStatus(status));
 }
 
 async function getRoMoneySummary(roId, shopId) {
@@ -66,7 +66,8 @@ async function getPaidCents(roId, shopId) {
 }
 
 function reconcilePaymentStatus({ paidCents, owedCents }) {
-  if (owedCents > 0 && paidCents >= owedCents) return 'paid';
+  if (owedCents <= 0) return 'unpaid';
+  if (paidCents >= owedCents) return 'paid';
   if (paidCents > 0) return 'partial';
   return 'unpaid';
 }

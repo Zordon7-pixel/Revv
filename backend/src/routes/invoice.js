@@ -82,17 +82,10 @@ async function loadInvoiceContext(roId, shopId) {
   );
   if (!ro) return null;
 
-  const [shop, customer, vehicle, parts, lineItems, moneySummary] = await Promise.all([
+  const [shop, customer, vehicle, lineItems, moneySummary] = await Promise.all([
     dbGet('SELECT * FROM shops WHERE id = $1', [ro.shop_id]),
     ro.customer_id ? dbGet('SELECT * FROM customers WHERE id = $1 AND shop_id = $2', [ro.customer_id, ro.shop_id]) : null,
     ro.vehicle_id ? dbGet('SELECT * FROM vehicles WHERE id = $1 AND shop_id = $2', [ro.vehicle_id, ro.shop_id]) : null,
-    dbAll(
-      `SELECT id, part_name, part_number, quantity, unit_cost
-       FROM parts_orders
-       WHERE ro_id = $1 AND shop_id = $2
-       ORDER BY created_at ASC`,
-      [ro.id, ro.shop_id]
-    ),
     dbAll(
       `SELECT id, type, description, quantity, unit_price, total, taxable, sort_order
        FROM estimate_line_items
@@ -104,7 +97,7 @@ async function loadInvoiceContext(roId, shopId) {
   ]);
 
   const deliveryFeeBreakdown = await calculateDeliveryFeeBreakdown(ro);
-  return { ro, shop, customer, vehicle, parts, lineItems, moneySummary, deliveryFeeBreakdown };
+  return { ro, shop, customer, vehicle, lineItems, moneySummary, deliveryFeeBreakdown };
 }
 
 function streamInvoicePdf(res, context) {
