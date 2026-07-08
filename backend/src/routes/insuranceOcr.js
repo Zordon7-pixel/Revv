@@ -15,6 +15,7 @@ const auth = require('../middleware/auth');
 const { dbGet } = require('../db');
 const { notifyOps } = require('../services/notifyOps');
 const { detectEstimateFormat, FORMATS } = require('../services/estimateFormat');
+const { parseCccEstimate } = require('../services/cccExtractor');
 
 const MAX_ESTIMATE_UPLOAD_FILES = 12;
 const allowedEstimateMimeTypes = new Set(['application/pdf']);
@@ -776,12 +777,6 @@ router.post('/parse', auth, insuranceOcrLimiter, upload.fields([
       return res.status(400).json({ success: false, error: 'No file uploaded. Use field name: estimate_image' });
     }
 
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey && !process.env.ANTHROPIC_API_KEY) {
-      return res.status(503).json({ success: false, error: AI_CONFIG_ERROR });
-    }
-
-    const openai = apiKey ? new OpenAI({ apiKey }) : null;
     let raw = '';
     let extractedTextForTotals = '';
     let retryWithRelaxedPrompt = null;
@@ -831,6 +826,27 @@ router.post('/parse', auth, insuranceOcrLimiter, upload.fields([
         detected_format: formatDetection.format,
       });
     }
+
+    if (extractedTextForTotals && formatDetection.format === FORMATS.CCC) {
+      const parsed = parseCccEstimate(extractedTextForTotals);
+      if (parsed.needs_review) {
+        return res.status(409).json({
+          success: false,
+          needs_review: true,
+          error: 'CCC estimate needs review before import.',
+          detected_format: formatDetection.format,
+          parsed,
+        });
+      }
+      return res.json({ success: true, parsed });
+    }
+
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey && !process.env.ANTHROPIC_API_KEY) {
+      return res.status(503).json({ success: false, error: AI_CONFIG_ERROR });
+    }
+
+    const openai = apiKey ? new OpenAI({ apiKey }) : null;
 
     if (imageDataUrls.length) {
       retryWithRelaxedPrompt = () => parseEstimateImageUrlsWithFallback(openai, imageDataUrls, RELAXED_LINE_ITEM_PROMPT);

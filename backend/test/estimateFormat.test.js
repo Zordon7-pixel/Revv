@@ -1,38 +1,43 @@
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
-const test = require('node:test');
+import { describe, expect, it } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 
+const require = createRequire(import.meta.url);
 const { detectEstimateFormat } = require('../src/services/estimateFormat');
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 function fixture(name) {
   return fs.readFileSync(path.join(__dirname, 'fixtures', name), 'utf8');
 }
 
-test('detectEstimateFormat detects synthetic CCC estimate text', () => {
-  const result = detectEstimateFormat(fixture('ccc-estimate-totals.txt'));
+describe('detectEstimateFormat', () => {
+  it('detects synthetic CCC estimate text', () => {
+    const result = detectEstimateFormat(fixture('ccc-estimate-totals.txt'));
 
-  assert.equal(result.format, 'ccc');
-  assert.ok(result.confidence > 0);
-  assert.ok(result.signals.includes('ccc-one-header'));
-  assert.ok(result.signals.includes('ccc-estimate-totals-block'));
-});
+    expect(result.format).toBe('ccc');
+    expect(result.confidence).toBeGreaterThan(0);
+    expect(result.signals).toContain('ccc-one-header');
+    expect(result.signals).toContain('ccc-estimate-totals-block');
+  });
 
-test('detectEstimateFormat detects synthetic Mitchell estimate text', () => {
-  const result = detectEstimateFormat(fixture('mitchell-estimate-synthetic.txt'));
+  it('detects synthetic Mitchell estimate text', () => {
+    const result = detectEstimateFormat(fixture('mitchell-estimate-synthetic.txt'));
 
-  assert.equal(result.format, 'mitchell');
-  assert.ok(result.confidence > 0);
-  assert.ok(result.signals.includes('mitchell-header'));
-  assert.ok(result.signals.includes('mitchell-gross-net-totals'));
-});
+    expect(result.format).toBe('mitchell');
+    expect(result.confidence).toBeGreaterThan(0);
+    expect(result.signals).toContain('mitchell-header');
+    expect(result.signals).toContain('mitchell-gross-net-totals');
+  });
 
-test('detectEstimateFormat returns unknown for unrecognized text', () => {
-  const result = detectEstimateFormat(fixture('estimate-format-unknown.txt'));
+  it('returns unknown for unrecognized text', () => {
+    const result = detectEstimateFormat(fixture('estimate-format-unknown.txt'));
 
-  assert.deepEqual(result, {
-    format: 'unknown',
-    confidence: 0,
-    signals: [],
+    expect(result).toEqual({
+      format: 'unknown',
+      confidence: 0,
+      signals: [],
+    });
   });
 });

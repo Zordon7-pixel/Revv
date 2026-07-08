@@ -1,0 +1,25 @@
+CCC ONE
+Preliminary Estimate
+Estimate of Record
+Shop: Example Collision Center
+Owner: Synthetic Customer
+Claim Number: SYN-CCC-BAD
+Insurance Company: Example Mutual Insurance
+Vehicle: 2024 Toyota Camry LE
+VIN: 4T1C11AK0RU000001
+
+Line  Op   Description                         Part No.       Type        Body   Paint   Price     Extended
+1     REPL Front cover                         52119-00000    OEM         0.0    0.0     300.00
+2     RPR  Repair quarter panel                -              -           ???    0.0     50.00     100.00
+
+ESTIMATE TOTALS
+CategoryBasisRateCost $
+Parts300.00
+Body Labor2.0 hrs@$ 50.00 /hr100.00
+Subtotal400.00
+Sales Tax$ 400.00@8.0000 %32.00
+Total Cost of Repairs450.00
+Total Adjustments0.00
+Net Cost of Repairs450.00
+
+This is not an authorization to repair.

@@ -8,12 +8,15 @@ Insurance Company: Example Mutual Insurance
 Vehicle: 2022 Honda Accord EX
 VIN: 1HGCV1F30NA000001
 
-Line  Op   Description                         Qty    Labor  Paint    Price
-1     R&I  Front bumper cover                  1.0     1.2    0.0      0.00
-2     RPR  Refinish front bumper cover         1.0     0.0    2.5      0.00
-3     REPL Grille assembly                     1.0     0.0    0.0    425.10
-4     RNI  Aim front radar sensor              1.0     0.8    0.0      0.00
-5          Hazardous waste disposal            1.0     0.0    0.0     35.00
+Line  Op   Description                         Part No.       Type        Body   Paint   Price     Extended
+1     R&I  Front bumper cover                  -              -           1.2    0.0     50.00     60.00
+2     REFN Refinish front bumper cover         -              -           0.0    2.5     50.00     125.00
+3     REPL Grille assembly                     71121-TVA-A01  OEM         0.0    0.0     425.10    425.10
+4     RNI  Aim front radar sensor              -              -           0.8    0.0     50.00     40.00
+5     REPL Bumper bracket                      AM-1042        AM          0.0    0.0     75.50     75.50
+6     REPL Left headlamp assembly              LKQ-8821       Recycled    0.0    0.0     120.00    120.00
+7     REPL Reconditioned wheel                 RW-2200        Recond      0.0    0.0     210.00    210.00
+8     SUBL Hazardous waste disposal            -              -           0.0    0.0     35.00     35.00
 
 ESTIMATE TOTALS
 CategoryBasisRateCost $
