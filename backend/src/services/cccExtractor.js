@@ -84,6 +84,11 @@ function moneyToCents(value) {
   return Math.round(amount * 100);
 }
 
+function centsToDollars(value) {
+  if (!Number.isFinite(value)) return value;
+  return Math.round(value) / 100;
+}
+
 function numberOrNull(value) {
   if (value === null || value === undefined || value === '') return null;
   const num = Number(String(value).replace(/[$,%]/g, '').trim());
@@ -207,15 +212,14 @@ function parseLineItems(lines, reviewReasons) {
       type: itemTypeFor(operation, priceCents),
       description,
       quantity: laborUnits > 0 ? laborUnits : 1,
-      unit_price: priceCents,
+      unit_price: centsToDollars(priceCents),
       operation_code: operation,
       operation,
       part_number: match[4] === '-' ? null : match[4],
       part_type: match[5] === '-' ? null : partTypeFor(match[5]),
       labor_units: laborUnits || null,
       labor_type: laborTypeFor(operation, bodyHours, paintHours, description),
-      price_cents: priceCents,
-      extended_cents: extendedCents,
+      extended: centsToDollars(extendedCents),
     });
   }
   return items;
@@ -317,10 +321,18 @@ function reconcileTotals(totals, reviewReasons) {
   }
 }
 
-function assertCentsShape(totals) {
+function totalsToDollars(totals) {
+  const normalized = { ...totals };
+  for (const key of MONEY_FIELDS) {
+    normalized[key] = centsToDollars(normalized[key] ?? 0);
+  }
+  return normalized;
+}
+
+function assertDollarsShape(totals) {
   for (const [key, value] of Object.entries(totals)) {
     if (!MONEY_FIELDS.has(key)) continue;
-    if (!Number.isInteger(value)) throw new Error(`CCC extractor emitted non-cent money field: ${key}`);
+    if (!Number.isFinite(value) || value < 0) throw new Error(`CCC extractor emitted invalid dollar money field: ${key}`);
   }
 }
 
@@ -331,10 +343,11 @@ function parseCccEstimate(text) {
   parsed.line_items = parseLineItems(lines, parsed.review_reasons);
   parsed.estimate_totals = parseTotals(lines, parsed.review_reasons);
   reconcileTotals(parsed.estimate_totals, parsed.review_reasons);
+  parsed.estimate_totals = totalsToDollars(parsed.estimate_totals);
 
   if (!parsed.line_items.length) parsed.review_reasons.push('ccc_line_items_missing');
   parsed.needs_review = parsed.review_reasons.length > 0;
-  assertCentsShape(parsed.estimate_totals);
+  assertDollarsShape(parsed.estimate_totals);
   return parsed;
 }
 

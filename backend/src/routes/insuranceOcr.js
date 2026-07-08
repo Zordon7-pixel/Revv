@@ -818,15 +818,6 @@ router.post('/parse', auth, insuranceOcrLimiter, upload.fields([
       signals: [],
     };
 
-    if (extractedTextForTotals && formatDetection.format === FORMATS.UNKNOWN) {
-      return res.status(409).json({
-        success: false,
-        needs_review: true,
-        error: 'Estimate format needs review before import.',
-        detected_format: formatDetection.format,
-      });
-    }
-
     if (extractedTextForTotals && formatDetection.format === FORMATS.CCC) {
       const parsed = parseCccEstimate(extractedTextForTotals);
       if (parsed.needs_review) {
