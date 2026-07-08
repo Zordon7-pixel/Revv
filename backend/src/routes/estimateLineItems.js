@@ -3,6 +3,7 @@ const { dbAll, dbGet, dbRun } = require('../db');
 const auth = require('../middleware/auth');
 const { v4: uuidv4 } = require('uuid');
 const { calculateProfit } = require('../services/profit');
+const { centsToDollars, dollarsToCents } = require('../services/roMoney');
 
 const ALLOWED_TYPES = new Set(['labor', 'parts', 'sublet', 'other']);
 
@@ -41,7 +42,7 @@ function parseJsonMaybe(value) {
 function firstMoney(...values) {
   for (const value of values) {
     if (value === null || value === undefined || value === '') continue;
-    const num = toNumber(value, NaN);
+    const num = toNumber(String(value).replace(/[$,]/g, '').trim(), NaN);
     if (Number.isFinite(num)) return num;
   }
   return 0;
@@ -53,14 +54,6 @@ function sumMoney(...values) {
 
 function hasMoneyValue(value) {
   return value !== null && value !== undefined && value !== '';
-}
-
-function moneyToCents(value) {
-  return Math.round(firstMoney(value) * 100);
-}
-
-function centsToMoney(cents) {
-  return Number((Number(cents || 0) / 100).toFixed(2));
 }
 
 function sumPresentMoney(...values) {
@@ -102,11 +95,11 @@ function buildFinancialsFromAdjusterTotals(summary, rawTotals) {
     totals.tax_total,
     totals.tax_amount
   );
-  const partsCents = moneyToCents(partsCost);
-  const laborCents = moneyToCents(laborCost);
-  const subletCents = moneyToCents(subletCost);
-  const taxCents = moneyToCents(statedTax);
-  const grossCents = moneyToCents(grossTotal);
+  const partsCents = dollarsToCents(partsCost);
+  const laborCents = dollarsToCents(laborCost);
+  const subletCents = dollarsToCents(subletCost);
+  const taxCents = dollarsToCents(statedTax);
+  const grossCents = dollarsToCents(grossTotal);
   const bucketTotalCents = partsCents + laborCents + subletCents + taxCents;
   const deltaCents = grossCents - bucketTotalCents;
   const toleranceCents = 2;
@@ -128,7 +121,7 @@ function buildFinancialsFromAdjusterTotals(summary, rawTotals) {
   }
 
   const tax = statedTax;
-  const total = grossTotal || centsToMoney(bucketTotalCents);
+  const total = grossTotal || Number(centsToDollars(bucketTotalCents).toFixed(2));
 
   if (!total && !partsCost && !laborCost && !subletCost && !tax && !deductible) return null;
 
@@ -279,7 +272,7 @@ async function getProfitOpportunities(roId, shopId) {
   };
 }
 
-async function syncRepairOrderFinancials(roId, shopId, summary) {
+async function syncRepairOrderFinancials(roId, shopId, summary, options = {}) {
   const [ro, metadata] = await Promise.all([
     dbGet(
       `SELECT id, deductible_waived, referral_fee, goodwill_repair_cost
@@ -297,8 +290,8 @@ async function syncRepairOrderFinancials(roId, shopId, summary) {
   if (!ro) return;
 
   const adjusterFinancials = buildFinancialsFromAdjusterTotals(summary, metadata?.adjuster_totals);
-  if (adjusterFinancials?.needs_review) return adjusterFinancials;
-  const nextValues = adjusterFinancials || {
+  if (adjusterFinancials?.needs_review && options.enforceAdjusterReconcile) return adjusterFinancials;
+  const nextValues = adjusterFinancials && !adjusterFinancials.needs_review ? adjusterFinancials : {
     parts_cost: toNumber(summary?.parts_total, 0),
     labor_cost: toNumber(summary?.labor_total, 0),
     sublet_cost: toNumber(summary?.sublet_total, 0),
@@ -355,7 +348,9 @@ router.post('/:roId/import-financials', auth, async (req, res) => {
     if (!ro) return res.status(404).json({ error: 'Repair order not found' });
 
     const summary = await getSummary(req.params.roId, req.user.shop_id);
-    const adjusterFinancials = await syncRepairOrderFinancials(req.params.roId, req.user.shop_id, summary);
+    const adjusterFinancials = await syncRepairOrderFinancials(req.params.roId, req.user.shop_id, summary, {
+      enforceAdjusterReconcile: true,
+    });
     if (adjusterFinancials?.needs_review) {
       return res.status(409).json({
         success: false,

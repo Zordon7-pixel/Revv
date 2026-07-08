@@ -51,7 +51,36 @@ function loadEstimateRoute({ adjusterTotals }) {
   return { calls, route: require('../routes/estimateLineItems') };
 }
 
-test('syncRepairOrderFinancials does not write scalar RO money when adjuster totals need review', async () => {
+test('syncRepairOrderFinancials import mode does not write scalar RO money when adjuster totals need review', async () => {
+  const { calls, route } = loadEstimateRoute({
+    adjusterTotals: {
+      parts: 5000,
+      body_labor_cost: 2500,
+      paint_supplies_cost: 1000,
+      sales_tax_cost: 400,
+      total_cost_of_repairs: 10000,
+    },
+  });
+
+  const result = await route.syncRepairOrderFinancials(
+    'ro-1',
+    'shop-1',
+    {
+      parts_total: 5000,
+      labor_total: 2500,
+      sublet_total: 1000,
+      tax_amount: 400,
+      grand_total: 8900,
+    },
+    { enforceAdjusterReconcile: true }
+  );
+
+  assert.equal(result.needs_review, true);
+  assert.equal(result.reconciliation.status, 'needs_review');
+  assert.equal(calls.dbRun.length, 0);
+});
+
+test('syncRepairOrderFinancials line-item mode falls back to line-item summary when stored adjuster totals need review', async () => {
   const { calls, route } = loadEstimateRoute({
     adjusterTotals: {
       parts: 5000,
@@ -63,14 +92,15 @@ test('syncRepairOrderFinancials does not write scalar RO money when adjuster tot
   });
 
   const result = await route.syncRepairOrderFinancials('ro-1', 'shop-1', {
-    parts_total: 5000,
-    labor_total: 2500,
-    sublet_total: 1000,
-    tax_amount: 400,
-    grand_total: 8900,
+    parts_total: 111,
+    labor_total: 222,
+    sublet_total: 333,
+    tax_amount: 44,
+    grand_total: 710,
   });
 
   assert.equal(result.needs_review, true);
-  assert.equal(result.reconciliation.status, 'needs_review');
-  assert.equal(calls.dbRun.length, 0);
+  assert.equal(calls.dbRun.length, 1);
+  assert.match(calls.dbRun[0].sql, /UPDATE repair_orders/);
+  assert.deepEqual(calls.dbRun[0].params.slice(0, 6), [111, 222, 333, 44, 710, 710]);
 });

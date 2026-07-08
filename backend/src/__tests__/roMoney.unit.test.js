@@ -1,4 +1,5 @@
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
 
@@ -66,6 +67,19 @@ test('getRoMoneySummary derives integer cents and applies tax once on taxable ag
   assert.deepEqual(calls.map((call) => call.params), [['ro-1', 'shop-1'], ['shop-1']]);
 });
 
+test('canonical money helpers convert dollars and round cents without unit drift', () => {
+  const { roMoney } = loadRoMoney({ summary: {}, shop: {} });
+
+  assert.equal(roMoney.dollarsToCents(12.345), 1235);
+  assert.equal(roMoney.dollarsToCents('$1,234.56'), 123456);
+  assert.equal(roMoney.dollarsToCents('bad input'), 0);
+  assert.equal(roMoney.centsToDollars(123456), 1234.56);
+  assert.equal(roMoney.roundToIntCents(1234.56), 1235);
+  assert.equal(roMoney.roundToIntCents('1234.4'), 1234);
+  assert.equal(roMoney.roundToIntCents('12.34'), 12);
+  assert.equal(roMoney.roundToIntCents(''), null);
+});
+
 test('reconcilePaymentStatus maps paid cents against owed cents', () => {
   const { roMoney } = loadRoMoney({ summary: {}, shop: {} });
 
@@ -86,4 +100,19 @@ test('isPaidStatus treats paid and legacy succeeded as paid only', () => {
   assert.equal(roMoney.isPaidStatus('partial'), false);
   assert.equal(roMoney.isPaidStatus('unpaid'), false);
   assert.equal(roMoney.isPaidStatus(''), false);
+});
+
+test('money helper definitions live only in services/roMoney.js', () => {
+  const srcRoot = path.resolve(__dirname, '..');
+  const files = [
+    'routes/ros.js',
+    'routes/supplements.js',
+    'routes/estimateLineItems.js',
+  ];
+
+  for (const file of files) {
+    const source = fs.readFileSync(path.join(srcRoot, file), 'utf8');
+    assert.doesNotMatch(source, /\bfunction\s+(?:dollarsToCents|moneyToCents|centsToMoney|toIntCents)\b/);
+    assert.doesNotMatch(source, /\bconst\s+(?:dollarsToCents|moneyToCents|centsToMoney|toIntCents)\b/);
+  }
 });

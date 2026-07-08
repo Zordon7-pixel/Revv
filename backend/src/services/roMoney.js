@@ -1,13 +1,20 @@
 const { dbGet } = require('../db');
 
 function dollarsToCents(value) {
-  const amount = Number(value);
+  const amount = Number(String(value ?? '').replace(/[$,]/g, '').trim());
   if (!Number.isFinite(amount)) return 0;
   return Math.round(amount * 100);
 }
 
 function centsToDollars(cents) {
   return Number(cents || 0) / 100;
+}
+
+function roundToIntCents(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return null;
+  return Math.round(amount);
 }
 
 function normalizePaymentStatus(status) {
@@ -79,4 +86,5 @@ module.exports = {
   getRoMoneySummary,
   isPaidStatus,
   reconcilePaymentStatus,
+  roundToIntCents,
 };
