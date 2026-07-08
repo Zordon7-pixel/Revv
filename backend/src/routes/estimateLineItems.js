@@ -51,6 +51,24 @@ function sumMoney(...values) {
   return values.reduce((sum, value) => sum + firstMoney(value), 0);
 }
 
+function hasMoneyValue(value) {
+  return value !== null && value !== undefined && value !== '';
+}
+
+function moneyToCents(value) {
+  return Math.round(firstMoney(value) * 100);
+}
+
+function centsToMoney(cents) {
+  return Number((Number(cents || 0) / 100).toFixed(2));
+}
+
+function sumPresentMoney(...values) {
+  return values
+    .filter(hasMoneyValue)
+    .reduce((sum, value) => sum + firstMoney(value), 0);
+}
+
 function buildFinancialsFromAdjusterTotals(summary, rawTotals) {
   const totals = parseJsonMaybe(rawTotals);
   if (!totals || typeof totals !== 'object') return null;
@@ -76,12 +94,41 @@ function buildFinancialsFromAdjusterTotals(summary, rawTotals) {
   const deductibleFromTotals = Math.abs(firstMoney(totals.deductible));
   const deductible = deductibleFromTotals || (grossTotal > 0 && netTotal > 0 ? Math.max(0, grossTotal - netTotal) : 0);
 
-  const lineTax = toNumber(summary?.tax_amount, 0);
-  const impliedTax = grossTotal > 0
-    ? grossTotal - partsCost - laborCost - subletCost
-    : 0;
-  const tax = impliedTax >= 0 ? impliedTax : lineTax;
-  const total = grossTotal || (partsCost + laborCost + subletCost + tax);
+  const statedTax = sumPresentMoney(
+    totals.sales_tax_cost,
+    totals.county_tax_cost,
+    totals.other_tax_1_cost,
+    totals.tax,
+    totals.tax_total,
+    totals.tax_amount
+  );
+  const partsCents = moneyToCents(partsCost);
+  const laborCents = moneyToCents(laborCost);
+  const subletCents = moneyToCents(subletCost);
+  const taxCents = moneyToCents(statedTax);
+  const grossCents = moneyToCents(grossTotal);
+  const bucketTotalCents = partsCents + laborCents + subletCents + taxCents;
+  const deltaCents = grossCents - bucketTotalCents;
+  const toleranceCents = 2;
+  const reconciliation = {
+    status: grossCents <= 0 || Math.abs(deltaCents) <= toleranceCents ? 'accepted' : 'needs_review',
+    tolerance_cents: toleranceCents,
+    gross_total_cents: grossCents,
+    bucket_total_cents: bucketTotalCents,
+    delta_cents: deltaCents,
+  };
+
+  if (grossCents > 0 && Math.abs(deltaCents) > toleranceCents) {
+    return {
+      needs_review: true,
+      reason: 'adjuster_totals_do_not_reconcile',
+      message: 'Estimate totals need review before importing financials.',
+      reconciliation,
+    };
+  }
+
+  const tax = statedTax;
+  const total = grossTotal || centsToMoney(bucketTotalCents);
 
   if (!total && !partsCost && !laborCost && !subletCost && !tax && !deductible) return null;
 
@@ -93,6 +140,8 @@ function buildFinancialsFromAdjusterTotals(summary, rawTotals) {
     total: Number(total.toFixed(2)),
     deductible: Number(deductible.toFixed(2)),
     net_estimate_total: Number((netTotal || Math.max(0, total - deductible)).toFixed(2)),
+    needs_review: false,
+    reconciliation,
   };
 }
 
@@ -248,6 +297,7 @@ async function syncRepairOrderFinancials(roId, shopId, summary) {
   if (!ro) return;
 
   const adjusterFinancials = buildFinancialsFromAdjusterTotals(summary, metadata?.adjuster_totals);
+  if (adjusterFinancials?.needs_review) return adjusterFinancials;
   const nextValues = adjusterFinancials || {
     parts_cost: toNumber(summary?.parts_total, 0),
     labor_cost: toNumber(summary?.labor_total, 0),
@@ -306,6 +356,15 @@ router.post('/:roId/import-financials', auth, async (req, res) => {
 
     const summary = await getSummary(req.params.roId, req.user.shop_id);
     const adjusterFinancials = await syncRepairOrderFinancials(req.params.roId, req.user.shop_id, summary);
+    if (adjusterFinancials?.needs_review) {
+      return res.status(409).json({
+        success: false,
+        status: 'needs_review',
+        error: adjusterFinancials.message,
+        reconciliation: adjusterFinancials.reconciliation,
+        summary: { ...summary, source: 'adjuster_totals', ...adjusterFinancials },
+      });
+    }
 
     const financials = await dbGet(
       `SELECT parts_cost, labor_cost, sublet_cost, tax, total, estimate_amount, deductible, true_profit
@@ -546,3 +605,4 @@ router.post('/metadata/:roId', auth, async (req, res) => {
 
 module.exports = router;
 module.exports.buildFinancialsFromAdjusterTotals = buildFinancialsFromAdjusterTotals;
+module.exports.syncRepairOrderFinancials = syncRepairOrderFinancials;
