@@ -5,6 +5,7 @@ const path = require('path');
 const auth = require('../middleware/auth');
 const { dbGet, dbAll } = require('../db');
 const { calculateDeliveryFeeBreakdown, toMoney } = require('../services/deliveryFees');
+const { centsToDollars, getRoMoneySummary } = require('../services/roMoney');
 
 function money(value) {
   const n = Number(value || 0);
@@ -60,7 +61,7 @@ function ensureTableRow(doc, rowY, col) {
 function normalizedPaymentStatus(ro) {
   const explicit = String(ro?.payment_status || '').trim().toLowerCase();
   if (explicit) return explicit;
-  return ro?.payment_received ? 'succeeded' : 'unpaid';
+  return ro?.payment_received ? 'paid' : 'unpaid';
 }
 
 function decodeDataUrlImage(dataUrl) {
@@ -81,43 +82,32 @@ async function loadInvoiceContext(roId, shopId) {
   );
   if (!ro) return null;
 
-  const [shop, customer, vehicle, parts] = await Promise.all([
+  const [shop, customer, vehicle, lineItems, moneySummary] = await Promise.all([
     dbGet('SELECT * FROM shops WHERE id = $1', [ro.shop_id]),
     ro.customer_id ? dbGet('SELECT * FROM customers WHERE id = $1 AND shop_id = $2', [ro.customer_id, ro.shop_id]) : null,
     ro.vehicle_id ? dbGet('SELECT * FROM vehicles WHERE id = $1 AND shop_id = $2', [ro.vehicle_id, ro.shop_id]) : null,
     dbAll(
-      `SELECT id, part_name, part_number, quantity, unit_cost
-       FROM parts_orders
+      `SELECT id, type, description, quantity, unit_price, total, taxable, sort_order
+       FROM estimate_line_items
        WHERE ro_id = $1 AND shop_id = $2
-       ORDER BY created_at ASC`,
+       ORDER BY sort_order ASC, created_at ASC`,
       [ro.id, ro.shop_id]
     ),
+    getRoMoneySummary(ro.id, ro.shop_id),
   ]);
 
   const deliveryFeeBreakdown = await calculateDeliveryFeeBreakdown(ro);
-  return { ro, shop, customer, vehicle, parts, deliveryFeeBreakdown };
+  return { ro, shop, customer, vehicle, lineItems, moneySummary, deliveryFeeBreakdown };
 }
 
 function streamInvoicePdf(res, context) {
-  const { ro, shop, customer, vehicle, parts, deliveryFeeBreakdown } = context;
-  const partsItems = Array.isArray(parts) ? parts : [];
-  const partsLineTotal = partsItems.reduce((sum, part) => {
-    const qty = Number(part.quantity || 1);
-    const unit = Number(part.unit_cost || 0);
-    return sum + qty * unit;
-  }, 0);
-
-  const labor = Number(ro.labor_cost || 0);
-  const sublet = Number(ro.sublet_cost || 0);
-  const tax = Number(ro.tax || 0);
-  const partsCost = Number(ro.parts_cost || 0);
-  const subtotalWithoutDelivery = partsItems.length > 0
-    ? (partsLineTotal + labor + sublet)
-    : (partsCost + labor + sublet);
+  const { ro, shop, customer, vehicle, lineItems, moneySummary, deliveryFeeBreakdown } = context;
+  const estimateItems = Array.isArray(lineItems) ? lineItems : [];
+  const estimateSubtotal = centsToDollars(moneySummary?.subtotalCents || 0);
+  const tax = centsToDollars(moneySummary?.taxCents || 0);
   const deliveryFeeTotal = Number(deliveryFeeBreakdown?.total_fee || 0);
-  const subtotal = subtotalWithoutDelivery + deliveryFeeTotal;
-  const baseTotal = Number(ro.total || 0) > 0 ? Number(ro.total) : subtotalWithoutDelivery + tax;
-  const total = toMoney(baseTotal + deliveryFeeTotal);
+  const subtotal = estimateSubtotal + deliveryFeeTotal;
+  const total = toMoney(centsToDollars(moneySummary?.totalCents || 0) + deliveryFeeTotal);
 
   const safeRo = String(ro.ro_number || ro.id || 'invoice').replace(/[^a-zA-Z0-9-_]+/g, '-');
   res.setHeader('Content-Type', 'application/pdf');
@@ -174,14 +164,13 @@ function streamInvoicePdf(res, context) {
   const col = { item: 52, qty: 350, unit: 410, total: 500 };
   let rowY = drawTableHeader(doc, col, tableStartY);
 
-  for (const part of partsItems) {
+  for (const item of estimateItems) {
     rowY = ensureTableRow(doc, rowY, col);
-    const qty = Number(part.quantity || 1);
-    const unit = Number(part.unit_cost || 0);
-    const lineTotal = qty * unit;
-    const title = part.part_number
-      ? `${part.part_name || 'Part'} (${part.part_number})`
-      : (part.part_name || 'Part');
+    const qty = Number(item.quantity || 1);
+    const unit = Number(item.unit_price || 0);
+    const lineTotal = Number(item.total || 0);
+    const typeLabel = String(item.type || 'line').toUpperCase();
+    const title = `${typeLabel}: ${item.description || 'Estimate line item'}`;
     doc.font('Helvetica').fontSize(10).fillColor('#111827');
     doc.text(title, col.item, rowY, { width: 290 });
     doc.text(String(qty), col.qty, rowY, { width: 40, align: 'center' });
@@ -191,14 +180,15 @@ function streamInvoicePdf(res, context) {
     doc.moveTo(50, rowY - 3).lineTo(562, rowY - 3).strokeColor('#F3F4F6').lineWidth(1).stroke();
   }
 
-  const serviceItems = [
-    { description: 'Labor', amount: labor },
-    { description: 'Sublet Work', amount: sublet },
-  ].filter((item) => item.amount > 0);
-
-  if (!partsItems.length && partsCost > 0) {
-    serviceItems.unshift({ description: 'Parts', amount: partsCost });
+  if (!estimateItems.length) {
+    rowY = ensureTableRow(doc, rowY, col);
+    doc.font('Helvetica-Oblique').fontSize(10).fillColor('#6B7280');
+    doc.text('No estimate line items are available for this invoice.', col.item, rowY, { width: 430 });
+    rowY += 18;
+    doc.moveTo(50, rowY - 3).lineTo(562, rowY - 3).strokeColor('#F3F4F6').lineWidth(1).stroke();
   }
+
+  const serviceItems = [];
 
   const deliveryLeg = deliveryFeeBreakdown?.delivery;
   const pickupLeg = deliveryFeeBreakdown?.pickup;
@@ -258,7 +248,7 @@ function streamInvoicePdf(res, context) {
   const paymentStatus = normalizedPaymentStatus(ro);
   doc.font('Helvetica').fontSize(10).fillColor('#374151');
   doc.text('Payment Status', 50, doc.y, { width: 140 });
-  doc.font('Helvetica-Bold').fillColor(paymentStatus === 'succeeded' ? '#047857' : '#B45309');
+  doc.font('Helvetica-Bold').fillColor(paymentStatus === 'paid' ? '#047857' : '#B45309');
   doc.text(String(paymentStatus).toUpperCase(), 195, doc.y, { width: 100 });
 
   if (ro.notes) {
@@ -299,7 +289,7 @@ router.get('/public/:token', async (req, res) => {
 
     const context = await loadInvoiceContext(tokenRecord.ro_id, tokenRecord.shop_id);
     if (!context) return res.status(404).json({ error: 'Repair order not found' });
-    if (context.ro.status !== 'closed' || normalizedPaymentStatus(context.ro) !== 'succeeded') {
+    if (context.ro.status !== 'closed' || normalizedPaymentStatus(context.ro) !== 'paid') {
       return res.status(403).json({ error: 'Invoice is available after the repair order is closed and paid' });
     }
 

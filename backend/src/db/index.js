@@ -96,6 +96,8 @@ async function initDb() {
       status TEXT DEFAULT 'intake',
       payment_type TEXT DEFAULT 'insurance',
       payment_status TEXT DEFAULT 'unpaid',
+      amount_paid_cents INTEGER DEFAULT 0,
+      amount_owed_cents INTEGER DEFAULT 0,
       claim_number TEXT,
       insurer TEXT,
       insurance_claim_number TEXT,
@@ -420,6 +422,8 @@ async function initDb() {
   await pool.query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS payment_received_at TEXT`);
   await pool.query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS payment_method TEXT`);
   await pool.query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS payment_status TEXT DEFAULT 'unpaid'`);
+  await pool.query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS amount_paid_cents INTEGER DEFAULT 0`);
+  await pool.query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS amount_owed_cents INTEGER DEFAULT 0`);
   await pool.query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS invoice_emailed_at TEXT`);
   await pool.query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS billing_month VARCHAR(7)`);
   await pool.query(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS revenue_period VARCHAR(8) DEFAULT 'current'`);
@@ -429,7 +433,8 @@ async function initDb() {
   await pool.query(`ALTER TABLE repair_orders ALTER COLUMN revenue_period SET DEFAULT 'current'`);
   await pool.query(`ALTER TABLE repair_orders ALTER COLUMN carried_over SET DEFAULT FALSE`);
   await pool.query(`UPDATE repair_orders SET billing_month = TO_CHAR(created_at, 'YYYY-MM') WHERE billing_month IS NULL`);
-  await pool.query(`UPDATE repair_orders SET payment_status = 'succeeded' WHERE payment_status IS NULL AND payment_received = 1`);
+  await pool.query(`UPDATE repair_orders SET payment_status = 'paid' WHERE payment_status IS NULL AND payment_received = 1`);
+  await pool.query(`UPDATE repair_orders SET payment_status = 'paid' WHERE LOWER(payment_status) = 'succeeded'`);
   await pool.query(`UPDATE repair_orders SET payment_status = 'unpaid' WHERE payment_status IS NULL`);
   await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS onboarded BOOLEAN DEFAULT FALSE`);
   await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS logo_url TEXT`);
