@@ -3,7 +3,7 @@ const { pool, dbGet, dbAll, dbRun } = require('../db');
 const auth = require('../middleware/auth');
 const { ROLE_RANK, getRoleRank, requireAdmin, requireTechnician } = require('../middleware/roles');
 const { calculateProfit } = require('../services/profit');
-const { getRoMoneySummary, isPaidStatus } = require('../services/roMoney');
+const { getRoMoneySummary, isPaidStatus, roundToIntCents } = require('../services/roMoney');
 const { sendSMS, isConfiguredForShop } = require('../services/sms');
 const { sendMail } = require('../services/mailer');
 const { statusChangeEmail } = require('../services/emailTemplates');
@@ -434,13 +434,6 @@ async function recomputeSupplementLedgerTotals(roId, shopId) {
     insurance_approved_amount: Number(totals.insurance_approved_amount || 0),
     total_insurer_owed: totalInsurerOwed,
   };
-}
-
-function toIntCents(value) {
-  if (value === null || value === undefined || value === '') return null;
-  const n = Number(value);
-  if (!Number.isFinite(n)) return null;
-  return Math.round(n);
 }
 
 function cleanText(value, max = 255) {
@@ -1536,10 +1529,10 @@ router.patch('/:id/insurance', auth, requireTechnician, async (req, res) => {
       updates.is_drp = !!updates.is_drp;
     }
     if (Object.prototype.hasOwnProperty.call(updates, 'insurance_approved_amount')) {
-      updates.insurance_approved_amount = toIntCents(updates.insurance_approved_amount);
+      updates.insurance_approved_amount = roundToIntCents(updates.insurance_approved_amount);
     }
     if (Object.prototype.hasOwnProperty.call(updates, 'supplement_amount')) {
-      updates.supplement_amount = toIntCents(updates.supplement_amount);
+      updates.supplement_amount = roundToIntCents(updates.supplement_amount);
     }
     if (Object.prototype.hasOwnProperty.call(updates, 'deductible')) {
       updates.deductible = normalizeMoney(updates.deductible, 0);
@@ -1558,7 +1551,7 @@ router.patch('/:id/insurance', auth, requireTechnician, async (req, res) => {
         : (Number(existing?.supplement_amount) || 0);
       updates.total_insurer_owed = approved + supplement;
     } else {
-      updates.total_insurer_owed = toIntCents(updates.total_insurer_owed);
+      updates.total_insurer_owed = roundToIntCents(updates.total_insurer_owed);
     }
 
     if (Object.prototype.hasOwnProperty.call(updates, 'insurance_claim_number')) {
@@ -1599,7 +1592,7 @@ router.post('/:id/supplement', auth, requireTechnician, async (req, res) => {
     );
     if (!ro) return res.status(404).json({ error: 'Not found' });
 
-    const amount = toIntCents(req.body?.amount);
+    const amount = roundToIntCents(req.body?.amount);
     const notes = typeof req.body?.notes === 'string' ? req.body.notes.trim() : '';
     if (amount === null || amount <= 0) return res.status(400).json({ error: 'Enter a supplement amount greater than $0.00.' });
 

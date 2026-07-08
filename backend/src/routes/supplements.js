@@ -2,14 +2,9 @@ const router = require('express').Router();
 const { dbGet, dbAll, dbRun } = require('../db');
 const auth = require('../middleware/auth');
 const { v4: uuidv4 } = require('uuid');
+const { dollarsToCents } = require('../services/roMoney');
 
 const VALID_STATUSES = ['Pending', 'Approved', 'Denied', 'Withdrawn'];
-
-function dollarsToCents(value) {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return null;
-  return Math.round(n * 100);
-}
 
 async function recomputeSupplementLedgerTotals(roId, shopId) {
   const totals = await dbGet(
