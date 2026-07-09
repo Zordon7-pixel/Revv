@@ -8,23 +8,32 @@ Insurance Company: Sample Casualty
 Vehicle: 2021 Toyota Camry SE
 VIN: 4T1G11AK0MU000002
 
-Line  Oper  Description                         Labor  Refinish  Extended
-1     R&I   Remove/install front bumper cover     1.4      0.0       84.00
-2     REPL  Front bumper cover                    0.0      0.0      512.40
-3     RPR   Repair left fender                    2.2      1.6      228.00
-4     BLND  Blend left front door                 0.0      1.2       72.00
-5           Pre-repair scan                       0.0      0.0      165.00
+Line  Description                       Oper  Part Number      Kind       Labor  Refinish  Price     Extended
+1     Front bumper cover                R&I   -                -          1.4    0.0       60.00     84.00
+2     Front bumper cover                REPL  52119-06999      OEM        0.0    0.0       512.40    512.40
+3     Repair left fender                RPR   -                -          2.2    1.6       60.00     228.00
+4     Blend left front door             BLND  -                -          0.0    1.2       60.00     72.00
+5     Pre-repair scan                   R&I   -                -          1.5    0.0       60.00     90.00
+6     Frame setup and measure           RPR   -                -          0.5    0.0       60.00     30.00
+7     Replace windshield glass          R&I   -                -          0.4    0.0       60.00     24.00
+8     Bumper reinforcement              REPL  AM-8842          AM         0.0    0.0       225.00    225.00
+9     Left headlamp assembly            REPL  LKQ-1402         Recycled   0.0    0.0       170.00    170.00
+10    Reconditioned alloy wheel         REPL  RW-3100          Recond     0.0    0.0       125.60    125.60
+11    Sublet alignment                  SUBL  -                -          0.0    0.0       165.00    165.00
 
 Estimate Totals
-Body Labor        24.6   $60.00   $1,476.00
-Refinish Labor    17.9   $60.00   $1,074.00
-Glass Labor        0.5   $60.00      $30.00
-Frame Labor        2.0   $60.00     $120.00
+Body Labor         3.6   $60.00     $216.00
+Refinish Labor     2.8   $60.00     $168.00
 Mechanical Labor   1.5   $60.00      $90.00
-Taxable Parts                      $5,038.72
-Paint Materials                    $1,322.88
-Other Additional Costs                 $5.00
-Costs Total                        $1,445.73
-Gross Total                        $9,969.25
-Deductible                        -$1,000.00
-Net Estimate Total                 $8,969.25
+Frame Labor        0.5   $60.00      $30.00
+Glass Labor        0.4   $60.00      $24.00
+Taxable Parts                    $1,033.00
+Paint Materials                     $84.00
+Other Additional Costs             $165.00
+Subtotal                         $1,810.00
+Sales Tax $1,033.00 @ 8.8750%       $91.65
+Gross Total                       $1,901.65
+Deductible                         -$500.00
+Net Estimate Total                $1,401.65
+
+Mitchell Estimating 24.2

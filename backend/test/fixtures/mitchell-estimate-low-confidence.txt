@@ -1,0 +1,22 @@
+Mitchell Cloud Estimating
+UltraMate Estimate Report
+Estimate Profile
+Owner: Synthetic Mitchell Customer
+Claim Number: SYN-MIT-BAD
+Insurance Company: Sample Casualty
+Vehicle: 2023 Honda Civic EX
+VIN: 2HGFE2F50PH000003
+
+Line  Description                       Oper  Part Number      Kind       Labor  Refinish  Price     Extended
+1     Front bumper cover                REPL  04711-T20-A00    OEM        0.0    0.0       400.00
+2     Repair quarter panel              RPR   -                -          ???    1.0       60.00     120.00
+
+Estimate Totals
+Body Labor         2.0   $60.00     $120.00
+Taxable Parts                      $400.00
+Subtotal                           $520.00
+Sales Tax unreadable               $32.00
+Gross Total                        $570.00
+Net Estimate Total                 $570.00
+
+Mitchell Estimating 24.2

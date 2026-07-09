@@ -5,7 +5,7 @@
   "scripts": {
     "start": "node src/app.js",
     "dev": "nodemon src/app.js",
-    "test:run": "vitest run test/cccExtractor.test.js test/estimateFormat.test.js",
+    "test:run": "vitest run test/cccExtractor.test.js test/estimateFormat.test.js test/mitchellExtractor.test.js",
     "seed:demo": "node ../scripts/seed-demo.js",
     "seed:demo:force": "node ../scripts/seed-demo.js --force"
   },

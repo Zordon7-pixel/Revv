@@ -16,6 +16,7 @@ const { dbGet } = require('../db');
 const { notifyOps } = require('../services/notifyOps');
 const { detectEstimateFormat, FORMATS } = require('../services/estimateFormat');
 const { parseCccEstimate } = require('../services/cccExtractor');
+const { parseMitchellEstimate } = require('../services/mitchellExtractor');
 
 const MAX_ESTIMATE_UPLOAD_FILES = 12;
 const allowedEstimateMimeTypes = new Set(['application/pdf']);
@@ -825,6 +826,20 @@ router.post('/parse', auth, insuranceOcrLimiter, upload.fields([
           success: false,
           needs_review: true,
           error: 'CCC estimate needs review before import.',
+          detected_format: formatDetection.format,
+          parsed,
+        });
+      }
+      return res.json({ success: true, parsed });
+    }
+
+    if (extractedTextForTotals && formatDetection.format === FORMATS.MITCHELL) {
+      const parsed = parseMitchellEstimate(extractedTextForTotals);
+      if (parsed.needs_review) {
+        return res.status(409).json({
+          success: false,
+          needs_review: true,
+          error: 'Mitchell estimate needs review before import.',
           detected_format: formatDetection.format,
           parsed,
         });
