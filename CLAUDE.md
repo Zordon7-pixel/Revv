@@ -106,6 +106,16 @@ Screenshots: /tmp/revv-appraisal-quick-intake.png, /tmp/revv-new-ro-appraisal-lo
 - LOW, non-blocking: gap-review counts `ro_photos` by `ro_id` after first validating that the RO belongs to `req.user.shop_id`; `ro_photos` has no `shop_id` column, so this follows the established ownership pattern and does not expose cross-tenant data.
 - **Hermes is clear to ship.**
 
+**Hermes Deployment Verification — 2026-07-10 (Appraisal Quick Intake + Estimate Gap Review)**
+- Pushed linear HEAD `6536f91` to `origin/main` (fast-forward `db96956..6536f91`, no force, no history rewrite). Batch: feature commits `2b70648`, `00a5a6b` + docs `1a16572`, `12d9a05`, `6536f91`.
+- Railway auto-deployed; both hosts live on `6536f91`:
+  - `https://revvshop.app/api/health` → HTTP 200, commit `6536f9182d9072ac1182289c1607d606d7c7ca8e`
+  - `https://revv-production-ffa9.up.railway.app/api/health` → HTTP 200, commit `6536f9182d9072ac1182289c1607d606d7c7ca8e`
+- `./scripts/smoke-test.sh` → 6 PASS + 1 documented `RESEND_API_KEY` local-env WARN.
+- Railway startup logs clean: Sentry release `6536f91`, `[DB] Tables initialized`, idempotent migrations complete, PostgreSQL connected, server on :4000, feedback audit + owner digest jobs ran. Pre-existing benign `[migrate] schemaSql warning ... syntax error at or near "NOT"` present (idempotent path completes right after; no migration/schema files changed in this batch) — not a blocker.
+- Control-room BUILD SHIPPED notice: could not be sent from this workspace host — `openclaw` CLI not on PATH here. Left for operator/Bryan to post.
+- Production is ready for Bryan to validate Appraisal Quick Intake.
+
 ## Dispatch Log — 2026-07-10 iPad Landscape Compact Entry Follow-up
 
 **Status:** CLAUDE CODE QA PASS — READY FOR HERMES DEPLOYMENT; PHYSICAL IPAD VALIDATION REQUIRED
