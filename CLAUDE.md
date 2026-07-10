@@ -99,6 +99,13 @@ Playwright Estimate Builder: gap visible, evidence sources visible, zero-dollar 
 Screenshots: /tmp/revv-appraisal-quick-intake.png, /tmp/revv-new-ro-appraisal-loaded.png, /tmp/revv-estimate-gap-review.png, /tmp/revv-appraisal-mobile.png
 ```
 
+**Claude Code QA — PASS (2026-07-10) Appraisal Quick Intake + Estimate Gap Review**
+- Reviewed range `db96956..12d9a05` (feature commits `2b70648`, `00a5a6b`). All 15 dispatch items verified with file:line evidence; zero CRITICAL/HIGH/MEDIUM findings.
+- Independent verification: backend route syntax passed; backend suites passed 98/98, 7/7, and 19/19; frontend passed 23 files/53 tests; production build passed; `git diff --check` clean; `frontend/dist` untracked.
+- Confirmed intake mode returns metadata only and leaves full estimate parsing unchanged; unique matching reuses records; new extracted customers start with consent false while matched customers retain stored consent; exact duplicate claims warn before create; PDF source pages attach as claim documents; failed attachments cannot trigger duplicate RO creation; New RO no longer shows contextless AI suggestions; Estimate Gap Review is authenticated, shop-scoped, evidence-gated, and forces zero-dollar non-taxable drafts.
+- LOW, non-blocking: gap-review counts `ro_photos` by `ro_id` after first validating that the RO belongs to `req.user.shop_id`; `ro_photos` has no `shop_id` column, so this follows the established ownership pattern and does not expose cross-tenant data.
+- **Hermes is clear to ship.**
+
 ## Dispatch Log — 2026-07-10 iPad Landscape Compact Entry Follow-up
 
 **Status:** CLAUDE CODE QA PASS — READY FOR HERMES DEPLOYMENT; PHYSICAL IPAD VALIDATION REQUIRED
