@@ -58,7 +58,7 @@ await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 
 ## Dispatch Log — 2026-07-10 iPad Landscape Compact Entry Follow-up
 
-**Status:** BUILT LOCALLY — READY FOR CLAUDE CODE QA
+**Status:** CLAUDE CODE QA PASS — READY FOR HERMES DEPLOYMENT; PHYSICAL IPAD VALIDATION REQUIRED
 
 **Why the prior production fix was insufficient**
 - Physical-iPad validation after deploy `c69ae92` still reproduced the landscape keyboard problem.
@@ -106,6 +106,13 @@ Rendered wireless-keyboard state:
 - complete Add RO form restored; typed value retained
 - screenshot: /tmp/revv-ipad-wireless-keyboard-full-form.png
 ```
+
+**Claude Code QA — PASS (2026-07-10)**
+- Verified all 12 dispatch items with file/line evidence.
+- Independent verification: 19 frontend test files, 46/46 tests passed; production build passed; `git diff --check` clean; `frontend/dist` untracked.
+- Confirmed realistic `iPad` + `Mobile` Safari UA remains tablet, both-height shrink remains tablet, compact values sync and survive Done, and portrait/wireless/desktop gates remain normal.
+- Confirmed listener/timer/animation-frame cleanup and no backend/schema/data/Miles changes.
+- Do not close the originating user report until Bryan validates the deployed change with the physical iPad in landscape.
 
 **Claude Code QA Prompt**
 ```text
