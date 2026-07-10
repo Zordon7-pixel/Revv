@@ -58,7 +58,7 @@ await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 
 ## Dispatch Log — 2026-07-10 Photo Delete + Above-Sidebar Overlay Audit
 
-**Status:** BUILD READY FOR CLAUDE CODE QA — NOT DEPLOYED
+**Status:** CLAUDE CODE QA PASS — CLEAR FOR HERMES — NOT DEPLOYED
 
 **Reported behavior:** Uploaded photos could not always be deleted, and full-size photo previews rendered behind the desktop/tablet sidebar because they used `z-50` inside the main-content stacking context while the sidebar uses `z-70`. The image also opened too large by default.
 
@@ -88,6 +88,15 @@ await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 - `cd frontend && npm run build` — PASS (existing bundle-size warning only).
 - `git diff --check` — PASS; `frontend/dist` remains untracked.
 - Regression tests assert each internal photo viewer is portaled directly under `document.body`, uses `z-200` above the sidebar, defaults to bounded dimensions, supports zoom, and calls the correct delete endpoint. The Total Loss dialog test also asserts RO Detail dialogs use the body-level `z-150` overlay.
+
+**Claude Code read-only QA — PASS (`98a3097`)**
+- Zero CRITICAL, HIGH, or MEDIUM findings.
+- Confirmed Pre-Dropoff, Technician Photos, and Claim Tracker photo evidence all use the body-level viewer, preserve broken-media fallbacks, close stale viewer state after delete, and use the correct existing shop-scoped delete endpoints.
+- Confirmed the viewer defaults to bounded dimensions, zooms only after explicit controls, restores body scrolling, supports Escape/backdrop/close, and cannot sit behind the sidebar.
+- Confirmed Communication Log, Mark Paid, Total Loss, and Storage Billing now use `AppOverlay` without changing submit/cancel business logic.
+- Re-ran focused tests 10/10, frontend 62/62, backend photo scope 3/3, frontend build, diff check, and untracked-dist guard.
+- Non-blocking product note accepted: non-assistant technicians/employees can now delete RO photos, matching the existing authenticated/shop-scoped backend permission and the request that uploaders be able to delete photos.
+- Remaining post-deploy check: physical iPad/tablet landscape confirmation. No hosted database or Miles Automotive data was accessed during QA.
 
 ## Dispatch Log — 2026-07-10 CCC/Mitchell Reviewable Estimate Import
 
