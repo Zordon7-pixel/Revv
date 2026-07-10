@@ -104,6 +104,40 @@ describe('EstimateImportWizard', () => {
     expect(screen.getByText('20.5 hrs @ $50.00/hr = $1,025.00')).toBeInTheDocument()
   })
 
+  it('opens a flagged CCC parse in editable review without creating the RO', async () => {
+    const user = userEvent.setup()
+    api.post.mockResolvedValueOnce({
+      data: {
+        success: true,
+        needs_review: true,
+        detected_format: 'ccc',
+        parsed: {
+          detected_format: 'ccc',
+          needs_review: true,
+          review_reasons: ['net_cost_does_not_reconcile'],
+          customer_name: 'Avery Stone',
+          vehicle_make: 'Honda',
+          vehicle_model: 'Accord',
+          line_items: [
+            { type: 'parts', description: 'Front bumper cover', quantity: 1, unit_price: 450 },
+          ],
+        },
+      },
+    })
+
+    const { container } = render(<EstimateImportWizard onClose={vi.fn()} onImported={vi.fn()} />)
+    fireEvent.change(container.querySelector('input[type="file"]'), {
+      target: { files: [new File(['pdf'], 'ccc-estimate.pdf', { type: 'application/pdf' })] },
+    })
+    await user.click(screen.getByRole('button', { name: /Parse Estimate/i }))
+
+    expect(await screen.findByText('Review this CCC estimate before import')).toBeInTheDocument()
+    expect(screen.getByText('The extracted net total does not reconcile after deductible and adjustments.')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('Front bumper cover')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Create Repair Order' })).toBeEnabled()
+    expect(api.post).toHaveBeenCalledTimes(1)
+  })
+
   it.each([
     ['absent', undefined],
     ['empty', {}],

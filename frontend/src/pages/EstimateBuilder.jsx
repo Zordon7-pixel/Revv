@@ -4,6 +4,7 @@ import { AlertTriangle, ArrowLeft, Camera, CheckCircle, Plus, Trash2, X } from '
 import api from '../lib/api'
 import { computeEstimateCrossCheck } from '../lib/estimateCrossCheck'
 import { safeExternalErrorMessage } from '../lib/safeErrors'
+import EstimateReviewWarning from '../components/EstimateReviewWarning'
 
 const ITEM_TYPES = ['labor', 'parts', 'sublet', 'other']
 
@@ -67,6 +68,11 @@ function OcrModal({
             {metaNote}
           </div>
         )}
+        <EstimateReviewWarning
+          parsed={parsed}
+          pendingActionCopy="Line items are not imported until you choose Import."
+          className="mx-5 mt-3"
+        />
         {crossCheck?.hasMismatch && (
           <div className="px-5 py-3 bg-red-950/30 border-b border-red-800/30 space-y-1">
             {crossCheck.messages.map((msg, idx) => (
@@ -456,6 +462,8 @@ export default function EstimateBuilder() {
       if (!data.success) throw new Error(data.error || 'Parse failed')
       const parsed = {
         ...(data.parsed || {}),
+        detected_format: data?.parsed?.detected_format || data?.detected_format || null,
+        needs_review: Boolean(data?.needs_review || data?.parsed?.needs_review),
         line_items: Array.isArray(data?.parsed?.line_items) ? data.parsed.line_items : [],
       }
       const initialChecked = {}

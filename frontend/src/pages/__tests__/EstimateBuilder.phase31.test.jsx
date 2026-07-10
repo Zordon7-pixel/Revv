@@ -76,4 +76,40 @@ describe('EstimateBuilder OCR import', () => {
     expect(screen.queryByText(/sk-(?:proj-)?|platform\.[a-z]+\.com|api key/i)).not.toBeInTheDocument()
     expect(window.alert).not.toHaveBeenCalled()
   })
+
+  it('opens flagged CCC results for review instead of treating them as a failed upload', async () => {
+    api.post
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          needs_review: true,
+          detected_format: 'ccc',
+          parsed: {
+            detected_format: 'ccc',
+            needs_review: true,
+            review_reasons: ['subtotal_does_not_reconcile'],
+            line_items: [
+              { type: 'parts', description: 'Front bumper cover', quantity: 1, unit_price: 450 },
+            ],
+          },
+        },
+      })
+      .mockResolvedValueOnce({ data: { success: true, flags: [], summary: {} } })
+
+    const { container } = renderEstimateBuilder()
+    await screen.findByRole('heading', { name: 'Estimate Builder' })
+
+    fireEvent.change(container.querySelector('input[type="file"]'), {
+      target: {
+        files: [new File(['pdf'], 'ccc-estimate.pdf', { type: 'application/pdf' })],
+      },
+    })
+
+    expect(await screen.findByText('Review this CCC estimate before import')).toBeInTheDocument()
+    expect(screen.getByText('The extracted subtotal does not match the sum of its estimate buckets.')).toBeInTheDocument()
+    expect(screen.getByText('Front bumper cover')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Import 1 item' })).toBeEnabled()
+    expect(api.post.mock.calls.some(([url]) => String(url).startsWith('/estimate-items/'))).toBe(false)
+    expect(screen.queryByText('CCC estimate needs review before import.')).not.toBeInTheDocument()
+  })
 })

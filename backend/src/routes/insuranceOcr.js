@@ -54,6 +54,21 @@ const PDF_IMAGE_PAGE_LIMIT = 12;
 const AI_CONFIG_ERROR = 'AI estimate extraction is not configured correctly. Please contact support.';
 const ANTHROPIC_ESTIMATE_MODEL = process.env.ANTHROPIC_ESTIMATE_MODEL || process.env.ANTHROPIC_MODEL || 'claude-haiku-4-5';
 
+function buildDeterministicParseResponse(parsed, detectedFormat) {
+  const reviewReasons = Array.isArray(parsed?.review_reasons) ? parsed.review_reasons : [];
+  const needsReview = Boolean(parsed?.needs_review || reviewReasons.length);
+  return {
+    success: true,
+    needs_review: needsReview,
+    detected_format: detectedFormat || parsed?.detected_format || FORMATS.UNKNOWN,
+    parsed: {
+      ...parsed,
+      needs_review: needsReview,
+      review_reasons: reviewReasons,
+    },
+  };
+}
+
 const SYSTEM_PROMPT = `You are an insurance estimate parser for auto body shops. Extract all line items from this insurance estimate document.
 Return ONLY valid JSON in this exact format:
 {
@@ -889,16 +904,7 @@ router.post('/parse', auth, insuranceOcrLimiter, upload.fields([
       if (intakeMode) {
         return res.json({ success: true, parsed: normalizeIntakeParsed(parsed, formatDetection.format) });
       }
-      if (parsed.needs_review) {
-        return res.status(409).json({
-          success: false,
-          needs_review: true,
-          error: 'CCC estimate needs review before import.',
-          detected_format: formatDetection.format,
-          parsed,
-        });
-      }
-      return res.json({ success: true, parsed });
+      return res.json(buildDeterministicParseResponse(parsed, formatDetection.format));
     }
 
     if (extractedTextForTotals && formatDetection.format === FORMATS.MITCHELL) {
@@ -906,16 +912,7 @@ router.post('/parse', auth, insuranceOcrLimiter, upload.fields([
       if (intakeMode) {
         return res.json({ success: true, parsed: normalizeIntakeParsed(parsed, formatDetection.format) });
       }
-      if (parsed.needs_review) {
-        return res.status(409).json({
-          success: false,
-          needs_review: true,
-          error: 'Mitchell estimate needs review before import.',
-          detected_format: formatDetection.format,
-          parsed,
-        });
-      }
-      return res.json({ success: true, parsed });
+      return res.json(buildDeterministicParseResponse(parsed, formatDetection.format));
     }
 
     const apiKey = process.env.OPENAI_API_KEY;
@@ -1177,4 +1174,5 @@ module.exports.insuranceOcrLimiter = insuranceOcrLimiter;
 module.exports.insuranceOcrLimiterKeyGenerator = insuranceOcrLimiterKeyGenerator;
 module.exports.parseEstimateTotalsFromPdfText = parseEstimateTotalsFromPdfText;
 module.exports.normalizeIntakeParsed = normalizeIntakeParsed;
+module.exports.buildDeterministicParseResponse = buildDeterministicParseResponse;
 module.exports.INTAKE_PROMPT = INTAKE_PROMPT;

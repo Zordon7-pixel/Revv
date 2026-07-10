@@ -3,6 +3,7 @@ import { BadgeDollarSign, ChevronDown, ChevronUp, FileImage, Mail, Phone, Shield
 import api from '../lib/api'
 import { computeEstimateCrossCheck } from '../lib/estimateCrossCheck'
 import { safeExternalErrorMessage } from '../lib/safeErrors'
+import EstimateReviewWarning from './EstimateReviewWarning'
 
 const INSURANCE_COMPANIES = [
   'State Farm',
@@ -105,7 +106,11 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
       const { data } = await api.post('/insurance-ocr/parse', form, {
         headers: { 'Content-Type': 'multipart/form-data' },
       })
-      const parsed = data?.parsed || {}
+      const parsed = {
+        ...(data?.parsed || {}),
+        detected_format: data?.parsed?.detected_format || data?.detected_format || null,
+        needs_review: Boolean(data?.needs_review || data?.parsed?.needs_review),
+      }
       const items = Array.isArray(parsed?.line_items) ? parsed.line_items : (data?.items || [])
       setOcrItems(items)
       setOcrParsedMeta(parsed)
@@ -366,6 +371,11 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
                 Parsed: {[ocrParsedMeta.insurance_company, ocrParsedMeta.claim_number, ocrParsedMeta.adjuster_name, ocrParsedMeta.vehicle].filter(Boolean).join(' · ')}
               </p>
             )}
+            <EstimateReviewWarning
+              parsed={ocrParsedMeta}
+              pendingActionCopy="Line items are not imported until you choose Import."
+              className="mb-2"
+            />
             {ocrCrossCheck?.hasMismatch && (
               <div className="mb-2 rounded border border-red-700/40 bg-red-950/20 p-2 space-y-1">
                 {ocrCrossCheck.messages.map((msg, idx) => (

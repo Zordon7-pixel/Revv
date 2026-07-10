@@ -56,6 +56,41 @@ const ro = await dbGet('SELECT * FROM ros WHERE id = $1 AND shop_id = $2', [id, 
 await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 ```
 
+## Dispatch Log — 2026-07-10 CCC/Mitchell Reviewable Estimate Import
+
+**Status:** BUILD READY FOR CLAUDE CODE QA — NOT DEPLOYED
+
+**Reported behavior:** A recognized CCC insurance estimate returned `CCC estimate needs review before import` as a fatal error, preventing the shop from reaching the existing review/import UI.
+
+**Behavior shipped**
+- Recognized CCC and Mitchell documents now return HTTP 200 with `success: true`, the parsed estimate, `needs_review`, and preserved `review_reasons`. Parser uncertainty remains visible but is no longer misreported as an upload failure.
+- Added one shared, shop-facing review warning that translates parser reason codes into clear instructions without exposing internal reason strings.
+- Added the warning to Estimate Builder, the RO Insurance panel, and the Estimate Import Wizard. Each flow keeps its explicit Import/Create action; flagged line items or a new RO are not created merely by parsing the file.
+- Preserved deterministic parser reconciliation and low-confidence checks. No extractor thresholds, financial calculations, database schema, production data, seed, reset, or migration behavior changed.
+- Miles Automotive data was not read or modified. Verification used mocked files, mocked API responses, source-level route checks, and local builds only.
+
+**Files changed**
+- `backend/src/routes/insuranceOcr.js`
+- `backend/src/__tests__/insuranceOcr.review.test.js`
+- `frontend/src/components/EstimateReviewWarning.jsx`
+- `frontend/src/lib/estimateReview.js`
+- `frontend/src/lib/__tests__/estimateReview.test.js`
+- `frontend/src/pages/EstimateBuilder.jsx`
+- `frontend/src/pages/__tests__/EstimateBuilder.phase31.test.jsx`
+- `frontend/src/components/InsurancePanel.jsx`
+- `frontend/src/components/__tests__/InsurancePanel.phase31.test.jsx`
+- `frontend/src/components/EstimateImportWizard.jsx`
+- `frontend/src/components/__tests__/EstimateImportWizard.test.jsx`
+
+**Verification**
+- `node --check backend/src/routes/insuranceOcr.js` — PASS
+- Backend Node test files (excluding the three Vitest parser specs) — 119/119 PASS
+- `cd backend && npm run test:run` — 3 files / 7 tests PASS
+- `cd frontend && npm run test:run` — 24 files / 58 tests PASS
+- `cd frontend && npm run build` — PASS
+- `git diff --check` — PASS
+- Regression coverage confirms flagged CCC parses open review on all three frontend surfaces and make no estimate-item or RO creation request before the explicit action.
+
 ## Dispatch Log — 2026-07-10 Appraisal Quick Intake + Estimate Gap Review
 
 **Status:** BUILD READY FOR CLAUDE CODE QA — NOT DEPLOYED

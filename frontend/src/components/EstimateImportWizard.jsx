@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from 'react'
 import { ArrowRight, CheckCircle2, FileText, Loader2, Plus, Trash2, Upload, X } from 'lucide-react'
 import api from '../lib/api'
 import { safeExternalErrorMessage } from '../lib/safeErrors'
+import EstimateReviewWarning from './EstimateReviewWarning'
 
 const emptyForm = {
   customer_name: '',
@@ -85,6 +86,7 @@ export default function EstimateImportWizard({ onClose, onImported }) {
   const [form, setForm] = useState(emptyForm)
   const [items, setItems] = useState([])
   const [estimateTotals, setEstimateTotals] = useState(null)
+  const [parsedReview, setParsedReview] = useState(null)
 
   const total = useMemo(
     () => items.reduce((sum, item) => sum + (Number(item.quantity) || 0) * (Number(item.unit_price) || 0), 0),
@@ -133,10 +135,15 @@ export default function EstimateImportWizard({ onClose, onImported }) {
       const { data } = await api.post('/insurance-ocr/parse', fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
       })
-      const parsed = data?.parsed || {}
+      const parsed = {
+        ...(data?.parsed || {}),
+        detected_format: data?.parsed?.detected_format || data?.detected_format || null,
+        needs_review: Boolean(data?.needs_review || data?.parsed?.needs_review),
+      }
       setForm(parsedToForm(parsed))
       setItems(normalizeItems(parsed))
       setEstimateTotals(parsed?.estimate_totals || null)
+      setParsedReview(parsed)
       setStep('review')
     } catch (err) {
       setError(safeExternalErrorMessage(err, 'Could not parse that estimate. Try a clearer PDF or image.'))
@@ -249,6 +256,10 @@ export default function EstimateImportWizard({ onClose, onImported }) {
 
           {step === 'review' && (
             <div className="space-y-5">
+              <EstimateReviewWarning
+                parsed={parsedReview}
+                pendingActionCopy="The repair order is not created until you choose Create Repair Order."
+              />
               {showFinancials && (
                 <div className="border border-[#2c3345] rounded-lg bg-[#0f1117] px-4 py-3">
                   <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">

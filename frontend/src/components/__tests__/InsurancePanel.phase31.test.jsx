@@ -61,6 +61,45 @@ describe('InsurancePanel OCR import', () => {
     expect(window.alert).not.toHaveBeenCalled()
   })
 
+  it('keeps flagged CCC line items available for review and explicit import', async () => {
+    const user = userEvent.setup()
+    api.post.mockResolvedValueOnce({
+      data: {
+        success: true,
+        needs_review: true,
+        detected_format: 'ccc',
+        parsed: {
+          detected_format: 'ccc',
+          needs_review: true,
+          review_reasons: ['total_cost_does_not_reconcile'],
+          line_items: [
+            { type: 'labor', description: 'Repair quarter panel', quantity: 3, unit_price: 75 },
+          ],
+        },
+      },
+    })
+
+    const { container } = render(
+      <InsurancePanel
+        roId="ro-1"
+        ro={{ insurance_company: 'Progressive', insurance_claim_number: 'CLM-1' }}
+        onUpdated={vi.fn()}
+      />
+    )
+
+    await user.click(screen.getByRole('button', { name: /Upload estimate photo/i }))
+    fireEvent.change(container.querySelector('input[type="file"]'), {
+      target: { files: [new File(['pdf'], 'ccc-estimate.pdf', { type: 'application/pdf' })] },
+    })
+    await user.click(screen.getByRole('button', { name: /Extract Line Items with AI/i }))
+
+    expect(await screen.findByText('Review this CCC estimate before import')).toBeInTheDocument()
+    expect(screen.getByText('The extracted gross repair total does not reconcile with the subtotal and taxes.')).toBeInTheDocument()
+    expect(screen.getByText('Repair quarter panel')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Import 1 items' })).toBeEnabled()
+    expect(api.post.mock.calls.some(([url]) => String(url).startsWith('/estimate-items/'))).toBe(false)
+  })
+
   it('saves deductible as dollars instead of cents', async () => {
     const user = userEvent.setup()
     api.patch.mockResolvedValue({ data: { deductible: 1000 } })
