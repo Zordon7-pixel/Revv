@@ -120,6 +120,20 @@ html.theme-light iframe {
   padding-bottom: calc(1rem + env(safe-area-inset-bottom));
 }
 
+.add-ro-page .sheet-modal-card {
+  max-width: none;
+  max-height: none;
+  overflow: visible;
+}
+
+.add-ro-page .sheet-modal-body {
+  overflow: visible;
+}
+
+.add-ro-page .sheet-modal-footer {
+  padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+}
+
 @media (max-width: 767px) {
   .sheet-modal-overlay {
     align-items: flex-end;

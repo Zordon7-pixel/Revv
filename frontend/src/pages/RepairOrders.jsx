@@ -177,6 +177,17 @@ export default function RepairOrders() {
     setSearchParams(next)
   }
 
+  function openNewRepairOrder() {
+    const root = document?.documentElement
+    const isTouchDevice = root?.dataset?.touch === 'true'
+    const deviceMode = root?.dataset?.deviceMode || ''
+    if (isTouchDevice || ['phone', 'tablet'].includes(deviceMode)) {
+      navigate('/ros/new')
+      return
+    }
+    setShowAdd(true)
+  }
+
   function toggleSelect(id) {
     setSelected((prev) => {
       const next = new Set(prev)
@@ -231,7 +242,7 @@ export default function RepairOrders() {
           <p className="text-slate-500 text-sm">{ros.length} total · {ros.filter((r) => r.status !== 'closed').length} active</p>
         </div>
         {!assistant && (
-          <button onClick={() => setShowAdd(true)} className="flex items-center gap-2 bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] text-sm font-semibold px-4 py-2 rounded-lg transition-colors">
+          <button onClick={openNewRepairOrder} className="flex items-center gap-2 bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] text-sm font-semibold px-4 py-2 rounded-lg transition-colors">
             <Plus size={16} /> New RO
           </button>
         )}

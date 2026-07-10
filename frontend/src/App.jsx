@@ -5,6 +5,7 @@ import PublicOnlyRoute from './components/PublicOnlyRoute'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import RepairOrders from './pages/RepairOrders'
+import NewRepairOrder from './pages/NewRepairOrder'
 import RODetail from './pages/RODetail'
 import Customers from './pages/Customers'
 import Reports from './pages/Reports'
@@ -156,6 +157,7 @@ export default function App() {
             <Route element={<PrivateRoute><Layout /></PrivateRoute>}>
               <Route path="dashboard" element={<Dashboard />} />
               <Route path="ros" element={<RepairOrders />} />
+              <Route path="ros/new" element={<NewRepairOrder />} />
               <Route path="parts" element={<PartsOnOrder />} />
               <Route path="parts-on-order" element={<PartsOnOrder />} />
               <Route path="inventory" element={<Inventory />} />

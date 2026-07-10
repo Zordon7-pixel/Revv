@@ -17,7 +17,7 @@ const DAMAGE_TYPES = [
   { value: 'glass', label: 'Glass' },
 ]
 
-export default function AddROModal({ onClose, onSaved }) {
+export default function AddROModal({ onClose, onSaved, presentation = 'modal' }) {
   const { t } = useLanguage()
   const navigate = useNavigate()
   const [customers, setCustomers] = useState([])
@@ -46,6 +46,7 @@ export default function AddROModal({ onClose, onSaved }) {
   const [suggestionSummary, setSuggestionSummary] = useState(null)
   const [loadingSuggestions, setLoadingSuggestions] = useState(false)
   const [addedCodes, setAddedCodes] = useState([])
+  const isPage = presentation === 'page'
 
   useEffect(() => { api.get('/customers').then(r => setCustomers(r.data.customers)) }, [])
 
@@ -277,7 +278,7 @@ export default function AddROModal({ onClose, onSaved }) {
         setNewRoCustomerId(customer_id)
         return
       }
-      onSaved()
+      onSaved(ro)
     } catch(e) {
       const msg = e?.response?.data?.error || e?.message || 'Unknown error'
       console.error('[AddROModal] create failed:', e)
@@ -300,9 +301,8 @@ export default function AddROModal({ onClose, onSaved }) {
     return ''
   }
 
-  return (
-    <div className="sheet-modal-overlay fixed inset-0 bg-black/70 flex items-end sm:items-center justify-center z-[90] p-0 sm:p-4">
-      <div className="sheet-modal-card bg-[#1a1d2e] border border-[#2a2d3e] sm:max-w-2xl sm:rounded-xl rounded-t-2xl">
+  const content = (
+      <div className={`sheet-modal-card bg-[#1a1d2e] border border-[#2a2d3e] ${isPage ? 'rounded-xl shadow-2xl' : 'sm:max-w-2xl sm:rounded-xl rounded-t-2xl'}`}>
         <div className="sheet-modal-header flex items-center justify-between p-5 border-b border-[#2a2d3e]">
           <h2 className="font-bold text-white">{t('ro.addRO')}</h2>
           <button type="button" onClick={onClose} className="text-slate-400 hover:text-white" aria-label="Close new RO form"><X size={18} /></button>
@@ -599,6 +599,19 @@ export default function AddROModal({ onClose, onSaved }) {
           )}
         </div>
       </div>
+  )
+
+  if (isPage) {
+    return (
+      <div className="add-ro-page mx-auto w-full max-w-3xl px-3 py-4 pb-[45vh] sm:px-4 sm:py-6">
+        {content}
+      </div>
+    )
+  }
+
+  return (
+    <div className="sheet-modal-overlay fixed inset-0 bg-black/70 flex items-end sm:items-center justify-center z-[90] p-0 sm:p-4">
+      {content}
     </div>
   )
 }
