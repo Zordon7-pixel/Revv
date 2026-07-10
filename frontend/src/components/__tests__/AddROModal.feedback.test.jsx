@@ -60,4 +60,23 @@ describe('AddROModal feedback handling', () => {
     expect(window.alert).not.toHaveBeenCalled()
     expect(api.post).not.toHaveBeenCalled()
   })
+
+  it('requires an email before enabling customer email status updates', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <MemoryRouter>
+        <AddROModal onClose={vi.fn()} onSaved={vi.fn()} />
+      </MemoryRouter>
+    )
+
+    await user.click(await screen.findByRole('button', { name: /^New$/i }))
+    await user.type(screen.getByPlaceholderText('John Smith'), 'Miles Customer')
+    await user.click(screen.getByLabelText(/Customer consents to receive email status updates/i))
+    await user.click(screen.getByRole('button', { name: /Next/i }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Customer email is required for email status updates.')
+    expect(window.alert).not.toHaveBeenCalled()
+    expect(api.post).not.toHaveBeenCalled()
+  })
 })

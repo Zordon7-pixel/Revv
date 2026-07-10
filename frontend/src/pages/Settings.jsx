@@ -37,6 +37,15 @@ export default function Settings() {
   const [smsStatus, setSmsStatus] = useState({ configured: false, sms_phone: null })
   const [smsLoading, setSmsLoading] = useState(true)
   const [smsNotificationsEnabled, setSmsNotificationsEnabled] = useState(true)
+  const [emailNotificationsEnabled, setEmailNotificationsEnabled] = useState(true)
+  const [ownerActivityPrefs, setOwnerActivityPrefs] = useState({
+    owner_activity_digest_enabled: true,
+    owner_activity_immediate_alerts_enabled: true,
+    owner_activity_digest_time: '19:00',
+    owner_activity_digest_recipients: '',
+  })
+  const [ownerActivityTestResult, setOwnerActivityTestResult] = useState('')
+  const [ownerActivityTestSending, setOwnerActivityTestSending] = useState(false)
   const [smsExamplesOpen, setSmsExamplesOpen] = useState(false)
   const [showTestSmsModal, setShowTestSmsModal] = useState(false)
   const [testPhone, setTestPhone] = useState('')
@@ -134,8 +143,22 @@ export default function Settings() {
     api.get('/market/rates').then(r => setStates(r.data.states || []))
     refreshSmsStatus()
     api.get('/settings')
-      .then(r => setSmsNotificationsEnabled(r?.data?.sms_notifications_enabled !== false))
-      .catch(() => setSmsNotificationsEnabled(true))
+      .then(r => {
+        setSmsNotificationsEnabled(r?.data?.sms_notifications_enabled !== false)
+        setEmailNotificationsEnabled(r?.data?.email_notifications_enabled !== false)
+      })
+      .catch(() => {
+        setSmsNotificationsEnabled(true)
+        setEmailNotificationsEnabled(true)
+      })
+    api.get('/owner-activity/preferences')
+      .then(r => setOwnerActivityPrefs({
+        owner_activity_digest_enabled: r?.data?.owner_activity_digest_enabled !== false,
+        owner_activity_immediate_alerts_enabled: r?.data?.owner_activity_immediate_alerts_enabled === true,
+        owner_activity_digest_time: r?.data?.owner_activity_digest_time || '19:00',
+        owner_activity_digest_recipients: r?.data?.owner_activity_digest_recipients || '',
+      }))
+      .catch(() => {})
     api.get('/users/me').then(r => setProfile({ name: r.data.name || '', phone: r.data.phone || '' }))
     api.get('/subscriptions/status')
       .then(r => setBilling(r.data))
@@ -273,7 +296,9 @@ export default function Settings() {
       })
       await api.patch('/settings', {
         sms_notifications_enabled: !!smsNotificationsEnabled,
+        email_notifications_enabled: !!emailNotificationsEnabled,
       })
+      await api.put('/owner-activity/preferences', ownerActivityPrefs)
       setShop(data)
       setForm(f => ({
         ...f,
@@ -381,6 +406,19 @@ export default function Settings() {
       setTestSmsResult({ type: 'error', message: e?.response?.data?.error || 'Failed to send test SMS.' })
     } finally {
       setSendingTest(false)
+    }
+  }
+
+  async function sendOwnerActivityTestDigest() {
+    setOwnerActivityTestSending(true)
+    setOwnerActivityTestResult('')
+    try {
+      const { data } = await api.post('/owner-activity/digest/test')
+      setOwnerActivityTestResult(data?.sent ? `Test digest sent to ${data.sent} recipient(s).` : 'No recipients found for the test digest.')
+    } catch (err) {
+      setOwnerActivityTestResult(err?.response?.data?.error || 'Could not send test digest.')
+    } finally {
+      setOwnerActivityTestSending(false)
     }
   }
 
@@ -948,6 +986,79 @@ export default function Settings() {
                 className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${smsNotificationsEnabled ? 'translate-x-6' : 'translate-x-1'}`}
               />
             </button>
+          </div>
+
+          <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-xl p-4 flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-white">Customer Email Status Notifications</p>
+              <p className="text-xs text-slate-400 mt-1">Email customers when their RO status changes, only when the customer opts in and has an email on file.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setEmailNotificationsEnabled(v => !v)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${emailNotificationsEnabled ? 'bg-[#EAB308]' : 'bg-slate-600'}`}
+              aria-pressed={emailNotificationsEnabled}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${emailNotificationsEnabled ? 'translate-x-6' : 'translate-x-1'}`}
+              />
+            </button>
+          </div>
+
+          <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-xl p-4 space-y-4">
+            <div>
+              <p className="text-sm font-semibold text-white">Owner Activity Digest</p>
+              <p className="text-xs text-slate-400 mt-1">Send owners and admins a daily email summary of opened ROs, closed ROs, assignment changes, total losses, and SIU holds.</p>
+            </div>
+            <label className="flex items-center justify-between gap-3 text-xs text-slate-300">
+              <span>Daily owner digest</span>
+              <input
+                type="checkbox"
+                checked={ownerActivityPrefs.owner_activity_digest_enabled}
+                onChange={e => setOwnerActivityPrefs(p => ({ ...p, owner_activity_digest_enabled: e.target.checked }))}
+                className="h-4 w-4 rounded border-[#2a2d3e] bg-[#0f1117] accent-[#EAB308]"
+              />
+            </label>
+            <label className="flex items-center justify-between gap-3 text-xs text-slate-300">
+              <span>Immediate high-priority alerts</span>
+              <input
+                type="checkbox"
+                checked={ownerActivityPrefs.owner_activity_immediate_alerts_enabled}
+                onChange={e => setOwnerActivityPrefs(p => ({ ...p, owner_activity_immediate_alerts_enabled: e.target.checked }))}
+                className="h-4 w-4 rounded border-[#2a2d3e] bg-[#0f1117] accent-[#EAB308]"
+              />
+            </label>
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div>
+                <label className={lbl}>Digest Time</label>
+                <input
+                  className={inp}
+                  type="time"
+                  value={ownerActivityPrefs.owner_activity_digest_time}
+                  onChange={e => setOwnerActivityPrefs(p => ({ ...p, owner_activity_digest_time: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className={lbl}>Extra Recipients</label>
+                <input
+                  className={inp}
+                  value={ownerActivityPrefs.owner_activity_digest_recipients}
+                  onChange={e => setOwnerActivityPrefs(p => ({ ...p, owner_activity_digest_recipients: e.target.value }))}
+                  placeholder="owner@example.com, admin@example.com"
+                />
+              </div>
+            </div>
+            <div className="flex items-center gap-3 flex-wrap">
+              <button
+                type="button"
+                onClick={sendOwnerActivityTestDigest}
+                disabled={ownerActivityTestSending}
+                className="text-xs bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] font-semibold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60"
+              >
+                {ownerActivityTestSending ? 'Sending...' : 'Send Test Digest'}
+              </button>
+              {ownerActivityTestResult && <span className="text-xs text-slate-400">{ownerActivityTestResult}</span>}
+            </div>
           </div>
 
           {smsLoading ? (

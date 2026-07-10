@@ -86,6 +86,7 @@ app.use('/api/parts-requests', require('./routes/partsRequests'));
 app.use('/api/performance', require('./routes/performance'));
 app.use('/api/superadmin', require('./routes/superadmin'));
 app.use('/api/settings', require('./routes/settings'));
+app.use('/api/owner-activity', require('./routes/ownerActivity'));
 app.use('/api/goals', require('./routes/goals'));
 app.use('/api/appointments', require('./routes/appointments'));
 app.use('/api/estimate-requests', require('./routes/estimateRequests'));
@@ -128,8 +129,10 @@ const PORT = process.env.PORT || 4000;
 const { initDb, dbAll } = require('./db');
 const { runMonthCarryover } = require('./jobs/monthCarryover');
 const { runFeedbackDailyAudit } = require('./jobs/feedbackDailyAudit');
+const { runOwnerActivityDigest } = require('./jobs/ownerActivityDigest');
 
 const DAILY_FEEDBACK_AUDIT_MS = 24 * 60 * 60 * 1000;
+const OWNER_ACTIVITY_DIGEST_MS = 60 * 60 * 1000;
 
 async function runCarryoverForActiveShops() {
   try {
@@ -158,6 +161,15 @@ async function runDailyFeedbackAudit() {
   }
 }
 
+async function runDailyOwnerActivityDigest() {
+  try {
+    const result = await runOwnerActivityDigest();
+    console.log(`[OwnerActivity] daily digest checked ${result.shops} shop(s), sent ${result.sent}, skipped ${result.skipped}`);
+  } catch (err) {
+    console.error('[OwnerActivity] Daily digest failed:', err.message);
+  }
+}
+
 initDb()
   .then(async () => {
     // Run PostgreSQL migrations (idempotent — safe every startup)
@@ -182,7 +194,9 @@ initDb()
       console.log(`   PostgreSQL: ${process.env.DATABASE_URL ? 'connected' : 'local'}`);
       setImmediate(runCarryoverForActiveShops);
       setImmediate(runDailyFeedbackAudit);
+      setImmediate(runDailyOwnerActivityDigest);
       setInterval(runDailyFeedbackAudit, DAILY_FEEDBACK_AUDIT_MS).unref();
+      setInterval(runDailyOwnerActivityDigest, OWNER_ACTIVITY_DIGEST_MS).unref();
     });
   })
   .catch(err => {

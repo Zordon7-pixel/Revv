@@ -56,6 +56,118 @@ const ro = await dbGet('SELECT * FROM ros WHERE id = $1 AND shop_id = $2', [id, 
 await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 ```
 
+## Dispatch Log — 2026-07-10 Customer Email + Owner Activity Notifications
+
+**Status:** BUILT LOCALLY — READY FOR CLAUDE CODE QA
+
+**Scope**
+- Added customer-level email status notification consent alongside the existing SMS consent flow.
+- Customer status emails now require both shop email notifications enabled and `customers.email_consent = TRUE`; SMS behavior remains unchanged.
+- Add RO now collects customer email notification consent and blocks enabling it without a customer email address.
+- Added owner/admin activity logging for RO creation, status changes, assignment changes, total-loss changes, SIU holds, and claim workflow approval.
+- Added owner activity preferences, daily digest email support, optional immediate critical alerts, and Settings UI controls.
+- Added once-per-day digest locking (`owner_activity_last_digest_date`) so deploys/restarts do not spam owners.
+- Added source/schema/migration alignment for new customer consent fields and owner activity tables.
+- No customer, shop, RO, seed, reset, or destructive data mutation was performed. Miles Automotive data was not touched.
+
+**Files changed**
+- `backend/src/app.js`
+- `backend/src/db/index.js`
+- `backend/src/db/migrate.js`
+- `backend/src/db/schema.pg.sql`
+- `backend/src/jobs/ownerActivityDigest.js`
+- `backend/src/routes/customers.js`
+- `backend/src/routes/ownerActivity.js`
+- `backend/src/routes/ros.js`
+- `backend/src/services/ownerActivity.js`
+- `backend/src/__tests__/ownerActivity.test.js`
+- `frontend/src/components/AddROModal.jsx`
+- `frontend/src/components/__tests__/AddROModal.feedback.test.jsx`
+- `frontend/src/pages/Settings.jsx`
+- `docs/SPEC-email-status-notifications.md`
+- `docs/SPEC-owner-activity-digest.md`
+- `CLAUDE.md`
+
+**Verification**
+```
+node --check backend/src/app.js backend/src/routes/ownerActivity.js backend/src/services/ownerActivity.js backend/src/jobs/ownerActivityDigest.js backend/src/routes/customers.js backend/src/routes/ros.js backend/src/db/index.js backend/src/db/migrate.js
+node --test backend/src/__tests__/*.test.js  # 92/92 passed
+cd backend && npm run test:run  # 3 files, 7/7 passed
+cd frontend && npm run test:run -- src/components/__tests__/AddROModal.feedback.test.jsx  # 1 file, 2/2 passed
+cd frontend && npm run build
+rm -rf frontend/dist
+git diff --check
+git ls-files frontend/dist  # 0 tracked files
+```
+
+**Claude Code follow-up addressed**
+- Claude Code first-pass QA returned a conditional code-review pass and flagged 3 medium items.
+- Fixed `queueStatusEmail` outer catch to log `[Email] queueStatusEmail failed` instead of swallowing DB/runtime errors.
+- Aligned owner activity severity taxonomy to `critical` in the spec because implementation and immediate alerts use `critical`.
+- Changed owner immediate alerts default to ON in schema/init/migration/service fallback/frontend default to match the spec recommendation.
+- Re-ran verification after the fixes:
+  - `node --check ...` passed.
+  - `node --test backend/src/__tests__/*.test.js` passed, 92/92.
+  - `cd backend && npm run test:run` passed, 3 files / 7 tests.
+  - `cd frontend && npm run test:run -- src/components/__tests__/AddROModal.feedback.test.jsx` passed, 2/2.
+  - `cd frontend && npm run build` passed.
+
+**Claude Code QA Prompt**
+```text
+TASK: REVV — QA customer email status notifications + owner activity digest
+
+CONTEXT
+Repo: /Users/zordon/.openclaw/workspace/Revv
+Change: Customer email notification opt-in plus owner/admin activity digest and Settings controls.
+Read docs/SPEC-email-status-notifications.md and docs/SPEC-owner-activity-digest.md first.
+
+SCOPE — read-only QA. Do not edit code. Do not mutate customer/shop/RO data. Do not run seed/reset/destructive scripts. Do not deploy.
+
+Review these changed files:
+- backend/src/app.js
+- backend/src/db/index.js
+- backend/src/db/migrate.js
+- backend/src/db/schema.pg.sql
+- backend/src/jobs/ownerActivityDigest.js
+- backend/src/routes/customers.js
+- backend/src/routes/ownerActivity.js
+- backend/src/routes/ros.js
+- backend/src/services/ownerActivity.js
+- backend/src/__tests__/ownerActivity.test.js
+- frontend/src/components/AddROModal.jsx
+- frontend/src/components/__tests__/AddROModal.feedback.test.jsx
+- frontend/src/pages/Settings.jsx
+- docs/SPEC-email-status-notifications.md
+- docs/SPEC-owner-activity-digest.md
+- CLAUDE.md
+
+Verify:
+1. Customer status email sends only when shop email notifications are enabled AND customer.email_consent is true AND customer has an email.
+2. SMS consent behavior is unchanged.
+3. Add RO blocks email-notification opt-in without a customer email and sends email_consent/preferred_contact_method to backend.
+4. Customers create/update/autofill include email_consent and preferred_contact_method without breaking existing sms_consent.
+5. Owner activity routes are auth/admin gated and explicitly block assistant/technician/customer roles from owner digest preferences.
+6. Owner activity logging is non-blocking and redacts sensitive keys before storage/email.
+7. Daily digest job respects owner_activity_digest_time and owner_activity_last_digest_date so one shop cannot receive multiple daily digests after restarts.
+8. Immediate alerts only fire for critical owner events and only when enabled.
+9. Schema changes are additive only: no DROP, no destructive migration, no data reset.
+10. Settings Messaging tab exposes customer email notifications and owner activity digest preferences and saves both.
+11. `frontend/dist` is not tracked.
+12. No Miles Automotive data is read/written/mutated during QA.
+
+Commands:
+- node --check backend/src/app.js backend/src/routes/ownerActivity.js backend/src/services/ownerActivity.js backend/src/jobs/ownerActivityDigest.js backend/src/routes/customers.js backend/src/routes/ros.js backend/src/db/index.js backend/src/db/migrate.js
+- node --test backend/src/__tests__/*.test.js
+- cd backend && npm run test:run
+- cd frontend && npm run test:run -- src/components/__tests__/AddROModal.feedback.test.jsx
+- cd frontend && npm run build
+- rm -rf frontend/dist && git diff --check && git ls-files frontend/dist
+
+Expected:
+- All checks pass.
+- Verdict should say whether Hermes can review/ship this notification work after QA.
+```
+
 ---
 
 ## Dispatch Log — 2026-07-07 Phase 1 Money Authority (H2 + H3)

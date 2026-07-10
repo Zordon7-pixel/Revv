@@ -49,10 +49,40 @@ CREATE TABLE IF NOT EXISTS customers (
   phone TEXT,
   sms_consent BOOLEAN DEFAULT TRUE,
   email TEXT,
+  email_consent BOOLEAN DEFAULT FALSE,
+  preferred_contact_method TEXT DEFAULT 'sms',
   address TEXT,
   insurance_company TEXT,
   policy_number TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS owner_activity_events (
+  id UUID PRIMARY KEY,
+  shop_id TEXT NOT NULL,
+  ro_id TEXT,
+  actor_user_id TEXT,
+  actor_name TEXT,
+  actor_role TEXT,
+  event_type TEXT NOT NULL,
+  severity TEXT NOT NULL DEFAULT 'info',
+  summary TEXT NOT NULL,
+  before_json JSONB DEFAULT '{}'::jsonb,
+  after_json JSONB DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_owner_activity_events_shop_created
+  ON owner_activity_events(shop_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS shop_notification_preferences (
+  shop_id TEXT PRIMARY KEY,
+  owner_activity_digest_enabled BOOLEAN DEFAULT TRUE,
+  owner_activity_immediate_alerts_enabled BOOLEAN DEFAULT TRUE,
+  owner_activity_digest_time TEXT DEFAULT '19:00',
+  owner_activity_digest_recipients TEXT DEFAULT '',
+  owner_activity_last_digest_date TEXT,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 ALTER TABLE users

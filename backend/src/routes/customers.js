@@ -5,6 +5,17 @@ const { requireTechnician } = require('../middleware/roles');
 const { sendCustomerOptInConfirmation } = require('../services/customerOptInConfirmation');
 const { v4: uuidv4 } = require('uuid');
 
+const CONTACT_METHODS = new Set(['none', 'sms', 'email', 'both']);
+
+function normalizePreferredContactMethod(value, smsConsent, emailConsent) {
+  const method = String(value || '').trim().toLowerCase();
+  if (CONTACT_METHODS.has(method)) return method;
+  if (smsConsent && emailConsent) return 'both';
+  if (emailConsent) return 'email';
+  if (smsConsent) return 'sms';
+  return 'none';
+}
+
 router.get('/', auth, async (req, res) => {
   try {
     const customers = await dbAll('SELECT * FROM customers WHERE shop_id = $1 ORDER BY name', [req.user.shop_id]);
@@ -79,7 +90,7 @@ router.get('/:id/history', auth, async (req, res) => {
 router.get('/:id/autofill', auth, async (req, res) => {
   try {
     const customer = await dbGet(
-      'SELECT id, name, phone, sms_consent, email, insurance_company, policy_number FROM customers WHERE id = $1 AND shop_id = $2',
+      'SELECT id, name, phone, sms_consent, email, email_consent, preferred_contact_method, insurance_company, policy_number FROM customers WHERE id = $1 AND shop_id = $2',
       [req.params.id, req.user.shop_id]
     );
     if (!customer) return res.status(404).json({ error: 'Not found' });
@@ -141,14 +152,23 @@ router.get('/:id', auth, async (req, res) => {
 
 router.post('/', auth, requireTechnician, async (req, res) => {
   try {
-    const { name, phone, email, address, insurance_company, policy_number, sms_consent } = req.body;
+    const { name, phone, email, address, insurance_company, policy_number, sms_consent, email_consent, preferred_contact_method } = req.body;
     if (!name || !name.trim()) return res.status(400).json({ error: 'Customer name is required.' });
+    const nextEmailConsent = email_consent === true;
+    const normalizedEmail = String(email || '').trim() || null;
+    if (nextEmailConsent && !normalizedEmail) {
+      return res.status(400).json({ error: 'Customer email is required for email status updates.' });
+    }
+    const nextSmsConsent = sms_consent !== false;
+    const nextPreferredMethod = normalizePreferredContactMethod(preferred_contact_method, nextSmsConsent, nextEmailConsent);
     const shop = await dbGet('SELECT id FROM shops WHERE id = $1', [req.user.shop_id]);
     if (!shop) return res.status(401).json({ error: 'Session expired. Please log out and back in.' });
     const id = uuidv4();
     await dbRun(
-      'INSERT INTO customers (id, shop_id, name, phone, sms_consent, email, address, insurance_company, policy_number) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)',
-      [id, req.user.shop_id, name.trim(), phone || null, sms_consent !== false, email || null, address || null, insurance_company || null, policy_number || null]
+      `INSERT INTO customers
+        (id, shop_id, name, phone, sms_consent, email, email_consent, preferred_contact_method, address, insurance_company, policy_number)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+      [id, req.user.shop_id, name.trim(), phone || null, nextSmsConsent, normalizedEmail, nextEmailConsent, nextPreferredMethod, address || null, insurance_company || null, policy_number || null]
     );
     await sendCustomerOptInConfirmation({
       phone,
@@ -164,11 +184,29 @@ router.post('/', auth, requireTechnician, async (req, res) => {
 
 router.put('/:id', auth, requireTechnician, async (req, res) => {
   try {
-    const { name, phone, email, address, insurance_company, policy_number, sms_consent } = req.body;
+    const { name, phone, email, address, insurance_company, policy_number, sms_consent, email_consent, preferred_contact_method } = req.body;
     const nextSmsConsent = typeof sms_consent === 'boolean' ? sms_consent : null;
+    const nextEmailConsent = typeof email_consent === 'boolean' ? email_consent : null;
+    const normalizedEmail = String(email || '').trim() || null;
+    if (nextEmailConsent === true && !normalizedEmail) {
+      return res.status(400).json({ error: 'Customer email is required for email status updates.' });
+    }
+    const nextPreferredMethod = Object.prototype.hasOwnProperty.call(req.body || {}, 'preferred_contact_method')
+      ? normalizePreferredContactMethod(preferred_contact_method, nextSmsConsent !== false, nextEmailConsent === true)
+      : null;
     await dbRun(
-      'UPDATE customers SET name=$1, phone=$2, sms_consent=COALESCE($3, sms_consent), email=$4, address=$5, insurance_company=$6, policy_number=$7 WHERE id=$8 AND shop_id=$9',
-      [name, phone, nextSmsConsent, email, address, insurance_company, policy_number, req.params.id, req.user.shop_id]
+      `UPDATE customers SET
+         name=$1,
+         phone=$2,
+         sms_consent=COALESCE($3, sms_consent),
+         email=$4,
+         email_consent=COALESCE($5, email_consent),
+         preferred_contact_method=COALESCE($6, preferred_contact_method),
+         address=$7,
+         insurance_company=$8,
+         policy_number=$9
+       WHERE id=$10 AND shop_id=$11`,
+      [name, phone, nextSmsConsent, normalizedEmail, nextEmailConsent, nextPreferredMethod, address, insurance_company, policy_number, req.params.id, req.user.shop_id]
     );
     res.json(await dbGet('SELECT * FROM customers WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]));
   } catch (err) {

@@ -7,6 +7,7 @@ const { getRoMoneySummary, isPaidStatus, roundToIntCents } = require('../service
 const { sendSMS, isConfiguredForShop } = require('../services/sms');
 const { sendMail } = require('../services/mailer');
 const { statusChangeEmail } = require('../services/emailTemplates');
+const { recordOwnerActivity } = require('../services/ownerActivity');
 const { createNotification } = require('../services/notifications');
 const { calculateDeliveryFeeBreakdown, toMoney } = require('../services/deliveryFees');
 const {
@@ -241,7 +242,10 @@ function queueStatusEmail(roId, shopId, toStatus) {
   setImmediate(async () => {
     try {
       const emailContext = await dbGet(
-        `SELECT ro.ro_number, ro.payment_status, ro.payment_received, c.email AS customer_email, c.name AS customer_name, s.name AS shop_name,
+        `SELECT ro.ro_number, ro.payment_status, ro.payment_received, c.email AS customer_email, c.name AS customer_name,
+                COALESCE(c.email_consent, FALSE) AS customer_email_consent,
+                COALESCE(c.preferred_contact_method, '') AS preferred_contact_method,
+                s.name AS shop_name,
                 v.year, v.make, v.model,
                 COALESCE(s.email_notifications_enabled, TRUE) AS email_notifications_enabled
          FROM repair_orders ro
@@ -253,6 +257,7 @@ function queueStatusEmail(roId, shopId, toStatus) {
       );
       if (!emailContext?.customer_email) return;
       if (!emailContext.email_notifications_enabled) return;
+      if (!emailContext.customer_email_consent) return;
 
       const portalToken = await ensureTrackingToken(roId, shopId);
       const appUrl = process.env.APP_URL || process.env.PUBLIC_URL || 'https://revvshop.app';
@@ -289,8 +294,8 @@ function queueStatusEmail(roId, shopId, toStatus) {
       sendMail(emailContext.customer_email, subject, finalHtml).catch((e) => {
         console.error('[Email] status notification failed:', e.message);
       });
-    } catch (_) {
-      // Non-blocking fire-and-forget path; ignore email errors.
+    } catch (err) {
+      console.error('[Email] queueStatusEmail failed:', err.message);
     }
   });
 }
@@ -1817,12 +1822,15 @@ router.post('/approval/:token/respond', publicTokenLimiter, async (req, res) => 
 
 router.post('/', auth, requireTechnician, roLimitGuard, async (req, res) => {
   try {
-    const { customer_id, vehicle_id, job_type, payment_type, claim_number, insurer, adjuster_name, adjuster_phone, adjuster_email, deductible, notes, estimated_delivery, damaged_panels, sms_consent } = req.body;
+    const { customer_id, vehicle_id, job_type, payment_type, claim_number, insurer, adjuster_name, adjuster_phone, adjuster_email, deductible, notes, estimated_delivery, damaged_panels, sms_consent, email_consent, preferred_contact_method } = req.body;
     if (!customer_id || !vehicle_id) {
       return res.status(400).json({ error: 'customer_id and vehicle_id are required' });
     }
-    const customer = await dbGet('SELECT id FROM customers WHERE id = $1 AND shop_id = $2', [customer_id, req.user.shop_id]);
+    const customer = await dbGet('SELECT id, email FROM customers WHERE id = $1 AND shop_id = $2', [customer_id, req.user.shop_id]);
     if (!customer) return res.status(400).json({ error: 'Invalid customer_id for this shop' });
+    if (email_consent === true && !customer.email) {
+      return res.status(400).json({ error: 'Customer email is required for email status updates.' });
+    }
     const vehicle = await dbGet(
       'SELECT id, year, make, model, vin FROM vehicles WHERE id = $1 AND shop_id = $2 AND customer_id = $3',
       [vehicle_id, req.user.shop_id, customer_id]
@@ -1832,6 +1840,20 @@ router.post('/', auth, requireTechnician, roLimitGuard, async (req, res) => {
       await dbRun(
         'UPDATE customers SET sms_consent = $1 WHERE id = $2 AND shop_id = $3',
         [sms_consent, customer_id, req.user.shop_id]
+      );
+    }
+    if (typeof email_consent === 'boolean' || preferred_contact_method) {
+      await dbRun(
+        `UPDATE customers SET
+           email_consent = COALESCE($1, email_consent),
+           preferred_contact_method = COALESCE($2, preferred_contact_method)
+         WHERE id = $3 AND shop_id = $4`,
+        [
+          typeof email_consent === 'boolean' ? email_consent : null,
+          preferred_contact_method || null,
+          customer_id,
+          req.user.shop_id,
+        ]
       );
     }
 
@@ -1953,6 +1975,15 @@ router.post('/', auth, requireTechnician, roLimitGuard, async (req, res) => {
     });
 
     const enriched = await enrichRO(ro);
+    recordOwnerActivity({
+      shopId: req.user.shop_id,
+      roId,
+      actor: req.user,
+      eventType: 'ro_created',
+      severity: 'important',
+      summary: `${req.user.name || req.user.email || 'A team member'} opened ${roNumber}`,
+      after: { status: 'intake', job_type: job_type || 'collision', payment_type: payment_type || 'insurance' },
+    });
     if (duplicateRows.length > 0) {
       return res.status(201).json({
         ...enriched,
@@ -2244,6 +2275,16 @@ router.put('/:id', auth, requireTechnician, async (req, res) => {
       return res.status(400).json({ error: 'No valid fields to update' });
     }
     if (statusChanged) {
+      recordOwnerActivity({
+        shopId: req.user.shop_id,
+        roId: req.params.id,
+        actor: req.user,
+        eventType: 'status_changed',
+        severity: updates.status === 'closed' ? 'critical' : 'important',
+        summary: `${req.user.name || req.user.email || 'A team member'} moved ${ro.ro_number || 'RO'} from ${ro.status || 'unknown'} to ${updates.status}`,
+        before: { status: ro.status },
+        after: { status: updates.status },
+      });
       queueStatusEmail(req.params.id, req.user.shop_id, updates.status);
       if (updates.status === 'closed') {
         queueClosedReviewEmail(req.params.id).catch(() => {});
@@ -2273,6 +2314,16 @@ router.put('/:id/status', auth, requireTechnician, async (req, res) => {
       await dbRun('UPDATE repair_orders SET status = $1, updated_at = $2 WHERE id = $3 AND shop_id = $4', [status, now, req.params.id, req.user.shop_id]);
     }
     await dbRun('INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by, note) VALUES ($1, $2, $3, $4, $5, $6)', [uuidv4(), req.params.id, fromStatus, status, req.user.id, note || null]);
+    recordOwnerActivity({
+      shopId: req.user.shop_id,
+      roId: req.params.id,
+      actor: req.user,
+      eventType: 'status_changed',
+      severity: status === 'closed' ? 'critical' : 'important',
+      summary: `${req.user.name || req.user.email || 'A team member'} moved ${ro.ro_number || 'RO'} from ${fromStatus || 'unknown'} to ${status}`,
+      before: { status: fromStatus },
+      after: { status },
+    });
     notifyStatusChange(req.user.shop_id, { ...ro, id: req.params.id }, status);
     queueStatusSMS(req.params.id, req.user.shop_id, status);
     queueStatusEmail(req.params.id, req.user.shop_id, status);
@@ -2308,6 +2359,16 @@ router.patch('/:id/assign', auth, requireTechnician, async (req, res) => {
     const mismatchOverride = actorIsTechRole && !!ro.assigned_to && ro.assigned_to !== req.user.id;
 
     await dbRun('UPDATE repair_orders SET assigned_to = $1, updated_at = $2 WHERE id = $3 AND shop_id = $4', [nextAssignedTo, new Date().toISOString(), req.params.id, req.user.shop_id]);
+    recordOwnerActivity({
+      shopId: req.user.shop_id,
+      roId: req.params.id,
+      actor: req.user,
+      eventType: 'assignment_changed',
+      severity: mismatchOverride ? 'important' : 'info',
+      summary: `${req.user.name || req.user.email || 'A team member'} changed assignment on ${ro.ro_number || 'RO'} to ${nextAssignee?.name || 'Unassigned'}`,
+      before: { assigned_to: ro.assigned_to || null },
+      after: { assigned_to: nextAssignedTo },
+    });
     const updated = await dbGet('SELECT * FROM repair_orders WHERE id = $1', [req.params.id]);
 
     if (mismatchOverride) {
@@ -2368,6 +2429,16 @@ router.patch('/:id', auth, requireTechnician, async (req, res) => {
             [uuidv4(), req.params.id, ro.status, 'total_loss', req.user.id, 'Claim marked as Total Loss; storage hold enabled']);
           notifyStatusChange(req.user.shop_id, { ...ro, id: req.params.id }, 'total_loss');
           queueStatusSMS(req.params.id, req.user.shop_id, 'total_loss');
+          recordOwnerActivity({
+            shopId: req.user.shop_id,
+            roId: req.params.id,
+            actor: req.user,
+            eventType: 'claim_status_changed',
+            severity: 'critical',
+            summary: `${req.user.name || req.user.email || 'A team member'} marked ${ro.ro_number || 'RO'} as total loss`,
+            before: { claim_status: ro.claim_status, status: ro.status },
+            after: { claim_status: 'total_loss', status: 'total_loss' },
+          });
         } else if (updates.claim_status === 'siu') {
           updates.pre_siu_status = ro.status; // remember where we were
           updates.status = 'siu_hold';
@@ -2375,6 +2446,16 @@ router.patch('/:id', auth, requireTechnician, async (req, res) => {
             [uuidv4(), req.params.id, ro.status, 'siu_hold', req.user.id, 'Claim placed under SIU investigation']);
           notifyStatusChange(req.user.shop_id, { ...ro, id: req.params.id }, 'siu_hold');
           queueStatusSMS(req.params.id, req.user.shop_id, 'siu_hold');
+          recordOwnerActivity({
+            shopId: req.user.shop_id,
+            roId: req.params.id,
+            actor: req.user,
+            eventType: 'claim_status_changed',
+            severity: 'critical',
+            summary: `${req.user.name || req.user.email || 'A team member'} placed ${ro.ro_number || 'RO'} under SIU hold`,
+            before: { claim_status: ro.claim_status, status: ro.status },
+            after: { claim_status: 'siu', status: 'siu_hold' },
+          });
         } else if (updates.claim_status === 'approved') {
           const latestNonHoldStatus = !ro.pre_siu_status && (ro.status === 'siu_hold' || ro.status === 'total_loss')
             ? await dbGet(
@@ -2395,6 +2476,16 @@ router.patch('/:id', auth, requireTechnician, async (req, res) => {
             [uuidv4(), req.params.id, ro.status, resumeStatus, req.user.id, 'Claim approved for work — workflow resumed']);
           notifyStatusChange(req.user.shop_id, { ...ro, id: req.params.id }, resumeStatus);
           queueStatusSMS(req.params.id, req.user.shop_id, 'approval');
+          recordOwnerActivity({
+            shopId: req.user.shop_id,
+            roId: req.params.id,
+            actor: req.user,
+            eventType: 'claim_status_changed',
+            severity: 'important',
+            summary: `${req.user.name || req.user.email || 'A team member'} approved claim workflow on ${ro.ro_number || 'RO'}`,
+            before: { claim_status: ro.claim_status, status: ro.status },
+            after: { claim_status: 'approved', status: resumeStatus },
+          });
         }
       }
 
@@ -2419,6 +2510,16 @@ router.patch('/:id', auth, requireTechnician, async (req, res) => {
       await dbRun('UPDATE repair_orders SET status = $1, updated_at = $2 WHERE id = $3 AND shop_id = $4', [status, now, req.params.id, req.user.shop_id]);
     }
     await dbRun('INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by, note) VALUES ($1, $2, $3, $4, $5, $6)', [uuidv4(), req.params.id, fromStatus, status, req.user.id, note || null]);
+    recordOwnerActivity({
+      shopId: req.user.shop_id,
+      roId: req.params.id,
+      actor: req.user,
+      eventType: 'status_changed',
+      severity: status === 'closed' ? 'critical' : 'important',
+      summary: `${req.user.name || req.user.email || 'A team member'} moved ${ro.ro_number || 'RO'} from ${fromStatus || 'unknown'} to ${status}`,
+      before: { status: fromStatus },
+      after: { status },
+    });
     notifyStatusChange(req.user.shop_id, { ...ro, id: req.params.id }, status);
     queueStatusSMS(req.params.id, req.user.shop_id, status);
     queueStatusEmail(req.params.id, req.user.shop_id, status);

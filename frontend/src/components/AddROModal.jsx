@@ -33,7 +33,7 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
   const [form, setForm] = useState({
     // Customer (new or existing)
     customer_id: '', new_customer: false,
-    customer_name: '', customer_phone: '', customer_email: '', sms_consent: true,
+    customer_name: '', customer_phone: '', customer_email: '', sms_consent: true, email_consent: false,
     // Vehicle
     vehicle_id: '', new_vehicle: true,
     year: '', make: '', model: '', vin: '', color: '', plate: '',
@@ -72,6 +72,7 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
           if (!next.customer_phone && customer?.phone) next.customer_phone = customer.phone
           if (!next.customer_email && customer?.email) next.customer_email = customer.email
           next.sms_consent = customer?.sms_consent !== false
+          next.email_consent = customer?.email_consent === true
           if (latestVehicle && (!next.vehicle_id || next.new_vehicle)) {
             next.new_vehicle = false
             next.vehicle_id = latestVehicle.id || ''
@@ -237,6 +238,10 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
       setFormError(`${t('common.name')} is required.`)
       return
     }
+    if (form.email_consent && !form.customer_email.trim()) {
+      setFormError('Customer email is required for email status updates.')
+      return
+    }
     if (form.new_vehicle && (!form.make.trim() || !form.model.trim() || !form.year)) {
       setFormError(`${t('common.vehicle')} ${t('common.year').toLowerCase()}, ${t('common.make').toLowerCase()}, and ${t('common.model').toLowerCase()} are required.`)
       return
@@ -252,7 +257,14 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
     try {
       let customer_id = form.customer_id
       if (!customer_id || form.new_customer) {
-        const { data } = await api.post('/customers', { name: form.customer_name, phone: form.customer_phone, email: form.customer_email, sms_consent: form.sms_consent })
+        const { data } = await api.post('/customers', {
+          name: form.customer_name,
+          phone: form.customer_phone,
+          email: form.customer_email,
+          sms_consent: form.sms_consent,
+          email_consent: form.email_consent,
+          preferred_contact_method: form.sms_consent && form.email_consent ? 'both' : form.email_consent ? 'email' : form.sms_consent ? 'sms' : 'none',
+        })
         customer_id = data.id
       }
       let vehicle_id = form.vehicle_id
@@ -271,7 +283,9 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
         adjuster_email: form.adjuster_email,
         deductible: +form.deductible || 0, estimated_delivery: form.estimated_delivery, notes: form.notes,
         damaged_panels: form.damaged_panels,
-        sms_consent: form.sms_consent
+        sms_consent: form.sms_consent,
+        email_consent: form.email_consent,
+        preferred_contact_method: form.sms_consent && form.email_consent ? 'both' : form.email_consent ? 'email' : form.sms_consent ? 'sms' : 'none',
       })
       if (ro?.duplicate_warning) {
         setDuplicateWarning(ro.duplicate_warning)
@@ -290,6 +304,7 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
     if (step === 1) {
       if (!form.new_customer && !form.customer_id) return 'Please select a customer or choose New.'
       if (form.new_customer && !form.customer_name.trim()) return `${t('common.name')} is required.`
+      if (form.email_consent && !form.customer_email.trim()) return 'Customer email is required for email status updates.'
     }
     if (step === 2) {
       if (autoFillLoading) return 'Still loading customer vehicle defaults. Please try again in a moment.'
@@ -391,6 +406,7 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
                         color: '',
                         plate: '',
                         sms_consent: true,
+                        email_consent: false,
                       }))
                     }}
                     className={inp}
@@ -413,6 +429,15 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
                   className="mt-0.5 h-4 w-4 rounded border-[#2a2d3e] bg-[#0f1117] accent-indigo-600"
                 />
                 Customer consents to receive SMS status updates
+              </label>
+              <label className="flex items-start gap-2 text-xs text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={form.email_consent}
+                  onChange={e => set('email_consent', e.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-[#2a2d3e] bg-[#0f1117] accent-[#EAB308]"
+                />
+                Customer consents to receive email status updates
               </label>
             </>
           )}
