@@ -156,13 +156,13 @@ html[data-touch="true"][data-text-entry-focus="true"] .sheet-modal-body {
   html[data-touch="true"][data-text-entry-focus="true"] .sheet-modal-overlay {
     align-items: flex-start;
     justify-content: center;
-    padding-top: calc(0.5rem + env(safe-area-inset-top));
-    padding-bottom: calc(0.75rem + var(--app-keyboard-inset) + env(safe-area-inset-bottom));
+    padding-top: calc(0.25rem + env(safe-area-inset-top));
+    padding-bottom: calc(0.5rem + var(--app-keyboard-inset) + env(safe-area-inset-bottom));
   }
 
   html[data-touch="true"][data-text-entry-focus="true"] .sheet-modal-overlay .sheet-modal-card {
     max-width: min(42rem, calc(100vw - 2rem));
-    max-height: min(calc(var(--app-viewport-height) - 1rem - env(safe-area-inset-top)), 20rem);
+    max-height: min(calc(var(--app-viewport-height) - 0.5rem - env(safe-area-inset-top)), 16rem);
   }
 
   html[data-touch="true"][data-text-entry-focus="true"] .sheet-modal-overlay .sheet-modal-header,
