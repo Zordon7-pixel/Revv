@@ -131,13 +131,12 @@ html.theme-light iframe {
 }
 
 html[data-touch="true"][data-text-entry-focus="true"] .sheet-modal-overlay {
-  align-items: flex-start;
-  padding-top: calc(0.5rem + env(safe-area-inset-top));
-  padding-bottom: 0;
+  align-items: center;
+  padding: 0.75rem 0;
 }
 
 html[data-touch="true"][data-text-entry-focus="true"] .sheet-modal-card {
-  max-height: min(calc(var(--app-viewport-height) - 0.75rem - env(safe-area-inset-top)), 52vh);
+  max-height: min(calc(var(--app-viewport-height) - 1.5rem - env(safe-area-inset-top) - env(safe-area-inset-bottom)), 82vh);
 }
 
 html[data-touch="true"][data-text-entry-focus="true"] .sheet-modal-body {
@@ -147,15 +146,14 @@ html[data-touch="true"][data-text-entry-focus="true"] .sheet-modal-body {
 
 @media (orientation: landscape) and (max-height: 900px) and (max-width: 1400px) {
   html[data-touch="true"] .sheet-modal-overlay:focus-within {
-    align-items: flex-start;
+    align-items: center;
     justify-content: center;
-    padding-top: calc(0.35rem + env(safe-area-inset-top));
-    padding-bottom: 0;
+    padding: 0.5rem 0;
   }
 
   html[data-touch="true"] .sheet-modal-overlay:focus-within .sheet-modal-card {
     max-width: min(42rem, calc(100vw - 2rem));
-    max-height: min(calc(var(--app-viewport-height) - 0.5rem - env(safe-area-inset-top)), 38vh);
+    max-height: min(calc(var(--app-viewport-height) - 1rem - env(safe-area-inset-top)), 80vh);
   }
 
   html[data-touch="true"] .sheet-modal-overlay:focus-within .sheet-modal-header,
@@ -173,22 +171,9 @@ html[data-touch="true"][data-text-entry-focus="true"] .sheet-modal-body {
   html[data-touch="true"] .sheet-modal-card input:focus:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]),
   html[data-touch="true"] .sheet-modal-card textarea:focus,
   html[data-touch="true"] .sheet-modal-card select:focus {
-    position: fixed;
-    top: calc(0.5rem + env(safe-area-inset-top));
-    left: 50%;
-    z-index: 120;
-    width: min(38rem, calc(100vw - 2rem));
-    min-height: 3rem;
-    transform: translateX(-50%);
     border-color: #EAB308;
-    background: #0f1117;
-    color: #fff;
-    font-size: 18px;
-    box-shadow: 0 18px 44px rgba(0,0,0,0.45), 0 0 0 1px rgba(234,179,8,0.35);
-  }
-
-  html[data-touch="true"] .sheet-modal-card textarea:focus {
-    min-height: 5rem;
+    font-size: 16px;
+    box-shadow: 0 0 0 3px rgba(234,179,8,0.22);
   }
 }
 
