@@ -58,7 +58,7 @@ await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 
 ## Dispatch Log — 2026-07-10 CCC/Mitchell Reviewable Estimate Import
 
-**Status:** BUILD READY FOR CLAUDE CODE QA — NOT DEPLOYED
+**Status:** CLAUDE CODE QA PASS — CLEAR FOR HERMES — NOT DEPLOYED
 
 **Reported behavior:** A recognized CCC insurance estimate returned `CCC estimate needs review before import` as a fatal error, preventing the shop from reaching the existing review/import UI.
 
@@ -90,6 +90,13 @@ await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 - `cd frontend && npm run build` — PASS
 - `git diff --check` — PASS
 - Regression coverage confirms flagged CCC parses open review on all three frontend surfaces and make no estimate-item or RO creation request before the explicit action.
+
+**Claude Code read-only QA — PASS (`6267a74`)**
+- Zero CRITICAL, HIGH, or MEDIUM findings.
+- Confirmed both deterministic formats return reviewable success payloads and the old 409/error strings are absent.
+- Confirmed top-level-only `detected_format` is merged by all three clients, unknown review reasons remain visible in human-readable copy, and flagged parse requests do not create estimate items or an RO.
+- Re-ran backend Node tests 119/119, parser tests 7/7, frontend tests 58/58, frontend build, diff check, and untracked-dist guard.
+- Remaining post-deploy check: use a synthetic flagged CCC/Mitchell estimate to confirm production returns HTTP 200 and opens the review UI. No hosted database or Miles Automotive data was accessed during QA.
 
 ## Dispatch Log — 2026-07-10 Appraisal Quick Intake + Estimate Gap Review
 
