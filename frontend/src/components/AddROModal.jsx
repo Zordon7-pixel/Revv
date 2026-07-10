@@ -18,6 +18,50 @@ const DAMAGE_TYPES = [
   { value: 'glass', label: 'Glass' },
 ]
 
+const COMPACT_KEYBOARD_MIN_REDUCTION = 160
+
+export function shouldUseCompactKeyboardEditor(targetWindow = window) {
+  const visualViewport = targetWindow?.visualViewport
+  if (!visualViewport) return false
+
+  const root = targetWindow?.document?.documentElement
+  const touch = root?.dataset?.touch === 'true' || Number(targetWindow?.navigator?.maxTouchPoints || 0) > 0
+  const screenWidth = Math.round(Number(targetWindow?.screen?.width || 0))
+  const screenHeight = Math.round(Number(targetWindow?.screen?.height || 0))
+  const layoutHeight = Math.round(Number(targetWindow?.innerHeight || 0))
+  const visualHeight = Math.round(Number(visualViewport.height || 0))
+  const visualOffsetTop = Math.round(Number(visualViewport.offsetTop || 0))
+  const orientationType = String(targetWindow?.screen?.orientation?.type || '')
+  const legacyOrientation = Number(targetWindow?.orientation)
+  const landscape = orientationType
+    ? orientationType.startsWith('landscape')
+    : Number.isFinite(legacyOrientation) && Math.abs(legacyOrientation) === 90
+      ? true
+      : screenWidth > 0 && screenHeight > 0
+        ? screenWidth > screenHeight
+        : Number(targetWindow?.innerWidth || 0) > layoutHeight
+  const physicalViewportHeight = screenWidth > 0 && screenHeight > 0
+    ? landscape
+      ? Math.min(screenWidth, screenHeight)
+      : Math.max(screenWidth, screenHeight)
+    : 0
+  const referenceHeight = Math.max(physicalViewportHeight, layoutHeight)
+  const keyboardReduction = Math.max(0, referenceHeight - visualHeight - visualOffsetTop)
+
+  return touch && landscape && keyboardReduction >= COMPACT_KEYBOARD_MIN_REDUCTION
+}
+
+function findControlLabel(control, boundary) {
+  if (control?.labels?.[0]?.textContent) return control.labels[0].textContent.trim()
+  let node = control?.parentElement
+  while (node && node !== boundary) {
+    const directLabel = Array.from(node.children || []).find((child) => child.tagName === 'LABEL')
+    if (directLabel?.textContent) return directLabel.textContent.trim()
+    node = node.parentElement
+  }
+  return control?.getAttribute?.('aria-label') || control?.placeholder || 'Field'
+}
+
 export default function AddROModal({ onClose, onSaved, presentation = 'modal' }) {
   const { t } = useLanguage()
   const navigate = useNavigate()
@@ -47,7 +91,10 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
   const [suggestionSummary, setSuggestionSummary] = useState(null)
   const [loadingSuggestions, setLoadingSuggestions] = useState(false)
   const [addedCodes, setAddedCodes] = useState([])
+  const [compactEditor, setCompactEditor] = useState(null)
   const pageRef = useRef(null)
+  const compactInputRef = useRef(null)
+  const compactOriginalRef = useRef(null)
   const isPage = presentation === 'page'
 
   useEffect(() => { api.get('/customers').then(r => setCustomers(r.data.customers)) }, [])
@@ -56,7 +103,33 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
     if (!isPage || !pageRef.current) return undefined
 
     const timers = new Set()
+    const activateCompactEditor = () => {
+      const active = document.activeElement
+      if (active?.dataset?.roCompactInput === 'true') return true
+      if (!shouldUseCompactKeyboardEditor(window)) return false
+      if (!pageRef.current?.contains(active) || !isTextEntryTarget(active)) return false
+      if (!['INPUT', 'TEXTAREA'].includes(active.tagName)) return false
+
+      if (compactOriginalRef.current === active) return true
+      compactOriginalRef.current = active
+      setCompactEditor({
+        token: `${Date.now()}-${Math.random()}`,
+        label: findControlLabel(active, pageRef.current),
+        value: active.value || '',
+        tagName: active.tagName,
+        type: active.type || 'text',
+        inputMode: active.inputMode || undefined,
+        autoComplete: active.autocomplete || undefined,
+        placeholder: active.placeholder || '',
+        maxLength: active.maxLength > 0 ? active.maxLength : undefined,
+        min: active.min || undefined,
+        max: active.max || undefined,
+        step: active.step || undefined,
+      })
+      return true
+    }
     const keepFocusedFieldVisible = () => {
+      activateCompactEditor()
       const active = document.activeElement
       if (!pageRef.current?.contains(active) || !isTextEntryTarget(active)) return
 
@@ -85,21 +158,71 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
     const onFocusIn = (event) => {
       if (isTextEntryTarget(event.target)) scheduleVisibilityCheck()
     }
+    const onViewportChange = () => {
+      if (!shouldUseCompactKeyboardEditor(window)) {
+        setCompactEditor(null)
+        compactOriginalRef.current = null
+      }
+      scheduleVisibilityCheck()
+    }
 
     const page = pageRef.current
     page.addEventListener('focusin', onFocusIn)
-    window.visualViewport?.addEventListener('resize', scheduleVisibilityCheck)
-    window.visualViewport?.addEventListener('scroll', scheduleVisibilityCheck)
-    window.addEventListener('orientationchange', scheduleVisibilityCheck)
+    window.visualViewport?.addEventListener('resize', onViewportChange)
+    window.visualViewport?.addEventListener('scroll', onViewportChange)
+    window.addEventListener('orientationchange', onViewportChange)
 
     return () => {
       timers.forEach((timer) => window.clearTimeout(timer))
       page.removeEventListener('focusin', onFocusIn)
-      window.visualViewport?.removeEventListener('resize', scheduleVisibilityCheck)
-      window.visualViewport?.removeEventListener('scroll', scheduleVisibilityCheck)
-      window.removeEventListener('orientationchange', scheduleVisibilityCheck)
+      window.visualViewport?.removeEventListener('resize', onViewportChange)
+      window.visualViewport?.removeEventListener('scroll', onViewportChange)
+      window.removeEventListener('orientationchange', onViewportChange)
+      compactOriginalRef.current = null
     }
   }, [isPage])
+
+  useEffect(() => {
+    if (!compactEditor) return undefined
+    const frame = window.requestAnimationFrame(() => {
+      const input = compactInputRef.current
+      input?.focus({ preventScroll: true })
+      if (input && typeof input.setSelectionRange === 'function') {
+        const end = String(input.value || '').length
+        try { input.setSelectionRange(end, end) } catch { /* unsupported input type */ }
+      }
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [compactEditor?.token])
+
+  useEffect(() => {
+    compactOriginalRef.current = null
+    setCompactEditor(null)
+  }, [step])
+
+  function updateCompactEditorValue(value) {
+    const original = compactOriginalRef.current
+    if (!original) return
+
+    const prototype = original.tagName === 'TEXTAREA'
+      ? window.HTMLTextAreaElement?.prototype
+      : window.HTMLInputElement?.prototype
+    const nativeSetter = prototype
+      ? Object.getOwnPropertyDescriptor(prototype, 'value')?.set
+      : null
+
+    if (nativeSetter) nativeSetter.call(original, value)
+    else original.value = value
+    original.dispatchEvent(new window.Event('input', { bubbles: true }))
+    setCompactEditor((current) => current ? { ...current, value } : current)
+  }
+
+  function dismissCompactEditor() {
+    compactInputRef.current?.blur()
+    compactOriginalRef.current?.blur()
+    compactOriginalRef.current = null
+    setCompactEditor(null)
+  }
 
   useEffect(() => {
     if (form.new_customer || !form.customer_id) {
@@ -368,7 +491,7 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
   }
 
   const content = (
-      <div className={`sheet-modal-card bg-[#1a1d2e] border border-[#2a2d3e] ${isPage ? 'rounded-xl shadow-2xl' : 'sm:max-w-2xl sm:rounded-xl rounded-t-2xl'}`}>
+      <div className={`sheet-modal-card bg-[#1a1d2e] border border-[#2a2d3e] ${compactEditor ? 'add-ro-compact-active' : ''} ${isPage ? 'rounded-xl shadow-2xl' : 'sm:max-w-2xl sm:rounded-xl rounded-t-2xl'}`}>
         <div className="sheet-modal-header flex items-center justify-between p-5 border-b border-[#2a2d3e]">
           <h2 className="font-bold text-white">{t('ro.addRO')}</h2>
           <button type="button" onClick={onClose} className="text-slate-400 hover:text-white" aria-label="Close new RO form"><X size={18} /></button>
@@ -656,6 +779,52 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
             </>
           )}
         </div>
+        {compactEditor && (
+          <div className="add-ro-compact-editor" role="group" aria-label={`Editing ${compactEditor.label}`}>
+            <div className="flex items-center justify-between gap-3">
+              <label htmlFor="add-ro-compact-input" className="text-sm font-semibold text-slate-100">
+                {compactEditor.label}
+              </label>
+              <button
+                type="button"
+                onClick={dismissCompactEditor}
+                className="shrink-0 rounded-lg border border-[#EAB308]/50 bg-[#EAB308]/10 px-3 py-1.5 text-xs font-semibold text-[#EAB308]"
+              >
+                Done
+              </button>
+            </div>
+            {compactEditor.tagName === 'TEXTAREA' ? (
+              <textarea
+                ref={compactInputRef}
+                id="add-ro-compact-input"
+                data-ro-compact-input="true"
+                value={compactEditor.value}
+                onChange={(event) => updateCompactEditorValue(event.target.value)}
+                placeholder={compactEditor.placeholder}
+                maxLength={compactEditor.maxLength}
+                rows={2}
+                className="w-full rounded-lg border border-[#EAB308] bg-[#0f1117] px-3 py-2 text-base text-white outline-none shadow-[0_0_0_3px_rgba(234,179,8,0.2)]"
+              />
+            ) : (
+              <input
+                ref={compactInputRef}
+                id="add-ro-compact-input"
+                data-ro-compact-input="true"
+                type={compactEditor.type}
+                inputMode={compactEditor.inputMode}
+                autoComplete={compactEditor.autoComplete}
+                value={compactEditor.value}
+                onChange={(event) => updateCompactEditorValue(event.target.value)}
+                placeholder={compactEditor.placeholder}
+                maxLength={compactEditor.maxLength}
+                min={compactEditor.min}
+                max={compactEditor.max}
+                step={compactEditor.step}
+                className="w-full rounded-lg border border-[#EAB308] bg-[#0f1117] px-3 py-2 text-base text-white outline-none shadow-[0_0_0_3px_rgba(234,179,8,0.2)]"
+              />
+            )}
+          </div>
+        )}
         <div className="sheet-modal-footer flex items-center justify-between p-5 border-t border-[#2a2d3e]">
           <button onClick={() => step > 1 ? setStep(s=>s-1) : onClose()} className="text-slate-400 hover:text-white text-sm transition-colors">
             {step > 1 ? `← ${t('common.back')}` : t('common.cancel')}
@@ -679,7 +848,7 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
 
   if (isPage) {
     return (
-      <div ref={pageRef} className="add-ro-page mx-auto min-h-full w-full max-w-3xl px-3 py-4 sm:px-4 sm:py-6">
+      <div ref={pageRef} className={`add-ro-page mx-auto min-h-full w-full max-w-3xl px-3 py-4 sm:px-4 sm:py-6 ${compactEditor ? 'add-ro-compact-mode' : ''}`}>
         {content}
       </div>
     )

@@ -8,6 +8,8 @@ function createMockWindow({
   visualHeight = height,
   visualOffsetTop = 0,
   visualOffsetLeft = 0,
+  screenWidth = width,
+  screenHeight = height,
   userAgent,
   platform,
   maxTouchPoints = 0,
@@ -22,6 +24,10 @@ function createMockWindow({
       userAgent,
       platform,
       maxTouchPoints,
+    },
+    screen: {
+      width: screenWidth,
+      height: screenHeight,
     },
     matchMedia: () => ({ matches: coarsePointer }),
     visualViewport: {
@@ -62,7 +68,7 @@ describe('viewport profile detection', () => {
     const mockWindow = createMockWindow({
       width: 834,
       height: 1194,
-      userAgent: 'Mozilla/5.0 (iPad; CPU OS 17_4 like Mac OS X)',
+      userAgent: 'Mozilla/5.0 (iPad; CPU OS 17_4 like Mac OS X) AppleWebKit/605.1.15 Version/17.4 Mobile/15E148 Safari/604.1',
       platform: 'iPad',
       maxTouchPoints: 5,
       coarsePointer: true,
@@ -100,5 +106,27 @@ describe('viewport profile detection', () => {
     expect(mockWindow.document.documentElement.style.getPropertyValue('--app-viewport-height')).toBe('248px')
     expect(mockWindow.document.documentElement.style.getPropertyValue('--app-viewport-offset-top')).toBe('74px')
     expect(mockWindow.document.documentElement.style.getPropertyValue('--app-viewport-offset-left')).toBe('0px')
+  })
+
+  it('keeps an iPad in tablet mode when Safari shrinks both innerHeight and visualViewport height', () => {
+    const mockWindow = createMockWindow({
+      width: 1024,
+      height: 248,
+      visualWidth: 1024,
+      visualHeight: 248,
+      screenWidth: 1024,
+      screenHeight: 768,
+      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15) AppleWebKit/605.1.15',
+      platform: 'MacIntel',
+      maxTouchPoints: 5,
+      coarsePointer: true,
+    })
+
+    const profile = detectViewportProfile(mockWindow)
+
+    expect(profile.deviceMode).toBe('tablet')
+    expect(profile.shortestSide).toBe(768)
+    expect(profile.longestSide).toBe(1024)
+    expect(profile.height).toBe(248)
   })
 })

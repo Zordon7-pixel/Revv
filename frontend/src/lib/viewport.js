@@ -36,14 +36,22 @@ export function detectViewportProfile(targetWindow = window) {
   const platform = String(navigatorRef.platform || '')
   const maxTouchPoints = Number(navigatorRef.maxTouchPoints || 0)
   const touch = hasCoarsePointer(targetWindow) || maxTouchPoints > 0 || 'ontouchstart' in targetWindow
+  const screenWidth = Math.round(Number(targetWindow?.screen?.width || 0))
+  const screenHeight = Math.round(Number(targetWindow?.screen?.height || 0))
+  const stableShortestSide = touch && screenWidth > 0 && screenHeight > 0
+    ? Math.min(screenWidth, screenHeight)
+    : shortestSide
+  const stableLongestSide = touch && screenWidth > 0 && screenHeight > 0
+    ? Math.max(screenWidth, screenHeight)
+    : longestSide
   const isIOS = /iPad|iPhone|iPod/i.test(userAgent) || (platform === 'MacIntel' && maxTouchPoints > 1)
   const isTabletAgent = /iPad|Tablet|Android(?!.*Mobile)/i.test(userAgent) || (platform === 'MacIntel' && maxTouchPoints > 1)
-  const isPhoneAgent = /iPhone|Android.+Mobile|Mobile/i.test(userAgent)
+  const isPhoneAgent = !isTabletAgent && /iPhone|Android.+Mobile|Mobile/i.test(userAgent)
 
   let deviceMode = 'desktop'
-  if (touch && (isPhoneAgent || shortestSide <= 767)) {
+  if (touch && (isPhoneAgent || stableShortestSide <= 767)) {
     deviceMode = 'phone'
-  } else if (touch && (isTabletAgent || (shortestSide <= 1100 && longestSide <= 1400))) {
+  } else if (touch && (isTabletAgent || (stableShortestSide <= 1100 && stableLongestSide <= 1400))) {
     deviceMode = 'tablet'
   }
 
@@ -54,8 +62,8 @@ export function detectViewportProfile(targetWindow = window) {
     offsetLeft,
     layoutHeight,
     keyboardInset,
-    shortestSide,
-    longestSide,
+    shortestSide: stableShortestSide,
+    longestSide: stableLongestSide,
     touch,
     isIOS,
     deviceMode,

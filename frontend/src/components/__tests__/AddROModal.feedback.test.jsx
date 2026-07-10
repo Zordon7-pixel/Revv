@@ -26,7 +26,7 @@ vi.mock('../../contexts/LanguageContext', () => ({
 }))
 
 import api from '../../lib/api'
-import AddROModal from '../AddROModal'
+import AddROModal, { shouldUseCompactKeyboardEditor } from '../AddROModal'
 
 describe('AddROModal feedback handling', () => {
   beforeEach(() => {
@@ -41,8 +41,44 @@ describe('AddROModal feedback handling', () => {
 
   afterEach(() => {
     cleanup()
+    delete document.documentElement.dataset.touch
     vi.useRealTimers()
     vi.restoreAllMocks()
+  })
+
+  it('uses compact entry only for a touch landscape soft keyboard reduction', () => {
+    const baseWindow = {
+      innerWidth: 1024,
+      innerHeight: 248,
+      orientation: 90,
+      navigator: { maxTouchPoints: 5 },
+      document: { documentElement: { dataset: { touch: 'true' } } },
+      screen: { width: 1024, height: 768 },
+      visualViewport: { height: 248, offsetTop: 0 },
+    }
+
+    expect(shouldUseCompactKeyboardEditor(baseWindow)).toBe(true)
+    expect(shouldUseCompactKeyboardEditor({
+      ...baseWindow,
+      innerHeight: 700,
+      visualViewport: { height: 700, offsetTop: 0 },
+    })).toBe(false)
+    expect(shouldUseCompactKeyboardEditor({
+      ...baseWindow,
+      innerHeight: 700,
+      screen: { width: 768, height: 1024 },
+      visualViewport: { height: 700, offsetTop: 0 },
+    })).toBe(false)
+    expect(shouldUseCompactKeyboardEditor({
+      ...baseWindow,
+      orientation: 0,
+      screen: { width: 768, height: 1024 },
+    })).toBe(false)
+    expect(shouldUseCompactKeyboardEditor({
+      ...baseWindow,
+      navigator: { maxTouchPoints: 0 },
+      document: { documentElement: { dataset: { touch: 'false' } } },
+    })).toBe(false)
   })
 
   it('shows customer-selection validation inline instead of using a browser alert', async () => {
@@ -128,6 +164,66 @@ describe('AddROModal feedback handling', () => {
       } else {
         delete window.visualViewport
       }
+    }
+  })
+
+  it('shows a focused one-field editor for the iPad landscape soft keyboard and syncs the value', () => {
+    vi.useFakeTimers()
+    const originalVisualViewport = Object.getOwnPropertyDescriptor(window, 'visualViewport')
+    const originalInnerWidth = Object.getOwnPropertyDescriptor(window, 'innerWidth')
+    const originalInnerHeight = Object.getOwnPropertyDescriptor(window, 'innerHeight')
+    const originalOrientation = Object.getOwnPropertyDescriptor(window, 'orientation')
+    const originalScreenWidth = Object.getOwnPropertyDescriptor(window.screen, 'width')
+    const originalScreenHeight = Object.getOwnPropertyDescriptor(window.screen, 'height')
+    const visualViewport = new EventTarget()
+    Object.assign(visualViewport, { width: 1024, height: 248, offsetTop: 0, offsetLeft: 0 })
+
+    Object.defineProperty(window, 'visualViewport', { configurable: true, value: visualViewport })
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1024 })
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 248 })
+    Object.defineProperty(window, 'orientation', { configurable: true, value: 90 })
+    Object.defineProperty(window.screen, 'width', { configurable: true, value: 1024 })
+    Object.defineProperty(window.screen, 'height', { configurable: true, value: 768 })
+    document.documentElement.dataset.touch = 'true'
+
+    try {
+      render(
+        <MemoryRouter>
+          <AddROModal presentation="page" onClose={vi.fn()} onSaved={vi.fn()} />
+        </MemoryRouter>
+      )
+
+      fireEvent.click(screen.getByRole('button', { name: /^New$/i }))
+      const originalNameInput = screen.getByPlaceholderText('John Smith')
+
+      act(() => {
+        originalNameInput.focus()
+        fireEvent.focusIn(originalNameInput)
+        visualViewport.dispatchEvent(new Event('resize'))
+        vi.runAllTimers()
+      })
+
+      const compactGroup = screen.getByRole('group', { name: /Editing Full Name/i })
+      const compactInput = compactGroup.querySelector('[data-ro-compact-input="true"]')
+      expect(compactInput).not.toBeNull()
+
+      fireEvent.change(compactInput, { target: { value: 'Miles Customer' } })
+      expect(originalNameInput).toHaveValue('Miles Customer')
+
+      fireEvent.click(screen.getByRole('button', { name: 'Done' }))
+      expect(screen.queryByRole('group', { name: /Editing Full Name/i })).not.toBeInTheDocument()
+      expect(originalNameInput).toHaveValue('Miles Customer')
+    } finally {
+      const restore = (target, key, descriptor) => {
+        if (descriptor) Object.defineProperty(target, key, descriptor)
+        else delete target[key]
+      }
+      restore(window, 'visualViewport', originalVisualViewport)
+      restore(window, 'innerWidth', originalInnerWidth)
+      restore(window, 'innerHeight', originalInnerHeight)
+      restore(window, 'orientation', originalOrientation)
+      restore(window.screen, 'width', originalScreenWidth)
+      restore(window.screen, 'height', originalScreenHeight)
     }
   })
 })

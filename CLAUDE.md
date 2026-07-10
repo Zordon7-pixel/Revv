@@ -56,6 +56,88 @@ const ro = await dbGet('SELECT * FROM ros WHERE id = $1 AND shop_id = $2', [id, 
 await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 ```
 
+## Dispatch Log — 2026-07-10 iPad Landscape Compact Entry Follow-up
+
+**Status:** BUILT LOCALLY — READY FOR CLAUDE CODE QA
+
+**Why the prior production fix was insufficient**
+- Physical-iPad validation after deploy `c69ae92` still reproduced the landscape keyboard problem.
+- Safari can shrink both `innerHeight` and `visualViewport.height`; using `innerHeight` as the stable device height could still downgrade the iPad to phone mode.
+- Real iPad Safari user agents contain `Mobile`; the prior phone-agent regex ran before the tablet exclusion and classified that real UA as a phone.
+- Even with correct visual-viewport sizing, the native landscape keyboard leaves too little height for the complete multi-field form. REVV cannot resize the operating-system keyboard.
+
+**Replacement behavior**
+- Touch-device classification now uses physical screen dimensions and excludes identified tablets from the generic `Mobile` phone match.
+- A compact one-field editor activates only for touch + physical landscape orientation + at least 160px of soft-keyboard viewport reduction.
+- The compact editor shows the active field, `Done`, and the existing RO step footer/`Next`; typed values synchronize to the original controlled form field.
+- Closing the keyboard or tapping `Done` restores the complete form without losing the typed value.
+- iPad portrait remains the normal form.
+- iPad with a wireless keyboard remains the normal full-height form because no large visual-viewport reduction occurs.
+- Desktop is unchanged; phone landscape with its native soft keyboard uses the same compact behavior.
+- No customer, shop, RO, seed, reset, migration, backend, or production-data mutation was performed. Miles Automotive data was not touched.
+
+**Files changed**
+- `frontend/src/components/AddROModal.jsx`
+- `frontend/src/components/__tests__/AddROModal.feedback.test.jsx`
+- `frontend/src/index.css`
+- `frontend/src/lib/viewport.js`
+- `frontend/src/lib/__tests__/viewport.test.js`
+- `CLAUDE.md`
+
+**Verification**
+```text
+cd frontend && npm run test:run  # 19 files, 46/46 passed
+cd frontend && npm run build     # passed; existing Sentry/chunk warnings only
+rm -rf frontend/dist
+git diff --check                 # passed
+git ls-files frontend/dist       # no tracked files
+
+Rendered iPad landscape soft-keyboard state:
+- realistic iPad Safari UA with Mobile token => deviceMode tablet
+- visual viewport 1024x248 at offsetTop 74
+- compact input y=122..164, Next y=183..219; both inside shell y=74..322
+- typed `Miles Landscape` present in both compact input and original form field
+- focused compact input=true; sidebar count=0
+- screenshot: /tmp/revv-ipad-landscape-compact-editor.png
+
+Rendered wireless-keyboard state:
+- visual viewport expanded to 1024x700
+- deviceMode tablet; compact editor=false
+- complete Add RO form restored; typed value retained
+- screenshot: /tmp/revv-ipad-wireless-keyboard-full-form.png
+```
+
+**Claude Code QA Prompt**
+```text
+TASK: REVV — Read-only QA for physical-iPad landscape compact-entry follow-up
+
+Repo: /Users/zordon/.openclaw/workspace/Revv
+Review the commit immediately following this dispatch. Do not edit, deploy, access a live DB, or mutate customer/shop/RO/Miles data.
+
+Verify:
+1. A realistic iPad Safari UA containing `iPad` and `Mobile` is classified as tablet, not phone.
+2. If Safari shrinks both innerHeight and visualViewport height, physical screen dimensions keep the iPad classified as tablet.
+3. Compact entry activates only for touch + physical landscape + >=160px viewport reduction.
+4. Portrait soft-keyboard use does not activate compact entry.
+5. An iPad wireless-keyboard/full-height viewport does not activate compact entry.
+6. A non-touch desktop never activates compact entry.
+7. Compact input changes synchronize to the original controlled Add-RO field and survive Done/restore.
+8. The compact state leaves the active input, Done, and RO footer/Next visible while hiding the rest of the form from the reduced viewport.
+9. Closing the keyboard restores the full form.
+10. Existing Add-RO validation, portrait flow, desktop modal flow, and three-step submission remain unchanged.
+11. Tests/build/diff pass; frontend/dist is untracked.
+12. No backend, schema, data, seed/reset, or Miles Automotive change exists.
+
+Commands:
+- cd frontend && npm run test:run
+- cd frontend && npm run build
+- rm -rf frontend/dist
+- git diff --check
+- git ls-files frontend/dist
+
+Return PASS or NEEDS FIXES with file:line evidence. On PASS, hand to Hermes for deploy, then require Bryan's physical-iPad landscape validation before marking the user report closed.
+```
+
 ## Claude Code QA — 2026-07-10 Permanent REVV Logo Assets
 
 **Status:** PASS — commit `1ca3b06` is safe to ship.
