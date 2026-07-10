@@ -56,6 +56,47 @@ const ro = await dbGet('SELECT * FROM ros WHERE id = $1 AND shop_id = $2', [id, 
 await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 ```
 
+## Dispatch Log — 2026-07-10 Appraisal Quick Intake + Estimate Gap Review
+
+**Status:** BUILD READY FOR CLAUDE CODE QA — NOT DEPLOYED
+
+**Behavior shipped**
+- Added `Appraisal Quick Intake` as a dedicated New RO entry method. It accepts up to 12 PDF/image pages, extracts intake metadata only, and never imports estimate line items or financial totals.
+- Extracted customer, vehicle, insurer, claim, policy, adjuster, mileage, and deductible fields remain editable before they are applied to the existing three-step New RO workflow.
+- Intake matching reuses a unique customer phone/email match and a unique VIN or year/make/model vehicle match. Exact duplicate claim numbers produce a warning before another RO is created.
+- Notification consent is never inferred from appraisal paperwork. New extracted customers start with SMS/email consent disabled; previously recorded consent is retained only when an existing customer is matched.
+- Appraisal source pages are attached after RO creation in Claim Tracker. Claim evidence now supports PDF documents and renders them as document links rather than broken image thumbnails. Failed attachments do not invite a duplicate RO submission; the created RO enters an explicit retry/open state.
+- Removed the contextless `AI Estimate Suggestions` and damage-photo AI controls from New RO. New RO now captures damage type/panels only.
+- Added a shop-scoped `Estimate Gap Review` in Estimate Builder. It runs only after estimate lines and damaged panels/evidence exist, filters operations already represented in the estimate, explains sources/reason/confidence, and can add only a zero-dollar non-taxable draft for human review.
+- Expanded RO search to include exact claim fields for intake duplicate detection and persisted policy number on normal RO creation.
+- No seed, reset, destructive migration, or hosted database action was run. Miles Automotive data was not read or modified; all visual/browser flows used mocked shop records.
+
+**Primary files**
+- `backend/src/routes/insuranceOcr.js`
+- `backend/src/routes/estimateAssistant.js`
+- `backend/src/routes/claimTracker.js`
+- `backend/src/routes/ros.js`
+- `frontend/src/components/AppraisalQuickIntake.jsx`
+- `frontend/src/components/AddROModal.jsx`
+- `frontend/src/components/ClaimTrackerPanel.jsx`
+- `frontend/src/pages/EstimateBuilder.jsx`
+- `frontend/src/lib/appraisalIntake.js`
+- Regression tests under `backend/src/__tests__`, `frontend/src/components/__tests__`, `frontend/src/pages/__tests__`, and `frontend/src/lib/__tests__`
+
+**Verification**
+```text
+node --check backend/src/routes/{insuranceOcr,claimTracker,estimateAssistant,ros}.js  # PASS
+node --test backend/src/__tests__/*.test.js                                        # 98/98 PASS
+cd backend && npm run test:run                                                     # 3 files, 7/7 PASS
+node --test backend/test/{bmsParser,estimateFinancials,estimateImport,estimateTotals,idTypeCastGuard,typeCastRoutes}.test.js  # 19/19 PASS
+cd frontend && npm run test:run                                                    # 23 files, 53/53 PASS
+cd frontend && npm run build                                                       # PASS
+Playwright mocked tablet flow, 1024x768: no page errors, no horizontal overflow, 2-page intake applied, existing customer/VIN matched, old suggestion panel count 0
+Playwright mocked phone flow, 390x844: no horizontal overflow
+Playwright Estimate Builder: gap visible, evidence sources visible, zero-dollar draft disclosure present
+Screenshots: /tmp/revv-appraisal-quick-intake.png, /tmp/revv-new-ro-appraisal-loaded.png, /tmp/revv-estimate-gap-review.png, /tmp/revv-appraisal-mobile.png
+```
+
 ## Dispatch Log — 2026-07-10 iPad Landscape Compact Entry Follow-up
 
 **Status:** CLAUDE CODE QA PASS — READY FOR HERMES DEPLOYMENT; PHYSICAL IPAD VALIDATION REQUIRED
