@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { AlertTriangle, Camera, Film, PhoneCall, ShieldAlert, Trash2, Upload } from 'lucide-react'
+import { AlertTriangle, Camera, FileText, Film, PhoneCall, ShieldAlert, Trash2, Upload } from 'lucide-react'
 import api from '../lib/api'
 import { resolveUploadedMediaUrl } from '../lib/mediaUrls'
 import { safeExternalErrorMessage } from '../lib/safeErrors'
@@ -224,9 +224,9 @@ export default function ClaimTrackerPanel({ roId, canEdit }) {
       <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 space-y-3">
         <div>
           <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
-            <Upload size={12} /> Photo/Video Documentation
+            <Upload size={12} /> Claim Documentation
           </h3>
-          <p className="text-xs text-slate-500 mt-1">Upload evidence files directly to this job for insurance disputes.</p>
+          <p className="text-xs text-slate-500 mt-1">Upload photos, videos, PDFs, and appraisal documents directly to this job.</p>
         </div>
 
         {canEdit && (
@@ -235,7 +235,7 @@ export default function ClaimTrackerPanel({ roId, canEdit }) {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/*,video/*"
+                accept="image/*,video/*,application/pdf"
                 onChange={(e) => setSelectedEvidenceFile(e.target.files?.[0] || null)}
                 className={inp}
                 disabled={uploadingEvidence}
@@ -271,7 +271,12 @@ export default function ClaimTrackerPanel({ roId, canEdit }) {
               return (
                 <div key={item.id} className="bg-[#0f1117] border border-[#2a2d3e] rounded-xl p-3">
                   <div className="rounded-lg overflow-hidden border border-[#2a2d3e] bg-black mb-2">
-                    {mediaUrl && !mediaFailed && item.media_type === 'video' ? (
+                    {mediaUrl && !mediaFailed && item.media_type === 'document' ? (
+                      <a href={mediaUrl} target="_blank" rel="noreferrer" className="flex h-40 w-full flex-col items-center justify-center gap-2 text-[#EAB308] hover:bg-[#EAB308]/5">
+                        <FileText size={28} />
+                        <span className="text-xs font-semibold">Open appraisal document</span>
+                      </a>
+                    ) : mediaUrl && !mediaFailed && item.media_type === 'video' ? (
                       <video
                         src={mediaUrl}
                         controls
@@ -287,15 +292,15 @@ export default function ClaimTrackerPanel({ roId, canEdit }) {
                       />
                     ) : (
                       <div className="flex h-40 w-full flex-col items-center justify-center gap-1 text-slate-500">
-                        {item.media_type === 'video' ? <Film size={22} className="text-slate-600" /> : <Camera size={22} className="text-slate-600" />}
+                        {item.media_type === 'document' ? <FileText size={22} className="text-slate-600" /> : item.media_type === 'video' ? <Film size={22} className="text-slate-600" /> : <Camera size={22} className="text-slate-600" />}
                         <span className="text-xs font-medium">Evidence unavailable</span>
                       </div>
                     )}
                   </div>
 
                   <div className="flex items-center justify-between gap-2 mb-1">
-                    <span className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold ${item.media_type === 'video' ? 'text-[#EAB308] bg-[#EAB308]/10 border-[#EAB308]/40' : 'text-emerald-300 bg-emerald-900/20 border-emerald-700/40'}`}>
-                      {item.media_type === 'video' ? <span className="inline-flex items-center gap-1"><Film size={10} /> Video</span> : <span className="inline-flex items-center gap-1"><Camera size={10} /> Photo</span>}
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold ${item.media_type === 'photo' ? 'text-emerald-300 bg-emerald-900/20 border-emerald-700/40' : 'text-[#EAB308] bg-[#EAB308]/10 border-[#EAB308]/40'}`}>
+                      {item.media_type === 'document' ? <span className="inline-flex items-center gap-1"><FileText size={10} /> Document</span> : item.media_type === 'video' ? <span className="inline-flex items-center gap-1"><Film size={10} /> Video</span> : <span className="inline-flex items-center gap-1"><Camera size={10} /> Photo</span>}
                     </span>
                     {canEdit && (
                       <button

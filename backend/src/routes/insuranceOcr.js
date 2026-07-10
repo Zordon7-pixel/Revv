@@ -133,6 +133,32 @@ Important operation code mapping:
 Include all numbered estimate rows (exclude section headers) and include the estimate totals block.
 Return only the JSON object, no markdown fences, no extra text.`;
 
+const INTAKE_PROMPT = `You are reading an auto insurance appraisal to open a repair order. Extract intake metadata only.
+Return ONLY valid JSON in this exact format:
+{
+  "customer_name": "string or null",
+  "customer_phone": "string or null",
+  "customer_email": "string or null",
+  "customer_address": "string or null",
+  "insurance_company": "string or null",
+  "claim_number": "string or null",
+  "policy_number": "string or null",
+  "adjuster_name": "string or null",
+  "adjuster_phone": "string or null",
+  "adjuster_email": "string or null",
+  "vehicle": "string or null",
+  "vin": "string or null",
+  "vehicle_year": "string or null",
+  "vehicle_make": "string or null",
+  "vehicle_model": "string or null",
+  "vehicle_color": "string or null",
+  "vehicle_plate": "string or null",
+  "vehicle_mileage": "string or null",
+  "deductible": "number or null"
+}
+Do not extract estimate line items, labor, parts, totals, or repair pricing. Do not infer missing values.
+Return only the JSON object, no markdown fences, no extra text.`;
+
 const RELAXED_LINE_ITEM_PROMPT = `${SYSTEM_PROMPT}
 
 Second-pass instructions:
@@ -473,6 +499,43 @@ function normalizeLineItems(rawItems) {
     .filter((item) => item.description);
 }
 
+function normalizeIntakeParsed(parsed = {}, detectedFormat = FORMATS.UNKNOWN) {
+  const vehicleParts = String(parsed.vehicle || '').trim().split(/\s+/).filter(Boolean);
+  const vehicleYear = parsed.vehicle_year || (/^\d{4}$/.test(vehicleParts[0] || '') ? vehicleParts.shift() : null);
+  const vehicleMake = parsed.vehicle_make || vehicleParts.shift() || null;
+  const vehicleModel = parsed.vehicle_model || vehicleParts.join(' ') || null;
+  const rawDeductible = parsed.deductible ?? parsed.estimate_totals?.deductible;
+  const deductible = rawDeductible === null || rawDeductible === undefined || rawDeductible === ''
+    ? null
+    : Math.abs(Number(rawDeductible));
+
+  return {
+    intake_only: true,
+    detected_format: detectedFormat,
+    customer_name: parsed.customer_name || null,
+    customer_phone: parsed.customer_phone || null,
+    customer_email: parsed.customer_email || null,
+    customer_address: parsed.customer_address || null,
+    insurance_company: parsed.insurance_company || null,
+    claim_number: parsed.claim_number || null,
+    policy_number: parsed.policy_number || null,
+    adjuster_name: parsed.adjuster_name || null,
+    adjuster_phone: parsed.adjuster_phone || null,
+    adjuster_email: parsed.adjuster_email || null,
+    vehicle: parsed.vehicle || [vehicleYear, vehicleMake, vehicleModel].filter(Boolean).join(' ') || null,
+    vin: parsed.vin || null,
+    vehicle_year: vehicleYear || null,
+    vehicle_make: vehicleMake || null,
+    vehicle_model: vehicleModel || null,
+    vehicle_color: parsed.vehicle_color || parsed.color || null,
+    vehicle_plate: parsed.vehicle_plate || parsed.plate || null,
+    vehicle_mileage: parsed.vehicle_mileage || parsed.mileage || null,
+    deductible: Number.isFinite(deductible) ? deductible : null,
+    line_items: [],
+    estimate_totals: null,
+  };
+}
+
 function addTotalsLine(items, description, type, quantity, rate, fallbackTotal) {
   const qty = toNumberOrNull(quantity);
   const unit = toNumberOrNull(rate);
@@ -778,6 +841,8 @@ router.post('/parse', auth, insuranceOcrLimiter, upload.fields([
       return res.status(400).json({ success: false, error: 'No file uploaded. Use field name: estimate_image' });
     }
 
+    const intakeMode = String(req.body?.mode || '').trim().toLowerCase() === 'intake';
+    const parsePrompt = intakeMode ? INTAKE_PROMPT : SYSTEM_PROMPT;
     let raw = '';
     let extractedTextForTotals = '';
     let retryWithRelaxedPrompt = null;
@@ -821,6 +886,9 @@ router.post('/parse', auth, insuranceOcrLimiter, upload.fields([
 
     if (extractedTextForTotals && formatDetection.format === FORMATS.CCC) {
       const parsed = parseCccEstimate(extractedTextForTotals);
+      if (intakeMode) {
+        return res.json({ success: true, parsed: normalizeIntakeParsed(parsed, formatDetection.format) });
+      }
       if (parsed.needs_review) {
         return res.status(409).json({
           success: false,
@@ -835,6 +903,9 @@ router.post('/parse', auth, insuranceOcrLimiter, upload.fields([
 
     if (extractedTextForTotals && formatDetection.format === FORMATS.MITCHELL) {
       const parsed = parseMitchellEstimate(extractedTextForTotals);
+      if (intakeMode) {
+        return res.json({ success: true, parsed: normalizeIntakeParsed(parsed, formatDetection.format) });
+      }
       if (parsed.needs_review) {
         return res.status(409).json({
           success: false,
@@ -855,12 +926,12 @@ router.post('/parse', auth, insuranceOcrLimiter, upload.fields([
     const openai = apiKey ? new OpenAI({ apiKey }) : null;
 
     if (imageDataUrls.length) {
-      retryWithRelaxedPrompt = () => parseEstimateImageUrlsWithFallback(openai, imageDataUrls, RELAXED_LINE_ITEM_PROMPT);
-      raw = await parseEstimateImageUrlsWithFallback(openai, imageDataUrls);
+      if (!intakeMode) retryWithRelaxedPrompt = () => parseEstimateImageUrlsWithFallback(openai, imageDataUrls, RELAXED_LINE_ITEM_PROMPT);
+      raw = await parseEstimateImageUrlsWithFallback(openai, imageDataUrls, parsePrompt);
     } else if (extractedTextForTotals) {
-      retryWithRelaxedPrompt = () => parseEstimateTextWithFallback(openai, extractedTextForTotals, RELAXED_LINE_ITEM_PROMPT);
+      if (!intakeMode) retryWithRelaxedPrompt = () => parseEstimateTextWithFallback(openai, extractedTextForTotals, RELAXED_LINE_ITEM_PROMPT);
       try {
-        raw = await parseEstimateTextWithFallback(openai, extractedTextForTotals);
+        raw = await parseEstimateTextWithFallback(openai, extractedTextForTotals, parsePrompt);
       } catch (parseErr) {
         if (isOpenAiJsonBodyParseError(parseErr)) {
           console.warn('[InsuranceOCR] OpenAI rejected PDF-text payload; falling back to PDF image OCR.');
@@ -889,8 +960,8 @@ router.post('/parse', auth, insuranceOcrLimiter, upload.fields([
           });
         }
 
-        retryWithRelaxedPrompt = () => parseEstimateImageUrlsWithFallback(openai, imageDataUrls, RELAXED_LINE_ITEM_PROMPT);
-        raw = await parseEstimateImageUrlsWithFallback(openai, imageDataUrls);
+        if (!intakeMode) retryWithRelaxedPrompt = () => parseEstimateImageUrlsWithFallback(openai, imageDataUrls, RELAXED_LINE_ITEM_PROMPT);
+        raw = await parseEstimateImageUrlsWithFallback(openai, imageDataUrls, parsePrompt);
       }
     } else {
       return res.status(422).json({
@@ -905,6 +976,10 @@ router.post('/parse', auth, insuranceOcrLimiter, upload.fields([
     } catch {
       console.error('[InsuranceOCR] Failed to parse OpenAI response. raw length:', raw?.length, '| preview:', raw?.slice(0, 300));
       return res.status(422).json({ success: false, error: 'Could not extract estimate data from file. Try a clearer upload.' });
+    }
+
+    if (intakeMode) {
+      return res.json({ success: true, parsed: normalizeIntakeParsed(parsed, formatDetection.format) });
     }
 
     let items = normalizeLineItems(parsed.line_items);
@@ -1101,3 +1176,5 @@ module.exports = router;
 module.exports.insuranceOcrLimiter = insuranceOcrLimiter;
 module.exports.insuranceOcrLimiterKeyGenerator = insuranceOcrLimiterKeyGenerator;
 module.exports.parseEstimateTotalsFromPdfText = parseEstimateTotalsFromPdfText;
+module.exports.normalizeIntakeParsed = normalizeIntakeParsed;
+module.exports.INTAKE_PROMPT = INTAKE_PROMPT;

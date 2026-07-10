@@ -64,4 +64,28 @@ describe('ClaimTrackerPanel evidence media', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not load claim tracker data')
     expect(window.alert).not.toHaveBeenCalled()
   })
+
+  it('renders appraisal PDFs as document links instead of broken images', async () => {
+    api.get.mockResolvedValue({
+      data: {
+        evidence: [{
+          id: 'document-1',
+          media_url: '/uploads/claim-evidence/appraisal.pdf',
+          media_type: 'document',
+          mime_type: 'application/pdf',
+          caption: 'Appraisal quick intake source',
+          created_at: '2026-07-10T12:00:00.000Z',
+          uploaded_by_name: 'Miles Owner',
+        }],
+        contacts: [],
+        disputes: [],
+      },
+    })
+
+    render(<ClaimTrackerPanel roId="ro-1" canEdit />)
+
+    const link = await screen.findByRole('link', { name: 'Open appraisal document' })
+    expect(link).toHaveAttribute('href', `${window.location.origin}/uploads/claim-evidence/appraisal.pdf`)
+    expect(screen.getByText('Document')).toBeInTheDocument()
+  })
 })

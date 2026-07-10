@@ -14,11 +14,30 @@ const CONTACT_CHANNELS = new Set(['phone', 'email', 'sms', 'portal', 'in-person'
 const uploadDir = path.join(__dirname, '../../uploads/claim-evidence');
 fs.mkdirSync(uploadDir, { recursive: true });
 
+function isAllowedEvidenceMimeType(mimeType) {
+  const mime = String(mimeType || '').toLowerCase();
+  return mime.startsWith('image/') || mime.startsWith('video/') || mime === 'application/pdf';
+}
+
+function isAllowedEvidenceFile(file) {
+  return isAllowedEvidenceMimeType(file?.mimetype)
+    || String(file?.originalname || '').toLowerCase().endsWith('.pdf');
+}
+
+function classifyEvidenceMediaType(mimeType, filename = '') {
+  const mime = String(mimeType || '').toLowerCase();
+  if (mime.startsWith('video/')) return 'video';
+  if (mime.startsWith('image/')) return 'photo';
+  if (mime === 'application/pdf' || String(filename || '').toLowerCase().endsWith('.pdf')) return 'document';
+  return null;
+}
+
 function safeExtFromFile(file) {
   const ext = String(path.extname(file?.originalname || '') || '').toLowerCase();
   if (/^\.[a-z0-9]{1,8}$/.test(ext)) return ext;
   if (String(file?.mimetype || '').startsWith('image/')) return '.jpg';
   if (String(file?.mimetype || '').startsWith('video/')) return '.mp4';
+  if (String(file?.mimetype || '') === 'application/pdf') return '.pdf';
   return '';
 }
 
@@ -32,8 +51,8 @@ const upload = multer({
   limits: { fileSize: MAX_EVIDENCE_FILE_SIZE_BYTES },
   fileFilter: (req, file, cb) => {
     const mime = String(file?.mimetype || '');
-    if (!mime.startsWith('image/') && !mime.startsWith('video/')) {
-      return cb(new Error('Only image or video files are allowed'));
+    if (!isAllowedEvidenceFile(file)) {
+      return cb(new Error('Only image, video, or PDF files are allowed'));
     }
     return cb(null, true);
   },
@@ -193,11 +212,7 @@ router.post('/ro/:roId/evidence', auth, requireTechnician, upload.single('media'
     if (!req.file) return res.status(400).json({ error: 'No media file uploaded' });
 
     const mimeType = String(req.file.mimetype || '').toLowerCase();
-    const mediaType = mimeType.startsWith('video/')
-      ? 'video'
-      : mimeType.startsWith('image/')
-        ? 'photo'
-        : null;
+    const mediaType = classifyEvidenceMediaType(mimeType, req.file.originalname);
     if (!mediaType) return res.status(400).json({ error: 'Unsupported media type' });
 
     const caption = normalizeText(req.body?.caption, 300);
@@ -419,3 +434,6 @@ router.use((err, req, res, next) => {
 });
 
 module.exports = router;
+module.exports.isAllowedEvidenceMimeType = isAllowedEvidenceMimeType;
+module.exports.isAllowedEvidenceFile = isAllowedEvidenceFile;
+module.exports.classifyEvidenceMediaType = classifyEvidenceMediaType;

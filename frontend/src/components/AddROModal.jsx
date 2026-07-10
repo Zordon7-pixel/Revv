@@ -1,13 +1,15 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { X, CheckCircle, Sparkles, Plus } from 'lucide-react'
+import { X, CheckCircle } from 'lucide-react'
 import api from '../lib/api'
+import AppraisalQuickIntake from './AppraisalQuickIntake'
 import LibraryAutocomplete from './LibraryAutocomplete'
 import VehicleDiagram from './VehicleDiagram'
 import TurnaroundEstimator from './TurnaroundEstimator'
 import { searchInsurers } from '../data/insurers'
 import { useLanguage } from '../contexts/LanguageContext'
 import { isTextEntryTarget } from '../lib/keyboardFocus'
+import { findAppraisalClaimMatches, findAppraisalCustomerMatch, findAppraisalVehicleMatch } from '../lib/appraisalIntake'
 
 const JOB_TYPES = ['collision','paint','detailing','glass','towing','key_programming','wheel_recon','car_wrap']
 const DAMAGE_TYPES = [
@@ -70,27 +72,27 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
   const [autoFillLoading, setAutoFillLoading] = useState(false)
   const [step, setStep] = useState(1)
   const [loading, setLoading] = useState(false)
-  const [scanLoading, setScanLoading] = useState(false)
-  const [scanToast, setScanToast] = useState(null) // { type: 'success'|'error', msg: string }
   const [formError, setFormError] = useState('')
   const [duplicateWarning, setDuplicateWarning] = useState(null)
   const [newRoCustomerId, setNewRoCustomerId] = useState('')
+  const [entryMode, setEntryMode] = useState('manual')
+  const [appraisalFiles, setAppraisalFiles] = useState([])
+  const [intakeNotice, setIntakeNotice] = useState('')
+  const [intakeClaimMatches, setIntakeClaimMatches] = useState([])
+  const [createdRoWithPendingDocuments, setCreatedRoWithPendingDocuments] = useState(null)
+  const [failedAppraisalFiles, setFailedAppraisalFiles] = useState([])
   const [form, setForm] = useState({
     // Customer (new or existing)
     customer_id: '', new_customer: false,
-    customer_name: '', customer_phone: '', customer_email: '', sms_consent: true, email_consent: false,
+    customer_name: '', customer_phone: '', customer_email: '', customer_address: '', sms_consent: true, email_consent: false,
     // Vehicle
     vehicle_id: '', new_vehicle: true,
-    year: '', make: '', model: '', vin: '', color: '', plate: '',
+    year: '', make: '', model: '', vin: '', color: '', plate: '', mileage: '',
     // Job
     job_type: 'collision', payment_type: 'insurance',
-    claim_number: '', insurer: 'Progressive', adjuster_name: '', adjuster_phone: '', adjuster_email: '', deductible: '',
+    claim_number: '', policy_number: '', insurer: 'Progressive', adjuster_name: '', adjuster_phone: '', adjuster_email: '', deductible: '',
     estimated_delivery: '', notes: '', damage_type: 'front_impact', damaged_panels: []
   })
-  const [suggestions, setSuggestions] = useState([])
-  const [suggestionSummary, setSuggestionSummary] = useState(null)
-  const [loadingSuggestions, setLoadingSuggestions] = useState(false)
-  const [addedCodes, setAddedCodes] = useState([])
   const [compactEditor, setCompactEditor] = useState(null)
   const pageRef = useRef(null)
   const compactInputRef = useRef(null)
@@ -245,6 +247,7 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
           if (!next.customer_name && customer?.name) next.customer_name = customer.name
           if (!next.customer_phone && customer?.phone) next.customer_phone = customer.phone
           if (!next.customer_email && customer?.email) next.customer_email = customer.email
+          if (!next.customer_address && customer?.address) next.customer_address = customer.address
           next.sms_consent = customer?.sms_consent !== false
           next.email_consent = customer?.email_consent === true
           if (latestVehicle && (!next.vehicle_id || next.new_vehicle)) {
@@ -256,6 +259,7 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
             next.vin = latestVehicle.vin || ''
             next.color = latestVehicle.color || ''
             next.plate = latestVehicle.plate || ''
+            next.mileage = latestVehicle.mileage ?? ''
           }
           const insurerCandidate = latestInsurance?.insurance_company || latestInsurance?.insurer || customer?.insurance_company || ''
           if ((!next.insurer || next.insurer === 'Progressive') && insurerCandidate) {
@@ -264,6 +268,7 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
           if (!next.adjuster_name && latestInsurance?.adjuster_name) next.adjuster_name = latestInsurance.adjuster_name
           if (!next.adjuster_phone && latestInsurance?.adjuster_phone) next.adjuster_phone = latestInsurance.adjuster_phone
           if (!next.adjuster_email && latestInsurance?.adjuster_email) next.adjuster_email = latestInsurance.adjuster_email
+          if (!next.policy_number && latestInsurance?.policy_number) next.policy_number = latestInsurance.policy_number
           if (!next.deductible && latestInsurance?.deductible !== null && latestInsurance?.deductible !== undefined) {
             next.deductible = String(latestInsurance.deductible)
           }
@@ -279,39 +284,6 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
     return () => { canceled = true }
   }, [form.new_customer, form.customer_id])
 
-  useEffect(() => {
-    if (step !== 3 || !form.year || !form.make.trim() || !form.model.trim()) return
-    if (!Array.isArray(form.damaged_panels) || form.damaged_panels.length === 0) {
-      setSuggestions([])
-      setSuggestionSummary(null)
-      return
-    }
-    setLoadingSuggestions(true)
-    api.get('/estimate-assistant/suggestions', {
-      params: {
-        year: form.year,
-        make: form.make,
-        model: form.model,
-        jobType: form.job_type,
-        damageType: form.damage_type,
-        damagedPanels: form.damaged_panels.join(','),
-      },
-    })
-      .then(({ data }) => {
-        setSuggestions(data.suggestions || [])
-        setSuggestionSummary(data.summary || null)
-      })
-      .catch(() => {
-        setSuggestions([])
-        setSuggestionSummary(null)
-      })
-      .finally(() => setLoadingSuggestions(false))
-  }, [step, form.year, form.make, form.model, form.job_type, form.damage_type, form.damaged_panels])
-
-  useEffect(() => {
-    setAddedCodes([])
-  }, [form.damage_type, form.make, form.model, form.year])
-
   const set = (k, v) => {
     setForm(f => ({ ...f, [k]: v }))
     if (formError) setFormError('')
@@ -319,50 +291,99 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
   const inp = 'w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500'
   const lbl = 'block text-xs font-medium text-slate-400 mb-1'
 
-  function showScanToast(type, msg) {
-    setScanToast({ type, msg })
-    setTimeout(() => setScanToast(null), 4000)
-  }
+  async function applyAppraisalIntake({ fields, files }) {
+    const customerMatch = findAppraisalCustomerMatch(customers, fields)
+    let matchedVehicles = []
+    let matchedCustomer = customerMatch?.customer || null
 
-  async function handleScanPhoto(e) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    if (file.size > 10 * 1024 * 1024) {
-      showScanToast('error', 'Photo too large (max 10MB)')
-      return
+    if (matchedCustomer?.id) {
+      const { data } = await api.get(`/customers/${matchedCustomer.id}/autofill`)
+      matchedVehicles = Array.isArray(data?.vehicles) ? data.vehicles : []
+      matchedCustomer = data?.customer || matchedCustomer
+      setCustomerVehicles(matchedVehicles)
+    } else {
+      setCustomerVehicles([])
     }
-    setScanLoading(true)
-    try {
-      const fd = new FormData()
-      fd.append('photo', file)
-      if (form.make) fd.append('make', form.make)
-      if (form.model) fd.append('model', form.model)
-      if (form.year) fd.append('year', form.year)
-      const { data } = await api.post('/estimate-assistant/scan-photo', fd, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      })
-      if (data.inferred_damage_type) set('damage_type', data.inferred_damage_type)
-      if (data.inferred_panels?.length) set('damaged_panels', data.inferred_panels)
-      const severityLabel = data.severity ? `${data.severity} damage` : 'damage'
-      const zonesLabel = data.zones?.slice(0, 3).join(', ') || 'unknown area'
-      showScanToast('success', `AI detected: ${severityLabel} — ${zonesLabel}`)
-    } catch (err) {
-      const msg = err?.response?.data?.error || 'AI scan unavailable — select damage manually'
-      showScanToast('error', msg)
-    } finally {
-      setScanLoading(false)
-      e.target.value = ''
-    }
-  }
 
-  function addSuggestionLineItem(item) {
-    if (addedCodes.includes(item.code)) return
-    const nextLine = `• ${item.description} (${item.labor_hours} hr labor, ~$${Number(item.parts_estimate || 0).toLocaleString()} parts)`
+    const vehicleMatch = matchedCustomer
+      ? findAppraisalVehicleMatch(matchedVehicles, fields)
+      : null
+    const matchedVehicle = vehicleMatch?.vehicle || null
+    let claimMatches = []
+    if (fields.claim_number) {
+      try {
+        const { data } = await api.get('/ros', { params: { search: fields.claim_number } })
+        claimMatches = findAppraisalClaimMatches(data?.ros || [], fields.claim_number)
+      } catch {
+        claimMatches = []
+      }
+    }
+
     setForm((prev) => ({
       ...prev,
-      notes: prev.notes ? `${prev.notes}\n${nextLine}` : nextLine,
+      customer_id: matchedCustomer?.id || '',
+      new_customer: !matchedCustomer,
+      customer_name: matchedCustomer?.name || fields.customer_name,
+      customer_phone: matchedCustomer?.phone || fields.customer_phone,
+      customer_email: matchedCustomer?.email || fields.customer_email,
+      customer_address: matchedCustomer?.address || fields.customer_address,
+      sms_consent: matchedCustomer ? matchedCustomer.sms_consent === true : false,
+      email_consent: matchedCustomer ? matchedCustomer.email_consent === true : false,
+      vehicle_id: matchedVehicle?.id || '',
+      new_vehicle: !matchedVehicle,
+      year: matchedVehicle?.year || fields.year,
+      make: matchedVehicle?.make || fields.make,
+      model: matchedVehicle?.model || fields.model,
+      vin: matchedVehicle?.vin || fields.vin,
+      color: matchedVehicle?.color || fields.color,
+      plate: matchedVehicle?.plate || fields.plate,
+      mileage: matchedVehicle?.mileage ?? fields.mileage,
+      payment_type: 'insurance',
+      insurer: fields.insurer || prev.insurer,
+      claim_number: fields.claim_number,
+      policy_number: fields.policy_number,
+      adjuster_name: fields.adjuster_name,
+      adjuster_phone: fields.adjuster_phone,
+      adjuster_email: fields.adjuster_email,
+      deductible: fields.deductible,
     }))
-    setAddedCodes((prev) => [...prev, item.code])
+    setAppraisalFiles(files)
+    setIntakeClaimMatches(claimMatches)
+    setEntryMode('manual')
+    setStep(1)
+    setFormError('')
+    setIntakeNotice(
+      matchedCustomer
+        ? `Appraisal details loaded. Matched ${matchedCustomer.name}${matchedVehicle ? ` and the saved vehicle by ${vehicleMatch.reason}` : ''}. Review before creating the RO.`
+        : 'Appraisal details loaded for a new customer and vehicle. Confirm the fields and notification consent before creating the RO.'
+    )
+  }
+
+  async function uploadAppraisalDocuments(roId, files = appraisalFiles) {
+    if (!roId || !files.length) return []
+    const results = await Promise.allSettled(files.map(async (file) => {
+      const data = new FormData()
+      data.append('media', file)
+      data.append('caption', `Appraisal quick intake source · ${file.name}`)
+      await api.post(`/claim-tracker/ro/${roId}/evidence`, data, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      return file
+    }))
+    return results.flatMap((result, index) => result.status === 'rejected' ? [files[index]] : [])
+  }
+
+  async function retryPendingDocuments() {
+    if (!createdRoWithPendingDocuments) return
+    setLoading(true)
+    const failed = await uploadAppraisalDocuments(createdRoWithPendingDocuments.id, failedAppraisalFiles)
+    setLoading(false)
+    if (failed.length) {
+      setFailedAppraisalFiles(failed)
+      setFormError(`RO ${createdRoWithPendingDocuments.ro_number || ''} is created, but ${failed.length} appraisal document${failed.length === 1 ? '' : 's'} still need to be attached.`)
+      return
+    }
+    onSaved(createdRoWithPendingDocuments)
   }
 
   function applyVehicleSelection(vehicleId) {
@@ -377,6 +398,7 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
       vin: selected?.vin || '',
       color: selected?.color || '',
       plate: selected?.plate || '',
+      mileage: selected?.mileage ?? '',
     }))
   }
 
@@ -394,6 +416,7 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
         vin: selected?.vin || prev.vin || '',
         color: selected?.color || prev.color || '',
         plate: selected?.plate || prev.plate || '',
+        mileage: selected?.mileage ?? prev.mileage ?? '',
       }
     })
   }
@@ -435,6 +458,9 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
           name: form.customer_name,
           phone: form.customer_phone,
           email: form.customer_email,
+          address: form.customer_address,
+          insurance_company: form.payment_type === 'insurance' ? form.insurer : null,
+          policy_number: form.policy_number || null,
           sms_consent: form.sms_consent,
           email_consent: form.email_consent,
           preferred_contact_method: form.sms_consent && form.email_consent ? 'both' : form.email_consent ? 'email' : form.sms_consent ? 'sms' : 'none',
@@ -445,13 +471,15 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
       if (form.new_vehicle || !vehicle_id) {
         const { data: veh } = await api.post('/vehicles', {
           customer_id, year: +form.year, make: form.make, model: form.model,
-          vin: form.vin, color: form.color, plate: form.plate
+          vin: form.vin, color: form.color, plate: form.plate,
+          mileage: form.mileage === '' ? null : Number(form.mileage),
         })
         vehicle_id = veh.id
       }
       const { data: ro } = await api.post('/ros', {
         customer_id, vehicle_id, job_type: form.job_type,
         payment_type: form.payment_type, claim_number: form.claim_number,
+        policy_number: form.policy_number,
         insurer: form.payment_type === 'insurance' ? form.insurer : null,
         adjuster_name: form.adjuster_name, adjuster_phone: form.adjuster_phone,
         adjuster_email: form.adjuster_email,
@@ -461,6 +489,14 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
         email_consent: form.email_consent,
         preferred_contact_method: form.sms_consent && form.email_consent ? 'both' : form.email_consent ? 'email' : form.sms_consent ? 'sms' : 'none',
       })
+      const failedDocuments = await uploadAppraisalDocuments(ro?.id)
+      if (failedDocuments.length) {
+        console.error('[AddROModal] appraisal document upload failed:', failedDocuments.map((file) => file.name))
+        setCreatedRoWithPendingDocuments(ro)
+        setFailedAppraisalFiles(failedDocuments)
+        setFormError(`RO ${ro?.ro_number || ''} was created, but ${failedDocuments.length} appraisal document${failedDocuments.length === 1 ? '' : 's'} could not be attached. Retry the documents or open the RO and attach them in Claim Tracker.`)
+        return
+      }
       if (ro?.duplicate_warning) {
         setDuplicateWarning(ro.duplicate_warning)
         setNewRoCustomerId(customer_id)
@@ -497,6 +533,37 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
           <button type="button" onClick={onClose} className="text-slate-400 hover:text-white" aria-label="Close new RO form"><X size={18} /></button>
         </div>
         <div className="sheet-modal-body p-5 space-y-4">
+          <div className="grid grid-cols-2 gap-2" role="tablist" aria-label="New repair order entry method">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={entryMode === 'manual'}
+              onClick={() => setEntryMode('manual')}
+              className={`rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${entryMode === 'manual' ? 'bg-[#EAB308] text-[#0f1117]' : 'border border-[#2a2d3e] bg-[#0f1117] text-slate-400 hover:border-[#EAB308]/50'}`}
+            >
+              Manual Entry
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={entryMode === 'appraisal'}
+              onClick={() => setEntryMode('appraisal')}
+              className={`rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${entryMode === 'appraisal' ? 'bg-[#EAB308] text-[#0f1117]' : 'border border-[#2a2d3e] bg-[#0f1117] text-slate-400 hover:border-[#EAB308]/50'}`}
+            >
+              Appraisal Quick Intake
+            </button>
+          </div>
+          {entryMode === 'appraisal' && <AppraisalQuickIntake onApply={applyAppraisalIntake} />}
+          {entryMode === 'manual' && intakeNotice && (
+            <div role="status" className="rounded-lg border border-emerald-700/40 bg-emerald-950/20 px-3 py-2 text-sm text-emerald-200">
+              {intakeNotice} {appraisalFiles.length > 0 ? `${appraisalFiles.length} source document${appraisalFiles.length === 1 ? '' : 's'} will be attached to the RO.` : ''}
+            </div>
+          )}
+          {entryMode === 'manual' && intakeClaimMatches.length > 0 && (
+            <div role="alert" className="rounded-lg border border-amber-600/50 bg-amber-950/20 px-3 py-2 text-sm text-amber-100">
+              Possible duplicate claim: {intakeClaimMatches.map((ro) => ro.ro_number || ro.id).join(', ')} already uses claim {form.claim_number}. Review that RO before creating another one.
+            </div>
+          )}
           {duplicateWarning && (
             <div className="bg-amber-500/10 border border-amber-400/40 rounded-lg p-3 space-y-2">
               <p className="text-amber-300 text-sm">
@@ -528,7 +595,7 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
               {formError}
             </div>
           )}
-          {step === 1 && (
+          {entryMode === 'manual' && step === 1 && (
             <>
               <h3 className="text-xs font-bold text-indigo-400 uppercase tracking-wide">Step 1 — Customer</h3>
               <div className="flex gap-2">
@@ -553,6 +620,7 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
                       vin: '',
                       color: '',
                       plate: '',
+                      mileage: '',
                       sms_consent: true,
                     }))
                   }}
@@ -579,6 +647,7 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
                         vin: '',
                         color: '',
                         plate: '',
+                        mileage: '',
                         sms_consent: true,
                         email_consent: false,
                       }))
@@ -593,6 +662,7 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
                   <div><label className={lbl}>Full Name *</label><input className={inp} value={form.customer_name} onChange={e => set('customer_name', e.target.value)} placeholder="John Smith" /></div>
                   <div><label className={lbl}>Phone</label><input className={inp} value={form.customer_phone} onChange={e => set('customer_phone', e.target.value)} placeholder="(718) 555-0100" /></div>
                   <div><label className={lbl}>Email</label><input className={inp} type="email" value={form.customer_email} onChange={e => set('customer_email', e.target.value)} placeholder="john@email.com" /></div>
+                  <div><label className={lbl}>Address</label><input className={inp} value={form.customer_address} onChange={e => set('customer_address', e.target.value)} placeholder="Customer address" /></div>
                 </>
               )}
               <label className="flex items-start gap-2 text-xs text-slate-300">
@@ -615,7 +685,7 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
               </label>
             </>
           )}
-          {step === 2 && (
+          {entryMode === 'manual' && step === 2 && (
             <>
               <h3 className="text-xs font-bold text-indigo-400 uppercase tracking-wide">Step 2 - {t('common.vehicle')}</h3>
               {!form.new_customer && customerVehicles.length > 0 && (
@@ -658,13 +728,14 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
                 <div><label className={lbl}>{t('common.model')} *</label><input className={inp} value={form.model} onChange={e => set('model', e.target.value)} placeholder="Camry" /></div>
               </div>
               <div><label className={lbl}>{t('common.vin')}</label><input className={inp} value={form.vin} onChange={e => set('vin', e.target.value)} placeholder="1HGCV1F30KA..." /></div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 <div><label className={lbl}>Color</label><input className={inp} value={form.color} onChange={e => set('color', e.target.value)} placeholder="Silver" /></div>
                 <div><label className={lbl}>Plate</label><input className={inp} value={form.plate} onChange={e => set('plate', e.target.value)} placeholder="ABC1234" /></div>
+                <div><label className={lbl}>Mileage</label><input className={inp} inputMode="numeric" value={form.mileage} onChange={e => set('mileage', e.target.value)} placeholder="45000" /></div>
               </div>
             </>
           )}
-          {step === 3 && (
+          {entryMode === 'manual' && step === 3 && (
             <>
               <h3 className="text-xs font-bold text-indigo-400 uppercase tracking-wide">Step 3 — Job Details</h3>
               <div><label className={lbl}>Job Type</label>
@@ -672,22 +743,7 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
                   {JOB_TYPES.map(j => <option key={j} value={j}>{j.replace('_',' ')}</option>)}
                 </select></div>
               <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className={lbl} style={{marginBottom:0}}>Damage Type</label>
-                  <label className={`flex items-center gap-1.5 text-[11px] font-medium cursor-pointer px-2.5 py-1 rounded-lg border transition-colors ${scanLoading ? 'opacity-50 pointer-events-none border-[#2a2d3e] text-slate-500' : 'border-indigo-500/40 text-indigo-400 hover:bg-indigo-500/10'}`}>
-                    {scanLoading ? (
-                      <><svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg> Analyzing...</>
-                    ) : (
-                      <><span>📸</span> Scan Damage</>
-                    )}
-                    <input type="file" accept="image/*" className="hidden" onChange={handleScanPhoto} disabled={scanLoading} />
-                  </label>
-                </div>
-                {scanToast && (
-                  <div className={`text-[11px] px-3 py-2 rounded-lg mb-2 ${scanToast.type === 'success' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
-                    {scanToast.msg}
-                  </div>
-                )}
+                <label className={lbl}>Damage Type</label>
                 <select className={inp} value={form.damage_type} onChange={e => set('damage_type', e.target.value)}>
                   {DAMAGE_TYPES.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
                 </select>
@@ -726,6 +782,7 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
                     />
                   </div>
                   <div><label className={lbl}>Claim #</label><input className={inp} value={form.claim_number} onChange={e => set('claim_number', e.target.value)} placeholder="CLM-2026-XXXXX" /></div>
+                  <div><label className={lbl}>Policy #</label><input className={inp} value={form.policy_number} onChange={e => set('policy_number', e.target.value)} placeholder="Policy number" /></div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <div><label className={lbl}>Adjuster Name</label><input className={inp} value={form.adjuster_name} onChange={e => set('adjuster_name', e.target.value)} /></div>
                     <div><label className={lbl}>Adjuster Phone</label><input className={inp} value={form.adjuster_phone} onChange={e => set('adjuster_phone', e.target.value)} /></div>
@@ -734,42 +791,6 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
                   <div><label className={lbl}>Deductible ($)</label><input className={inp} type="number" value={form.deductible} onChange={e => set('deductible', e.target.value)} placeholder="500" /></div>
                 </>
               )}
-              <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-xl p-3">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-xs text-indigo-300 font-semibold inline-flex items-center gap-1"><Sparkles size={13} /> AI Estimate Suggestions</p>
-                  {suggestionSummary && (
-                    <p className="text-[10px] text-slate-500">
-                      {suggestionSummary.estimated_labor_hours.toFixed(1)} hr · ~${Number(suggestionSummary.estimated_parts_cost || 0).toLocaleString()} parts
-                    </p>
-                  )}
-                </div>
-                {loadingSuggestions ? (
-                  <p className="text-[11px] text-slate-500">Loading suggestions...</p>
-                ) : form.damaged_panels.length === 0 ? (
-                  <p className="text-[11px] text-slate-500">Select damaged panels to get vehicle-specific suggestions.</p>
-                ) : suggestions.length === 0 ? (
-                  <p className="text-[11px] text-slate-500">No panel-specific suggestions found for this vehicle/damage combination.</p>
-                ) : (
-                  <div className="space-y-1.5">
-                    {suggestions.map((item) => (
-                      <button
-                        type="button"
-                        key={item.code}
-                        onClick={() => addSuggestionLineItem(item)}
-                        disabled={addedCodes.includes(item.code)}
-                        className="w-full text-left bg-[#1a1d2e] border border-[#2a2d3e] hover:border-indigo-500 rounded-lg px-2.5 py-2 text-xs text-slate-200 disabled:opacity-40"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span>{item.description}</span>
-                          <span className="inline-flex items-center gap-1 text-[10px] text-indigo-300">
-                            <Plus size={10} /> {addedCodes.includes(item.code) ? 'Added' : 'Add'}
-                          </span>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
               <TurnaroundEstimator
                 jobType={form.job_type}
                 onAccept={(date) => setForm(f => ({ ...f, estimated_delivery: date }))}
@@ -826,21 +847,37 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
           </div>
         )}
         <div className="sheet-modal-footer flex items-center justify-between p-5 border-t border-[#2a2d3e]">
-          <button onClick={() => step > 1 ? setStep(s=>s-1) : onClose()} className="text-slate-400 hover:text-white text-sm transition-colors">
-            {step > 1 ? `← ${t('common.back')}` : t('common.cancel')}
-          </button>
-          <div className="flex items-center gap-2">
-            {[1,2,3].map(i => <div key={i} className={`w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full ${step>=i ? 'bg-indigo-500' : 'bg-[#2a2d3e]'}`} />)}
-          </div>
-          {step < 3 ? (
-            <button onClick={() => {
-              const message = validateCurrentStep()
-              if (message) { setFormError(message); return }
-              setFormError('')
-              setStep(s=>s+1)
-            }} className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">Next →</button>
+          {entryMode === 'appraisal' ? (
+            <>
+              <button type="button" onClick={onClose} className="text-sm text-slate-400 transition-colors hover:text-white">{t('common.cancel')}</button>
+              <span className="text-xs text-slate-500">Upload · Review · Apply</span>
+              <button type="button" onClick={() => setEntryMode('manual')} className="rounded-lg border border-[#2a2d3e] px-3 py-2 text-xs font-semibold text-slate-300 hover:border-[#EAB308]/50">Manual Entry</button>
+            </>
+          ) : createdRoWithPendingDocuments ? (
+            <>
+              <button type="button" onClick={() => onSaved(createdRoWithPendingDocuments)} className="text-sm text-slate-400 transition-colors hover:text-white">Open RO without documents</button>
+              <span className="text-xs text-amber-300">RO already created</span>
+              <button type="button" onClick={retryPendingDocuments} disabled={loading} className="rounded-lg bg-[#EAB308] px-4 py-2 text-sm font-semibold text-[#0f1117] hover:bg-yellow-400 disabled:opacity-50">{loading ? 'Retrying...' : 'Retry Documents'}</button>
+            </>
           ) : (
-            <button onClick={submit} disabled={loading} className="bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors disabled:opacity-50">{loading ? 'Creating...' : <span className="inline-flex items-center gap-1">{t('ro.addRO')} <CheckCircle size={13} /></span>}</button>
+            <>
+              <button onClick={() => step > 1 ? setStep(s=>s-1) : onClose()} className="text-slate-400 hover:text-white text-sm transition-colors">
+                {step > 1 ? `← ${t('common.back')}` : t('common.cancel')}
+              </button>
+              <div className="flex items-center gap-2">
+                {[1,2,3].map(i => <div key={i} className={`w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full ${step>=i ? 'bg-[#EAB308]' : 'bg-[#2a2d3e]'}`} />)}
+              </div>
+              {step < 3 ? (
+                <button onClick={() => {
+                  const message = validateCurrentStep()
+                  if (message) { setFormError(message); return }
+                  setFormError('')
+                  setStep(s=>s+1)
+                }} className="bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] text-sm font-semibold px-4 py-2 rounded-lg transition-colors">Next →</button>
+              ) : (
+                <button onClick={submit} disabled={loading} className="bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] text-sm font-semibold px-4 py-2 rounded-lg transition-colors disabled:opacity-50">{loading ? 'Creating...' : <span className="inline-flex items-center gap-1">{t('ro.addRO')} <CheckCircle size={13} /></span>}</button>
+              )}
+            </>
           )}
         </div>
       </div>

@@ -905,6 +905,8 @@ router.get('/', auth, async (req, res) => {
         ro.ro_number ILIKE $${idx}
         OR c.name ILIKE $${idx}
         OR CONCAT_WS(' ', v.year::text, v.make, v.model) ILIKE $${idx}
+        OR ro.claim_number ILIKE $${idx}
+        OR ro.insurance_claim_number ILIKE $${idx}
       )`);
     }
 
@@ -1822,7 +1824,7 @@ router.post('/approval/:token/respond', publicTokenLimiter, async (req, res) => 
 
 router.post('/', auth, requireTechnician, roLimitGuard, async (req, res) => {
   try {
-    const { customer_id, vehicle_id, job_type, payment_type, claim_number, insurer, adjuster_name, adjuster_phone, adjuster_email, deductible, notes, estimated_delivery, damaged_panels, sms_consent, email_consent, preferred_contact_method } = req.body;
+    const { customer_id, vehicle_id, job_type, payment_type, claim_number, policy_number, insurer, adjuster_name, adjuster_phone, adjuster_email, deductible, notes, estimated_delivery, damaged_panels, sms_consent, email_consent, preferred_contact_method } = req.body;
     if (!customer_id || !vehicle_id) {
       return res.status(400).json({ error: 'customer_id and vehicle_id are required' });
     }
@@ -1899,9 +1901,9 @@ router.post('/', auth, requireTechnician, roLimitGuard, async (req, res) => {
           INSERT INTO repair_orders (
             id, shop_id, ro_number, vehicle_id, customer_id, job_type, status, payment_type,
             claim_number, insurer, insurance_claim_number, insurance_company,
-            adjuster_name, adjuster_phone, adjuster_email, deductible, intake_date, estimated_delivery, notes, damaged_panels
+            policy_number, adjuster_name, adjuster_phone, adjuster_email, deductible, intake_date, estimated_delivery, notes, damaged_panels
           )
-          VALUES ($1, $2, $3, $4, $5, $6, 'intake', $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+          VALUES ($1, $2, $3, $4, $5, $6, 'intake', $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
         `, [
           roId,
           req.user.shop_id,
@@ -1914,6 +1916,7 @@ router.post('/', auth, requireTechnician, roLimitGuard, async (req, res) => {
           insurer || null,
           claim_number || null,
           insurer || null,
+          policy_number || null,
           adjuster_name || null,
           adjuster_phone || null,
           adjuster_email || null,
