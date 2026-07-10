@@ -58,7 +58,7 @@ await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 
 ## Dispatch Log — 2026-07-10 iPad Landscape Add-RO Keyboard
 
-**Status:** BUILT LOCALLY — READY FOR CLAUDE CODE QA
+**Status:** CLAUDE CODE QA PASS — READY FOR HERMES DEPLOYMENT
 
 **Root cause**
 - The prior `/ros/new` “full-page” flow still rendered inside the normal REVV `Layout`, leaving the desktop sidebar/header in control of the available space.
@@ -97,6 +97,12 @@ visual viewport simulated as 1024x248 at offsetTop=74:
 - focused input = true
 - screenshot: /tmp/revv-ipad-landscape-keyboard-fix.png
 ```
+
+**Claude Code QA — PASS (2026-07-10)**
+- Read-only code review passed all behavior and safety checks.
+- Independent command verification: 19 frontend test files, 43/43 tests passed; production build passed; `git diff --check` clean; `frontend/dist` has zero tracked files.
+- Claude confirmed `/ros/new` has no sidebar/header, iPad classification remains `tablet` at a 248px keyboard-reduced visual height, visual offsets are published, and focused fields are moved only when outside usable bounds.
+- No source edits, deployment, DB access, or Miles Automotive data mutation occurred during QA.
 
 **Claude Code QA Prompt**
 ```text
