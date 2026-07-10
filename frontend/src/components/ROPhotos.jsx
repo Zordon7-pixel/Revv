@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
-import { Camera, Trash2, ZoomIn, Upload, X, Sparkles } from 'lucide-react'
+import { Camera, Trash2, ZoomIn, Upload, Sparkles } from 'lucide-react'
 import api from '../lib/api'
 import { optimizeImageForUpload } from '../lib/imageUpload'
 import { resolveUploadedMediaUrl } from '../lib/mediaUrls'
 import { safeExternalErrorMessage } from '../lib/safeErrors'
+import PhotoLightbox from './PhotoLightbox'
 
 const PHOTO_TYPE_META = {
   damage:   { label: 'Damage',   cls: 'text-red-400 bg-red-900/30 border-red-700/40' },
@@ -17,7 +18,7 @@ const SEVERITY_META = {
   severe:   { label: 'Severe',   cls: 'text-red-300 bg-red-800/40 border-red-500/50' },
 }
 
-export default function ROPhotos({ roId, isAdmin }) {
+export default function ROPhotos({ roId, isAdmin, canDelete = isAdmin }) {
   const [photos, setPhotos] = useState([])
   const [uploading, setUploading] = useState(false)
   const [analyzingMsg, setAnalyzingMsg] = useState('')
@@ -77,6 +78,8 @@ export default function ROPhotos({ roId, isAdmin }) {
     if (!confirm('Delete this photo?')) return
     try {
       await api.delete(`/photos/${photoId}`)
+      setPhotos((current) => current.filter((photo) => photo.id !== photoId))
+      setLightbox((current) => current?.id === photoId ? null : current)
       load()
     } catch (err) {
       alert(safeExternalErrorMessage(err, 'Failed to delete photo'))
@@ -242,6 +245,7 @@ export default function ROPhotos({ roId, isAdmin }) {
                 key={photo.id}
                 role="button"
                 tabIndex={0}
+                aria-label={`View ${displayCaption || 'photo'}`}
                 onClick={() => setLightbox(photo)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') {
@@ -267,33 +271,38 @@ export default function ROPhotos({ roId, isAdmin }) {
 
                 {/* AI assessed badge — top right */}
                 {photo.ai_severity && (
-                  <div className="absolute top-1.5 right-1.5 flex items-center gap-0.5 bg-indigo-900/80 border border-indigo-700/50 rounded-full px-1.5 py-0.5">
+                  <div className="absolute top-1.5 left-1.5 flex items-center gap-0.5 bg-indigo-900/80 border border-indigo-700/50 rounded-full px-1.5 py-0.5">
                     <Sparkles size={8} className="text-indigo-300" />
                     <span className="text-[8px] text-indigo-300 font-semibold">AI</span>
                   </div>
                 )}
 
-                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity flex items-center justify-center gap-2 z-10">
+                {canDelete && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      deletePhoto(photo.id)
+                    }}
+                    className="absolute right-1.5 top-1.5 z-20 rounded-md border border-red-500/40 bg-black/75 p-1.5 text-red-300 hover:bg-red-500/20 hover:text-red-200"
+                    aria-label={`Delete ${displayCaption || 'photo'}`}
+                    title="Delete photo"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
+
+                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity flex items-center justify-center z-10 pointer-events-none">
                   <button
                     onClick={(e) => {
                       e.stopPropagation()
                       setLightbox(photo)
                     }}
-                    className="p-1.5 bg-white/20 rounded-lg hover:bg-white/30 transition-colors"
+                    className="pointer-events-auto p-1.5 bg-white/20 rounded-lg hover:bg-white/30 transition-colors"
+                    aria-label={`Open ${displayCaption || 'photo'} full size`}
                   >
                     <ZoomIn size={14} className="text-white" />
                   </button>
-                  {isAdmin && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        deletePhoto(photo.id)
-                      }}
-                      className="p-1.5 bg-red-600/80 rounded-lg hover:bg-red-500 transition-colors"
-                    >
-                      <Trash2 size={14} className="text-white" />
-                    </button>
-                  )}
                 </div>
 
                 <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/80">
@@ -322,73 +331,55 @@ export default function ROPhotos({ roId, isAdmin }) {
         </div>
       )}
 
-      {/* Lightbox */}
       {lightbox && (
-        <div
-          className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4"
-          onClick={() => setLightbox(null)}
-        >
-          <div
-            className="relative max-w-4xl max-h-full"
-            onClick={e => e.stopPropagation()}
-          >
-            {resolveUploadedMediaUrl(lightbox.photo_url) && !failedPhotoIds[lightbox.id] ? (
-              <img
-                src={resolveUploadedMediaUrl(lightbox.photo_url)}
-                alt={lightbox.caption || lightbox.ai_description || 'Photo'}
-                className="max-h-[85vh] max-w-full object-contain rounded-xl"
-                onError={() => setFailedPhotoIds((prev) => ({ ...prev, [lightbox.id]: true }))}
-              />
-            ) : (
-              <div className="flex min-h-64 w-80 max-w-full flex-col items-center justify-center gap-2 rounded-xl border border-[#2a2d3e] bg-[#0f1117] text-slate-500">
-                <Camera size={28} className="text-slate-600" />
-                <span className="text-sm font-medium">Photo unavailable</span>
-              </div>
-            )}
-            {/* AI assessment detail in lightbox */}
-            {lightbox.ai_severity && (
-              <div className="mt-3 bg-[#1a1d2e]/90 rounded-xl border border-[#2a2d3e] p-3">
-                <div className="flex items-center gap-2 mb-1.5">
-                  <Sparkles size={11} className="text-indigo-400" />
-                  <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wide">AI Assessment</span>
-                  {SEVERITY_META[lightbox.ai_severity] && (
-                    <span className={`text-[9px] px-1.5 py-0.5 rounded-full border font-semibold ${SEVERITY_META[lightbox.ai_severity].cls}`}>
-                      {SEVERITY_META[lightbox.ai_severity].label}
-                    </span>
+        <PhotoLightbox
+          src={resolveUploadedMediaUrl(lightbox.photo_url)}
+          alt={lightbox.caption || lightbox.ai_description || 'Photo'}
+          title={lightbox.caption || lightbox.ai_description || 'RO photo'}
+          unavailable={!!failedPhotoIds[lightbox.id]}
+          onError={() => setFailedPhotoIds((prev) => ({ ...prev, [lightbox.id]: true }))}
+          onClose={() => setLightbox(null)}
+          onDelete={canDelete ? () => deletePhoto(lightbox.id) : undefined}
+          footer={(lightbox.ai_severity || lightbox.caption || lightbox.ai_description) ? (
+            <div>
+              {lightbox.ai_severity && (
+                <>
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <Sparkles size={11} className="text-indigo-400" />
+                    <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wide">AI Assessment</span>
+                    {SEVERITY_META[lightbox.ai_severity] && (
+                      <span className={`text-[9px] px-1.5 py-0.5 rounded-full border font-semibold ${SEVERITY_META[lightbox.ai_severity].cls}`}>
+                        {SEVERITY_META[lightbox.ai_severity].label}
+                      </span>
+                    )}
+                  </div>
+                  {(() => {
+                    const z = Array.isArray(lightbox.ai_zones)
+                      ? lightbox.ai_zones
+                      : lightbox.ai_zones
+                        ? (() => { try { return JSON.parse(lightbox.ai_zones) } catch { return [] } })()
+                        : []
+                    return z.length > 0 ? (
+                      <div className="flex flex-wrap gap-1 mb-1">
+                        {z.map((zone, i) => (
+                          <span key={i} className="text-[9px] bg-slate-700/60 text-slate-300 px-1.5 py-0.5 rounded-full">{zone}</span>
+                        ))}
+                      </div>
+                    ) : null
+                  })()}
+                  {lightbox.ai_description && (
+                    <p className="text-slate-300 text-xs">{lightbox.ai_description}</p>
                   )}
-                </div>
-                {(() => {
-                  const z = Array.isArray(lightbox.ai_zones)
-                    ? lightbox.ai_zones
-                    : lightbox.ai_zones
-                      ? (() => { try { return JSON.parse(lightbox.ai_zones) } catch { return [] } })()
-                      : []
-                  return z.length > 0 ? (
-                    <div className="flex flex-wrap gap-1 mb-1">
-                      {z.map((zone, i) => (
-                        <span key={i} className="text-[9px] bg-slate-700/60 text-slate-300 px-1.5 py-0.5 rounded-full">{zone}</span>
-                      ))}
-                    </div>
-                  ) : null
-                })()}
-                {lightbox.ai_description && (
-                  <p className="text-slate-300 text-xs">{lightbox.ai_description}</p>
-                )}
-              </div>
-            )}
-            {!lightbox.ai_severity && (lightbox.caption || lightbox.ai_description) && (
-              <p className="text-center text-slate-300 text-sm mt-2">
-                {lightbox.caption || lightbox.ai_description}
-              </p>
-            )}
-            <button
-              onClick={() => setLightbox(null)}
-              className="absolute -top-3 -right-3 bg-slate-700 hover:bg-slate-600 rounded-full p-1 transition-colors"
-            >
-              <X size={16} className="text-white" />
-            </button>
-          </div>
-        </div>
+                </>
+              )}
+              {!lightbox.ai_severity && (lightbox.caption || lightbox.ai_description) && (
+                <p className="text-center text-slate-300 text-sm">
+                  {lightbox.caption || lightbox.ai_description}
+                </p>
+              )}
+            </div>
+          ) : null}
+        />
       )}
     </div>
   )

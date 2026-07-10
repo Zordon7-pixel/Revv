@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 
 vi.mock('../../lib/api', () => ({
   default: {
@@ -87,5 +88,37 @@ describe('ClaimTrackerPanel evidence media', () => {
     const link = await screen.findByRole('link', { name: 'Open appraisal document' })
     expect(link).toHaveAttribute('href', `${window.location.origin}/uploads/claim-evidence/appraisal.pdf`)
     expect(screen.getByText('Document')).toBeInTheDocument()
+  })
+
+  it('opens claim photos above the sidebar and can delete them from the viewer', async () => {
+    const user = userEvent.setup()
+    api.get.mockResolvedValue({
+      data: {
+        evidence: [{
+          id: 'evidence-1',
+          media_url: '/uploads/claim-evidence/supplement.jpg',
+          media_type: 'photo',
+          caption: 'Supplement damage',
+          created_at: '2026-07-10T12:00:00.000Z',
+          uploaded_by_name: 'Shop Tech',
+        }],
+        contacts: [],
+        disputes: [],
+      },
+    })
+    api.delete.mockResolvedValue({ data: { ok: true } })
+
+    render(<ClaimTrackerPanel roId="ro-1" canEdit />)
+    await user.click(await screen.findByRole('button', { name: 'View Supplement damage' }))
+
+    const dialog = screen.getByRole('dialog', { name: 'Supplement damage' })
+    const overlay = dialog.closest('[data-photo-lightbox="true"]')
+    expect(overlay?.parentElement).toBe(document.body)
+    expect(overlay).toHaveClass('z-[200]')
+    expect(screen.getByTestId('photo-lightbox-image')).toHaveClass('max-h-[64dvh]', 'max-w-[min(76vw,60rem)]')
+
+    await user.click(screen.getByRole('button', { name: 'Delete photo' }))
+    expect(window.confirm).toHaveBeenCalledWith('Delete this evidence file?')
+    await waitFor(() => expect(api.delete).toHaveBeenCalledWith('/claim-tracker/evidence/evidence-1'))
   })
 })

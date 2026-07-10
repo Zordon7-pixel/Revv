@@ -3,6 +3,7 @@ import { AlertTriangle, Camera, FileText, Film, PhoneCall, ShieldAlert, Trash2, 
 import api from '../lib/api'
 import { resolveUploadedMediaUrl } from '../lib/mediaUrls'
 import { safeExternalErrorMessage } from '../lib/safeErrors'
+import PhotoLightbox from './PhotoLightbox'
 
 const CHANNEL_OPTIONS = [
   { value: 'phone', label: 'Phone' },
@@ -47,6 +48,7 @@ export default function ClaimTrackerPanel({ roId, canEdit }) {
   const [evidenceCaption, setEvidenceCaption] = useState('')
   const [uploadingEvidence, setUploadingEvidence] = useState(false)
   const [deletingEvidenceId, setDeletingEvidenceId] = useState('')
+  const [selectedEvidencePhoto, setSelectedEvidencePhoto] = useState(null)
 
   const [contactForm, setContactForm] = useState(EMPTY_CONTACT_FORM)
   const [savingContact, setSavingContact] = useState(false)
@@ -111,6 +113,7 @@ export default function ClaimTrackerPanel({ roId, canEdit }) {
     setActionError('')
     try {
       await api.delete(`/claim-tracker/evidence/${evidenceId}`)
+      setSelectedEvidencePhoto((current) => current?.id === evidenceId ? null : current)
       await loadTracker()
     } catch (err) {
       setActionError(safeExternalErrorMessage(err, 'Could not delete evidence file'))
@@ -284,12 +287,19 @@ export default function ClaimTrackerPanel({ roId, canEdit }) {
                         onError={() => setFailedEvidenceIds((prev) => ({ ...prev, [item.id]: true }))}
                       />
                     ) : mediaUrl && !mediaFailed ? (
-                      <img
-                        src={mediaUrl}
-                        alt={item.caption || 'Claim evidence'}
-                        className="w-full h-40 object-cover"
-                        onError={() => setFailedEvidenceIds((prev) => ({ ...prev, [item.id]: true }))}
-                      />
+                      <button
+                        type="button"
+                        onClick={() => setSelectedEvidencePhoto(item)}
+                        className="block h-40 w-full cursor-zoom-in"
+                        aria-label={`View ${item.caption || 'claim evidence photo'}`}
+                      >
+                        <img
+                          src={mediaUrl}
+                          alt={item.caption || 'Claim evidence'}
+                          className="h-full w-full object-cover"
+                          onError={() => setFailedEvidenceIds((prev) => ({ ...prev, [item.id]: true }))}
+                        />
+                      </button>
                     ) : (
                       <div className="flex h-40 w-full flex-col items-center justify-center gap-1 text-slate-500">
                         {item.media_type === 'document' ? <FileText size={22} className="text-slate-600" /> : item.media_type === 'video' ? <Film size={22} className="text-slate-600" /> : <Camera size={22} className="text-slate-600" />}
@@ -325,6 +335,19 @@ export default function ClaimTrackerPanel({ roId, canEdit }) {
           </div>
         )}
       </div>
+
+      {selectedEvidencePhoto && (
+        <PhotoLightbox
+          src={resolveUploadedMediaUrl(selectedEvidencePhoto.media_url)}
+          alt={selectedEvidencePhoto.caption || 'Claim evidence'}
+          title={selectedEvidencePhoto.caption || 'Claim evidence photo'}
+          unavailable={!!failedEvidenceIds[selectedEvidencePhoto.id]}
+          onError={() => setFailedEvidenceIds((prev) => ({ ...prev, [selectedEvidencePhoto.id]: true }))}
+          onClose={() => setSelectedEvidencePhoto(null)}
+          onDelete={canEdit ? () => removeEvidence(selectedEvidencePhoto.id) : undefined}
+          deleting={deletingEvidenceId === selectedEvidencePhoto.id}
+        />
+      )}
 
       <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 space-y-3">
         <div>

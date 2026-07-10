@@ -23,6 +23,8 @@ import ROOperations from '../components/ROOperations'
 import ClaimTrackerPanel from '../components/ClaimTrackerPanel'
 import { optimizeImageForUpload } from '../lib/imageUpload'
 import { resolveUploadedMediaUrl } from '../lib/mediaUrls'
+import PhotoLightbox from '../components/PhotoLightbox'
+import AppOverlay from '../components/AppOverlay'
 
 const PART_STATUS_META = {
   ordered:     { label: 'Ordered',     cls: 'text-blue-400   bg-blue-900/30   border-blue-700',   icon: Clock },
@@ -698,6 +700,17 @@ export default function RODetail() {
     } finally {
       setPreDropoffUploading(false)
       e.target.value = ''
+    }
+  }
+
+  async function deletePreDropoffPhoto(photoId) {
+    if (!confirm('Delete this pre-dropoff photo?')) return
+    try {
+      await api.delete(`/photos/${photoId}`)
+      setPreDropoffPhotos((current) => current.filter((photo) => photo.id !== photoId))
+      setPreDropoffLightbox((current) => current?.id === photoId ? null : current)
+    } catch (err) {
+      alert(err?.response?.data?.error || 'Could not delete photo')
     }
   }
 
@@ -1403,11 +1416,19 @@ export default function RODetail() {
                     const photoFailed = !!failedPreDropoffPhotoIds[photo.id]
 
                     return (
-                      <button
-                        type="button"
+                      <div
                         key={photo.id}
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`View pre-dropoff photo${photo.caption ? `: ${photo.caption}` : ''}`}
                         onClick={() => setPreDropoffLightbox(photo)}
-                        className="relative group rounded-xl overflow-hidden border border-[#2a2d3e] aspect-video bg-[#0f1117]"
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault()
+                            setPreDropoffLightbox(photo)
+                          }
+                        }}
+                        className="relative group rounded-xl overflow-hidden border border-[#2a2d3e] aspect-video bg-[#0f1117] cursor-zoom-in"
                       >
                         {photoUrl && !photoFailed ? (
                           <img
@@ -1427,7 +1448,21 @@ export default function RODetail() {
                             Pre-Dropoff
                           </span>
                         </div>
-                      </button>
+                        {canUploadPreDropoff && (
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              deletePreDropoffPhoto(photo.id)
+                            }}
+                            className="absolute right-1.5 top-1.5 z-20 rounded-md border border-red-500/40 bg-black/75 p-1.5 text-red-300 hover:bg-red-500/20 hover:text-red-200"
+                            aria-label="Delete pre-dropoff photo"
+                            title="Delete photo"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                      </div>
                     )
                   })}
                 </div>
@@ -1438,33 +1473,15 @@ export default function RODetail() {
       )}
 
       {preDropoffLightbox && (
-        <div
-          className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4"
-          onClick={() => setPreDropoffLightbox(null)}
-        >
-          <div className="relative max-w-4xl max-h-full" onClick={(e) => e.stopPropagation()}>
-            {resolveUploadedMediaUrl(preDropoffLightbox.photo_url) && !failedPreDropoffPhotoIds[preDropoffLightbox.id] ? (
-              <img
-                src={resolveUploadedMediaUrl(preDropoffLightbox.photo_url)}
-                alt="Pre-dropoff full view"
-                className="max-h-[85vh] max-w-full object-contain rounded-xl"
-                onError={() => setFailedPreDropoffPhotoIds((prev) => ({ ...prev, [preDropoffLightbox.id]: true }))}
-              />
-            ) : (
-              <div className="flex min-h-64 w-80 max-w-full flex-col items-center justify-center gap-2 rounded-xl border border-[#2a2d3e] bg-[#0f1117] text-slate-500">
-                <Camera size={28} className="text-slate-600" />
-                <span className="text-sm font-medium">Photo unavailable</span>
-              </div>
-            )}
-            <button
-              type="button"
-              onClick={() => setPreDropoffLightbox(null)}
-              className="absolute -top-3 -right-3 bg-slate-700 hover:bg-slate-600 rounded-full p-1 transition-colors"
-            >
-              <X size={16} className="text-white" />
-            </button>
-          </div>
-        </div>
+        <PhotoLightbox
+          src={resolveUploadedMediaUrl(preDropoffLightbox.photo_url)}
+          alt="Pre-dropoff full view"
+          title={preDropoffLightbox.caption || 'Pre-dropoff photo'}
+          unavailable={!!failedPreDropoffPhotoIds[preDropoffLightbox.id]}
+          onError={() => setFailedPreDropoffPhotoIds((prev) => ({ ...prev, [preDropoffLightbox.id]: true }))}
+          onClose={() => setPreDropoffLightbox(null)}
+          onDelete={canUploadPreDropoff ? () => deletePreDropoffPhoto(preDropoffLightbox.id) : undefined}
+        />
       )}
 
       <div className="grid md:grid-cols-2 gap-4">
@@ -2195,7 +2212,7 @@ export default function RODetail() {
       )}
 
       {/* Photos */}
-      {overviewTab === 'technician' && <ROPhotos roId={ro.id} isAdmin={userIsAdmin} />}
+      {overviewTab === 'technician' && <ROPhotos roId={ro.id} isAdmin={userIsAdmin} canDelete={!userIsAssistant} />}
 
       {/* Assigned Tech */}
       {overviewTab === 'technician' && userIsEmployee && (
@@ -2523,7 +2540,7 @@ export default function RODetail() {
       )}
 
       {showCommForm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <AppOverlay label="Log communication" onClose={() => setShowCommForm(false)} className="bg-black/50 p-4">
           <form onSubmit={submitComm} className="w-full max-w-lg bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-5 space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="text-white font-semibold text-sm">Log Communication</h3>
@@ -2602,12 +2619,12 @@ export default function RODetail() {
               </button>
             </div>
           </form>
-        </div>
+        </AppOverlay>
       )}
 
       {/* Mark as Paid Modal */}
       {showMarkPaidModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <AppOverlay label="Mark as paid" onClose={() => setShowMarkPaidModal(false)} className="bg-black/50 p-4">
           <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-6 max-w-sm w-full mx-4 space-y-4">
             <div className="flex items-center gap-2">
               <DollarSign size={20} className="text-emerald-400" />
@@ -2645,11 +2662,11 @@ export default function RODetail() {
               </button>
             </div>
           </div>
-        </div>
+        </AppOverlay>
       )}
 
       {showTotalLossModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <AppOverlay label="Mark total loss" onClose={() => !markingTotalLoss && setShowTotalLossModal(false)} className="bg-black/50 p-4">
           <div className="bg-[#1a1d2e] border border-red-800/60 rounded-xl p-6 max-w-md w-full mx-4 space-y-4">
             <div className="flex items-center gap-2">
               <AlertTriangle size={20} className="text-red-400" />
@@ -2688,7 +2705,7 @@ export default function RODetail() {
               </button>
             </div>
           </div>
-        </div>
+        </AppOverlay>
       )}
 
       {/* Parts Tracking */}
@@ -2881,7 +2898,7 @@ export default function RODetail() {
       )}
 
       {showStorageBillModal && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+        <AppOverlay label="Bill storage" onClose={() => setShowStorageBillModal(false)} className="bg-black/60 p-4">
           <form onSubmit={billStorage} className="w-full max-w-md bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-5 space-y-3">
             <h3 className="text-white font-semibold text-sm">Bill Storage</h3>
             <div>
@@ -2912,7 +2929,7 @@ export default function RODetail() {
               </button>
             </div>
           </form>
-        </div>
+        </AppOverlay>
       )}
 
       {showCatalogSearch && (

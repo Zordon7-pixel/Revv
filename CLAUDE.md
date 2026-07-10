@@ -56,6 +56,39 @@ const ro = await dbGet('SELECT * FROM ros WHERE id = $1 AND shop_id = $2', [id, 
 await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 ```
 
+## Dispatch Log — 2026-07-10 Photo Delete + Above-Sidebar Overlay Audit
+
+**Status:** BUILD READY FOR CLAUDE CODE QA — NOT DEPLOYED
+
+**Reported behavior:** Uploaded photos could not always be deleted, and full-size photo previews rendered behind the desktop/tablet sidebar because they used `z-50` inside the main-content stacking context while the sidebar uses `z-70`. The image also opened too large by default.
+
+**Behavior shipped**
+- Added a shared body-level `AppOverlay` portal so dialogs render outside the main-content stacking context and above the complete app shell.
+- Added a shared `PhotoLightbox` with `z-200`, Escape/backdrop close, body scroll lock, bounded default image sizing (`76vw` by `64dvh` maximum), and 75%–200% zoom controls.
+- Migrated all internal RO photo surfaces to the shared viewer: Pre-Dropoff Condition, Technician Photos, and Claim Tracker photo evidence. Inspection photo links open a separate page/tab and the public tracking portal has no internal sidebar.
+- Added touch-visible delete buttons to Pre-Dropoff and Technician photo thumbnails, plus delete actions inside every internal full-size photo viewer. Existing shop-scoped backend delete routes are reused.
+- Migrated the remaining RO Detail dialogs (Communication Log, Mark Paid, Total Loss, and Storage Billing) to `AppOverlay` after the tab audit found the same unsafe local `z-50` pattern.
+- Did not change database schema, upload storage, API authorization, seed/reset behavior, or production data. Miles Automotive data was not read or modified.
+
+**Files changed**
+- `frontend/src/components/AppOverlay.jsx`
+- `frontend/src/components/PhotoLightbox.jsx`
+- `frontend/src/components/ROPhotos.jsx`
+- `frontend/src/components/ClaimTrackerPanel.jsx`
+- `frontend/src/pages/RODetail.jsx`
+- `frontend/src/components/__tests__/ROPhotos.phase31.test.jsx`
+- `frontend/src/components/__tests__/ClaimTrackerPanel.phase32.test.jsx`
+- `frontend/src/pages/__tests__/RODetail.totalLoss.test.jsx`
+
+**Verification**
+- Focused photo/RO Detail tests — 3 files / 10 tests PASS.
+- Full frontend suite — 24 files / 62 tests PASS.
+- `node --check backend/src/routes/photos.js` — PASS.
+- Backend photo scope tests — 3/3 PASS.
+- `cd frontend && npm run build` — PASS (existing bundle-size warning only).
+- `git diff --check` — PASS; `frontend/dist` remains untracked.
+- Regression tests assert each internal photo viewer is portaled directly under `document.body`, uses `z-200` above the sidebar, defaults to bounded dimensions, supports zoom, and calls the correct delete endpoint. The Total Loss dialog test also asserts RO Detail dialogs use the body-level `z-150` overlay.
+
 ## Dispatch Log — 2026-07-10 CCC/Mitchell Reviewable Estimate Import
 
 **Status:** DEPLOYED + VERIFIED — live on `8c1801e` (both hosts HTTP 200; synthetic flagged CCC probe returns reviewable 200)

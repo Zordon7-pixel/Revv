@@ -101,7 +101,7 @@ function makeRo(overrides = {}) {
   }
 }
 
-function stubApi(initialRo) {
+function stubApi(initialRo, { preDropoffPhotos = [] } = {}) {
   let currentRo = initialRo
   api.get.mockImplementation((url) => {
     if (url === '/ros/ro-1') return Promise.resolve({ data: currentRo })
@@ -109,7 +109,7 @@ function stubApi(initialRo) {
     if (url === '/comms/ro-1') return Promise.resolve({ data: { comms: [] } })
     if (url === '/ros/ro-1/notes') return Promise.resolve({ data: { notes: [] } })
     if (url === '/sms/thread/ro-1') return Promise.resolve({ data: { messages: [], customerPhone: '' } })
-    if (url === '/photos/ro/ro-1/predropoff') return Promise.resolve({ data: { photos: [] } })
+    if (url === '/photos/ro/ro-1/predropoff') return Promise.resolve({ data: { photos: preDropoffPhotos } })
     if (url === '/inspections/ro/ro-1') return Promise.resolve({ data: { inspections: [] } })
     if (url === '/ros/ro-1/supplements') return Promise.resolve({ data: { supplements: [], totalApproved: 0 } })
     if (url === '/storage/ro-1/charges') return Promise.resolve({ data: { charges: [] } })
@@ -162,6 +162,7 @@ describe('RODetail total loss action', () => {
     api.patch.mockReset()
     api.put.mockReset()
     api.delete.mockReset()
+    window.confirm = vi.fn(() => true)
   })
 
   afterEach(() => {
@@ -177,6 +178,9 @@ describe('RODetail total loss action', () => {
     await screen.findByText('RO-1')
     await user.click(screen.getByRole('button', { name: /mark total loss/i }))
 
+    const modal = await screen.findByRole('dialog', { name: /mark total loss/i })
+    expect(modal.parentElement).toBe(document.body)
+    expect(modal).toHaveClass('z-[150]')
     await screen.findByRole('heading', { name: /mark total loss/i })
     await user.type(screen.getByLabelText(/internal note/i), 'Insurer declared total loss')
     await user.click(screen.getByRole('button', { name: /confirm total loss/i }))
@@ -192,5 +196,34 @@ describe('RODetail total loss action', () => {
     const setButtons = screen.getAllByRole('button', { name: /\+ set/i })
     await user.click(setButtons[0])
     expect(screen.getByDisplayValue('0')).toBeInTheDocument()
+  })
+
+  it('keeps pre-dropoff previews above the sidebar and allows the photo to be deleted', async () => {
+    stubApi(makeRo(), {
+      preDropoffPhotos: [{
+        id: 'predropoff-1',
+        photo_url: '/uploads/photos/predropoff.jpg',
+        photo_type: 'predropoff',
+        caption: 'Driver side before work',
+      }],
+    })
+    const user = userEvent.setup()
+    renderRODetail()
+
+    await screen.findByText('RO-1')
+    await user.click(await screen.findByRole('button', { name: 'View pre-dropoff photo: Driver side before work' }))
+
+    const dialog = screen.getByRole('dialog', { name: 'Driver side before work' })
+    const overlay = dialog.closest('[data-photo-lightbox="true"]')
+    expect(overlay?.parentElement).toBe(document.body)
+    expect(overlay).toHaveClass('z-[200]')
+    expect(screen.getByTestId('photo-lightbox-image')).toHaveClass('max-h-[64dvh]', 'max-w-[min(76vw,60rem)]')
+
+    await user.click(screen.getByRole('button', { name: 'Close photo preview' }))
+    await user.click(screen.getByRole('button', { name: 'Delete pre-dropoff photo' }))
+
+    expect(window.confirm).toHaveBeenCalledWith('Delete this pre-dropoff photo?')
+    await waitFor(() => expect(api.delete).toHaveBeenCalledWith('/photos/predropoff-1'))
+    expect(screen.queryByRole('button', { name: 'View pre-dropoff photo: Driver side before work' })).not.toBeInTheDocument()
   })
 })
