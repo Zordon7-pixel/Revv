@@ -58,7 +58,7 @@ await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 
 ## Dispatch Log — 2026-07-10 Landscape Overlay + Complete Estimate Import
 
-**Status:** READY FOR CLAUDE CODE QA — NOT DEPLOYED
+**Status:** CLAUDE CODE QA PASS — CLEAR FOR HERMES — NOT DEPLOYED; LIVE LANDSCAPE VISUAL PENDING
 
 **Bugs addressed**
 - Landscape tablet dialogs could still sit behind the desktop sidebar. The earlier estimate fix only raised a descendant from `z-50` to `z-100`; the dialog remained trapped inside the main page's `z-10` stacking context.
@@ -105,6 +105,15 @@ git ls-files frontend/dist
 - At iPad landscape dimensions with the desktop sidebar expanded, open every authenticated dialog/picker and confirm the overlay is centered or intentionally right-docked, fully above the dimmed sidebar, and internally scrollable.
 - In Estimate Builder, import a mocked mixed estimate and physically click `Clear` -> `Select Parts Only` -> `Select All`; verify selected counts `0` -> parts count -> all count.
 - Confirm the financial review remains legible in landscape and includes all collision-estimate buckets listed above.
+
+**Claude Code read-only QA — PASS (`1945072`)**
+- Zero CRITICAL, HIGH, or MEDIUM findings. Final verdict: `QA PASS — CLEAR FOR HERMES`.
+- Re-ran frontend 27 files / 69 tests, backend Node 119/119, backend extractor Vitest 7/7, production frontend build, diff check, and untracked-dist guard.
+- Confirmed all 15 migrated authenticated surfaces use the body-level `AppOverlay`; the only `fixed inset-0` exceptions are the public Track Portal, dedicated full-page Add RO route, shared AppOverlay itself, and Layout's mobile sidebar.
+- Confirmed the selection tests exercise real state transitions and all financial buckets plus the `$9,969.25` gross / `$8,969.25` net fixture.
+- Confirmed Estimate Builder and Insurance Panel persist `adjuster_totals` before guarded financial sync and preserve imported lines when reconciliation requires review.
+- Confirmed no hosted DB, production customer/shop/RO record, or Miles Automotive data was accessed; `SPEC-revv-redesign.md` remains untracked and untouched.
+- Browser extension was unavailable to Claude, so it explicitly left the live iPad landscape screenshot gate pending instead of claiming a visual pass. Hermes must not close the issue without that evidence.
 
 ## Dispatch Log — 2026-07-10 Photo Delete + Above-Sidebar Overlay Audit
 
