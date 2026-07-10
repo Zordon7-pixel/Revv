@@ -56,6 +56,14 @@ const ro = await dbGet('SELECT * FROM ros WHERE id = $1 AND shop_id = $2', [id, 
 await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 ```
 
+## Claude Code QA — 2026-07-10 Permanent REVV Logo Assets
+
+**Status:** PASS — commit `1ca3b06` is safe to ship.
+- Confirmed valid wordmark, 1024x1024 app icon, 512x512 and 192x192 PWA icons, and 64x64 favicon.
+- Confirmed valid manifest entries and square-icon use in both Layout logo tiles.
+- Production frontend build passed; `git diff --check` clean; `frontend/dist` untracked.
+- Commit contains frontend/docs assets only. No backend, migration, seed, DB, or Miles Automotive data changes.
+
 ## Dispatch Log — 2026-07-10 iPad Landscape Add-RO Keyboard
 
 **Status:** CLAUDE CODE QA PASS — READY FOR HERMES DEPLOYMENT
