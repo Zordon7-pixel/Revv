@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { X, CheckCircle, Sparkles, Plus } from 'lucide-react'
 import api from '../lib/api'
@@ -7,6 +7,7 @@ import VehicleDiagram from './VehicleDiagram'
 import TurnaroundEstimator from './TurnaroundEstimator'
 import { searchInsurers } from '../data/insurers'
 import { useLanguage } from '../contexts/LanguageContext'
+import { isTextEntryTarget } from '../lib/keyboardFocus'
 
 const JOB_TYPES = ['collision','paint','detailing','glass','towing','key_programming','wheel_recon','car_wrap']
 const DAMAGE_TYPES = [
@@ -46,9 +47,59 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
   const [suggestionSummary, setSuggestionSummary] = useState(null)
   const [loadingSuggestions, setLoadingSuggestions] = useState(false)
   const [addedCodes, setAddedCodes] = useState([])
+  const pageRef = useRef(null)
   const isPage = presentation === 'page'
 
   useEffect(() => { api.get('/customers').then(r => setCustomers(r.data.customers)) }, [])
+
+  useEffect(() => {
+    if (!isPage || !pageRef.current) return undefined
+
+    const timers = new Set()
+    const keepFocusedFieldVisible = () => {
+      const active = document.activeElement
+      if (!pageRef.current?.contains(active) || !isTextEntryTarget(active)) return
+
+      const visualViewport = window.visualViewport
+      const viewportTop = Math.round(visualViewport?.offsetTop || 0)
+      const viewportHeight = Math.round(visualViewport?.height || window.innerHeight || 0)
+      const rect = active.getBoundingClientRect()
+      const topLimit = viewportTop + 12
+      const bottomLimit = viewportTop + viewportHeight - 62
+
+      if (rect.top < topLimit || rect.bottom > bottomLimit) {
+        active.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'auto' })
+      }
+    }
+    const scheduleVisibilityCheck = () => {
+      timers.forEach((timer) => window.clearTimeout(timer))
+      timers.clear()
+      ;[0, 100, 300].forEach((delay) => {
+        const timer = window.setTimeout(() => {
+          timers.delete(timer)
+          keepFocusedFieldVisible()
+        }, delay)
+        timers.add(timer)
+      })
+    }
+    const onFocusIn = (event) => {
+      if (isTextEntryTarget(event.target)) scheduleVisibilityCheck()
+    }
+
+    const page = pageRef.current
+    page.addEventListener('focusin', onFocusIn)
+    window.visualViewport?.addEventListener('resize', scheduleVisibilityCheck)
+    window.visualViewport?.addEventListener('scroll', scheduleVisibilityCheck)
+    window.addEventListener('orientationchange', scheduleVisibilityCheck)
+
+    return () => {
+      timers.forEach((timer) => window.clearTimeout(timer))
+      page.removeEventListener('focusin', onFocusIn)
+      window.visualViewport?.removeEventListener('resize', scheduleVisibilityCheck)
+      window.visualViewport?.removeEventListener('scroll', scheduleVisibilityCheck)
+      window.removeEventListener('orientationchange', scheduleVisibilityCheck)
+    }
+  }, [isPage])
 
   useEffect(() => {
     if (form.new_customer || !form.customer_id) {
@@ -628,7 +679,7 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
 
   if (isPage) {
     return (
-      <div className="add-ro-page mx-auto w-full max-w-3xl px-3 py-4 pb-[45vh] sm:px-4 sm:py-6">
+      <div ref={pageRef} className="add-ro-page mx-auto min-h-full w-full max-w-3xl px-3 py-4 sm:px-4 sm:py-6">
         {content}
       </div>
     )

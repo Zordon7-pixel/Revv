@@ -56,6 +56,79 @@ const ro = await dbGet('SELECT * FROM ros WHERE id = $1 AND shop_id = $2', [id, 
 await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 ```
 
+## Dispatch Log — 2026-07-10 iPad Landscape Add-RO Keyboard
+
+**Status:** BUILT LOCALLY — READY FOR CLAUDE CODE QA
+
+**Root cause**
+- The prior `/ros/new` “full-page” flow still rendered inside the normal REVV `Layout`, leaving the desktop sidebar/header in control of the available space.
+- Viewport detection used the keyboard-reduced `visualViewport.height` to classify the device. An iPad in landscape changed from `tablet` to `phone` when the keyboard opened.
+- REVV tracked the visual viewport's size but not Safari's `offsetTop`/`offsetLeft`, so the page could be correctly sized but positioned outside the visible area after Safari panned it.
+
+**Behavior shipped**
+- `/ros/new` now uses a dedicated visual-viewport shell with no sidebar or app header.
+- Device classification now uses stable layout dimensions; visual dimensions are used only for the currently usable screen area.
+- The shell follows `visualViewport.width`, `height`, `offsetTop`, and `offsetLeft` during keyboard resize/pan events.
+- The focused Add-RO field is rechecked at 0/100/300 ms after focus or viewport changes and centered only when it falls outside the usable area.
+- The landscape keyboard state compacts the page header while keeping the active field and Add-RO footer controls visible.
+- No customer, shop, RO, seed, reset, migration, or production-data mutation was performed. Miles Automotive data was not touched.
+
+**Files changed**
+- `frontend/src/components/AddROModal.jsx`
+- `frontend/src/components/Layout.jsx`
+- `frontend/src/components/__tests__/AddROModal.feedback.test.jsx`
+- `frontend/src/index.css`
+- `frontend/src/lib/viewport.js`
+- `frontend/src/lib/__tests__/viewport.test.js`
+
+**Verification**
+```text
+cd frontend && npm run test:run  # 19 files, 43/43 passed
+cd frontend && npm run build     # passed
+git diff --check                 # passed
+git ls-files frontend/dist       # no tracked files
+
+Headless interactive render at iPad landscape dimensions with the keyboard-reduced
+visual viewport simulated as 1024x248 at offsetTop=74:
+- /ros/new remained the active route
+- .new-ro-visual-shell = x:0, y:74, width:1024, height:248
+- focused Full Name input = y:143..181 (fully visible)
+- sidebar count = 0
+- focused input = true
+- screenshot: /tmp/revv-ipad-landscape-keyboard-fix.png
+```
+
+**Claude Code QA Prompt**
+```text
+TASK: REVV — Read-only QA for iPad landscape Add-RO keyboard fix
+
+Repo: /Users/zordon/.openclaw/workspace/Revv
+Scope: the commit immediately following this dispatch entry.
+
+Do not edit code, deploy, connect to a live DB, or mutate customer/shop/RO data. Miles Automotive data must remain untouched.
+
+Verify:
+1. /ros/new renders in the dedicated new-ro-visual-shell and does not render the normal sidebar/header.
+2. Other Layout routes still render the existing sidebar/header unchanged.
+3. detectViewportProfile keeps a 1024x768 touch iPad classified as tablet when visualViewport.height falls to 248.
+4. applyViewportProfile publishes visualViewport width/height/offsetTop/offsetLeft as CSS variables.
+5. The Add-RO full-page editor follows those variables and remains scrollable within the keyboard-reduced viewport.
+6. A focused field outside the visible bounds is recentered after focus and visualViewport resize/scroll; an already-visible field is not needlessly moved.
+7. Landscape compact styling leaves the focused field and footer controls visible without the sidebar.
+8. Portrait and desktop modal behavior are not regressed.
+9. Tests/build/diff pass and frontend/dist is not tracked.
+10. No data, migration, seed, reset, backend, or Miles Automotive changes are present.
+
+Commands:
+- cd frontend && npm run test:run
+- cd frontend && npm run build
+- rm -rf frontend/dist
+- git diff --check
+- git ls-files frontend/dist
+
+Return PASS/NEEDS FIXES with file:line evidence. On PASS, hand off to Hermes for deployment and require a real iPad landscape validation after production deploy.
+```
+
 ## Dispatch Log — 2026-07-10 Customer Email + Owner Activity Notifications
 
 **Status:** BUILT LOCALLY — READY FOR CLAUDE CODE QA

@@ -6,6 +6,8 @@ function createMockWindow({
   height,
   visualWidth = width,
   visualHeight = height,
+  visualOffsetTop = 0,
+  visualOffsetLeft = 0,
   userAgent,
   platform,
   maxTouchPoints = 0,
@@ -25,6 +27,8 @@ function createMockWindow({
     visualViewport: {
       width: visualWidth,
       height: visualHeight,
+      offsetTop: visualOffsetTop,
+      offsetLeft: visualOffsetLeft,
     },
   }
 }
@@ -68,5 +72,33 @@ describe('viewport profile detection', () => {
 
     expect(profile.deviceMode).toBe('tablet')
     expect(profile.shortestSide).toBe(834)
+  })
+
+  it('keeps an iPad in tablet mode and tracks its visual viewport while the landscape keyboard is open', () => {
+    const mockWindow = createMockWindow({
+      width: 1024,
+      height: 768,
+      visualWidth: 1024,
+      visualHeight: 248,
+      visualOffsetTop: 74,
+      visualOffsetLeft: 0,
+      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15) AppleWebKit/605.1.15',
+      platform: 'MacIntel',
+      maxTouchPoints: 5,
+      coarsePointer: true,
+    })
+
+    const profile = detectViewportProfile(mockWindow)
+    applyViewportProfile(profile, mockWindow.document)
+
+    expect(profile.deviceMode).toBe('tablet')
+    expect(profile.shortestSide).toBe(768)
+    expect(profile.height).toBe(248)
+    expect(profile.offsetTop).toBe(74)
+    expect(profile.keyboardInset).toBe(446)
+    expect(mockWindow.document.documentElement.dataset.keyboardOpen).toBe('true')
+    expect(mockWindow.document.documentElement.style.getPropertyValue('--app-viewport-height')).toBe('248px')
+    expect(mockWindow.document.documentElement.style.getPropertyValue('--app-viewport-offset-top')).toBe('74px')
+    expect(mockWindow.document.documentElement.style.getPropertyValue('--app-viewport-offset-left')).toBe('0px')
   })
 })

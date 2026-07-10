@@ -344,6 +344,16 @@ export default function Layout() {
     </div>
   )
 
+  if (location.pathname === '/ros/new') {
+    return (
+      <div className="new-ro-visual-shell bg-[#0f1117]">
+        <main className="new-ro-visual-scroll" aria-label="Create repair order">
+          <Outlet />
+        </main>
+      </div>
+    )
+  }
+
   return (
     <div className="app-shell flex bg-[#0f1117] overflow-hidden">
       {/* Desktop sidebar */}

@@ -3,15 +3,21 @@ function getViewportMetrics(targetWindow) {
   const visualViewport = targetWindow?.visualViewport
   const width = Math.round(visualViewport?.width || targetWindow?.innerWidth || root?.clientWidth || 0)
   const height = Math.round(visualViewport?.height || targetWindow?.innerHeight || root?.clientHeight || 0)
+  const offsetTop = Math.round(visualViewport?.offsetTop || 0)
+  const offsetLeft = Math.round(visualViewport?.offsetLeft || 0)
+  const layoutWidth = Math.round(targetWindow?.innerWidth || root?.clientWidth || width || 0)
   const layoutHeight = Math.round(targetWindow?.innerHeight || root?.clientHeight || height || 0)
-  const keyboardInset = Math.max(0, layoutHeight - height - Math.round(visualViewport?.offsetTop || 0))
+  const keyboardInset = Math.max(0, layoutHeight - height - offsetTop)
   return {
     width,
     height,
+    offsetTop,
+    offsetLeft,
+    layoutWidth,
     layoutHeight,
     keyboardInset,
-    shortestSide: Math.min(width, height),
-    longestSide: Math.max(width, height),
+    shortestSide: Math.min(layoutWidth, layoutHeight),
+    longestSide: Math.max(layoutWidth, layoutHeight),
   }
 }
 
@@ -24,7 +30,7 @@ function hasCoarsePointer(targetWindow) {
 }
 
 export function detectViewportProfile(targetWindow = window) {
-  const { width, height, layoutHeight, keyboardInset, shortestSide, longestSide } = getViewportMetrics(targetWindow)
+  const { width, height, offsetTop, offsetLeft, layoutHeight, keyboardInset, shortestSide, longestSide } = getViewportMetrics(targetWindow)
   const navigatorRef = targetWindow?.navigator || {}
   const userAgent = String(navigatorRef.userAgent || '')
   const platform = String(navigatorRef.platform || '')
@@ -44,6 +50,8 @@ export function detectViewportProfile(targetWindow = window) {
   return {
     width,
     height,
+    offsetTop,
+    offsetLeft,
     layoutHeight,
     keyboardInset,
     shortestSide,
@@ -60,6 +68,8 @@ export function applyViewportProfile(profile, targetDocument = document) {
 
   root.style.setProperty('--app-viewport-height', `${profile.height}px`)
   root.style.setProperty('--app-viewport-width', `${profile.width}px`)
+  root.style.setProperty('--app-viewport-offset-top', `${profile.offsetTop || 0}px`)
+  root.style.setProperty('--app-viewport-offset-left', `${profile.offsetLeft || 0}px`)
   root.style.setProperty('--app-viewport-short', `${profile.shortestSide}px`)
   root.style.setProperty('--app-viewport-long', `${profile.longestSide}px`)
   root.style.setProperty('--app-keyboard-inset', `${profile.keyboardInset || 0}px`)

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 
@@ -41,6 +41,7 @@ describe('AddROModal feedback handling', () => {
 
   afterEach(() => {
     cleanup()
+    vi.useRealTimers()
     vi.restoreAllMocks()
   })
 
@@ -78,5 +79,55 @@ describe('AddROModal feedback handling', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Customer email is required for email status updates.')
     expect(window.alert).not.toHaveBeenCalled()
     expect(api.post).not.toHaveBeenCalled()
+  })
+
+  it('re-centers the focused field after the iPad landscape keyboard changes the visual viewport', () => {
+    vi.useFakeTimers()
+    const originalVisualViewport = Object.getOwnPropertyDescriptor(window, 'visualViewport')
+    const visualViewport = new EventTarget()
+    Object.assign(visualViewport, {
+      width: 1024,
+      height: 248,
+      offsetTop: 74,
+      offsetLeft: 0,
+    })
+    Object.defineProperty(window, 'visualViewport', {
+      configurable: true,
+      value: visualViewport,
+    })
+
+    try {
+      render(
+        <MemoryRouter>
+          <AddROModal presentation="page" onClose={vi.fn()} onSaved={vi.fn()} />
+        </MemoryRouter>
+      )
+
+      fireEvent.click(screen.getByRole('button', { name: /^New$/i }))
+      const nameInput = screen.getByPlaceholderText('John Smith')
+      const scrollIntoView = vi.fn()
+      nameInput.scrollIntoView = scrollIntoView
+      nameInput.getBoundingClientRect = () => ({ top: 390, bottom: 434 })
+
+      act(() => {
+        nameInput.focus()
+        fireEvent.focusIn(nameInput)
+        visualViewport.dispatchEvent(new Event('resize'))
+        vi.runAllTimers()
+      })
+
+      expect(document.activeElement).toBe(nameInput)
+      expect(scrollIntoView).toHaveBeenCalledWith({
+        block: 'center',
+        inline: 'nearest',
+        behavior: 'auto',
+      })
+    } finally {
+      if (originalVisualViewport) {
+        Object.defineProperty(window, 'visualViewport', originalVisualViewport)
+      } else {
+        delete window.visualViewport
+      }
+    }
   })
 })
