@@ -60,6 +60,8 @@ await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 
 **Status:** BUILD READY FOR CLAUDE CODE QA — NOT DEPLOYED
 
+**Build commits:** `2b70648` (Appraisal Quick Intake) + `00a5a6b` (Estimate Gap Review)
+
 **Behavior shipped**
 - Added `Appraisal Quick Intake` as a dedicated New RO entry method. It accepts up to 12 PDF/image pages, extracts intake metadata only, and never imports estimate line items or financial totals.
 - Extracted customer, vehicle, insurer, claim, policy, adjuster, mileage, and deductible fields remain editable before they are applied to the existing three-step New RO workflow.
