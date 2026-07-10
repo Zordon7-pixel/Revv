@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import {
   CarFront,
   Workflow,
@@ -13,6 +13,7 @@ import {
   ChevronUp,
   X
 } from 'lucide-react'
+import AppOverlay from './AppOverlay'
 
 const PIPELINE_STEPS = [
   { name: 'Intake', desc: 'Capture customer, vehicle, and initial damage details.' },
@@ -182,40 +183,18 @@ const sections = [
 export default function HelpPanel({ isOpen, onClose }) {
   const [openSections, setOpenSections] = useState(['creating-ro'])
 
-  useEffect(() => {
-    function onEsc(e) {
-      if (e.key === 'Escape') onClose()
-    }
-
-    if (isOpen) {
-      window.addEventListener('keydown', onEsc)
-      document.body.style.overflow = 'hidden'
-    }
-
-    return () => {
-      window.removeEventListener('keydown', onEsc)
-      document.body.style.overflow = ''
-    }
-  }, [isOpen, onClose])
-
   function toggleSection(id) {
     setOpenSections((prev) =>
       prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
     )
   }
 
-  return (
-    <div
-      className={`fixed inset-0 z-50 transition-all duration-200 ${isOpen ? 'pointer-events-auto' : 'pointer-events-none'}`}
-      aria-hidden={!isOpen}
-    >
-      <div
-        className={`absolute inset-0 bg-black/60 transition-opacity duration-200 ${isOpen ? 'opacity-100' : 'opacity-0'}`}
-        onClick={onClose}
-      />
+  if (!isOpen) return null
 
+  return (
+    <AppOverlay label="Quick start help" onClose={onClose} className="bg-black/60 p-0">
       <aside
-        className={`absolute right-0 top-0 h-full w-full max-w-xl bg-[#0f1117] border-l border-[#2a2d3e] shadow-2xl transition-transform duration-200 ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}
+        className="absolute right-0 top-0 h-full w-full max-w-xl bg-[#0f1117] border-l border-[#2a2d3e] shadow-2xl"
       >
         <div className="h-full flex flex-col">
           <div className="flex items-center justify-between px-5 py-4 border-b border-[#2a2d3e] bg-[#1a1d2e]">
@@ -258,6 +237,6 @@ export default function HelpPanel({ isOpen, onClose }) {
           </div>
         </div>
       </aside>
-    </div>
+    </AppOverlay>
   )
 }

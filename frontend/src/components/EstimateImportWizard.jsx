@@ -3,6 +3,7 @@ import { ArrowRight, CheckCircle2, FileText, Loader2, Plus, Trash2, Upload, X } 
 import api from '../lib/api'
 import { safeExternalErrorMessage } from '../lib/safeErrors'
 import EstimateReviewWarning from './EstimateReviewWarning'
+import AppOverlay from './AppOverlay'
 
 const emptyForm = {
   customer_name: '',
@@ -190,7 +191,7 @@ export default function EstimateImportWizard({ onClose, onImported }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
+    <AppOverlay label="Import CCC or Mitchell estimate" onClose={onClose} className="bg-black/70 p-3 sm:p-4">
       <div className="w-full max-w-5xl max-h-[92vh] overflow-hidden bg-[#171c27] border border-[#2c3345] rounded-xl shadow-2xl">
         <div className="flex items-center justify-between gap-4 border-b border-[#2c3345] px-5 py-4">
           <div className="flex items-center gap-3">
@@ -370,6 +371,6 @@ export default function EstimateImportWizard({ onClose, onImported }) {
           )}
         </div>
       </div>
-    </div>
+    </AppOverlay>
   )
 }

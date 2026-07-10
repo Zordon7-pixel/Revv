@@ -3,6 +3,7 @@ import { MapPin, Wrench, DollarSign, Save, RefreshCw, CheckCircle, ShieldCheck, 
 import api from '../lib/api'
 import { optimizeImageForUpload } from '../lib/imageUpload'
 import { isAdmin } from '../lib/auth'
+import AppOverlay from '../components/AppOverlay'
 
 const TIER_COLORS = {
   1: 'text-purple-400 bg-purple-900/30 border-purple-700',
@@ -1350,7 +1351,7 @@ export default function Settings() {
       )}
 
       {showTestSmsModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
+        <AppOverlay label="Send test SMS" onClose={() => setShowTestSmsModal(false)} className="bg-black/60 p-4">
           <div className="w-full max-w-md bg-[#1a1d2e] border border-[#2a2d3e] rounded-2xl p-5 space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-white">Send Test SMS</h3>
@@ -1405,7 +1406,7 @@ export default function Settings() {
               </button>
             </div>
           </div>
-        </div>
+        </AppOverlay>
       )}
 
     </div>

@@ -4,6 +4,8 @@ import api from '../lib/api'
 import { computeEstimateCrossCheck } from '../lib/estimateCrossCheck'
 import { safeExternalErrorMessage } from '../lib/safeErrors'
 import EstimateReviewWarning from './EstimateReviewWarning'
+import EstimateFinancialReview from './EstimateFinancialReview'
+import EstimateSelectionToolbar from './EstimateSelectionToolbar'
 
 const INSURANCE_COMPANIES = [
   'State Farm',
@@ -206,13 +208,25 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
         })
         imported += 1
       }
+      let financialNotice = 'Estimate lines and financials imported to this RO.'
+      try {
+        if (ocrParsedMeta?.estimate_totals) {
+          await api.post(`/estimate-metadata/metadata/${roId}`, {
+            adjuster_totals: ocrParsedMeta.estimate_totals,
+          })
+        }
+        await api.post(`/estimate-items/${roId}/import-financials`)
+      } catch (financialErr) {
+        financialNotice = `Imported ${imported} line${imported !== 1 ? 's' : ''}. ${financialErr?.response?.data?.error || 'Financial totals need review before they can be synced.'}`
+      }
       onUpdated?.()
       setOcrFiles([])
       setOcrPreview(null)
       setOcrItems(null)
+      setOcrParsedMeta(null)
       setOcrSelected({})
       setOcrImportedCount(imported)
-      setOcrNotice(`Imported ${imported} item${imported !== 1 ? 's' : ''} to Estimate Builder.`)
+      setOcrNotice(financialNotice)
       const openBuilder = window.confirm(
         `Imported ${imported} item${imported !== 1 ? 's' : ''}. Open Estimate Builder now?`
       )
@@ -267,6 +281,7 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
 
   const supplementMeta = SUPPLEMENT_META[form.supplement_status] || SUPPLEMENT_META.none
   const inp = 'w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#EAB308]'
+  const selectedOcrCount = Object.values(ocrSelected).filter(Boolean).length
 
   function set(key, value) {
     setForm((prev) => ({ ...prev, [key]: value }))
@@ -455,29 +470,17 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
                     </label>
                   ))}
                 </div>
+                <EstimateFinancialReview totals={ocrParsedMeta?.estimate_totals} />
                 {ocrError && <p role="alert" className="text-xs text-red-400">{ocrError}</p>}
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => { const all = {}; ocrItems.forEach((_, i) => { all[i] = true }); setOcrSelected(all) }}
-                    className="text-[10px] text-slate-400 hover:text-white"
-                  >
-                    All
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setOcrSelected({})}
-                    className="text-[10px] text-slate-400 hover:text-white"
-                  >
-                    None
-                  </button>
+                <EstimateSelectionToolbar items={ocrItems} selected={ocrSelected} onChange={setOcrSelected} />
+                <div className="flex justify-end">
                   <button
                     type="button"
                     onClick={importSelected}
-                    disabled={ocrImporting || !Object.values(ocrSelected).some(Boolean)}
-                    className="ml-auto bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-semibold px-4 py-1.5 rounded-lg"
+                    disabled={ocrImporting || selectedOcrCount === 0}
+                    className="min-h-11 bg-[#EAB308] hover:bg-yellow-400 disabled:opacity-50 text-[#0f1117] text-xs font-semibold px-4 py-2 rounded-lg"
                   >
-                    {ocrImporting ? 'Importing…' : `Import ${Object.values(ocrSelected).filter(Boolean).length} items`}
+                    {ocrImporting ? 'Importing…' : `Import ${selectedOcrCount} item${selectedOcrCount === 1 ? '' : 's'}`}
                   </button>
                 </div>
               </div>

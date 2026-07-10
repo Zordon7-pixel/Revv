@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Plus, Trash2, X } from 'lucide-react'
 import api from '../lib/api'
 import { isAdmin } from '../lib/auth'
+import AppOverlay from '../components/AppOverlay'
 
 const EMPTY_DTC = { code: '', description: '', severity: 'info' }
 const EMPTY_ADAS = { system: '', status: 'ok' }
@@ -347,7 +348,7 @@ export default function VehicleDiagnostics() {
       </div>
 
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+        <AppOverlay label="New vehicle diagnostic scan" onClose={() => setShowModal(false)} className="bg-black/70 p-4">
           <div className="max-h-[95vh] w-full max-w-5xl overflow-auto rounded-xl border border-[#2a2d3e] bg-[#131622]">
             <div className="sticky top-0 z-10 flex items-center justify-between border-b border-[#2a2d3e] bg-[#131622] px-4 py-3">
               <h2 className="text-lg font-semibold text-white">New Vehicle Diagnostic Scan</h2>
@@ -525,7 +526,7 @@ export default function VehicleDiagnostics() {
               </div>
             </form>
           </div>
-        </div>
+        </AppOverlay>
       )}
     </div>
   )

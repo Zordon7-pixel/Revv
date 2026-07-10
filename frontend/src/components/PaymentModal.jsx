@@ -3,6 +3,7 @@ import { X, CreditCard, CheckCircle, AlertCircle, Loader2 } from 'lucide-react'
 import { loadStripe } from '@stripe/stripe-js'
 import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js'
 import api from '../lib/api'
+import AppOverlay from './AppOverlay'
 
 const CARD_OPTIONS = {
   style: {
@@ -151,7 +152,7 @@ export default function PaymentModal({ roId, amount, onClose, onSuccess }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-[1px] flex items-center justify-center p-4">
+    <AppOverlay label="Collect payment" onClose={onClose} className="bg-black/60 p-4 backdrop-blur-[1px]">
       <div className="w-full max-w-md bg-[#1a1d2e] border border-[#2a2d3e] rounded-2xl shadow-2xl">
         <div className="flex items-center justify-between px-5 py-4 border-b border-[#2a2d3e]">
           <div className="flex items-center gap-2">
@@ -189,6 +190,6 @@ export default function PaymentModal({ roId, amount, onClose, onSuccess }) {
           )}
         </div>
       </div>
-    </div>
+    </AppOverlay>
   )
 }

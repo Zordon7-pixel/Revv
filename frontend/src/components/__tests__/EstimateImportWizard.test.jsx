@@ -48,7 +48,7 @@ describe('EstimateImportWizard', () => {
 
     const { container } = render(<EstimateImportWizard onClose={vi.fn()} onImported={onImported} />)
 
-    fireEvent.change(container.querySelector('input[type="file"]'), {
+    fireEvent.change(document.querySelector('input[type="file"]'), {
       target: { files: [new File(['pdf'], 'ccc-estimate.pdf', { type: 'application/pdf' })] },
     })
     await user.click(screen.getByRole('button', { name: /Parse Estimate/i }))
@@ -93,7 +93,7 @@ describe('EstimateImportWizard', () => {
 
     const { container } = render(<EstimateImportWizard onClose={vi.fn()} onImported={vi.fn()} />)
 
-    fireEvent.change(container.querySelector('input[type="file"]'), {
+    fireEvent.change(document.querySelector('input[type="file"]'), {
       target: { files: [new File(['pdf'], 'ccc-estimate.pdf', { type: 'application/pdf' })] },
     })
     await user.click(screen.getByRole('button', { name: /Parse Estimate/i }))
@@ -126,7 +126,7 @@ describe('EstimateImportWizard', () => {
     })
 
     const { container } = render(<EstimateImportWizard onClose={vi.fn()} onImported={vi.fn()} />)
-    fireEvent.change(container.querySelector('input[type="file"]'), {
+    fireEvent.change(document.querySelector('input[type="file"]'), {
       target: { files: [new File(['pdf'], 'ccc-estimate.pdf', { type: 'application/pdf' })] },
     })
     await user.click(screen.getByRole('button', { name: /Parse Estimate/i }))
@@ -156,7 +156,7 @@ describe('EstimateImportWizard', () => {
 
     const { container } = render(<EstimateImportWizard onClose={vi.fn()} onImported={vi.fn()} />)
 
-    fireEvent.change(container.querySelector('input[type="file"]'), {
+    fireEvent.change(document.querySelector('input[type="file"]'), {
       target: { files: [new File(['pdf'], 'ccc-estimate.pdf', { type: 'application/pdf' })] },
     })
     await user.click(screen.getByRole('button', { name: /Parse Estimate/i }))

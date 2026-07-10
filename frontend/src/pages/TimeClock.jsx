@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Clock, CheckCircle, AlertCircle, Edit2, Trash2, Save, X, MapPin } from 'lucide-react'
 import api from '../lib/api'
 import { getTokenPayload, isAdmin } from '../lib/auth'
+import AppOverlay from '../components/AppOverlay'
 
 function fmt(iso) {
   if (!iso) return '—'
@@ -76,7 +77,7 @@ function AdminAdjustModal({ entry, onClose, onSaved }) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+    <AppOverlay label="Adjust time entry" onClose={onClose} className="bg-black/70 p-4">
       <div className="bg-[#1a1d2e] rounded-2xl border border-[#2a2d3e] w-full max-w-sm p-5 space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="font-bold text-white text-sm">Adjust Time Entry</h3>
@@ -100,7 +101,7 @@ function AdminAdjustModal({ entry, onClose, onSaved }) {
           </button>
         </div>
       </div>
-    </div>
+    </AppOverlay>
   )
 }
 
@@ -108,7 +109,7 @@ function EarlyOverrideModal({ onClose, onSubmit, error, submitting }) {
   const [password, setPassword] = useState('')
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+    <AppOverlay label="Authorize early clock-in" onClose={onClose} className="bg-black/70 p-4">
       <div className="bg-[#1a1d2e] rounded-2xl border border-[#2a2d3e] w-full max-w-sm p-5 space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="font-bold text-white text-sm">Admin Password Required</h3>
@@ -134,7 +135,7 @@ function EarlyOverrideModal({ onClose, onSubmit, error, submitting }) {
           </button>
         </div>
       </div>
-    </div>
+    </AppOverlay>
   )
 }
 

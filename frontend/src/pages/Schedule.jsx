@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, Plus, Trash2, X, Save, CheckCircle } from 'l
 import { useNavigate } from 'react-router-dom'
 import api from '../lib/api'
 import { isAdmin, isAssistant } from '../lib/auth'
+import AppOverlay from '../components/AppOverlay'
 
 const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']
 const MONTH_DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
@@ -132,7 +133,7 @@ function ShiftModal({ employees, prefill, shift, onClose, onSaved, onDeleted }) 
   }
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+    <AppOverlay label={isEdit ? 'Edit shift' : 'Add shift'} onClose={onClose} className="bg-black/70 p-4">
       <div className="bg-[#1a1d2e] rounded-2xl border border-[#2a2d3e] w-full max-w-sm p-5 space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="font-bold text-white text-sm">{isEdit ? 'Edit Shift' : 'Add Shift'}</h3>
@@ -174,7 +175,7 @@ function ShiftModal({ employees, prefill, shift, onClose, onSaved, onDeleted }) 
           </button>
         </div>
       </div>
-    </div>
+    </AppOverlay>
   )
 }
 
@@ -201,7 +202,7 @@ function EarlyAuthModal({ employee, onClose, onSuccess }) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+    <AppOverlay label="Authorize early clock-in" onClose={onClose} className="bg-black/70 p-4">
       <div className="bg-[#1a1d2e] rounded-2xl border border-[#2a2d3e] w-full max-w-sm p-5 space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="font-bold text-white text-sm">Admin Password Required</h3>
@@ -223,7 +224,7 @@ function EarlyAuthModal({ employee, onClose, onSuccess }) {
           </button>
         </div>
       </div>
-    </div>
+    </AppOverlay>
   )
 }
 

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Users as UsersIcon, Plus, X, Shield, Wrench, Trash2, Info, Pencil, KeyRound } from 'lucide-react'
 import api from '../lib/api'
 import { getTokenPayload, isAdmin } from '../lib/auth'
+import AppOverlay from '../components/AppOverlay'
 
 const ROLES = ['admin', 'employee', 'staff']
 const ROLE_META = {
@@ -282,7 +283,7 @@ export default function Users() {
 
       {/* Add User Modal */}
       {showAdd && (
-        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+        <AppOverlay label="Add user" onClose={close} className="bg-black/70 p-4">
           <div className="bg-[#1a1d2e] rounded-2xl border border-[#2a2d3e] w-full max-w-md">
             <div className="flex items-center justify-between p-5 border-b border-[#2a2d3e]">
               <h3 className="font-bold text-white">Add User</h3>
@@ -309,11 +310,11 @@ export default function Users() {
               </div>
             </form>
           </div>
-        </div>
+        </AppOverlay>
       )}
 
       {showAddAssistant && (
-        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+        <AppOverlay label="Add assistant" onClose={closeAssistant} className="bg-black/70 p-4">
           <div className="bg-[#1a1d2e] rounded-2xl border border-[#2a2d3e] w-full max-w-md">
             <div className="flex items-center justify-between p-5 border-b border-[#2a2d3e]">
               <h3 className="font-bold text-white">Add Assistant</h3>
@@ -331,11 +332,11 @@ export default function Users() {
               </div>
             </form>
           </div>
-        </div>
+        </AppOverlay>
       )}
 
       {editUser && (
-        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+        <AppOverlay label="Edit user" onClose={closeEdit} className="bg-black/70 p-4">
           <div className="bg-[#1a1d2e] rounded-2xl border border-[#2a2d3e] w-full max-w-md">
             <div className="flex items-center justify-between p-5 border-b border-[#2a2d3e]">
               <h3 className="font-bold text-white">Edit User</h3>
@@ -365,11 +366,11 @@ export default function Users() {
               </div>
             </form>
           </div>
-        </div>
+        </AppOverlay>
       )}
 
       {resetUser && (
-        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+        <AppOverlay label="Reset password" onClose={closeResetPassword} className="bg-black/70 p-4">
           <div className="bg-[#1a1d2e] rounded-2xl border border-[#2a2d3e] w-full max-w-sm">
             <div className="flex items-center justify-between p-5 border-b border-[#2a2d3e]">
               <h3 className="font-bold text-white">Reset Password</h3>
@@ -407,7 +408,7 @@ export default function Users() {
               </div>
             </form>
           </div>
-        </div>
+        </AppOverlay>
       )}
 
       {successToast && (

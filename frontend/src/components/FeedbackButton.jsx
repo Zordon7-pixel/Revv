@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { MessageSquarePlus, X, Send, Plus, CheckCircle, Trash2, Bug, Palette, Lightbulb, HelpCircle, Search, Rocket } from 'lucide-react'
 import api from '../lib/api'
 import { useLocation } from 'react-router-dom'
+import AppOverlay from './AppOverlay'
 
 const CATEGORIES = [
   { value: 'bug', label: 'Bug / Broken', icon: Bug, soldier: 'Codex 5.3', color: 'text-red-400' },
@@ -77,7 +78,7 @@ export default function FeedbackButton({ placement = 'floating' }) {
       </button>
 
       {open && (
-        <div className="fixed inset-0 bg-black/70 flex items-end sm:items-center justify-center z-50 p-4">
+        <AppOverlay label="Send feedback" onClose={close} className="items-end bg-black/70 p-4 sm:items-center">
           <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-2xl w-full max-w-lg max-h-[90vh] flex flex-col">
 
             {/* Header */}
@@ -194,7 +195,7 @@ export default function FeedbackButton({ placement = 'floating' }) {
               </>
             )}
           </div>
-        </div>
+        </AppOverlay>
       )}
     </>
   )

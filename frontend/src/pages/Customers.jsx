@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Search, Phone, Shield, X, Mail, MapPin, Car, FileText, ChevronRight, User, Pencil, Trash2 } from 'lucide-react'
 import api from '../lib/api'
 import { isAdmin, isAssistant } from '../lib/auth'
+import AppOverlay from '../components/AppOverlay'
 
 const LETTERS = ['All', ...Array.from({ length: 26 }, (_, i) => String.fromCharCode(65 + i))]
 
@@ -132,13 +133,13 @@ function CustomerFormModal({ title, form, error, loading, onChange, onClose, onS
   }
 
   return (
-    <div
-      className="sheet-modal-overlay fixed inset-0 bg-black/70 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4"
-      onClick={handleClose}
+    <AppOverlay
+      label={title}
+      onClose={handleClose}
+      className="sheet-modal-overlay items-end bg-black/70 p-0 sm:items-center sm:p-4"
     >
       <form
         className="sheet-modal-card bg-[#1a1d2e] rounded-2xl border border-[#2a2d3e]"
-        onClick={(e) => e.stopPropagation()}
         onSubmit={onSubmit}
       >
         <div className="sheet-modal-header border-b border-[#2a2d3e] px-5 sm:px-6 py-4 flex items-center justify-between">
@@ -174,7 +175,7 @@ function CustomerFormModal({ title, form, error, loading, onChange, onClose, onS
           </button>
         </div>
       </form>
-    </div>
+    </AppOverlay>
   )
 }
 
@@ -193,9 +194,8 @@ function CustomerDrawer({ customerId, onClose, adminUser, onEdit, onDelete }) {
   }, [customerId])
 
   return (
-    <div className="fixed inset-0 z-50 flex">
-      <div className="flex-1 bg-black/60" onClick={onClose} />
-      <div className="w-full max-w-md bg-[#1a1d2e] border-l border-[#2a2d3e] flex flex-col h-full overflow-hidden shadow-2xl">
+    <AppOverlay label="Customer 360" onClose={onClose} className="bg-black/60 p-0">
+      <div className="absolute inset-y-0 right-0 flex h-full w-full max-w-md flex-col overflow-hidden border-l border-[#2a2d3e] bg-[#1a1d2e] shadow-2xl">
         <div className="flex items-center justify-between px-5 py-4 border-b border-[#2a2d3e] flex-shrink-0">
           <h2 className="font-bold text-white text-sm">Customer 360</h2>
           <div className="flex items-center gap-1">
@@ -341,7 +341,7 @@ function CustomerDrawer({ customerId, onClose, adminUser, onEdit, onDelete }) {
           </div>
         )}
       </div>
-    </div>
+    </AppOverlay>
   )
 }
 

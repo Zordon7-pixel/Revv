@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Package, Receipt, CircleDollarSign, PlusCircle } from 'lucide-react'
 import api from '../lib/api'
 import { isAdmin, isAssistant } from '../lib/auth'
+import AppOverlay from '../components/AppOverlay'
 
 function formatCurrency(value) {
   return `$${Number(value || 0).toFixed(2)}`
@@ -290,7 +291,7 @@ export default function StorageHold() {
       )}
 
       {showBillModal && (
-        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+        <AppOverlay label="Bill storage" onClose={() => setShowBillModal(false)} className="bg-black/70 p-4">
           <form onSubmit={submitCharge} className="w-full max-w-md bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-5 space-y-3">
             <div className="flex items-center gap-2 text-white font-semibold">
               <Receipt size={16} className="text-amber-300" />
@@ -349,11 +350,11 @@ export default function StorageHold() {
               </button>
             </div>
           </form>
-        </div>
+        </AppOverlay>
       )}
 
       {showEditModal && (
-        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+        <AppOverlay label="Edit storage hold" onClose={() => setShowEditModal(false)} className="bg-black/70 p-4">
           <form onSubmit={saveStorageHold} className="w-full max-w-md bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-5 space-y-3">
             <div className="text-white font-semibold">Edit Storage Hold</div>
             <label className="flex items-center gap-2 text-xs text-slate-300">
@@ -421,7 +422,7 @@ export default function StorageHold() {
               </button>
             </div>
           </form>
-        </div>
+        </AppOverlay>
       )}
     </div>
   )

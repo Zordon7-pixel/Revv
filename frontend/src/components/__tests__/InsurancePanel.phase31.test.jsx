@@ -18,6 +18,7 @@ describe('InsurancePanel OCR import', () => {
     api.post.mockReset()
     api.patch.mockReset()
     window.alert = vi.fn()
+    window.confirm = vi.fn(() => false)
   })
 
   afterEach(() => {
@@ -96,7 +97,7 @@ describe('InsurancePanel OCR import', () => {
     expect(await screen.findByText('Review this CCC estimate before import')).toBeInTheDocument()
     expect(screen.getByText('The extracted gross repair total does not reconcile with the subtotal and taxes.')).toBeInTheDocument()
     expect(screen.getByText('Repair quarter panel')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Import 1 items' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Import 1 item' })).toBeEnabled()
     expect(api.post.mock.calls.some(([url]) => String(url).startsWith('/estimate-items/'))).toBe(false)
   })
 
@@ -121,6 +122,67 @@ describe('InsurancePanel OCR import', () => {
       deductible: 1000,
     })))
     expect(api.patch.mock.calls[0][1].deductible).not.toBe(100000)
+  })
+
+  it('selects estimate categories and syncs complete financials from the Insurance tab', async () => {
+    const user = userEvent.setup()
+    const onUpdated = vi.fn()
+    api.post.mockImplementation((url) => {
+      if (url === '/insurance-ocr/parse') return Promise.resolve({
+        data: {
+          success: true,
+          parsed: {
+            line_items: [
+              { type: 'parts', description: 'Bumper cover', quantity: 1, unit_price: 500 },
+              { type: 'labor', description: 'Body labor', quantity: 2, unit_price: 60 },
+              { type: 'other', description: 'Paint materials', quantity: 1, unit_price: 100 },
+            ],
+            estimate_totals: {
+              parts: 500,
+              body_labor_cost: 120,
+              paint_supplies_cost: 100,
+              sales_tax_cost: 20,
+              total_cost_of_repairs: 740,
+              deductible: 100,
+              net_cost_of_repairs: 640,
+            },
+          },
+        },
+      })
+      if (url === '/estimate-metadata/metadata/ro-1') return Promise.resolve({ data: { success: true } })
+      if (url === '/estimate-items/ro-1/import-financials') return Promise.resolve({ data: { success: true } })
+      if (url === '/estimate-items/ro-1') return Promise.resolve({ data: { item: {} } })
+      return Promise.resolve({ data: {} })
+    })
+
+    const { container } = render(
+      <InsurancePanel
+        roId="ro-1"
+        ro={{ insurance_company: 'Progressive', insurance_claim_number: 'CLM-1' }}
+        onUpdated={onUpdated}
+      />
+    )
+
+    await user.click(screen.getByRole('button', { name: /Upload estimate photo/i }))
+    fireEvent.change(container.querySelector('input[type="file"]'), {
+      target: { files: [new File(['pdf'], 'estimate.pdf', { type: 'application/pdf' })] },
+    })
+    await user.click(screen.getByRole('button', { name: /Extract Line Items with AI/i }))
+
+    expect(await screen.findByText('Gross estimate')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Clear' }))
+    expect(screen.getByRole('button', { name: 'Import 0 items' })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'Select Parts Only' }))
+    expect(screen.getByRole('button', { name: 'Import 1 item' })).toBeEnabled()
+    await user.click(screen.getByRole('button', { name: 'Select All' }))
+    await user.click(screen.getByRole('button', { name: 'Import 3 items' }))
+
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/estimate-metadata/metadata/ro-1', {
+      adjuster_totals: expect.objectContaining({ total_cost_of_repairs: 740 }),
+    }))
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/estimate-items/ro-1/import-financials'))
+    expect(onUpdated).toHaveBeenCalled()
+    expect(await screen.findByText('Estimate lines and financials imported to this RO.')).toBeInTheDocument()
   })
 
   it('validates supplement amount before requesting a supplement', async () => {

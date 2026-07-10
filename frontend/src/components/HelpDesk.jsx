@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { CheckCircle, XCircle } from 'lucide-react'
+import AppOverlay from './AppOverlay'
 
 export default function HelpDesk() {
   const [open, setOpen] = useState(false)
@@ -62,7 +63,7 @@ export default function HelpDesk() {
       </button>
 
       {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+        <AppOverlay label="REVV HelpDesk" onClose={() => setOpen(false)} className="bg-black/60 px-4">
           <div className="w-full max-w-2xl rounded-xl border border-[#2a2d3e] bg-[#1a1d2e] text-white p-5">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold">REVV HelpDesk</h2>
@@ -117,7 +118,7 @@ export default function HelpDesk() {
               </>
             )}
           </div>
-        </div>
+        </AppOverlay>
       )}
     </>
   )

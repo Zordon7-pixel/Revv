@@ -56,6 +56,56 @@ const ro = await dbGet('SELECT * FROM ros WHERE id = $1 AND shop_id = $2', [id, 
 await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 ```
 
+## Dispatch Log — 2026-07-10 Landscape Overlay + Complete Estimate Import
+
+**Status:** READY FOR CLAUDE CODE QA — NOT DEPLOYED
+
+**Bugs addressed**
+- Landscape tablet dialogs could still sit behind the desktop sidebar. The earlier estimate fix only raised a descendant from `z-50` to `z-100`; the dialog remained trapped inside the main page's `z-10` stacking context.
+- Insurance estimate selection shortcuts were not protected by interaction tests and were difficult to use on a touch tablet.
+- The Insurance tab imported detail rows without persisting/syncing the extracted financial snapshot, so parts, labor, paint/refinish, materials, tax, deductible, gross/net totals, and RO profit inputs could diverge.
+
+**Behavior shipped for QA**
+- Migrated authenticated modal, drawer, picker, payment, help, customer, schedule, timeclock, storage, settings, user, diagnostic, onboarding estimate, and RO parts-search surfaces to the shared `AppOverlay`. `AppOverlay` portals to `document.body` at `z-[150]`, above the desktop sidebar's `z-[70]`, and centers dialogs against the full visible viewport.
+- Left the full-page Add RO route and public tracking portal out of the authenticated-overlay rule because neither is rendered under the desktop sidebar.
+- Rebuilt Insurance Estimate Import as a bounded, scrollable `AppOverlay` with 44px touch targets and working `Select Parts Only`, `Select All`, and `Clear` controls.
+- Added a complete collision-estimate financial review: parts; body, paint/refinish, mechanical, frame, and glass labor; paint materials; sublet; miscellaneous/other charges; pre-tax subtotal; tax; gross; deductible; and net.
+- Clarified that insurer totals are allowed revenue and that true profit is calculated only after actual shop costs are recorded.
+- Both Estimate Builder and the RO Insurance tab now persist `adjuster_totals` and call the existing guarded `/estimate-items/:roId/import-financials` sync after detail-line import. A reconciliation failure keeps imported lines and reports that financial totals need review instead of silently dropping them.
+- Added an architecture regression test that rejects page-local `fixed inset-0` overlays on authenticated surfaces, plus behavioral tests for all three selection shortcuts, financial buckets, portal placement, and financial sync.
+- No backend code, schema, database, seed/reset path, customer record, shop record, RO record, or Miles Automotive data was touched.
+
+**Files changed**
+- Shared UI: `frontend/src/components/AppOverlay.jsx` consumers, `EstimateSelectionToolbar.jsx`, `EstimateFinancialReview.jsx`
+- Estimate flow: `frontend/src/pages/EstimateBuilder.jsx`, `frontend/src/components/InsurancePanel.jsx`, `frontend/src/components/EstimateImportWizard.jsx`
+- Authenticated overlays: `Layout.jsx`, `HelpPanel.jsx`, `HelpDesk.jsx`, `FeedbackButton.jsx`, `PartsSearch.jsx`, `PaymentModal.jsx`, `CarryoverModal.jsx`, `Customers.jsx`, `Schedule.jsx`, `Settings.jsx`, `StorageHold.jsx`, `TimeClock.jsx`, `Users.jsx`, `VehicleDiagnostics.jsx`
+- Tests: `AppOverlay.architecture.test.jsx`, `EstimateSelectionToolbar.test.jsx`, `EstimateFinancialReview.test.jsx`, `EstimateBuilder.phase31.test.jsx`, `InsurancePanel.phase31.test.jsx`, `EstimateImportWizard.test.jsx`
+
+**Verification**
+```text
+cd frontend && npm run test:run
+# 27 files, 69/69 tests passed
+
+cd frontend && npm run build
+# clean production build
+
+node --test backend/src/__tests__/*.test.js <Node backend/test files>
+# 119/119 passed
+
+cd backend && npm run test:run
+# 3 files, 7/7 extractor tests passed
+
+rm -rf frontend/dist
+git diff --check
+git ls-files frontend/dist
+# clean; dist untracked
+```
+
+**Required QA visual gate**
+- At iPad landscape dimensions with the desktop sidebar expanded, open every authenticated dialog/picker and confirm the overlay is centered or intentionally right-docked, fully above the dimmed sidebar, and internally scrollable.
+- In Estimate Builder, import a mocked mixed estimate and physically click `Clear` -> `Select Parts Only` -> `Select All`; verify selected counts `0` -> parts count -> all count.
+- Confirm the financial review remains legible in landscape and includes all collision-estimate buckets listed above.
+
 ## Dispatch Log — 2026-07-10 Photo Delete + Above-Sidebar Overlay Audit
 
 **Status:** CLAUDE CODE QA PASS — CLEAR FOR HERMES — NOT DEPLOYED

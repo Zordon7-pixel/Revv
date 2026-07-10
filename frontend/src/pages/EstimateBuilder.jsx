@@ -5,6 +5,9 @@ import api from '../lib/api'
 import { computeEstimateCrossCheck } from '../lib/estimateCrossCheck'
 import { safeExternalErrorMessage } from '../lib/safeErrors'
 import EstimateReviewWarning from '../components/EstimateReviewWarning'
+import AppOverlay from '../components/AppOverlay'
+import EstimateFinancialReview from '../components/EstimateFinancialReview'
+import EstimateSelectionToolbar from '../components/EstimateSelectionToolbar'
 
 const ITEM_TYPES = ['labor', 'parts', 'sublet', 'other']
 
@@ -34,9 +37,7 @@ function OcrModal({
   crossCheck,
   metaNote,
   onToggle,
-  onSelectAll,
-  onSelectNone,
-  onSelectPartsOnly,
+  onSelectionChange,
   onImport,
   onCancel,
   importing,
@@ -47,8 +48,12 @@ function OcrModal({
   const undervalueCount = analysisSummary?.undervalue_count || 0
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[100] p-4">
-      <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+    <AppOverlay
+      label="Insurance estimate import"
+      onClose={() => !importing && onCancel()}
+      className="bg-black/75 p-3 sm:p-5"
+    >
+      <div className="flex max-h-[calc(var(--app-viewport-height)-1.5rem)] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-[#2a2d3e] bg-[#1a1d2e] shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-[#2a2d3e]">
           <div>
@@ -59,7 +64,7 @@ function OcrModal({
               </p>
             )}
           </div>
-          <button onClick={onCancel} className="text-slate-400 hover:text-white"><X size={18} /></button>
+          <button type="button" onClick={onCancel} disabled={importing} className="text-slate-400 hover:text-white disabled:opacity-50" aria-label="Close estimate import"><X size={18} /></button>
         </div>
 
         {/* Phase 2: Analysis summary bar */}
@@ -99,33 +104,15 @@ function OcrModal({
           </div>
         )}
 
-        {/* Line items */}
-        <div className="overflow-y-auto flex-1 px-5 py-3 space-y-2">
-          <div className="flex items-center justify-between gap-2 flex-wrap mb-1">
-            <div className="text-[11px] text-slate-500">Select which lines to import</div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={onSelectPartsOnly}
-                className="text-[11px] px-2 py-1 rounded border border-[#2a2d3e] text-amber-300 hover:text-amber-200"
-              >
-                Select Parts Only
-              </button>
-              <button
-                type="button"
-                onClick={onSelectAll}
-                className="text-[11px] px-2 py-1 rounded border border-[#2a2d3e] text-slate-300 hover:text-white"
-              >
-                Select All
-              </button>
-              <button
-                type="button"
-                onClick={onSelectNone}
-                className="text-[11px] px-2 py-1 rounded border border-[#2a2d3e] text-slate-300 hover:text-white"
-              >
-                Clear
-              </button>
-            </div>
+        {/* Financial review + line items */}
+        <div className="flex-1 space-y-3 overflow-y-auto overscroll-contain px-4 py-3 sm:px-5">
+          <EstimateFinancialReview totals={parsed.estimate_totals} />
+          <div className="sticky top-0 z-10 rounded-xl border border-[#2a2d3e] bg-[#1a1d2e]/95 p-3 backdrop-blur">
+            <EstimateSelectionToolbar
+              items={parsed.line_items}
+              selected={checked}
+              onChange={onSelectionChange}
+            />
           </div>
           {parsed.line_items.length === 0 ? (
             <p className="text-slate-500 text-sm text-center py-6">No line items extracted. Try a clearer photo.</p>
@@ -146,9 +133,10 @@ function OcrModal({
               >
                 <input
                   type="checkbox"
-                  className="mt-0.5 accent-indigo-500"
+                  className="mt-0.5 h-5 w-5 shrink-0 accent-[#EAB308]"
                   checked={!!checked[idx]}
                   onChange={() => onToggle(idx)}
+                  aria-label={`Select ${item.description || `estimate line ${idx + 1}`}`}
                 />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
@@ -184,17 +172,18 @@ function OcrModal({
         </div>
 
         <div className="flex items-center justify-between gap-3 px-5 py-4 border-t border-[#2a2d3e]">
-          <button onClick={onCancel} className="text-slate-400 hover:text-white text-sm">Cancel</button>
+          <button type="button" onClick={onCancel} disabled={importing} className="min-h-11 px-3 text-sm text-slate-400 hover:text-white disabled:opacity-50">Cancel</button>
           <button
+            type="button"
             onClick={onImport}
             disabled={importing || checkedCount === 0}
-            className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
+            className="min-h-11 rounded-lg bg-[#EAB308] px-4 text-sm font-semibold text-[#0f1117] transition-colors hover:bg-yellow-400 disabled:opacity-50"
           >
             {importing ? 'Importing...' : `Import ${checkedCount} item${checkedCount !== 1 ? 's' : ''}`}
           </button>
         </div>
       </div>
-    </div>
+    </AppOverlay>
   )
 }
 
@@ -547,34 +536,6 @@ export default function EstimateBuilder() {
     setOcrChecked((prev) => ({ ...prev, [idx]: !prev[idx] }))
   }
 
-  function selectAllOcrItems() {
-    if (!ocrParsed?.line_items?.length) return
-    const next = {}
-    ocrParsed.line_items.forEach((_, idx) => {
-      next[idx] = true
-    })
-    setOcrChecked(next)
-  }
-
-  function clearOcrSelection() {
-    if (!ocrParsed?.line_items?.length) return
-    const next = {}
-    ocrParsed.line_items.forEach((_, idx) => {
-      next[idx] = false
-    })
-    setOcrChecked(next)
-  }
-
-  function selectPartsOnlyOcrItems() {
-    if (!ocrParsed?.line_items?.length) return
-    const next = {}
-    ocrParsed.line_items.forEach((item, idx) => {
-      next[idx] = String(item?.type || '').toLowerCase() === 'parts'
-    })
-    setOcrChecked(next)
-  }
-
-
   async function importOcrItems() {
     if (!ocrParsed) return
     if (ocrCrossCheck?.hasMismatch) {
@@ -637,10 +598,6 @@ export default function EstimateBuilder() {
         setItems(refreshed.data?.items || [])
         setSummary(refreshed.data?.summary || lastSummary)
       } catch (_) {}
-      setOcrModalOpen(false)
-      setOcrParsed(null)
-      setOcrCrossCheck(null)
-      setOcrMetaNote('')
       const noticeLines = [
         `${imported} item${imported !== 1 ? 's' : ''} imported from insurance estimate.`,
       ]
@@ -650,11 +607,28 @@ export default function EstimateBuilder() {
       if (partsRequestsFailed > 0) {
         noticeLines.push(`${partsRequestsFailed} part request${partsRequestsFailed !== 1 ? 's' : ''} could not be created.`)
       }
-      alert(noticeLines.join('\n'))
-      // Persist adjuster totals if they were loaded during this session
-      if (adjusterTotals) {
-        api.post(`/estimate-metadata/metadata/${roId}`, { adjuster_totals: adjusterTotals }).catch(() => {})
+      let financialsImported = false
+      try {
+        if (adjusterTotals) {
+          await api.post(`/estimate-metadata/metadata/${roId}`, { adjuster_totals: adjusterTotals })
+        }
+        const { data: financialData } = await api.post(`/estimate-items/${roId}/import-financials`)
+        if (financialData?.summary) setSummary(financialData.summary)
+        if (financialData?.financials) {
+          setRo((prev) => (prev ? { ...prev, ...financialData.financials } : prev))
+        }
+        financialsImported = true
+        setFinancialNotice(`Estimate revenue and profit inputs synced to this RO · Gross ${money(financialData?.summary?.total ?? financialData?.summary?.grand_total ?? 0)}`)
+      } catch (financialErr) {
+        const reviewMessage = financialErr?.response?.data?.error || 'Financial totals need review before they can be synced to the RO.'
+        setFinancialNotice(`${imported} lines imported. ${reviewMessage}`)
       }
+      setOcrModalOpen(false)
+      setOcrParsed(null)
+      setOcrCrossCheck(null)
+      setOcrMetaNote('')
+      noticeLines.push(financialsImported ? 'Estimate financials synced to the RO.' : 'Line items imported; review the financial notice before syncing totals.')
+      alert(noticeLines.join('\n'))
       await loadOpportunities({ silent: true })
     } catch (err) {
       alert(err?.response?.data?.error || 'Import failed — some items may not have been added')
@@ -678,7 +652,6 @@ export default function EstimateBuilder() {
   const noneTaxableSelected = taxableCount === 0
   const hasAdjusterTotals = !!adjusterTotals
   const adjusterRepairTotal = hasAdjusterTotals ? asNumber(adjusterTotals.total_cost_of_repairs, 0) : null
-  const adjusterNetRepair = hasAdjusterTotals ? asNumber(adjusterTotals.net_cost_of_repairs, 0) : null
   const revvTotal = asNumber(totals.grand_total, 0)
   const revvVsAdjusterVariance = adjusterRepairTotal === null ? null : (revvTotal - adjusterRepairTotal)
 
@@ -693,9 +666,7 @@ export default function EstimateBuilder() {
           metaNote={ocrMetaNote}
           checked={ocrChecked}
           onToggle={toggleOcrItem}
-          onSelectAll={selectAllOcrItems}
-          onSelectNone={clearOcrSelection}
-          onSelectPartsOnly={selectPartsOnlyOcrItems}
+          onSelectionChange={setOcrChecked}
           onImport={importOcrItems}
           onCancel={() => {
             setOcrModalOpen(false)
@@ -761,57 +732,13 @@ export default function EstimateBuilder() {
       )}
 
       {hasAdjusterTotals && (
-        <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 space-y-2">
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <h2 className="text-sm font-semibold text-white">Adjustor Estimate Totals</h2>
-            {revvVsAdjusterVariance !== null && (
-              <div className={`text-xs font-semibold ${Math.abs(revvVsAdjusterVariance) < 0.01 ? 'text-emerald-300' : 'text-amber-300'}`}>
-                REVV vs Adjustor variance: {money(revvVsAdjusterVariance)}
-              </div>
-            )}
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 text-xs">
-            <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2">
-              <p className="text-slate-400">Parts</p>
-              <p className="text-white font-semibold">{money(adjusterTotals.parts)}</p>
+        <div className="space-y-2">
+          {revvVsAdjusterVariance !== null && (
+            <div className={`text-right text-xs font-semibold ${Math.abs(revvVsAdjusterVariance) < 0.01 ? 'text-emerald-300' : 'text-amber-300'}`}>
+              REVV vs adjuster gross variance: {money(revvVsAdjusterVariance)}
             </div>
-            <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2">
-              <p className="text-slate-400">Body Labor</p>
-              <p className="text-white font-semibold">
-                {asNumber(adjusterTotals.body_labor_hours, 0).toFixed(1)}h @ {money(adjusterTotals.body_labor_rate)} = {money(adjusterTotals.body_labor_cost)}
-              </p>
-            </div>
-            <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2">
-              <p className="text-slate-400">Paint Labor</p>
-              <p className="text-white font-semibold">
-                {asNumber(adjusterTotals.paint_labor_hours, 0).toFixed(1)}h @ {money(adjusterTotals.paint_labor_rate)} = {money(adjusterTotals.paint_labor_cost)}
-              </p>
-            </div>
-            <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2">
-              <p className="text-slate-400">Paint Supplies</p>
-              <p className="text-white font-semibold">
-                {asNumber(adjusterTotals.paint_supplies_hours, 0).toFixed(1)}h @ {money(adjusterTotals.paint_supplies_rate)} = {money(adjusterTotals.paint_supplies_cost)}
-              </p>
-            </div>
-            <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2">
-              <p className="text-slate-400">Misc + Other</p>
-              <p className="text-white font-semibold">
-                {money(asNumber(adjusterTotals.miscellaneous, 0) + asNumber(adjusterTotals.other_charges, 0))}
-              </p>
-            </div>
-            <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2">
-              <p className="text-slate-400">Subtotal</p>
-              <p className="text-white font-semibold">{money(adjusterTotals.subtotal)}</p>
-            </div>
-            <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2">
-              <p className="text-slate-400">Total Cost of Repairs</p>
-              <p className="text-white font-semibold">{money(adjusterRepairTotal)}</p>
-            </div>
-            <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2">
-              <p className="text-slate-400">Net Cost of Repairs</p>
-              <p className="text-white font-semibold">{money(adjusterNetRepair)}</p>
-            </div>
-          </div>
+          )}
+          <EstimateFinancialReview totals={adjusterTotals} title="Adjuster Estimate Totals" />
         </div>
       )}
 

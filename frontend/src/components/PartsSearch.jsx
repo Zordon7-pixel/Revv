@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Search, X } from 'lucide-react'
 import api from '../lib/api'
+import AppOverlay from './AppOverlay'
 
 function availabilityClass(availability) {
   const v = String(availability || '').toLowerCase()
@@ -110,8 +111,8 @@ export default function PartsSearch({ roId, initialVehicle = {}, onClose, onPart
   }
 
   return (
-    <div className="fixed inset-0 bg-black/70 z-50 p-3 sm:p-6 overflow-y-auto">
-      <div className="max-w-5xl mx-auto bg-[#1a1d2e] border border-[#2a2d3e] rounded-2xl p-4 sm:p-5">
+    <AppOverlay label="Supplier catalog search" onClose={onClose} className="bg-black/70 p-3 sm:p-6">
+      <div className="w-full max-w-5xl max-h-[calc(var(--app-viewport-height)-1.5rem)] overflow-y-auto overscroll-contain bg-[#1a1d2e] border border-[#2a2d3e] rounded-2xl p-4 sm:p-5 shadow-2xl">
         <div className="flex items-center justify-between mb-4">
           <div>
             <h3 className="text-white font-semibold text-base">Supplier Catalog Search</h3>
@@ -216,6 +217,6 @@ export default function PartsSearch({ roId, initialVehicle = {}, onClose, onPart
           </div>
         )}
       </div>
-    </div>
+    </AppOverlay>
   )
 }

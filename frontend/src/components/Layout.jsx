@@ -9,6 +9,7 @@ import api from '../lib/api'
 import { useLanguage } from '../contexts/LanguageContext'
 import { useTheme } from '../contexts/ThemeContext'
 import LanguageToggle from './LanguageToggle'
+import AppOverlay from './AppOverlay'
 
 const NAV_GROUPS = [
   { id: 'core', label: 'Core', defaultOpen: true },
@@ -483,7 +484,7 @@ export default function Layout() {
           </main>
         </div>
         {accountOpen && (
-          <div className="fixed inset-0 z-[95] bg-black/60 flex items-center justify-center p-4">
+          <AppOverlay label="My account" onClose={() => setAccountOpen(false)} className="bg-black/60 p-4">
             <div className="w-full max-w-sm bg-[#1a1d2e] border border-[#2a2d3e] rounded-2xl p-5 space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-bold text-white">My Account</h3>
@@ -544,7 +545,7 @@ export default function Layout() {
                 </button>
               </div>
             </div>
-          </div>
+          </AppOverlay>
         )}
         <HelpPanel isOpen={helpOpen} onClose={() => setHelpOpen(false)} />
       </div>

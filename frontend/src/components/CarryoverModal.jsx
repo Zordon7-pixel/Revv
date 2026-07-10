@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AlertCircle, Calendar, ChevronRight, X } from 'lucide-react'
 import api from '../lib/api'
+import AppOverlay from './AppOverlay'
 
 function monthLabel(yearMonth) {
   if (!yearMonth || !/^\d{4}-\d{2}$/.test(yearMonth)) return yearMonth || '-'
@@ -44,7 +45,7 @@ export default function CarryoverModal({ ros, onClose, onDone }) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+    <AppOverlay label="Revenue period" onClose={onClose} className="bg-black/70 p-4">
       <div className="bg-[#1a1d2e] rounded-2xl border border-[#2a2d3e] w-full max-w-3xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-5 border-b border-[#2a2d3e]">
           <div className="flex items-center gap-2">
@@ -99,6 +100,6 @@ export default function CarryoverModal({ ros, onClose, onDone }) {
           ))}
         </div>
       </div>
-    </div>
+    </AppOverlay>
   )
 }
