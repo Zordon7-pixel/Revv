@@ -98,6 +98,17 @@ await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 - Non-blocking product note accepted: non-assistant technicians/employees can now delete RO photos, matching the existing authenticated/shop-scoped backend permission and the request that uploaders be able to delete photos.
 - Remaining post-deploy check: physical iPad/tablet landscape confirmation. No hosted database or Miles Automotive data was accessed during QA.
 
+**Hermes Deployment Verification — 2026-07-10 (Photo Delete + Above-Sidebar Overlay Audit)**
+- Confirmed only QA-passed commits `98a3097` (fix) + `a24bb9c` (QA record) were shipped; tracked worktree clean, untracked `SPEC-revv-redesign.md` left untouched (not added/edited/committed).
+- Fast-forward push `e2e085d..a24bb9c` to `origin/main` (no force, no history rewrite). Diff range = 9 files, frontend photo/overlay code + this CLAUDE.md only.
+- Railway auto-deployed; both hosts live on `a24bb9c`:
+  - `https://revvshop.app/api/health` → HTTP 200, commit `a24bb9c0ad8f86450b0c9a5f1cfc47f110498eb6`
+  - `https://revv-production-ffa9.up.railway.app/api/health` → HTTP 200, commit `a24bb9c0ad8f86450b0c9a5f1cfc47f110498eb6`
+- `./scripts/smoke-test.sh` → 6 PASS + SPF PASS + 1 documented `RESEND_API_KEY` local-env WARN.
+- Visual production probe: relied on Claude QA DOM assertions (body-level portal, `z-200` above sidebar `z-70`, bounded default sizing, zoom controls render, delete propagation) rather than driving a browser session against live production photos; no production data was read, uploaded, deleted, or mutated. Physical iPad/tablet landscape confirmation remains for Bryan.
+- No seed/reset/migration ran; no Miles Automotive or other real customer data was accessed.
+- Production is ready for Bryan to validate the above-sidebar photo viewer on a physical tablet.
+
 ## Dispatch Log — 2026-07-10 CCC/Mitchell Reviewable Estimate Import
 
 **Status:** DEPLOYED + VERIFIED — live on `8c1801e` (both hosts HTTP 200; synthetic flagged CCC probe returns reviewable 200)
