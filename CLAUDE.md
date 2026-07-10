@@ -115,6 +115,13 @@ git ls-files frontend/dist
 - Confirmed no hosted DB, production customer/shop/RO record, or Miles Automotive data was accessed; `SPEC-revv-redesign.md` remains untracked and untouched.
 - Browser extension was unavailable to Claude, so it explicitly left the live iPad landscape screenshot gate pending instead of claiming a visual pass. Hermes must not close the issue without that evidence.
 
+**Deployment verification — 2026-07-10**
+- Hermes fast-forwarded only `1945072` + `37989fe` to `origin/main`; no force push or history rewrite.
+- Both `https://revvshop.app/api/health` and the Railway health endpoint returned HTTP 200 on exact commit `37989fe9e65aa5bea0a4c085d985aedaa78067ec`.
+- `./scripts/smoke-test.sh` returned 6 PASS + the documented local `RESEND_API_KEY` warning.
+- Tracked worktree remained clean; `frontend/dist` remained untracked; `SPEC-revv-redesign.md` remained untracked and untouched.
+- Hermes' visual/browser step did not return and produced no screenshot. The process was stopped after deployment and health were independently confirmed. Live physical iPad landscape validation therefore remains open and must not be represented as complete.
+
 ## Dispatch Log — 2026-07-10 Photo Delete + Above-Sidebar Overlay Audit
 
 **Status:** CLAUDE CODE QA PASS — CLEAR FOR HERMES — NOT DEPLOYED
