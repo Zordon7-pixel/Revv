@@ -58,7 +58,7 @@ await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 
 ## Dispatch Log — 2026-07-10 CCC/Mitchell Reviewable Estimate Import
 
-**Status:** CLAUDE CODE QA PASS — CLEAR FOR HERMES — NOT DEPLOYED
+**Status:** DEPLOYED + VERIFIED — live on `8c1801e` (both hosts HTTP 200; synthetic flagged CCC probe returns reviewable 200)
 
 **Reported behavior:** A recognized CCC insurance estimate returned `CCC estimate needs review before import` as a fatal error, preventing the shop from reaching the existing review/import UI.
 
@@ -97,6 +97,16 @@ await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 - Confirmed top-level-only `detected_format` is merged by all three clients, unknown review reasons remain visible in human-readable copy, and flagged parse requests do not create estimate items or an RO.
 - Re-ran backend Node tests 119/119, parser tests 7/7, frontend tests 58/58, frontend build, diff check, and untracked-dist guard.
 - Remaining post-deploy check: use a synthetic flagged CCC/Mitchell estimate to confirm production returns HTTP 200 and opens the review UI. No hosted database or Miles Automotive data was accessed during QA.
+
+**Hermes Deployment Verification — 2026-07-10 (CCC/Mitchell Reviewable Estimate Import)**
+- Pushed linear HEAD `8c1801e` to `origin/main` (fast-forward `78c1774..8c1801e`, no force, no history rewrite). Batch: fix commit `6267a74` + QA-record docs `8c1801e`.
+- Railway auto-deployed; both hosts live on `8c1801e`:
+  - `https://revvshop.app/api/health` → HTTP 200, commit `8c1801e057df235601230f29f5b7ee4e725c57ac`
+  - `https://revv-production-ffa9.up.railway.app/api/health` → HTTP 200, commit `8c1801e057df235601230f29f5b7ee4e725c57ac`
+- `./scripts/smoke-test.sh` → 6 PASS + 1 documented `RESEND_API_KEY` local-env WARN.
+- Post-deploy flagged-estimate probe (safe synthetic, non-Miles): generated a synthetic CCC PDF from `backend/test/fixtures/ccc-estimate-low-confidence.txt` (synthetic customer, claim `SYN-CCC-BAD`) and POSTed it to `/api/insurance-ocr/parse` under the `demo@revvauto.com` demo shop. Live production returned HTTP 200 with `success:true`, `needs_review:true`, `detected_format:"ccc"`, and preserved `review_reasons` `["low_confidence_line_1","low_confidence_line_2","total_cost_does_not_reconcile","ccc_line_items_missing"]`. `line_items` empty and the parse-only endpoint created no estimate item or RO. Confirms the former fatal `409 needs review` path now returns a reviewable success payload in production.
+- No RO/line-item creation was requested; no seed/reset/migration ran; no hosted database rows or Miles Automotive data were read or mutated. Probe used the deterministic CCC extractor path (no AI provider call) and a synthetic upload only.
+- Production is ready for Bryan to validate the CCC/Mitchell estimate review flow in the UI.
 
 ## Dispatch Log — 2026-07-10 Appraisal Quick Intake + Estimate Gap Review
 
