@@ -153,25 +153,40 @@ html[data-touch="true"][data-text-entry-focus="true"] .sheet-modal-body {
 }
 
 @media (orientation: landscape) and (max-height: 900px) and (max-width: 1400px) {
-  html[data-touch="true"][data-text-entry-focus="true"] .sheet-modal-overlay {
+  html[data-touch="true"][data-text-entry-focus="true"] .sheet-modal-overlay,
+  html[data-touch="true"] .sheet-modal-overlay:has(input:focus:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"])),
+  html[data-touch="true"] .sheet-modal-overlay:has(textarea:focus),
+  html[data-touch="true"] .sheet-modal-overlay:has(select:focus) {
     align-items: flex-start;
     justify-content: center;
     padding-top: calc(0.25rem + env(safe-area-inset-top));
     padding-bottom: calc(0.5rem + var(--app-keyboard-inset) + env(safe-area-inset-bottom));
   }
 
-  html[data-touch="true"][data-text-entry-focus="true"] .sheet-modal-overlay .sheet-modal-card {
+  html[data-touch="true"][data-text-entry-focus="true"] .sheet-modal-overlay .sheet-modal-card,
+  html[data-touch="true"] .sheet-modal-overlay:has(input:focus:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"])) .sheet-modal-card,
+  html[data-touch="true"] .sheet-modal-overlay:has(textarea:focus) .sheet-modal-card,
+  html[data-touch="true"] .sheet-modal-overlay:has(select:focus) .sheet-modal-card {
     max-width: min(42rem, calc(100vw - 2rem));
     max-height: min(calc(var(--app-viewport-height) - 0.5rem - env(safe-area-inset-top)), 16rem);
   }
 
   html[data-touch="true"][data-text-entry-focus="true"] .sheet-modal-overlay .sheet-modal-header,
-  html[data-touch="true"][data-text-entry-focus="true"] .sheet-modal-overlay .sheet-modal-footer {
+  html[data-touch="true"][data-text-entry-focus="true"] .sheet-modal-overlay .sheet-modal-footer,
+  html[data-touch="true"] .sheet-modal-overlay:has(input:focus:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"])) .sheet-modal-header,
+  html[data-touch="true"] .sheet-modal-overlay:has(input:focus:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"])) .sheet-modal-footer,
+  html[data-touch="true"] .sheet-modal-overlay:has(textarea:focus) .sheet-modal-header,
+  html[data-touch="true"] .sheet-modal-overlay:has(textarea:focus) .sheet-modal-footer,
+  html[data-touch="true"] .sheet-modal-overlay:has(select:focus) .sheet-modal-header,
+  html[data-touch="true"] .sheet-modal-overlay:has(select:focus) .sheet-modal-footer {
     padding-top: 0.55rem;
     padding-bottom: 0.55rem;
   }
 
-  html[data-touch="true"][data-text-entry-focus="true"] .sheet-modal-overlay .sheet-modal-body {
+  html[data-touch="true"][data-text-entry-focus="true"] .sheet-modal-overlay .sheet-modal-body,
+  html[data-touch="true"] .sheet-modal-overlay:has(input:focus:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"])) .sheet-modal-body,
+  html[data-touch="true"] .sheet-modal-overlay:has(textarea:focus) .sheet-modal-body,
+  html[data-touch="true"] .sheet-modal-overlay:has(select:focus) .sheet-modal-body {
     padding-top: 0.65rem;
     padding-bottom: calc(0.85rem + env(safe-area-inset-bottom));
     scroll-padding-bottom: calc(65vh + env(safe-area-inset-bottom));
