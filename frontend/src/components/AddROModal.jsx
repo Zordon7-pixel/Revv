@@ -301,7 +301,7 @@ export default function AddROModal({ onClose, onSaved }) {
   }
 
   return (
-    <div className="sheet-modal-overlay fixed inset-0 bg-black/70 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
+    <div className="sheet-modal-overlay fixed inset-0 bg-black/70 flex items-end sm:items-center justify-center z-[90] p-0 sm:p-4">
       <div className="sheet-modal-card bg-[#1a1d2e] border border-[#2a2d3e] sm:max-w-2xl sm:rounded-xl rounded-t-2xl">
         <div className="sheet-modal-header flex items-center justify-between p-5 border-b border-[#2a2d3e]">
           <h2 className="font-bold text-white">{t('ro.addRO')}</h2>

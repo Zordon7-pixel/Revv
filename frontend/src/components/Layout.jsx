@@ -278,6 +278,15 @@ export default function Layout() {
     setOpenNavGroups((prev) => (prev[activeItem.group] ? prev : { ...prev, [activeItem.group]: true }))
   }, [location.pathname, nav])
 
+  useEffect(() => {
+    const root = document?.documentElement
+    if (!root) return undefined
+    root.dataset.sidebarCollapsed = sidebarCollapsed ? 'true' : 'false'
+    return () => {
+      delete root.dataset.sidebarCollapsed
+    }
+  }, [sidebarCollapsed])
+
   const SidebarContent = () => (
     <div className="flex flex-col h-full min-h-0">
       <div className="p-5 border-b border-[#2a2d3e]">
