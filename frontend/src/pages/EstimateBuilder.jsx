@@ -222,7 +222,27 @@ export default function EstimateBuilder() {
   const [financialNotice, setFinancialNotice] = useState('')
   const [opportunity, setOpportunity] = useState(null)
   const [opportunityLoading, setOpportunityLoading] = useState(false)
+  const [gapReview, setGapReview] = useState(null)
+  const [gapReviewLoading, setGapReviewLoading] = useState(false)
+  const [gapReviewError, setGapReviewError] = useState('')
+  const [addingGapCode, setAddingGapCode] = useState('')
   const [bulkTaxableSaving, setBulkTaxableSaving] = useState(false)
+
+  async function loadGapReview({ silent = false } = {}) {
+    if (!silent) setGapReviewLoading(true)
+    try {
+      const { data } = await api.get(`/estimate-assistant/gap-review/${roId}`)
+      setGapReview(data || null)
+      setGapReviewError('')
+    } catch (err) {
+      if (!silent) {
+        setGapReview(null)
+        setGapReviewError(err?.response?.data?.error || 'Could not review estimate gaps')
+      }
+    } finally {
+      if (!silent) setGapReviewLoading(false)
+    }
+  }
 
   async function loadOpportunities({ silent = false } = {}) {
     if (!silent) setOpportunityLoading(true)
@@ -237,6 +257,28 @@ export default function EstimateBuilder() {
       if (!silent) setOpportunity(null)
     } finally {
       if (!silent) setOpportunityLoading(false)
+    }
+    await loadGapReview({ silent: true })
+  }
+
+  async function addGapDraft(gap) {
+    if (!gap?.draft || !gap?.code) return
+    setAddingGapCode(gap.code)
+    setGapReviewError('')
+    try {
+      const { data } = await api.post(`/estimate-items/${roId}`, {
+        ...gap.draft,
+        unit_price: 0,
+        taxable: false,
+        sort_order: items.length,
+      })
+      setItems((prev) => [...prev, data.item])
+      setSummary(data.summary || null)
+      await loadOpportunities({ silent: true })
+    } catch (err) {
+      setGapReviewError(err?.response?.data?.error || 'Could not add the draft line')
+    } finally {
+      setAddingGapCode('')
     }
   }
 
@@ -764,6 +806,68 @@ export default function EstimateBuilder() {
           </div>
         </div>
       )}
+
+      <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 space-y-3">
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <h2 className="text-sm font-semibold text-white">Estimate Gap Review</h2>
+            <p className="mt-1 text-xs text-slate-500">Compares estimate lines with documented damage. Suggestions are review-only and never change pricing automatically.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => loadGapReview()}
+            disabled={gapReviewLoading}
+            className="text-xs px-2.5 py-1.5 rounded-lg border border-[#EAB308]/40 text-[#EAB308] hover:bg-[#EAB308]/10 disabled:opacity-50"
+          >
+            {gapReviewLoading ? 'Reviewing...' : 'Refresh'}
+          </button>
+        </div>
+        {gapReviewError && <p role="alert" className="rounded-lg border border-red-800/40 bg-red-950/30 px-3 py-2 text-xs text-red-200">{gapReviewError}</p>}
+        {!gapReview ? (
+          <p className="text-xs text-slate-500">Loading available evidence...</p>
+        ) : !gapReview.ready ? (
+          <div className="rounded-lg border border-[#2a2d3e] bg-[#0f1117] px-3 py-3">
+            <p className="text-xs font-medium text-slate-300">Not ready yet</p>
+            <p className="mt-1 text-xs text-slate-500">{gapReview.reason}</p>
+          </div>
+        ) : (gapReview.gaps || []).length === 0 ? (
+          <div className="rounded-lg border border-emerald-800/40 bg-emerald-950/20 px-3 py-3 text-xs text-emerald-200">
+            No likely gaps found across {gapReview.reviewed_line_count || 0} estimate lines and the current damage evidence.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <div className="flex flex-wrap gap-1.5">
+              {(gapReview.evidence_sources || []).map((source) => (
+                <span key={source} className="rounded-full border border-[#2a2d3e] bg-[#0f1117] px-2 py-1 text-[10px] text-slate-400">{source}</span>
+              ))}
+            </div>
+            {(gapReview.gaps || []).map((gap) => (
+              <div key={gap.code} className="rounded-lg border border-[#2a2d3e] bg-[#0f1117] px-3 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-medium text-white">{gap.description}</p>
+                      <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${gap.confidence === 'high' ? 'border-emerald-700/50 bg-emerald-900/20 text-emerald-300' : 'border-amber-700/50 bg-amber-900/20 text-amber-300'}`}>
+                        {gap.confidence} confidence
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs text-slate-400">{gap.reason}</p>
+                    <p className="mt-1 text-[10px] text-slate-600">Draft quantity: {gap.draft?.quantity || 1}. Unit price remains $0.00 until reviewed.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => addGapDraft(gap)}
+                    disabled={addingGapCode === gap.code}
+                    className="shrink-0 inline-flex items-center gap-1 rounded-lg bg-[#EAB308] px-3 py-2 text-xs font-semibold text-[#0f1117] hover:bg-yellow-400 disabled:opacity-50"
+                  >
+                    <Plus size={13} /> {addingGapCode === gap.code ? 'Adding...' : 'Add Draft'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 space-y-2">
         <div className="flex items-center justify-between gap-3 flex-wrap">

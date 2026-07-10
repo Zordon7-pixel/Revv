@@ -6,6 +6,7 @@ const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const Anthropic = require('@anthropic-ai/sdk');
+const { dbGet, dbAll } = require('../db');
 
 // ── Multer setup for scan-photo endpoint ──────────────────────────────────────
 const SCAN_MAX_BYTES = 10 * 1024 * 1024; // 10 MB
@@ -321,22 +322,10 @@ function shouldKeepForYear(item, yearNumber) {
   return true;
 }
 
-router.get('/suggestions', auth, (req, res) => {
-  const { make, model, damageType, year, damagedPanels } = req.query || {};
-
-  if (!make || !model || !damageType) {
-    return res.status(400).json({ error: 'make, model, and damageType are required' });
-  }
-
-  if (!DAMAGE_TYPES.includes(damageType)) {
-    return res.status(400).json({ error: `damageType must be one of: ${DAMAGE_TYPES.join(', ')}` });
-  }
-
+function buildRankedSuggestions({ make, model, year, damageType, panelIds }) {
   const vehicleType = classifyVehicleType(make, model);
-  const panelIds = normalizePanelIds(damagedPanels);
   const yearNumber = Number(year);
   const baseSuggestions = suggestionMatrix[vehicleType]?.[damageType] || [];
-
   const rankedSuggestions = baseSuggestions
     .filter((item) => shouldKeepForYear(item, yearNumber))
     .map((item) => {
@@ -349,9 +338,121 @@ router.get('/suggestions', auth, (req, res) => {
     })
     .sort((a, b) => b.relevance_score - a.relevance_score || a.code.localeCompare(b.code));
 
-  const suggestions = panelIds.length
-    ? rankedSuggestions.filter((item) => item.relevance_score > 0)
-    : rankedSuggestions;
+  return {
+    vehicleType,
+    yearNumber,
+    suggestions: panelIds.length
+      ? rankedSuggestions.filter((item) => item.relevance_score > 0)
+      : rankedSuggestions,
+  };
+}
+
+function parseStoredPanels(value) {
+  if (Array.isArray(value)) return normalizePanelIds(value);
+  try {
+    return normalizePanelIds(JSON.parse(value || '[]'));
+  } catch {
+    return normalizePanelIds(value);
+  }
+}
+
+const GAP_STOP_WORDS = new Set([
+  'and', 'after', 'assembly', 'front', 'rear', 'left', 'right', 'remove', 'replace', 'repair',
+  'install', 'setup', 'static', 'multi', 'point', 'outer', 'the', 'with', 'or',
+]);
+
+function comparisonTokens(value) {
+  return new Set(String(value || '')
+    .toLowerCase()
+    .replace(/r\s*&\s*r|r\s*&\s*i/g, ' remove install ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .split(/\s+/)
+    .filter((token) => token.length > 2 && !GAP_STOP_WORDS.has(token)));
+}
+
+function suggestionAlreadyPresent(description, items = []) {
+  const candidate = comparisonTokens(description);
+  if (!candidate.size) return false;
+  return items.some((item) => {
+    const existing = comparisonTokens(item?.description);
+    let overlap = 0;
+    candidate.forEach((token) => {
+      if (existing.has(token)) overlap += 1;
+    });
+    return overlap >= Math.min(2, candidate.size);
+  });
+}
+
+function buildEstimateGapReview({ ro, items = [], evidence = {} }) {
+  const panelIds = parseStoredPanels(ro?.damaged_panels);
+  const evidenceSources = [];
+  if (panelIds.length) evidenceSources.push('Damage diagram');
+  if (Number(evidence.photo_count || 0) > 0) evidenceSources.push('RO photos');
+  if (Number(evidence.inspection_count || 0) > 0) evidenceSources.push('Inspection');
+  if (Number(evidence.document_count || 0) > 0) evidenceSources.push('Claim documents');
+
+  if (!items.length) {
+    return { ready: false, reason: 'Import or add estimate lines before checking for gaps.', evidence_sources: evidenceSources, gaps: [] };
+  }
+  if (!panelIds.length) {
+    return { ready: false, reason: 'Mark damaged panels on the RO before checking for gaps.', evidence_sources: evidenceSources, gaps: [] };
+  }
+  if (!evidenceSources.length) {
+    return { ready: false, reason: 'Add a damage diagram, photos, inspection, or appraisal document before checking for gaps.', evidence_sources: [], gaps: [] };
+  }
+
+  const { inferred_damage_type: damageType } = inferFromZones(panelIds.map((panel) => panel.replace(/_/g, ' ')));
+  const ranked = buildRankedSuggestions({
+    make: ro?.make,
+    model: ro?.model,
+    year: ro?.year,
+    damageType,
+    panelIds,
+  });
+  const hasDirectVisualEvidence = Number(evidence.photo_count || 0) > 0 || Number(evidence.inspection_count || 0) > 0;
+  const gaps = ranked.suggestions
+    .filter((item) => !suggestionAlreadyPresent(item.description, items))
+    .map((item) => ({
+      code: item.code,
+      description: item.description,
+      confidence: item.matched_panels.length > 0 && hasDirectVisualEvidence ? 'high' : 'medium',
+      reason: item.matched_panels.length
+        ? `Matches ${item.matched_panels.map((panel) => panel.replace(/_/g, ' ')).join(', ')} but no similar estimate line was found.`
+        : 'Fits the documented damage pattern but no similar estimate line was found.',
+      sources: ['Estimate lines', ...evidenceSources],
+      draft: {
+        type: 'labor',
+        description: item.description,
+        quantity: Number(item.labor_hours || 1),
+        unit_price: 0,
+        taxable: false,
+      },
+    }));
+
+  return {
+    ready: true,
+    damage_type: damageType,
+    vehicle_type: ranked.vehicleType,
+    evidence_sources: evidenceSources,
+    reviewed_line_count: items.length,
+    gaps,
+  };
+}
+
+router.get('/suggestions', auth, (req, res) => {
+  const { make, model, damageType, year, damagedPanels } = req.query || {};
+
+  if (!make || !model || !damageType) {
+    return res.status(400).json({ error: 'make, model, and damageType are required' });
+  }
+
+  if (!DAMAGE_TYPES.includes(damageType)) {
+    return res.status(400).json({ error: `damageType must be one of: ${DAMAGE_TYPES.join(', ')}` });
+  }
+
+  const panelIds = normalizePanelIds(damagedPanels);
+  const ranked = buildRankedSuggestions({ make, model, year, damageType, panelIds });
+  const suggestions = ranked.suggestions;
 
   const summary = suggestions.reduce((acc, item) => {
     acc.estimated_labor_hours += Number(item.labor_hours || 0);
@@ -360,14 +461,49 @@ router.get('/suggestions', auth, (req, res) => {
   }, { estimated_labor_hours: 0, estimated_parts_cost: 0 });
 
   return res.json({
-    vehicleType,
+    vehicleType: ranked.vehicleType,
     damageType,
-    year: Number.isFinite(yearNumber) ? yearNumber : null,
+    year: Number.isFinite(ranked.yearNumber) ? ranked.yearNumber : null,
     selectedPanels: panelIds,
     panelFilterApplied: panelIds.length > 0,
     suggestions,
     summary,
   });
+});
+
+router.get('/gap-review/:roId', auth, async (req, res) => {
+  try {
+    const ro = await dbGet(
+      `SELECT ro.id, ro.damaged_panels, v.year, v.make, v.model
+       FROM repair_orders ro
+       LEFT JOIN vehicles v ON v.id::text = ro.vehicle_id::text
+       WHERE ro.id::text = $1::text AND ro.shop_id::text = $2::text`,
+      [req.params.roId, req.user.shop_id]
+    );
+    if (!ro) return res.status(404).json({ error: 'Repair order not found' });
+
+    const [items, evidence] = await Promise.all([
+      dbAll(
+        `SELECT id, type, description, quantity, unit_price
+         FROM estimate_line_items
+         WHERE ro_id::text = $1::text AND shop_id::text = $2::text
+         ORDER BY sort_order ASC, created_at ASC`,
+        [req.params.roId, req.user.shop_id]
+      ),
+      dbGet(
+        `SELECT
+           (SELECT COUNT(*)::int FROM ro_photos WHERE ro_id::text = $1::text) AS photo_count,
+           (SELECT COUNT(*)::int FROM inspections WHERE ro_id::text = $1::text AND shop_id::text = $2::text) AS inspection_count,
+           (SELECT COUNT(*)::int FROM ro_claim_evidence WHERE ro_id::text = $1::text AND shop_id::text = $2::text AND media_type = 'document') AS document_count`,
+        [req.params.roId, req.user.shop_id]
+      ),
+    ]);
+
+    return res.json(buildEstimateGapReview({ ro, items, evidence }));
+  } catch (err) {
+    console.error('[EstimateAssistant] gap review error:', err);
+    return res.status(500).json({ error: 'Could not review estimate gaps' });
+  }
 });
 
 // ── POST /estimate-assistant/scan-photo ───────────────────────────────────────
@@ -445,3 +581,5 @@ router.use((err, req, res, next) => {
 });
 
 module.exports = router;
+module.exports.buildEstimateGapReview = buildEstimateGapReview;
+module.exports.suggestionAlreadyPresent = suggestionAlreadyPresent;
