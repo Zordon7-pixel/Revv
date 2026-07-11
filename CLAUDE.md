@@ -56,6 +56,47 @@ const ro = await dbGet('SELECT * FROM ros WHERE id = $1 AND shop_id = $2', [id, 
 await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 ```
 
+## Dispatch Log — 2026-07-11 REVV Redesign Phase 6B: Financial Surfaces + App Shell
+
+**Time:** 2026-07-11 00:22 ET / 2026-07-11 04:22 UTC
+**Status:** READY FOR CLAUDE CODE QA — FEATURE BRANCH ONLY — NOT DEPLOYED — PHASE 6 CONTINUES
+
+**Scope**
+- Rebuilt Payments, Reports, Monthly Report, Owner KPIs, and Job Costing with the shared instrument primitives, real dark/light tokens, tabular numbers, responsive mobile cards, contained desktop tables, and explicit empty/error/loading states.
+- Routed monetary display through shared `Money`. Legacy report endpoints that return decimal dollars are normalized once through the shared display adapter `dollarsToCents`; endpoints already returning integer cents pass those cents directly. No backend totals or payment authority changed.
+- Payments now separates paid/succeeded transactions from pending attempts for its collected KPI, and the shared payment status badge uses the locked good/gold/crit/neutral token system.
+- Preserved all report tabs and endpoints, monthly CSV download and local owner notes, Owner KPI filters and links, Job Costing filters/navigation, and the backend-provided supplement capture rate.
+- Removed the legacy radial-gradient/watermark app canvas from `Layout` so light mode uses the real `--void` surface and dark mode uses the same semantic token. The previously documented black-on-dark light-theme defect is resolved.
+- Bounded the phone topbar: low-priority language/help/notification controls progressively collapse while menu, shop identity, back, search, and account remain reachable. At 390 px the header and all redesigned pages have zero horizontal overflow.
+- No backend, route, role, database, seed, reset, migration, destructive script, hosted DB, or customer/shop/RO data changed. Miles Automotive data was not touched; all visual data was Playwright route-mocked.
+
+**Files changed (10; batch cap respected)**
+- `frontend/src/components/Layout.jsx`
+- `frontend/src/components/PaymentStatusBadge.jsx`
+- `frontend/src/components/ui/index.jsx`
+- `frontend/src/pages/Payments.jsx`
+- `frontend/src/pages/Reports.jsx`
+- `frontend/src/pages/MonthlyReport.jsx`
+- `frontend/src/pages/OwnerKpis.jsx`
+- `frontend/src/pages/JobCosting.jsx`
+- `frontend/src/pages/__tests__/FinancialSurfaces.test.jsx`
+- `CLAUDE.md`
+
+**Verification**
+```
+node --test native backend sweep  # 130/130 passed
+cd backend && npm run test:run  # extractor suite 7/7 passed
+cd frontend && npm run test:run -- FinancialSurfaces OwnerKpis DesignSystem  # 3 files, 8/8 passed
+cd frontend && npm run test:run  # 34 files, 96/96 passed
+cd frontend && npm run build  # clean; pre-existing chunk-size warning only
+Playwright mocked app shell  # Reports dark 1440x1000, Owner KPIs light 1440x1000, Payments light 390x844, Monthly Report dark 390x844
+Playwright viewport results  # exact client/scroll widths at 1440 and 390; zero console/page errors
+computed shell backgrounds  # light rgb(247,248,251), dark rgb(15,17,23)
+screenshots  # /tmp/revv-phase6b-reports-dark-desktop-fixed.png, /tmp/revv-phase6b-owner-light-desktop-fixed.png, /tmp/revv-phase6b-payments-light-phone-fixed.png, /tmp/revv-phase6b-monthly-dark-phone.png
+rg raw hex / indigo / legacy palette in changed financial surfaces and Layout  # zero matches
+rm -rf frontend/dist && git diff --check && git ls-files frontend/dist | wc -l  # 0
+```
+
 ## Dispatch Log — 2026-07-10 REVV Redesign Phase 6A: Core Operations
 
 **Status:** READY FOR CLAUDE CODE QA — NOT DEPLOYED — PHASE 6 CONTINUES AFTER THIS BATCH

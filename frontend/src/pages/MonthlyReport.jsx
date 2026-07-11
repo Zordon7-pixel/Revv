@@ -1,27 +1,34 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CalendarDays, Download, ArrowUpDown } from 'lucide-react'
+import { ArrowUpDown, CalendarDays, Download, FileSpreadsheet } from 'lucide-react'
 import api from '../lib/api'
+import {
+  dollarsToCents,
+  EmptyState,
+  Money,
+  PageHeader,
+  Panel,
+  StatInstrument,
+  StatusBadge,
+} from '../components/ui'
 
 function currentYearMonth() {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  const date = new Date()
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
 }
 
-function formatCurrency(v) {
-  return `$${Number(v || 0).toLocaleString()}`
-}
-
-function formatDate(v) {
-  if (!v) return '-'
-  const d = new Date(v)
-  if (Number.isNaN(d.getTime())) return v
-  return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+function formatDate(value) {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
 export default function MonthlyReport() {
   const [yearMonth, setYearMonth] = useState(currentYearMonth())
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [downloadError, setDownloadError] = useState('')
   const [sort, setSort] = useState({ key: 'created_at', dir: 'desc' })
   const [notes, setNotes] = useState('')
 
@@ -33,18 +40,27 @@ export default function MonthlyReport() {
   }, [noteKey])
 
   useEffect(() => {
+    let mounted = true
     async function load() {
       setLoading(true)
+      setError('')
       try {
-        const res = await api.get(`/reports/monthly/${yearMonth}`)
-        setData(res.data)
+        const response = await api.get(`/reports/monthly/${yearMonth}`)
+        if (mounted) setData(response.data)
       } catch (err) {
         console.error('Failed to load monthly report:', err)
-        setData({ summary: null, ros: [] })
+        if (mounted) {
+          setData({ summary: null, ros: [] })
+          setError(err?.response?.data?.error || 'Failed to load the monthly report.')
+        }
+      } finally {
+        if (mounted) setLoading(false)
       }
-      setLoading(false)
     }
     load()
+    return () => {
+      mounted = false
+    }
   }, [yearMonth])
 
   useEffect(() => {
@@ -54,161 +70,169 @@ export default function MonthlyReport() {
   const sortedRos = useMemo(() => {
     const list = [...(data?.ros || [])]
     list.sort((a, b) => {
-      const aVal = a?.[sort.key]
-      const bVal = b?.[sort.key]
-      const aNorm = aVal === null || aVal === undefined ? '' : aVal
-      const bNorm = bVal === null || bVal === undefined ? '' : bVal
+      const aValue = a?.[sort.key]
+      const bValue = b?.[sort.key]
+      const aNormalized = aValue === null || aValue === undefined ? '' : aValue
+      const bNormalized = bValue === null || bValue === undefined ? '' : bValue
 
       if (sort.key === 'total_cost') {
-        return sort.dir === 'asc' ? Number(aNorm) - Number(bNorm) : Number(bNorm) - Number(aNorm)
+        return sort.dir === 'asc'
+          ? Number(aNormalized) - Number(bNormalized)
+          : Number(bNormalized) - Number(aNormalized)
       }
 
-      const cmp = String(aNorm).localeCompare(String(bNorm))
-      return sort.dir === 'asc' ? cmp : -cmp
+      const comparison = String(aNormalized).localeCompare(String(bNormalized))
+      return sort.dir === 'asc' ? comparison : -comparison
     })
     return list
   }, [data, sort])
 
   function toggleSort(key) {
-    setSort(prev => ({
+    setSort((previous) => ({
       key,
-      dir: prev.key === key && prev.dir === 'asc' ? 'desc' : 'asc',
+      dir: previous.key === key && previous.dir === 'asc' ? 'desc' : 'asc',
     }))
   }
 
   async function downloadCsv() {
+    setDownloadError('')
     try {
       const token = localStorage.getItem('sc_token')
-      const res = await fetch(`/api/reports/monthly/${yearMonth}/csv`, {
+      const response = await fetch(`/api/reports/monthly/${yearMonth}/csv`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       })
-      if (!res.ok) throw new Error('Download failed')
-      const blob = await res.blob()
+      if (!response.ok) throw new Error('Download failed')
+      const blob = await response.blob()
       const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `revv-report-${yearMonth}.csv`
-      a.click()
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = `revv-report-${yearMonth}.csv`
+      anchor.click()
       window.URL.revokeObjectURL(url)
     } catch (err) {
-      alert(err.message || 'Failed to download CSV')
+      setDownloadError(err.message || 'Failed to download CSV')
     }
   }
 
   const summary = data?.summary
-  const monthLabel = new Date(`${yearMonth}-01`).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+  const monthLabel = new Date(`${yearMonth}-01T12:00:00`).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+  const headerActions = (
+    <>
+      <label className="relative">
+        <span className="sr-only">Report month</span>
+        <CalendarDays size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint" />
+        <input
+          type="month"
+          value={yearMonth}
+          max={maxMonth}
+          onChange={(event) => setYearMonth(event.target.value)}
+          className="rounded-lg border border-line-2 bg-panel py-2 pl-9 pr-3 text-sm text-ink outline-none transition-colors focus:border-brand"
+          aria-label="Report month"
+        />
+      </label>
+      <button type="button" onClick={downloadCsv} className="inline-flex items-center gap-2 rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-lit">
+        <Download size={15} /> Download CSV
+      </button>
+    </>
+  )
 
   return (
-    <div className="space-y-5">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-white">Monthly Report</h1>
-          <p className="text-slate-500 text-sm">{monthLabel}</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="relative">
-            <CalendarDays size={14} className="absolute left-2.5 top-2.5 text-slate-500" />
-            <input
-              type="month"
-              value={yearMonth}
-              max={maxMonth}
-              onChange={e => setYearMonth(e.target.value)}
-              className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-lg text-sm text-white pl-8 pr-2 py-2"
-            />
-          </div>
-          <button
-            onClick={downloadCsv}
-            className="inline-flex items-center gap-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium px-3 py-2 rounded-lg transition-colors"
-          >
-            <Download size={14} />
-            Download CSV
-          </button>
-        </div>
-      </div>
+    <div className="mx-auto max-w-7xl space-y-5">
+      <PageHeader eyebrow="Financial" title="Monthly report" description={monthLabel} actions={headerActions} />
 
-      {loading && <div className="text-slate-500 text-sm">Loading report...</div>}
+      {downloadError && <div className="rounded-instrument border border-crit/30 bg-crit/10 px-4 py-3 text-sm text-crit" role="alert">{downloadError}</div>}
+      {error && <div className="rounded-instrument border border-crit/30 bg-crit/10 px-4 py-3 text-sm text-crit" role="alert">{error}</div>}
 
-      {!loading && summary && (
+      {loading ? (
+        <Panel><div className="grid min-h-52 place-items-center text-sm text-muted" role="status">Loading report...</div></Panel>
+      ) : summary ? (
         <>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
-            {[
-              ['Total Revenue', formatCurrency(summary.total_revenue), 'text-emerald-300'],
-              ['Total ROs', summary.total_ros, 'text-indigo-300'],
-              ['Completed', summary.completed_ros, 'text-emerald-400'],
-              ['In Progress', summary.in_progress_ros, 'text-amber-300'],
-              ['Avg Value', formatCurrency(summary.avg_ro_value), 'text-cyan-300'],
-            ].map(([label, value, color]) => (
-              <div key={label} className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4">
-                <div className={`text-xl font-bold ${color}`}>{value}</div>
-                <div className="text-xs text-slate-500 mt-0.5">{label}</div>
-              </div>
-            ))}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <StatInstrument label="Total revenue" value={<Money cents={dollarsToCents(summary.total_revenue)} className="text-gold" />} detail={monthLabel} tone="gold" />
+            <StatInstrument label="Total ROs" value={<span className="font-mono tabular-nums">{summary.total_ros || 0}</span>} detail="In report" />
+            <StatInstrument label="Completed" value={<span className="font-mono tabular-nums text-good">{summary.completed_ros || 0}</span>} detail="Delivered or closed" tone="good" />
+            <StatInstrument label="In progress" value={<span className="font-mono tabular-nums text-brand">{summary.in_progress_ros || 0}</span>} detail="Active workflow" />
+            <StatInstrument label="Average value" value={<Money cents={dollarsToCents(summary.avg_ro_value)} className="text-gold" />} detail="Per repair order" tone="gold" />
           </div>
 
-          <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4">
-            <h2 className="text-sm font-semibold text-white mb-3">Repair Orders</h2>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="text-slate-500 border-b border-[#2a2d3e]">
-                    {[
-                      ['ro_number', 'RO#'],
-                      ['customer_name', 'Customer'],
-                      ['vehicle', 'Vehicle'],
-                      ['status', 'Status'],
-                      ['total_cost', 'Total Cost'],
-                      ['revenue_period', 'Revenue Period'],
-                      ['carried_over', 'Carried Over'],
-                      ['technician', 'Technician'],
-                      ['created_at', 'Created'],
-                      ['completed_at', 'Completed'],
-                    ].map(([key, label]) => (
-                      <th key={key} className="text-left py-2 px-2 whitespace-nowrap">
-                        <button onClick={() => toggleSort(key)} className="inline-flex items-center gap-1 hover:text-slate-300">
-                          {label}
-                          <ArrowUpDown size={11} />
-                        </button>
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedRos.map(ro => (
-                    <tr key={ro.id} className="border-b border-[#2a2d3e]/60 text-slate-300">
-                      <td className="py-2 px-2">{ro.ro_number || '-'}</td>
-                      <td className="py-2 px-2">{ro.customer_name || '-'}</td>
-                      <td className="py-2 px-2">{ro.vehicle || '-'}</td>
-                      <td className="py-2 px-2 capitalize">{ro.status || '-'}</td>
-                      <td className="py-2 px-2 text-emerald-300">{formatCurrency(ro.total_cost)}</td>
-                      <td className="py-2 px-2 capitalize">{ro.revenue_period || 'current'}</td>
-                      <td className="py-2 px-2">{ro.carried_over ? 'Yes' : 'No'}</td>
-                      <td className="py-2 px-2">{ro.technician || '-'}</td>
-                      <td className="py-2 px-2">{formatDate(ro.created_at)}</td>
-                      <td className="py-2 px-2">{formatDate(ro.completed_at)}</td>
-                    </tr>
+          <Panel title="Repair orders" description={`${sortedRos.length} in ${monthLabel}`}>
+            {sortedRos.length ? (
+              <>
+                <div className="grid gap-3 p-3 md:hidden">
+                  {sortedRos.map((ro) => (
+                    <article key={ro.id} className="rounded-instrument border border-line bg-panel-2 p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0"><p className="font-mono text-sm font-semibold text-brand">{ro.ro_number || '-'}</p><p className="mt-1 truncate text-sm text-ink">{ro.customer_name || 'Customer not linked'}</p><p className="mt-1 truncate text-xs text-muted">{ro.vehicle || 'Vehicle not linked'}</p></div>
+                        <StatusBadge status={ro.status} />
+                      </div>
+                      <dl className="mt-4 grid grid-cols-2 gap-3 text-xs">
+                        <div><dt className="text-faint">Total</dt><dd className="mt-1"><Money cents={dollarsToCents(ro.total_cost)} className="text-gold" /></dd></div>
+                        <div><dt className="text-faint">Technician</dt><dd className="mt-1 text-ink">{ro.technician || 'Unassigned'}</dd></div>
+                        <div><dt className="text-faint">Created</dt><dd className="mt-1 text-muted">{formatDate(ro.created_at)}</dd></div>
+                        <div><dt className="text-faint">Completed</dt><dd className="mt-1 text-muted">{formatDate(ro.completed_at)}</dd></div>
+                      </dl>
+                    </article>
                   ))}
-                  {!sortedRos.length && (
-                    <tr>
-                      <td colSpan={10} className="py-6 text-center text-slate-500">No repair orders found for this month.</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
+                </div>
 
-          <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4">
-            <label className="block text-sm font-semibold text-white mb-2">Owner Notes (for tax purposes)</label>
-            <textarea
-              rows={5}
-              value={notes}
-              onChange={e => setNotes(e.target.value)}
-              className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500"
-              placeholder="Add monthly notes for accounting and tax review."
-            />
-          </div>
+                <div className="hidden overflow-x-auto md:block">
+                  <table className="w-full min-w-[980px] text-xs">
+                    <thead className="bg-panel-2 text-faint">
+                      <tr>
+                        {[
+                          ['ro_number', 'RO#'], ['customer_name', 'Customer'], ['vehicle', 'Vehicle'], ['status', 'Status'],
+                          ['total_cost', 'Total'], ['revenue_period', 'Revenue period'], ['carried_over', 'Carried over'],
+                          ['technician', 'Technician'], ['created_at', 'Created'], ['completed_at', 'Completed'],
+                        ].map(([key, label]) => (
+                          <th key={key} className="px-3 py-3 text-left font-semibold">
+                            <button type="button" onClick={() => toggleSort(key)} className="inline-flex items-center gap-1 transition-colors hover:text-ink" aria-label={`Sort by ${label}`}>
+                              {label}<ArrowUpDown size={11} />
+                            </button>
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sortedRos.map((ro) => (
+                        <tr key={ro.id} className="border-t border-line text-ink">
+                          <td className="px-3 py-3 font-mono font-semibold text-brand">{ro.ro_number || '-'}</td>
+                          <td className="px-3 py-3">{ro.customer_name || '-'}</td>
+                          <td className="px-3 py-3 text-muted">{ro.vehicle || '-'}</td>
+                          <td className="px-3 py-3"><StatusBadge status={ro.status} /></td>
+                          <td className="px-3 py-3"><Money cents={dollarsToCents(ro.total_cost)} className="text-gold" /></td>
+                          <td className="px-3 py-3 capitalize text-muted">{ro.revenue_period || 'current'}</td>
+                          <td className="px-3 py-3 text-muted">{ro.carried_over ? 'Yes' : 'No'}</td>
+                          <td className="px-3 py-3 text-muted">{ro.technician || '-'}</td>
+                          <td className="px-3 py-3 text-muted">{formatDate(ro.created_at)}</td>
+                          <td className="px-3 py-3 text-muted">{formatDate(ro.completed_at)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            ) : (
+              <EmptyState icon={FileSpreadsheet} title="No repair orders this month" description="Choose another month or create a repair order to populate this report." />
+            )}
+          </Panel>
+
+          <Panel title="Owner notes" description="Saved locally for accounting and tax review">
+            <div className="p-4">
+              <label htmlFor="monthly-owner-notes" className="sr-only">Owner notes for tax purposes</label>
+              <textarea
+                id="monthly-owner-notes"
+                rows={5}
+                value={notes}
+                onChange={(event) => setNotes(event.target.value)}
+                className="w-full rounded-lg border border-line-2 bg-void px-3 py-2 text-sm text-ink outline-none transition-colors placeholder:text-faint focus:border-brand"
+                placeholder="Add monthly notes for accounting and tax review."
+              />
+            </div>
+          </Panel>
         </>
-      )}
+      ) : !error ? (
+        <Panel><EmptyState icon={FileSpreadsheet} title="No report available" description="No monthly summary was returned for this period." /></Panel>
+      ) : null}
     </div>
   )
 }

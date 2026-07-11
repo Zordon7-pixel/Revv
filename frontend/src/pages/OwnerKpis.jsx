@@ -1,18 +1,19 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Activity, ArrowRight, BarChart3, Clock3, DollarSign, Gauge, PackageCheck, Percent, TrendingUp, Users } from 'lucide-react'
+import { Activity, ArrowRight, Clock3, Gauge } from 'lucide-react'
 import api from '../lib/api'
-import { STATUS_LABELS } from './RepairOrders'
+import { formatTurnaroundRange } from '../components/TurnaroundEstimator'
+import {
+  dollarsToCents,
+  EmptyState,
+  Money,
+  PageHeader,
+  Panel,
+  StatInstrument,
+  StatusBadge,
+} from '../components/ui'
 
-function money(value) {
-  return `$${Number(value || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-}
-
-function moneyFromCents(value) {
-  return money(Number(value || 0) / 100)
-}
-
-function pct(value) {
+function percent(value) {
   const numeric = Number(value ?? 0)
   return `${Number.isFinite(numeric) ? numeric.toFixed(1) : '0.0'}%`
 }
@@ -34,11 +35,7 @@ function daysAgoKey(days) {
 
 function formatDate(value) {
   if (!value) return ''
-  return new Date(`${value}T00:00:00`).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  })
+  return new Date(`${value}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 function formatDateRange(start, end) {
@@ -49,25 +46,8 @@ function formatDateRange(start, end) {
   return [formattedStart, formattedEnd].filter(Boolean).join(' - ')
 }
 
-function KpiCard({ icon: Icon, label, period, value, sublabel, tone = 'text-white', to, testId }) {
-  const content = (
-    <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 h-full hover:border-indigo-400/50 transition-colors">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-xs text-slate-500 mb-1">{label}</div>
-          {period && <div className="text-[11px] text-slate-600 mb-1">Period: {period}</div>}
-          <div className={`text-2xl font-bold ${tone}`} data-testid={testId}>{value}</div>
-        </div>
-        <div className="w-9 h-9 rounded-lg bg-[#0f1117] border border-[#2a2d3e] flex items-center justify-center text-indigo-300">
-          <Icon size={18} />
-        </div>
-      </div>
-      {sublabel && <div className="text-xs text-slate-500 mt-2">{sublabel}</div>}
-    </div>
-  )
-
-  if (!to) return content
-  return <Link to={to} className="block h-full">{content}</Link>
+function KpiLink({ to, children }) {
+  return to ? <Link to={to} className="block h-full">{children}</Link> : children
 }
 
 export default function OwnerKpis() {
@@ -111,8 +91,7 @@ export default function OwnerKpis() {
   }, [jobType])
 
   const capture = ownerData?.supplement_capture || {}
-  const identified = Number(supplementOpportunity?.total_supplement_opportunity || 0)
-  const captured = Number(capture.captured_cents || 0) / 100
+  const identifiedDollars = Number(supplementOpportunity?.total_supplement_opportunity || 0)
   const captureRate = capture.capture_rate ?? 0
   const cycleTimePeriod = `Last 120 days (${formatDateRange(daysAgoKey(120), todayKey())})`
   const monthToDatePeriod = `Month to date (${formatDateRange(monthStartKey(), todayKey())})`
@@ -121,154 +100,100 @@ export default function OwnerKpis() {
   const recentMargins = useMemo(() => (jobCosting?.rows || []).slice(0, 6).map((row) => {
     const revenue = Number(row.total || 0)
     const profit = Number(row.true_profit || 0)
-    return {
-      ...row,
-      margin: revenue > 0 ? (profit / revenue) * 100 : 0,
-      revenue,
-      profit,
-    }
+    return { ...row, margin: revenue > 0 ? (profit / revenue) * 100 : 0, revenue, profit }
   }), [jobCosting])
-  const avgStageDays = useMemo(() => {
+  const averageStageDays = useMemo(() => {
     const rows = ownerData?.cycle_time_by_stage || []
     if (!rows.length) return 0
     return rows.reduce((sum, row) => sum + Number(row.avg_days || 0), 0) / rows.length
   }, [ownerData])
 
+  const headerActions = (
+    <>
+      <label className="text-xs text-muted">From<input aria-label="Owner KPI from date" type="date" value={from} onChange={(event) => setFrom(event.target.value)} className="ml-2 rounded-lg border border-line-2 bg-panel px-3 py-2 text-sm text-ink outline-none focus:border-brand" /></label>
+      <label className="text-xs text-muted">To<input aria-label="Owner KPI to date" type="date" value={to} onChange={(event) => setTo(event.target.value)} className="ml-2 rounded-lg border border-line-2 bg-panel px-3 py-2 text-sm text-ink outline-none focus:border-brand" /></label>
+      <button type="button" onClick={load} className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-lit">Apply</button>
+    </>
+  )
+
   if (loading && !ownerData) {
-    return <div className="flex items-center justify-center h-64 text-slate-500">Loading owner KPIs...</div>
+    return <Panel><div className="grid min-h-64 place-items-center text-sm text-muted" role="status">Loading owner KPIs...</div></Panel>
   }
 
   return (
-    <div className="max-w-7xl mx-auto space-y-5">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-white flex items-center gap-2">
-            <Gauge size={24} className="text-indigo-300" />
-            Owner KPIs
-          </h1>
-          <p className="text-slate-500 text-sm mt-1">Shop health across cycle time, supplements, margin, and throughput.</p>
-        </div>
-        <div className="flex flex-wrap items-end gap-2">
-          <div>
-            <label className="block text-xs text-slate-500 mb-1">From</label>
-            <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white" />
-          </div>
-          <div>
-            <label className="block text-xs text-slate-500 mb-1">To</label>
-            <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white" />
-          </div>
-          <button onClick={load} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium transition-colors">
-            Apply
-          </button>
-        </div>
+    <div className="mx-auto max-w-7xl space-y-5">
+      <PageHeader eyebrow="Insights" title="Owner KPIs" description="Shop health across cycle time, supplements, margin, and throughput." actions={headerActions} />
+
+      {error && <div className="rounded-instrument border border-crit/30 bg-crit/10 p-4 text-sm text-crit" role="alert">{error}</div>}
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <StatInstrument label="Average cycle stage" value={<span className="font-mono tabular-nums">{averageStageDays.toFixed(1)}d</span>} detail={cycleTimePeriod} />
+        <StatInstrument label="Supplement capture" value={<span className="font-mono tabular-nums text-gold" data-testid="supplement-capture-rate-value">{percent(captureRate)}</span>} detail={<><Money cents={dollarsToCents(identifiedDollars)} /> identified / <Money cents={capture.captured_cents || 0} /> captured</>} tone="gold" />
+        <KpiLink to="/job-costing"><StatInstrument label="Average RO margin" value={<span className="font-mono tabular-nums text-good">{percent(jobCosting?.avgMargin)}</span>} detail={<><Money cents={dollarsToCents(jobCosting?.grossProfit)} /> gross profit</>} tone="good" /></KpiLink>
+        <KpiLink to="/performance"><StatInstrument label="Tech throughput" value={<span className="font-mono tabular-nums">{ownerData?.tech_efficiency?.reduce((sum, tech) => sum + Number(tech.ros_advanced || 0), 0) || 0}</span>} detail={monthToDatePeriod} /></KpiLink>
       </div>
 
-      {error && <div className="bg-red-900/30 border border-red-700 rounded-xl p-4 text-sm text-red-300">{error}</div>}
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        <KpiCard icon={Clock3} label="Avg Cycle Stage" period={cycleTimePeriod} value={`${avgStageDays.toFixed(1)}d`} sublabel="Average across logged stages" tone="text-sky-300" />
-        <KpiCard icon={PackageCheck} label="Supplement Capture" period={monthToDatePeriod} value={pct(captureRate)} sublabel={`${money(identified)} identified / ${money(captured)} captured`} tone="text-amber-300" testId="supplement-capture-rate-value" />
-        <KpiCard icon={Percent} label="Avg RO Margin" period={selectedPeriod} value={pct(jobCosting?.avgMargin)} sublabel={`${money(jobCosting?.grossProfit)} gross profit`} tone="text-emerald-300" to="/job-costing" />
-        <KpiCard icon={Users} label="Tech Throughput" period={monthToDatePeriod} value={ownerData?.tech_efficiency?.reduce((sum, tech) => sum + Number(tech.ros_advanced || 0), 0) || 0} sublabel="ROs advanced this month" tone="text-indigo-300" to="/performance" />
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <section className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold text-white flex items-center gap-2"><Clock3 size={16} /> Cycle Time by Stage</h2>
-            <span className="text-[11px] text-slate-500">{cycleTimePeriod}</span>
-          </div>
-          <div className="space-y-3">
-            {(ownerData?.cycle_time_by_stage || []).map((stage) => {
-              const width = Math.min((Number(stage.avg_days || 0) / 10) * 100, 100)
-              return (
-                <div key={stage.stage}>
-                  <div className="flex justify-between text-xs mb-1">
-                    <span className="text-slate-300">{STATUS_LABELS[stage.stage] || stage.stage}</span>
-                    <span className="text-white font-medium">{Number(stage.avg_days || 0).toFixed(2)}d <span className="text-slate-500">({stage.sample_count})</span></span>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <Panel title="Cycle time by stage" description={cycleTimePeriod}>
+          {(ownerData?.cycle_time_by_stage || []).length ? (
+            <div className="space-y-4 p-4">
+              {ownerData.cycle_time_by_stage.map((stage) => {
+                const width = Math.min((Number(stage.avg_days || 0) / 10) * 100, 100)
+                return (
+                  <div key={stage.stage}>
+                    <div className="mb-1 flex items-center justify-between gap-3 text-xs"><StatusBadge status={stage.stage} /><span className="font-mono tabular-nums text-ink">{Number(stage.avg_days || 0).toFixed(2)}d <span className="text-faint">({stage.sample_count})</span></span></div>
+                    <div className="h-2 overflow-hidden rounded-full bg-raised"><div className="h-full rounded-full bg-brand" style={{ width: `${width}%` }} /></div>
                   </div>
-                  <div className="h-2 bg-[#0f1117] rounded-full overflow-hidden">
-                    <div className="h-full bg-sky-500 rounded-full" style={{ width: `${width}%` }} />
-                  </div>
-                </div>
-              )
-            })}
-            {(!ownerData?.cycle_time_by_stage || ownerData.cycle_time_by_stage.length === 0) && (
-              <div className="text-sm text-slate-500 py-8 text-center">No status-log timing data yet.</div>
-            )}
-          </div>
-        </section>
-
-        <section className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold text-white flex items-center gap-2"><DollarSign size={16} /> Margin per RO</h2>
-            <div className="flex flex-col items-end gap-1">
-              <span className="text-[11px] text-slate-500">{selectedPeriod}</span>
-              <Link to="/job-costing" className="text-xs text-indigo-300 hover:text-indigo-200 flex items-center gap-1">Job costing <ArrowRight size={13} /></Link>
+                )
+              })}
             </div>
-          </div>
-          <div className="space-y-2">
-            {recentMargins.map((row) => (
-              <button key={row.id} onClick={() => navigate(`/ros/${row.id}`)} className="w-full flex items-center justify-between gap-3 border-b border-[#2a2d3e]/70 pb-2 text-left">
-                <div className="min-w-0">
-                  <div className="text-sm text-white truncate">{row.ro_number || 'RO'} · {row.customer_name || 'Customer'}</div>
-                  <div className="text-xs text-slate-500 truncate">{[row.year, row.make, row.model].filter(Boolean).join(' ') || row.status}</div>
-                </div>
-                <div className="text-right flex-shrink-0">
-                  <div className={row.margin >= 0 ? 'text-sm font-semibold text-emerald-300' : 'text-sm font-semibold text-red-300'}>{pct(row.margin)}</div>
-                  <div className="text-xs text-slate-500">{money(row.profit)}</div>
-                </div>
-              </button>
-            ))}
-            {recentMargins.length === 0 && <div className="text-sm text-slate-500 py-8 text-center">No RO margin data for this range.</div>}
-          </div>
-        </section>
+          ) : <EmptyState icon={Clock3} title="No cycle-time data" description="Timing appears after repair orders move through logged stages." />}
+        </Panel>
+
+        <Panel title="Margin per RO" description={selectedPeriod} actions={<Link to="/job-costing" className="inline-flex items-center gap-1 text-xs text-brand hover:text-brand-lit">Job costing <ArrowRight size={13} /></Link>}>
+          {recentMargins.length ? (
+            <div className="divide-y divide-line px-4">
+              {recentMargins.map((row) => (
+                <button key={row.id} type="button" onClick={() => navigate(`/ros/${row.id}`)} className="flex w-full items-center justify-between gap-3 py-3 text-left transition-colors hover:bg-panel-2">
+                  <div className="min-w-0"><p className="truncate text-sm text-ink">{row.ro_number || 'RO'} - {row.customer_name || 'Customer'}</p><p className="truncate text-xs text-muted">{[row.year, row.make, row.model].filter(Boolean).join(' ') || row.status}</p></div>
+                  <div className="shrink-0 text-right"><p className={`font-mono text-sm font-semibold tabular-nums ${row.margin >= 0 ? 'text-good' : 'text-crit'}`}>{percent(row.margin)}</p><Money cents={dollarsToCents(row.profit)} className="text-xs text-muted" /></div>
+                </button>
+              ))}
+            </div>
+          ) : <EmptyState icon={Gauge} title="No margin data" description="No repair-order margins were returned for this date range." />}
+        </Panel>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <section className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4">
-          <div className="flex items-center justify-between gap-3 mb-3">
-            <h2 className="text-sm font-semibold text-white flex items-center gap-2"><Activity size={16} /> Supplement Capture</h2>
-            <span className="text-[11px] text-slate-500">{monthToDatePeriod}</span>
-          </div>
-          <div className="space-y-3 text-sm">
-            <div className="flex justify-between"><span className="text-slate-400">Identified opportunity</span><span className="text-amber-300 font-semibold">{money(identified)}</span></div>
-            <div className="flex justify-between"><span className="text-slate-400">Captured approved</span><span className="text-emerald-300 font-semibold">{moneyFromCents(capture.captured_cents)}</span></div>
-            <div className="flex justify-between"><span className="text-slate-400">Open requested/pending</span><span className="text-slate-200 font-semibold">{moneyFromCents(Number(capture.requested_cents || 0) - Number(capture.captured_cents || 0))}</span></div>
-          </div>
-        </section>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <Panel title="Supplement capture" description={monthToDatePeriod}>
+          <dl className="divide-y divide-line px-4 text-sm">
+            <div className="flex items-center justify-between gap-3 py-3"><dt className="text-muted">Identified opportunity</dt><dd><Money cents={dollarsToCents(identifiedDollars)} className="font-semibold text-gold" /></dd></div>
+            <div className="flex items-center justify-between gap-3 py-3"><dt className="text-muted">Captured approved</dt><dd><Money cents={capture.captured_cents || 0} className="font-semibold text-good" /></dd></div>
+            <div className="flex items-center justify-between gap-3 py-3"><dt className="text-muted">Open requested/pending</dt><dd><Money cents={Number(capture.requested_cents || 0) - Number(capture.captured_cents || 0)} className="font-semibold text-gold" /></dd></div>
+          </dl>
+        </Panel>
 
-        <section className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold text-white flex items-center gap-2"><BarChart3 size={16} /> Carryover</h2>
-            <Link to="/monthly-report" className="text-xs text-indigo-300 hover:text-indigo-200 flex items-center gap-1">Monthly report <ArrowRight size={13} /></Link>
-          </div>
-          <div className="text-3xl font-bold text-white">{carryover.length}</div>
-          <div className="text-xs text-slate-500 mt-1">Current carryover queue</div>
-          <button onClick={() => navigate('/dashboard')} className="mt-4 text-xs text-slate-300 hover:text-white flex items-center gap-1">
-            Open dashboard carryover workflow <ArrowRight size={13} />
+        <Panel title="Carryover" actions={<Link to="/monthly-report" className="inline-flex items-center gap-1 text-xs text-brand hover:text-brand-lit">Monthly report <ArrowRight size={13} /></Link>}>
+          <button type="button" onClick={() => navigate('/dashboard')} className="w-full p-4 text-left transition-colors hover:bg-panel-2">
+            <span className="font-display text-3xl font-semibold text-ink">{carryover.length}</span>
+            <span className="mt-1 block text-xs text-muted">Current carryover queue</span>
+            <span className="mt-4 inline-flex items-center gap-1 text-xs text-brand">Open dashboard workflow <ArrowRight size={13} /></span>
           </button>
-        </section>
+        </Panel>
 
-        <section className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4">
-          <div className="flex items-center justify-between gap-3 mb-3">
-            <h2 className="text-sm font-semibold text-white flex items-center gap-2"><TrendingUp size={16} /> Turnaround Estimator</h2>
-            <select value={jobType} onChange={(e) => setJobType(e.target.value)} className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-2 py-1 text-xs text-white">
-              <option value="collision">Collision</option>
-              <option value="mechanical">Mechanical</option>
-              <option value="pdr">PDR</option>
-              <option value="detailing">Detailing</option>
-              <option value="glass">Glass</option>
-            </select>
+        <Panel title="Turnaround estimator" description={turnaroundPeriod} actions={(
+          <select aria-label="Turnaround job type" value={jobType} onChange={(event) => setJobType(event.target.value)} className="rounded-lg border border-line-2 bg-void px-2 py-1 text-xs text-ink outline-none focus:border-brand">
+            <option value="collision">Collision</option><option value="mechanical">Mechanical</option><option value="pdr">PDR</option><option value="detailing">Detailing</option><option value="glass">Glass</option>
+          </select>
+        )}>
+          <div className="p-4">
+            <p className="font-display text-2xl font-semibold text-brand">{formatTurnaroundRange(turnaround)}</p>
+            <p className="mt-2 text-xs text-muted">{turnaround?.label ? `${turnaround.label} - ${turnaround.basedOnSamples || 0} samples` : 'Uses existing estimator output'}</p>
           </div>
-          <div className="text-2xl font-bold text-sky-300">
-            {turnaround ? `${turnaround.minDays}-${turnaround.maxDays} days` : '—'}
-          </div>
-          <div className="text-xs text-slate-500 mt-1">
-            {turnaround?.label ? `${turnaround.label} · ${turnaround.basedOnSamples || 0} samples · ${turnaroundPeriod}` : 'Uses existing estimator output'}
-          </div>
-        </section>
+        </Panel>
       </div>
+
+      <p className="flex items-center gap-2 text-xs text-faint"><Activity size={14} /> Owner KPIs use the shop's existing reporting endpoints.</p>
     </div>
   )
 }

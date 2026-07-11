@@ -74,6 +74,11 @@ export function formatMoneyCents(cents, { currency = 'USD', locale = 'en-US' } =
   return `${negative ? '-' : ''}${symbol}${dollars.toLocaleString(locale)}.${remainder}`
 }
 
+export function dollarsToCents(value) {
+  const dollars = Number(value)
+  return Number.isFinite(dollars) ? Math.round(dollars * 100) : 0
+}
+
 export function Money({ cents, currency = 'USD', locale = 'en-US', className = '', as: Component = 'span', ...props }) {
   return (
     <Component className={classNames('font-mono tabular-nums tracking-normal', className)} data-numeric="true" {...props}>

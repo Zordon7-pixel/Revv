@@ -1,27 +1,31 @@
 const PAYMENT_META = {
   unpaid: {
     label: 'Unpaid',
-    cls: 'text-slate-300 bg-slate-800/60 border-slate-600/60',
+    cls: 'border-line-2 bg-raised text-muted',
   },
   pending: {
     label: 'Payment Pending',
-    cls: 'text-amber-300 bg-amber-900/30 border-amber-700/40',
+    cls: 'border-gold/30 bg-gold/10 text-gold',
   },
   requires_payment_method: {
     label: 'Action Required',
-    cls: 'text-orange-300 bg-orange-900/30 border-orange-700/40',
+    cls: 'border-gold/30 bg-gold/10 text-gold',
   },
   failed: {
     label: 'Payment Failed',
-    cls: 'text-red-300 bg-red-900/30 border-red-700/40',
+    cls: 'border-crit/30 bg-crit/10 text-crit',
   },
   canceled: {
     label: 'Payment Canceled',
-    cls: 'text-slate-300 bg-slate-900/60 border-slate-700/60',
+    cls: 'border-line-2 bg-raised text-muted',
   },
   succeeded: {
     label: 'Paid',
-    cls: 'text-emerald-300 bg-emerald-900/30 border-emerald-700/40',
+    cls: 'border-good/30 bg-good/10 text-good',
+  },
+  paid: {
+    label: 'Paid',
+    cls: 'border-good/30 bg-good/10 text-good',
   },
 };
 
@@ -36,7 +40,7 @@ export default function PaymentStatusBadge({ status, paymentReceived }) {
   const meta = PAYMENT_META[normalized] || PAYMENT_META.unpaid;
 
   return (
-    <span className={`inline-flex items-center border rounded-lg px-2 py-1 text-[10px] font-semibold ${meta.cls}`}>
+    <span className={`inline-flex min-h-6 items-center rounded-full border px-2.5 py-1 text-xs font-medium ${meta.cls}`}>
       {meta.label}
     </span>
   );

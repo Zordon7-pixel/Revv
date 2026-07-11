@@ -49,19 +49,6 @@ const allNav = [
   { to: '/settings',     icon: Settings,        labelKey: 'nav.settings',     group: 'admin', ownerOnly: true  },
 ]
 
-const REVV_WATERMARK_SVG = encodeURIComponent(
-  '<svg xmlns="http://www.w3.org/2000/svg" width="260" height="260" viewBox="0 0 260 260"><rect width="260" height="260" fill="none"/><g opacity="0.22"><text x="34" y="138" fill="#94a3b8" font-size="44" font-family="Arial, sans-serif" font-weight="700">REVV</text></g><circle cx="208" cy="56" r="24" fill="#4f46e5" fill-opacity="0.22"/><circle cx="64" cy="214" r="14" fill="#22d3ee" fill-opacity="0.18"/></svg>'
-)
-const REVV_WATERMARK_STYLE = {
-  backgroundImage: `url("data:image/svg+xml,${REVV_WATERMARK_SVG}")`,
-  backgroundSize: '260px 260px',
-  backgroundRepeat: 'repeat',
-}
-const MAIN_AMBIENT_STYLE = {
-  backgroundImage:
-    'radial-gradient(circle at 20% 18%, rgba(79,70,229,0.24), transparent 40%), radial-gradient(circle at 82% 72%, rgba(34,211,238,0.18), transparent 44%), linear-gradient(180deg, #121524 0%, #0f1117 100%)',
-}
-
 export default function Layout() {
   const { t } = useLanguage()
   const { theme, setTheme } = useTheme()
@@ -242,23 +229,23 @@ export default function Layout() {
 
   const UserMenu = () => (
     <div
-      className="absolute right-0 top-11 w-52 bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl shadow-2xl z-[90] overflow-hidden"
+      className="absolute right-0 top-11 z-[90] w-52 overflow-hidden rounded-instrument border border-line bg-panel shadow-2xl"
       role="menu"
     >
-      <div className="px-3 py-2 border-b border-[#2a2d3e]">
-        <div className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">Theme</div>
+      <div className="border-b border-line px-3 py-2">
+        <div className="mb-1 text-[10px] uppercase tracking-wide text-faint">Theme</div>
         <div className="grid grid-cols-2 gap-1">
           <button
             type="button"
             onClick={() => setTheme('dark')}
-            className={`text-xs px-2 py-1 rounded ${theme === 'dark' ? 'bg-indigo-600 text-white' : 'bg-[#0f1117] text-slate-300 hover:text-white'}`}
+            className={`rounded px-2 py-1 text-xs ${theme === 'dark' ? 'bg-brand text-white' : 'bg-void text-muted hover:text-ink'}`}
           >
             Dark
           </button>
           <button
             type="button"
             onClick={() => setTheme('light')}
-            className={`text-xs px-2 py-1 rounded ${theme === 'light' ? 'bg-indigo-600 text-white' : 'bg-[#0f1117] text-slate-300 hover:text-white'}`}
+            className={`rounded px-2 py-1 text-xs ${theme === 'light' ? 'bg-brand text-white' : 'bg-void text-muted hover:text-ink'}`}
           >
             Light
           </button>
@@ -270,7 +257,7 @@ export default function Layout() {
           setAccountOpen(true)
           setUserMenuOpen(false)
         }}
-        className="w-full text-left px-3 py-2.5 text-sm text-slate-200 hover:bg-[#2a2d3e]"
+        className="w-full px-3 py-2.5 text-left text-sm text-ink hover:bg-raised"
       >
         My Account
       </button>
@@ -281,7 +268,7 @@ export default function Layout() {
             navigate('/settings')
             setUserMenuOpen(false)
           }}
-          className="w-full text-left px-3 py-2.5 text-sm text-slate-200 hover:bg-[#2a2d3e]"
+          className="w-full px-3 py-2.5 text-left text-sm text-ink hover:bg-raised"
         >
           Shop Settings
         </button>
@@ -289,7 +276,7 @@ export default function Layout() {
       <button
         type="button"
         onClick={logout}
-        className="w-full text-left px-3 py-2.5 text-sm text-red-300 hover:bg-red-900/25"
+        className="w-full px-3 py-2.5 text-left text-sm text-crit hover:bg-crit/10"
       >
         Sign Out
       </button>
@@ -320,7 +307,7 @@ export default function Layout() {
 
   const SidebarContent = () => (
     <div className="flex flex-col h-full min-h-0">
-      <div className="p-5 border-b border-[#2a2d3e]">
+      <div className="border-b border-line p-5">
         <div className="flex items-center gap-3 mb-1">
           <div className="grid h-9 w-9 flex-shrink-0 place-items-center overflow-hidden rounded-lg bg-white p-1">
             {shopIdentity.logo_url ? (
@@ -330,23 +317,23 @@ export default function Layout() {
             )}
           </div>
           <div className="min-w-0">
-            <div className="truncate text-sm font-bold text-white">{shopIdentity.name || 'REVV'}</div>
-            <div className="text-[10px] text-slate-500">Shop HQ · REVV</div>
+            <div className="truncate text-sm font-bold text-ink">{shopIdentity.name || 'REVV'}</div>
+            <div className="text-[10px] text-faint">Shop HQ · REVV</div>
           </div>
         </div>
-        <div className="text-[10px] text-slate-300 mt-2 leading-tight">
-          Signed in: <span className="text-white font-semibold">{currentUserName || 'User'}</span> · <span className="text-indigo-300">{roleLabel}</span>
+        <div className="mt-2 text-[10px] leading-tight text-muted">
+          Signed in: <span className="font-semibold text-ink">{currentUserName || 'User'}</span> · <span className="text-brand">{roleLabel}</span>
         </div>
       </div>
       <nav className="flex-1 min-h-0 overflow-y-auto p-3 space-y-2">
         {navGroups.map((group) => {
           const isOpen = !!openNavGroups[group.id]
           return (
-            <div key={group.id} className="border border-[#2a2d3e] rounded-lg overflow-hidden">
+            <div key={group.id} className="overflow-hidden rounded-lg border border-line">
               <button
                 type="button"
                 onClick={() => toggleNavGroup(group.id)}
-                className="w-full flex items-center justify-between px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400 bg-[#141726] hover:text-slate-200 transition-colors"
+                className="flex w-full items-center justify-between bg-panel-2 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-muted transition-colors hover:text-ink"
               >
                 <span>{group.label}</span>
                 <ChevronDown size={13} className={`transition-transform ${isOpen ? 'rotate-180' : ''}`} />
@@ -356,7 +343,7 @@ export default function Layout() {
                   {group.items.map(({ to, icon: Icon, labelKey, label }) => (
                     <NavLink key={to} to={to} end={to === '/dashboard'}
                       className={({ isActive }) =>
-                        `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all ${isActive ? 'bg-indigo-600 text-white font-medium' : 'text-slate-400 hover:bg-[#2a2d3e] hover:text-white'}`
+                        `flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all ${isActive ? 'bg-brand text-white font-medium' : 'text-muted hover:bg-raised hover:text-ink'}`
                       }
                       onClick={() => setSidebarOpen(false)}>
                       <Icon size={16} /> {label || t(labelKey)}
@@ -368,11 +355,11 @@ export default function Layout() {
           )
         })}
       </nav>
-      <div className="p-3 border-t border-[#2a2d3e]">
+      <div className="border-t border-line p-3">
         <div className="mb-2">
           <FeedbackButton placement="sidebar" />
         </div>
-        <button onClick={logout} className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-slate-400 hover:bg-red-900/30 hover:text-red-400 transition-all w-full">
+        <button onClick={logout} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-muted transition-all hover:bg-crit/10 hover:text-crit">
           <LogOut size={16} /> Sign Out
         </button>
       </div>
@@ -381,7 +368,7 @@ export default function Layout() {
 
   if (location.pathname === '/ros/new') {
     return (
-      <div className="new-ro-visual-shell bg-[#0f1117]">
+      <div className="new-ro-visual-shell bg-void">
         <main className="new-ro-visual-scroll" aria-label="Create repair order">
           <Outlet />
         </main>
@@ -390,10 +377,10 @@ export default function Layout() {
   }
 
   return (
-    <div className="app-shell flex bg-[#0f1117] overflow-hidden">
+    <div className="app-shell flex overflow-hidden bg-void">
       {/* Desktop sidebar */}
       <aside
-        className={`${sidebarCollapsed ? 'hidden' : 'hidden md:flex'} flex-col w-56 bg-[#1a1d2e] border-r border-[#2a2d3e] flex-shrink-0 relative z-[70]`}
+        className={`${sidebarCollapsed ? 'hidden' : 'hidden md:flex'} relative z-[70] w-56 flex-shrink-0 flex-col border-r border-line bg-panel`}
       >
         <SidebarContent />
       </aside>
@@ -402,11 +389,11 @@ export default function Layout() {
       {sidebarOpen && (
         <div className="fixed inset-0 z-50 md:hidden transition-opacity opacity-100 pointer-events-auto">
           <div className="absolute inset-0 bg-black/60" onClick={() => setSidebarOpen(false)} />
-          <aside className="app-mobile-sidebar fixed inset-y-0 left-0 z-50 w-56 bg-[#1a1d2e] border-r border-[#2a2d3e] transform transition-transform duration-200 translate-x-0">
-            <div className="flex justify-end p-3 border-b border-[#2a2d3e]">
+          <aside className="app-mobile-sidebar fixed inset-y-0 left-0 z-50 w-56 translate-x-0 transform border-r border-line bg-panel transition-transform duration-200">
+            <div className="flex justify-end border-b border-line p-3">
               <button
                 onClick={() => setSidebarOpen(false)}
-                className="text-slate-400 hover:text-white"
+                className="text-muted hover:text-ink"
                 aria-label="Close sidebar"
               >
                 <X size={18} />
@@ -422,11 +409,11 @@ export default function Layout() {
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Mobile topbar */}
-        <header className="app-mobile-header md:hidden flex items-center gap-3 px-4 py-3 bg-[#1a1d2e] border-b border-[#2a2d3e]">
-          <button onClick={() => setSidebarOpen(true)} className="text-slate-400 hover:text-white">
+        <header className="app-mobile-header flex min-w-0 items-center gap-1.5 border-b border-line bg-panel px-3 py-3 md:hidden">
+          <button onClick={() => setSidebarOpen(true)} className="grid h-8 w-8 shrink-0 place-items-center text-muted hover:text-ink" aria-label="Open navigation">
             <Menu size={20} />
           </button>
-          <div className="flex items-center gap-2 flex-1">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
             <div className="grid h-6 w-6 shrink-0 place-items-center overflow-hidden rounded bg-white p-0.5">
               {shopIdentity.logo_url ? (
                 <img src={resolveUploadedMediaUrl(shopIdentity.logo_url)} alt={`${shopIdentity.name || 'Shop'} logo`} className="h-full w-full object-contain" />
@@ -434,11 +421,11 @@ export default function Layout() {
                 <Logo variant="mark" className="h-full w-full object-contain" />
               )}
             </div>
-            <span className="min-w-0 truncate text-sm font-bold">{shopIdentity.name || 'REVV'}</span>
+            <span className="min-w-0 truncate text-sm font-bold text-ink max-[359px]:hidden">{shopIdentity.name || 'REVV'}</span>
           </div>
           <button
             onClick={goBackOrDashboard}
-            className="w-8 h-8 rounded-lg border border-[#2a2d3e] bg-[#0f1117] text-slate-300 hover:text-white hover:border-indigo-400 transition-colors flex items-center justify-center"
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-line-2 bg-void text-muted transition-colors hover:border-brand hover:text-ink"
             aria-label="Go back"
             title="Back"
           >
@@ -453,20 +440,20 @@ export default function Layout() {
           >
             <Search size={16} />
           </button>
-          <LanguageToggle />
+          <div className="hidden shrink-0 min-[430px]:block"><LanguageToggle /></div>
           <button
             onClick={() => setHelpOpen(true)}
-            className="w-8 h-8 rounded-lg border border-[#2a2d3e] bg-[#0f1117] text-slate-300 hover:text-white hover:border-indigo-400 transition-colors flex items-center justify-center"
+            className="hidden h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-line-2 bg-void text-muted transition-colors hover:border-brand hover:text-ink min-[520px]:flex"
             aria-label="Open quick start help"
           >
             <HelpCircle size={16} />
           </button>
-          {staff && <NotificationBell />}
+          {staff && <div className="hidden shrink-0 min-[620px]:block"><NotificationBell /></div>}
           <div ref={userMenuMobileRef} className="relative">
             <button
               type="button"
               onClick={openUserArea}
-              className="relative z-20 w-8 h-8 rounded-full bg-[#2a2d3e] text-slate-200 text-xs font-semibold flex items-center justify-center hover:bg-[#363a50] transition-colors cursor-pointer"
+              className="relative z-20 flex h-8 w-8 cursor-pointer items-center justify-center rounded-full bg-raised text-xs font-semibold text-ink transition-colors hover:bg-panel-2"
               title="Open user menu"
               aria-label="Open user menu"
             >
@@ -477,11 +464,11 @@ export default function Layout() {
         </header>
 
         {/* Desktop navbar */}
-        <header className="hidden md:flex items-center justify-between gap-3 px-6 py-3 bg-[#1a1d2e] border-b border-[#2a2d3e]">
+        <header className="hidden items-center justify-between gap-3 border-b border-line bg-panel px-6 py-3 md:flex">
           <div className="flex items-center gap-2">
             <button
               onClick={toggleSidebarCollapsed}
-              className="h-9 w-9 rounded-lg border border-[#2a2d3e] bg-[#0f1117] text-slate-300 hover:text-white hover:border-indigo-400 transition-colors flex items-center justify-center"
+              className="flex h-9 w-9 items-center justify-center rounded-lg border border-line-2 bg-void text-muted transition-colors hover:border-brand hover:text-ink"
               aria-label={sidebarCollapsed ? 'Show sidebar' : 'Hide sidebar'}
               aria-pressed={sidebarCollapsed}
               title={sidebarCollapsed ? 'Show sidebar' : 'Hide sidebar'}
@@ -490,7 +477,7 @@ export default function Layout() {
             </button>
             <button
               onClick={goBackOrDashboard}
-              className="h-9 px-3 rounded-lg border border-[#2a2d3e] bg-[#0f1117] text-slate-300 hover:text-white hover:border-indigo-400 transition-colors flex items-center gap-2"
+              className="flex h-9 items-center gap-2 rounded-lg border border-line-2 bg-void px-3 text-muted transition-colors hover:border-brand hover:text-ink"
               aria-label="Go back"
               title="Back"
             >
@@ -513,7 +500,7 @@ export default function Layout() {
             <LanguageToggle />
             <button
               onClick={() => setHelpOpen(true)}
-              className="w-9 h-9 rounded-lg border border-[#2a2d3e] bg-[#0f1117] text-slate-300 hover:text-white hover:border-indigo-400 transition-colors flex items-center justify-center"
+              className="flex h-9 w-9 items-center justify-center rounded-lg border border-line-2 bg-void text-muted transition-colors hover:border-brand hover:text-ink"
               aria-label="Open quick start help"
             >
               <HelpCircle size={17} />
@@ -525,7 +512,7 @@ export default function Layout() {
               <button
                 type="button"
                 onClick={openUserArea}
-                className="relative z-20 w-9 h-9 rounded-full bg-[#2a2d3e] text-slate-200 text-sm font-semibold flex items-center justify-center hover:bg-[#363a50] transition-colors cursor-pointer"
+                className="relative z-20 flex h-9 w-9 cursor-pointer items-center justify-center rounded-full bg-raised text-sm font-semibold text-ink transition-colors hover:bg-panel-2"
                 title="Open user menu"
                 aria-label="Open user menu"
               >
@@ -536,54 +523,53 @@ export default function Layout() {
           </div>
         </header>
 
-        <div className="relative flex-1 overflow-hidden" style={MAIN_AMBIENT_STYLE}>
-          <div className="pointer-events-none absolute inset-0 opacity-[0.14]" style={REVV_WATERMARK_STYLE} />
-          <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent via-[#0f1117]/25 to-[#0f1117]/55" />
-          <main className="app-main-scroll relative z-10 h-full overflow-auto p-4 md:p-6">
+        <div className="relative flex-1 overflow-hidden bg-void">
+          <main className="app-main-scroll h-full overflow-auto p-4 md:p-6">
             <Outlet />
           </main>
         </div>
         {accountOpen && (
           <AppOverlay label="My account" onClose={() => setAccountOpen(false)} className="bg-black/60 p-4">
-            <div className="w-full max-w-sm bg-[#1a1d2e] border border-[#2a2d3e] rounded-2xl p-5 space-y-4">
+            <div className="w-full max-w-sm space-y-4 rounded-instrument border border-line bg-panel p-5">
               <div className="flex items-center justify-between">
-                <h3 className="text-sm font-bold text-white">My Account</h3>
+                <h3 className="font-display text-sm font-bold text-ink">My Account</h3>
                 <button
                   type="button"
                   onClick={() => setAccountOpen(false)}
-                  className="text-slate-400 hover:text-white"
+                  className="text-muted hover:text-ink"
+                  aria-label="Close account settings"
                 >
                   <X size={16} />
                 </button>
               </div>
               <div className="space-y-3">
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Full Name</label>
+                  <label className="mb-1 block text-xs text-muted">Full Name</label>
                   <input
                     value={profileForm.name}
                     onChange={(e) => setProfileForm((prev) => ({ ...prev, name: e.target.value }))}
-                    className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white"
+                    className="w-full rounded-lg border border-line-2 bg-void px-3 py-2 text-sm text-ink outline-none focus:border-brand"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Phone</label>
+                  <label className="mb-1 block text-xs text-muted">Phone</label>
                   <input
                     value={profileForm.phone}
                     onChange={(e) => setProfileForm((prev) => ({ ...prev, phone: e.target.value }))}
-                    className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white"
+                    className="w-full rounded-lg border border-line-2 bg-void px-3 py-2 text-sm text-ink outline-none focus:border-brand"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Email</label>
+                  <label className="mb-1 block text-xs text-muted">Email</label>
                   <input
                     value={currentUserEmail}
                     readOnly
-                    className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-slate-400"
+                    className="w-full rounded-lg border border-line-2 bg-void px-3 py-2 text-sm text-muted"
                   />
                 </div>
               </div>
               {profileMessage && (
-                <p className={`text-xs ${profileMessage.includes('updated') ? 'text-emerald-300' : 'text-red-300'}`}>
+                <p className={`text-xs ${profileMessage.includes('updated') ? 'text-good' : 'text-crit'}`}>
                   {profileMessage}
                 </p>
               )}
@@ -591,7 +577,7 @@ export default function Layout() {
                 <button
                   type="button"
                   onClick={() => setAccountOpen(false)}
-                  className="text-xs text-slate-400 hover:text-white px-3 py-1.5"
+                  className="px-3 py-1.5 text-xs text-muted hover:text-ink"
                 >
                   Close
                 </button>
@@ -599,7 +585,7 @@ export default function Layout() {
                   type="button"
                   onClick={saveProfile}
                   disabled={profileSaving}
-                  className="text-xs bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg disabled:opacity-50"
+                  className="rounded-lg bg-brand px-3 py-1.5 text-xs text-white hover:bg-brand-lit disabled:opacity-50"
                 >
                   {profileSaving ? 'Saving...' : 'Save'}
                 </button>

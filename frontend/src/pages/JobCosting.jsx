@@ -1,229 +1,145 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { TrendingUp, TrendingDown, DollarSign, Percent, List } from 'lucide-react'
+import { Calculator, TrendingUp } from 'lucide-react'
 import api from '../lib/api'
+import {
+  dollarsToCents,
+  EmptyState,
+  Money,
+  PageHeader,
+  Panel,
+  StatInstrument,
+  StatusBadge,
+} from '../components/ui'
 
-function fmt(n) { return `$${parseFloat(n || 0).toFixed(2)}` }
-function pct(n) { return `${parseFloat(n || 0).toFixed(1)}%` }
+function percent(value) {
+  const numeric = Number(value || 0)
+  return `${Number.isFinite(numeric) ? numeric.toFixed(1) : '0.0'}%`
+}
 
-function StatCard({ icon: Icon, label, value, color, onClick }) {
-  const interactive = typeof onClick === 'function'
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`w-full text-left bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-5 flex items-center gap-4 ${interactive ? 'hover:border-indigo-400/60 hover:bg-[#20253a] transition-colors cursor-pointer' : ''}`}
-    >
-      <div className={`p-3 rounded-lg ${color}`}>
-        <Icon size={20} className="text-white" />
-      </div>
-      <div>
-        <p className="text-xs text-slate-400 mb-1">{label}</p>
-        <p className="text-xl font-bold text-white">{value}</p>
-      </div>
-    </button>
-  )
+function rowMoney(row) {
+  const revenue = Number(row.total || 0)
+  const cost = Number(row.parts_cost || 0) + Number(row.labor_cost || 0) + Number(row.sublet_cost || 0)
+  const profit = Number(row.true_profit || 0)
+  return {
+    revenue,
+    cost,
+    profit,
+    margin: revenue > 0 ? (profit / revenue) * 100 : 0,
+  }
 }
 
 export default function JobCosting() {
   const navigate = useNavigate()
   const today = new Date().toISOString().split('T')[0]
-  const firstOfMonth = today.slice(0, 8) + '01'
+  const firstOfMonth = `${today.slice(0, 8)}01`
 
   const [from, setFrom] = useState(firstOfMonth)
   const [to, setTo] = useState(today)
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState(null)
+  const [error, setError] = useState('')
 
   async function load() {
     setLoading(true)
-    setError(null)
+    setError('')
     try {
-      const r = await api.get(`/ros/job-cost/summary?from=${from}&to=${to}`)
-      setData(r.data)
-    } catch (e) {
-      setError('Failed to load job costing data.')
+      const response = await api.get(`/ros/job-cost/summary?from=${from}&to=${to}`)
+      setData(response.data)
+    } catch (err) {
+      console.error('Failed to load job costing data:', err)
+      setError(err?.response?.data?.error || 'Failed to load job costing data.')
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    load()
+  }, [])
 
   const profitable = data?.profitableCount || 0
   const total = data?.totalJobs || 0
+  const headerActions = (
+    <>
+      <label className="text-xs text-muted">From<input aria-label="Job costing from date" type="date" value={from} onChange={(event) => setFrom(event.target.value)} className="ml-2 rounded-lg border border-line-2 bg-panel px-3 py-2 text-sm text-ink outline-none focus:border-brand" /></label>
+      <label className="text-xs text-muted">To<input aria-label="Job costing to date" type="date" value={to} onChange={(event) => setTo(event.target.value)} className="ml-2 rounded-lg border border-line-2 bg-panel px-3 py-2 text-sm text-ink outline-none focus:border-brand" /></label>
+      <button type="button" onClick={load} className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-lit">Apply</button>
+    </>
+  )
 
   return (
-    <div className="min-h-screen bg-[#0f1117] p-4 sm:p-6">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="mb-6">
-          <h1 className="text-xl sm:text-2xl font-bold text-white flex items-center gap-2">
-            <TrendingUp size={24} className="text-indigo-400" />
-            Job Costing
-          </h1>
-          <p className="text-slate-400 text-sm mt-1">Track profitability per repair order</p>
-        </div>
+    <div className="mx-auto max-w-7xl space-y-5">
+      <PageHeader eyebrow="Financial" title="Job costing" description="Track revenue, cost, profit, and margin per repair order." actions={headerActions} />
 
-        {/* Date Range */}
-        <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 mb-6 flex flex-wrap items-end gap-4">
-          <div>
-            <label className="block text-xs text-slate-400 mb-1">From</label>
-            <input
-              type="date"
-              value={from}
-              onChange={e => setFrom(e.target.value)}
-              className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-white text-sm"
-            />
+      {data && (
+        <>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <StatInstrument label="Total revenue" value={<Money cents={dollarsToCents(data.totalRevenue)} className="text-gold" />} detail="Selected date range" tone="gold" onClick={() => navigate('/ros')} />
+            <StatInstrument label="Total cost" value={<Money cents={dollarsToCents(data.totalCost)} className="text-gold" />} detail="Parts, labor, and sublet" tone="gold" onClick={() => navigate('/ros')} />
+            <StatInstrument label="Gross profit" value={<Money cents={dollarsToCents(data.grossProfit)} className={Number(data.grossProfit || 0) >= 0 ? 'text-good' : 'text-crit'} />} detail="Revenue minus recorded cost" tone={Number(data.grossProfit || 0) >= 0 ? 'good' : 'crit'} onClick={() => navigate('/ros')} />
+            <StatInstrument label="Average margin" value={<span className={`font-mono tabular-nums ${Number(data.avgMargin || 0) >= 0 ? 'text-good' : 'text-crit'}`}>{percent(data.avgMargin)}</span>} detail="Across selected jobs" tone={Number(data.avgMargin || 0) >= 0 ? 'good' : 'crit'} onClick={() => navigate('/ros')} />
           </div>
-          <div>
-            <label className="block text-xs text-slate-400 mb-1">To</label>
-            <input
-              type="date"
-              value={to}
-              onChange={e => setTo(e.target.value)}
-              className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-white text-sm"
-            />
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <StatInstrument label="Total jobs" value={<span className="font-mono tabular-nums">{total}</span>} detail={`${from} to ${to}`} onClick={() => navigate('/ros')} />
+            <StatInstrument label="Jobs profitable" value={<span className="font-mono tabular-nums text-good">{total > 0 ? Math.round((profitable / total) * 100) : 0}%</span>} detail={`${profitable} of ${total} jobs`} tone="good" onClick={() => navigate('/ros')} />
           </div>
-          <button
-            onClick={load}
-            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium transition-colors"
-          >
-            Apply
-          </button>
-        </div>
+        </>
+      )}
 
-        {/* Summary Cards */}
-        {data && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-            <StatCard
-              icon={DollarSign}
-              label="Total Revenue"
-              value={fmt(data.totalRevenue)}
-              color="bg-indigo-600"
-              onClick={() => navigate('/ros')}
-            />
-            <StatCard
-              icon={List}
-              label="Total Cost"
-              value={fmt(data.totalCost)}
-              color="bg-slate-600"
-              onClick={() => navigate('/ros')}
-            />
-            <StatCard
-              icon={data.grossProfit >= 0 ? TrendingUp : TrendingDown}
-              label="Gross Profit"
-              value={fmt(data.grossProfit)}
-              color={data.grossProfit >= 0 ? 'bg-emerald-600' : 'bg-red-600'}
-              onClick={() => navigate('/ros')}
-            />
-            <StatCard
-              icon={Percent}
-              label="Avg Margin"
-              value={pct(data.avgMargin)}
-              color="bg-violet-600"
-              onClick={() => navigate('/ros')}
-            />
+      {loading && <Panel><div className="grid min-h-52 place-items-center text-sm text-muted" role="status">Loading job costing...</div></Panel>}
+      {error && <div className="rounded-instrument border border-crit/30 bg-crit/10 p-4 text-sm text-crit" role="alert">{error}</div>}
+
+      {!loading && data?.rows?.length > 0 && (
+        <Panel title="Repair orders" description={`${from} to ${to}`}>
+          <div className="grid gap-3 p-3 md:hidden">
+            {data.rows.map((row) => {
+              const money = rowMoney(row)
+              return (
+                <button key={row.id} type="button" onClick={() => navigate(`/ros/${row.id}`)} className="rounded-instrument border border-line bg-panel-2 p-4 text-left transition-colors hover:border-brand">
+                  <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="font-mono text-sm font-semibold text-brand">{row.ro_number}</p><p className="mt-1 truncate text-sm text-ink">{row.customer_name || 'Customer not linked'}</p><p className="mt-1 truncate text-xs text-muted">{[row.year, row.make, row.model].filter(Boolean).join(' ') || 'Vehicle not linked'}</p></div><StatusBadge status={row.status} /></div>
+                  <dl className="mt-4 grid grid-cols-2 gap-3 text-xs">
+                    <div><dt className="text-faint">Revenue</dt><dd className="mt-1"><Money cents={dollarsToCents(money.revenue)} className="text-gold" /></dd></div>
+                    <div><dt className="text-faint">Cost</dt><dd className="mt-1"><Money cents={dollarsToCents(money.cost)} /></dd></div>
+                    <div><dt className="text-faint">Profit</dt><dd className="mt-1"><Money cents={dollarsToCents(money.profit)} className={money.profit >= 0 ? 'text-good' : 'text-crit'} /></dd></div>
+                    <div><dt className="text-faint">Margin</dt><dd className={`mt-1 font-mono tabular-nums ${money.profit >= 0 ? 'text-good' : 'text-crit'}`}>{percent(money.margin)}</dd></div>
+                  </dl>
+                </button>
+              )
+            })}
           </div>
-        )}
 
-        {/* Sub-stats */}
-        {data && (
-          <div className="grid grid-cols-2 gap-4 mb-6">
-            <button
-              type="button"
-              onClick={() => navigate('/ros')}
-              className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 text-center hover:border-indigo-400/60 hover:bg-[#20253a] transition-colors"
-            >
-              <p className="text-3xl font-bold text-white">{total}</p>
-              <p className="text-slate-400 text-sm mt-1">Total Jobs</p>
-            </button>
-            <button
-              type="button"
-              onClick={() => navigate('/ros')}
-              className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 text-center hover:border-indigo-400/60 hover:bg-[#20253a] transition-colors"
-            >
-              <p className="text-3xl font-bold text-emerald-400">{total > 0 ? Math.round((profitable / total) * 100) : 0}%</p>
-              <p className="text-slate-400 text-sm mt-1">Jobs Profitable</p>
-            </button>
+          <div className="hidden overflow-x-auto md:block">
+            <table className="w-full min-w-[900px] text-sm">
+              <thead className="bg-panel-2 text-xs text-faint"><tr><th className="px-4 py-3 text-left">RO</th><th className="px-4 py-3 text-left">Customer</th><th className="px-4 py-3 text-left">Vehicle</th><th className="px-4 py-3 text-right">Revenue</th><th className="px-4 py-3 text-right">Cost</th><th className="px-4 py-3 text-right">Profit</th><th className="px-4 py-3 text-right">Margin</th><th className="px-4 py-3 text-left">Status</th></tr></thead>
+              <tbody>
+                {data.rows.map((row) => {
+                  const money = rowMoney(row)
+                  return (
+                    <tr key={row.id} onClick={() => navigate(`/ros/${row.id}`)} className="cursor-pointer border-t border-line text-ink transition-colors hover:bg-panel-2">
+                      <td className="px-4 py-3 font-mono text-xs font-semibold text-brand">{row.ro_number}</td>
+                      <td className="px-4 py-3">{row.customer_name || '-'}</td>
+                      <td className="px-4 py-3 text-xs text-muted">{[row.year, row.make, row.model].filter(Boolean).join(' ') || '-'}</td>
+                      <td className="px-4 py-3 text-right"><Money cents={dollarsToCents(money.revenue)} className="text-gold" /></td>
+                      <td className="px-4 py-3 text-right"><Money cents={dollarsToCents(money.cost)} /></td>
+                      <td className="px-4 py-3 text-right"><Money cents={dollarsToCents(money.profit)} className={money.profit >= 0 ? 'font-semibold text-good' : 'font-semibold text-crit'} /></td>
+                      <td className={`px-4 py-3 text-right font-mono text-xs tabular-nums ${money.profit >= 0 ? 'text-good' : 'text-crit'}`}>{percent(money.margin)}</td>
+                      <td className="px-4 py-3"><StatusBadge status={row.status} /></td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
           </div>
-        )}
+        </Panel>
+      )}
 
-        {/* RO Table */}
-        {loading && (
-          <div className="text-center text-slate-400 py-12">Loading...</div>
-        )}
+      {!loading && data?.rows?.length === 0 && (
+        <Panel><EmptyState icon={Calculator} title="No repair orders in this range" description="Adjust the dates to review job profitability." /></Panel>
+      )}
 
-        {error && (
-          <div className="bg-red-900/30 border border-red-700 rounded-xl p-4 text-red-300 text-sm">{error}</div>
-        )}
-
-        {data && data.rows && data.rows.length > 0 && (
-          <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl overflow-hidden">
-            <div className="px-4 py-3 border-b border-[#2a2d3e]">
-              <h2 className="text-sm font-semibold text-white">Repair Orders — {from} to {to}</h2>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-[#2a2d3e]">
-                    <th className="text-left px-4 py-3 text-slate-400 font-medium">RO #</th>
-                    <th className="text-left px-4 py-3 text-slate-400 font-medium">Customer</th>
-                    <th className="text-left px-4 py-3 text-slate-400 font-medium">Vehicle</th>
-                    <th className="text-right px-4 py-3 text-slate-400 font-medium">Revenue</th>
-                    <th className="text-right px-4 py-3 text-slate-400 font-medium">Cost</th>
-                    <th className="text-right px-4 py-3 text-slate-400 font-medium">Profit</th>
-                    <th className="text-right px-4 py-3 text-slate-400 font-medium">Margin</th>
-                    <th className="text-center px-4 py-3 text-slate-400 font-medium">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.rows.map(row => {
-                    const revenue = parseFloat(row.total || 0)
-                    const cost = parseFloat(row.parts_cost || 0) + parseFloat(row.labor_cost || 0) + parseFloat(row.sublet_cost || 0)
-                    const profit = parseFloat(row.true_profit || 0)
-                    const margin = revenue > 0 ? ((profit / revenue) * 100).toFixed(1) : '0.0'
-                    const isProfit = profit >= 0
-
-                    return (
-                      <tr
-                        key={row.id}
-                        onClick={() => navigate(`/ros/${row.id}`)}
-                        className="border-b border-[#2a2d3e] hover:bg-[#0f1117] cursor-pointer transition-colors"
-                      >
-                        <td className="px-4 py-3 text-indigo-400 font-mono text-xs">{row.ro_number}</td>
-                        <td className="px-4 py-3 text-white">{row.customer_name || '—'}</td>
-                        <td className="px-4 py-3 text-slate-300 text-xs">{[row.year, row.make, row.model].filter(Boolean).join(' ') || '—'}</td>
-                        <td className="px-4 py-3 text-right text-slate-300">{fmt(revenue)}</td>
-                        <td className="px-4 py-3 text-right text-slate-300">{fmt(cost)}</td>
-                        <td className={`px-4 py-3 text-right font-semibold ${isProfit ? 'text-emerald-400' : 'text-red-400'}`}>
-                          {isProfit ? '+' : ''}{fmt(profit)}
-                        </td>
-                        <td className={`px-4 py-3 text-right text-xs ${isProfit ? 'text-emerald-400' : 'text-red-400'}`}>
-                          {margin}%
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          <span className={`px-2 py-0.5 rounded-full text-xs ${
-                            row.status === 'closed' ? 'bg-slate-700 text-slate-300' :
-                            row.status === 'repair' ? 'bg-indigo-900 text-indigo-300' :
-                            'bg-yellow-900 text-yellow-300'
-                          }`}>
-                            {row.status}
-                          </span>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {data && data.rows && data.rows.length === 0 && !loading && (
-          <div className="text-center text-slate-500 py-12">No repair orders found for this date range.</div>
-        )}
-      </div>
+      <p className="flex items-center gap-2 text-xs text-faint"><TrendingUp size={14} /> Figures reflect the existing shop job-costing report.</p>
     </div>
   )
 }
