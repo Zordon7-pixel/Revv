@@ -3,6 +3,7 @@ import { Clock, CheckCircle, AlertCircle, Edit2, Trash2, Save, X, MapPin } from 
 import api from '../lib/api'
 import { getTokenPayload, isAdmin } from '../lib/auth'
 import AppOverlay from '../components/AppOverlay'
+import { EmptyState, PageHeader, Panel } from '../components/ui'
 
 function fmt(iso) {
   if (!iso) return '—'
@@ -51,7 +52,7 @@ function LiveTimer({ clockIn }) {
     const id = setInterval(tick, 1000)
     return () => clearInterval(id)
   }, [clockIn])
-  return <span className="font-mono text-4xl font-bold text-indigo-400">{elapsed}</span>
+  return <span className="font-mono text-4xl font-bold tabular-nums text-brand">{elapsed}</span>
 }
 
 function AdminAdjustModal({ entry, onClose, onSaved }) {
@@ -61,11 +62,13 @@ function AdminAdjustModal({ entry, onClose, onSaved }) {
     admin_note: entry.admin_note || ''
   })
   const [saving, setSaving] = useState(false)
-  const inp = 'w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500'
-  const lbl = 'block text-xs font-medium text-slate-400 mb-1'
+  const [error, setError] = useState('')
+  const inp = 'w-full rounded-lg border border-line-2 bg-void px-3 py-2 text-sm text-ink outline-none focus:border-brand'
+  const lbl = 'mb-1 block text-xs font-medium text-muted'
 
   async function save() {
     setSaving(true)
+    setError('')
     try {
       await api.put(`/timeclock/${entry.id}`, {
         clock_in:  form.clock_in  ? new Date(form.clock_in).toISOString()  : undefined,
@@ -73,18 +76,20 @@ function AdminAdjustModal({ entry, onClose, onSaved }) {
         admin_note: form.admin_note
       })
       onSaved()
-    } catch { alert('Error saving') } finally { setSaving(false) }
+    } catch (err) {
+      setError(err?.response?.data?.error || 'Error saving time entry.')
+    } finally { setSaving(false) }
   }
 
   return (
     <AppOverlay label="Adjust time entry" onClose={onClose} className="bg-black/70 p-4">
-      <div className="bg-[#1a1d2e] rounded-2xl border border-[#2a2d3e] w-full max-w-sm p-5 space-y-4">
+      <div className="w-full max-w-sm space-y-4 rounded-instrument border border-line bg-panel p-5">
         <div className="flex items-center justify-between">
-          <h3 className="font-bold text-white text-sm">Adjust Time Entry</h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={16}/></button>
+          <h3 className="font-display text-sm font-bold text-ink">Adjust time entry</h3>
+          <button type="button" onClick={onClose} className="text-muted hover:text-ink" aria-label="Close time adjustment"><X size={16}/></button>
         </div>
-        <div className="text-xs text-slate-500 bg-[#0f1117] rounded-lg px-3 py-2">
-          {entry.user?.name} · {fmtDate(entry.clock_in)}
+        <div className="rounded-lg bg-void px-3 py-2 text-xs text-muted">
+          {entry.user?.name} - {fmtDate(entry.clock_in)}
         </div>
         <div className="space-y-3">
           <div><label className={lbl}>Clock In</label>
@@ -94,10 +99,11 @@ function AdminAdjustModal({ entry, onClose, onSaved }) {
           <div><label className={lbl}>Admin Note (reason for adjustment)</label>
             <input className={inp} placeholder="e.g. System error at clock-out" value={form.admin_note} onChange={e => setForm(f=>({...f,admin_note:e.target.value}))} /></div>
         </div>
+        {error && <p className="text-xs text-crit" role="alert">{error}</p>}
         <div className="flex justify-between pt-2">
-          <button onClick={onClose} className="text-slate-400 text-sm hover:text-white">Cancel</button>
-          <button onClick={save} disabled={saving} className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold px-4 py-2 rounded-lg transition-colors disabled:opacity-50">
-            <Save size={14}/> {saving ? 'Saving…' : 'Save Changes'}
+          <button type="button" onClick={onClose} className="text-sm text-muted hover:text-ink">Cancel</button>
+          <button type="button" onClick={save} disabled={saving} className="flex items-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-brand-lit disabled:opacity-50">
+            <Save size={14}/> {saving ? 'Saving...' : 'Save changes'}
           </button>
         </div>
       </div>
@@ -110,28 +116,28 @@ function EarlyOverrideModal({ onClose, onSubmit, error, submitting }) {
 
   return (
     <AppOverlay label="Authorize early clock-in" onClose={onClose} className="bg-black/70 p-4">
-      <div className="bg-[#1a1d2e] rounded-2xl border border-[#2a2d3e] w-full max-w-sm p-5 space-y-4">
+      <div className="w-full max-w-sm space-y-4 rounded-instrument border border-line bg-panel p-5">
         <div className="flex items-center justify-between">
-          <h3 className="font-bold text-white text-sm">Admin Password Required</h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={16}/></button>
+          <h3 className="font-display text-sm font-bold text-ink">Admin password required</h3>
+          <button type="button" onClick={onClose} className="text-muted hover:text-ink" aria-label="Close early clock-in override"><X size={16}/></button>
         </div>
-        <label className="block text-xs text-slate-400">Admin Password</label>
+        <label className="block text-xs text-muted">Admin password</label>
         <input
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+          className="w-full rounded-lg border border-line-2 bg-void px-3 py-2 text-sm text-ink outline-none focus:border-brand"
           placeholder="Enter admin password"
         />
-        {error && <p className="text-xs text-red-400">{error}</p>}
+        {error && <p className="text-xs text-crit" role="alert">{error}</p>}
         <div className="flex justify-end gap-2">
-          <button onClick={onClose} className="text-slate-400 text-sm hover:text-white">Cancel</button>
+          <button type="button" onClick={onClose} className="text-sm text-muted hover:text-ink">Cancel</button>
           <button
             onClick={() => onSubmit(password)}
             disabled={!password || submitting}
-            className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold px-4 py-2 rounded-lg disabled:opacity-50"
+            className="rounded-lg bg-brand px-4 py-2 text-sm font-bold text-white hover:bg-brand-lit disabled:opacity-50"
           >
-            {submitting ? 'Submitting…' : 'Submit'}
+            {submitting ? 'Submitting...' : 'Submit'}
           </button>
         </div>
       </div>
@@ -232,7 +238,7 @@ export default function TimeClock() {
       await api.delete(`/timeclock/${id}`)
       await refresh()
     } catch (err) {
-      alert(err?.response?.data?.error || 'Failed to delete entry')
+      setActionErr(err?.response?.data?.error || 'Failed to delete entry')
     }
   }
 
@@ -262,54 +268,54 @@ export default function TimeClock() {
     }
   }
 
-  if (!status) return <div className="flex items-center justify-center h-64 text-slate-500">Loading…</div>
+  if (!status) return <Panel><div className="grid min-h-64 place-items-center text-sm text-muted" role="status">Loading time clock...</div></Panel>
 
   const clocked = status.clocked_in
   const open    = status.entry
 
   return (
-    <div className="space-y-6 max-w-2xl">
-      <h1 className="text-xl font-bold text-white">Time Clock</h1>
+    <div className="mx-auto max-w-4xl space-y-5">
+      <PageHeader eyebrow="Team operations" title="Time clock" description={admin ? 'Clock status and all team entries' : 'Clock status and your recent entries'} />
 
       {todayShift ? (
-        <div className="bg-indigo-900/20 border border-indigo-700/40 rounded-xl p-4 flex items-center gap-3">
-          <Clock size={18} className="text-indigo-400 flex-shrink-0" />
+        <div className="flex items-center gap-3 rounded-instrument border border-brand/30 bg-brand/10 p-4">
+          <Clock size={18} className="flex-shrink-0 text-brand" />
           <div>
-            <div className="text-sm font-semibold text-white">
-              Today's Shift: {todayShift.start_time} — {todayShift.end_time}{shiftCrossesNextDay(todayShift) ? ' (+1d)' : ''}
+            <div className="text-sm font-semibold text-ink">
+              Today's shift: {todayShift.start_time} - {todayShift.end_time}{shiftCrossesNextDay(todayShift) ? ' (+1d)' : ''}
             </div>
             {todayShift.shift_date && todayShift.shift_date !== new Date().toISOString().slice(0, 10) && (
-              <div className="text-[11px] text-cyan-300 mt-0.5">Carryover from previous day</div>
+              <div className="mt-0.5 text-[11px] text-brand">Carryover from previous day</div>
             )}
-            {todayShift.notes && <div className="text-xs text-slate-400 mt-0.5">{todayShift.notes}</div>}
+            {todayShift.notes && <div className="mt-0.5 text-xs text-muted">{todayShift.notes}</div>}
           </div>
         </div>
       ) : (
-        <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 text-xs text-slate-500 flex items-center gap-2">
+        <div className="flex items-center gap-2 rounded-instrument border border-line bg-panel p-4 text-xs text-faint">
           <Clock size={14}/> No shift scheduled for today.
         </div>
       )}
 
-      <div className="bg-[#1a1d2e] rounded-2xl border border-[#2a2d3e] p-6 flex flex-col items-center gap-5">
+      <Panel className="flex flex-col items-center gap-5 p-6">
         {clocked ? (
           <>
-            <div className="flex items-center gap-2 text-emerald-400 text-sm font-semibold">
-              <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <div className="flex items-center gap-2 text-sm font-semibold text-good">
+              <div className="h-2 w-2 animate-pulse rounded-full bg-good" />
               Clocked in since {fmtTime(open?.clock_in)}
             </div>
             <LiveTimer clockIn={open?.clock_in} />
             {open?.is_late ? (
-              <div className="flex items-center gap-2 text-amber-400 text-xs">
+              <div className="flex items-center gap-2 text-xs text-crit">
                 <AlertCircle size={14}/> Clocked in {open.late_minutes} min late
               </div>
             ) : (
-              <div className="flex items-center gap-2 text-emerald-400 text-xs">
+              <div className="flex items-center gap-2 text-xs text-good">
                 <CheckCircle size={14}/> On time
               </div>
             )}
             <button onClick={clockOut} disabled={loading}
-              className="w-full max-w-xs bg-red-600 hover:bg-red-500 text-white font-bold rounded-xl py-4 text-sm transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
-              <Clock size={18}/> {loading ? 'Getting location…' : 'Clock Out'}
+              className="flex w-full max-w-xs items-center justify-center gap-2 rounded-lg bg-crit py-4 text-sm font-bold text-white transition-colors hover:bg-crit/80 disabled:opacity-50">
+              <Clock size={18}/> {loading ? 'Getting location...' : 'Clock Out'}
             </button>
 
             {/* Lunch buttons - show when clocked in */}
@@ -317,12 +323,12 @@ export default function TimeClock() {
               <div className="w-full max-w-xs flex gap-2">
                 {lunchStatus.on_lunch ? (
                   <button onClick={endLunch} disabled={loading}
-                    className="flex-1 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded-xl py-3 text-sm transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+                    className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-line-2 bg-raised py-3 text-sm font-bold text-ink transition-colors hover:border-brand disabled:opacity-50">
                     <Clock size={16}/> {loading ? 'Ending...' : 'End Lunch'}
                   </button>
                 ) : (
                   <button onClick={startLunch} disabled={loading}
-                    className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl py-3 text-sm transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+                    className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-line-2 bg-raised py-3 text-sm font-bold text-ink transition-colors hover:border-brand disabled:opacity-50">
                     <Clock size={16}/> {loading ? 'Starting...' : 'Start Lunch'}
                   </button>
                 )}
@@ -331,23 +337,23 @@ export default function TimeClock() {
           </>
         ) : (
           <>
-            <div className="text-slate-500 text-sm">You are not clocked in</div>
-            <div className="font-mono text-4xl font-bold text-slate-600">
+            <div className="text-sm text-muted">You are not clocked in</div>
+            <div className="font-mono text-4xl font-bold tabular-nums text-faint">
               {new Date().toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit', hour12:true })}
             </div>
             <button onClick={clockIn} disabled={loading}
-              className="w-full max-w-xs bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl py-4 text-sm transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
-              <Clock size={18}/> {loading ? 'Getting location…' : 'Clock In'}
+              className="flex w-full max-w-xs items-center justify-center gap-2 rounded-lg bg-brand py-4 text-sm font-bold text-white transition-colors hover:bg-brand-lit disabled:opacity-50">
+              <Clock size={18}/> {loading ? 'Getting location...' : 'Clock In'}
             </button>
           </>
         )}
 
         {earlyBlock && (
-          <div className="bg-amber-900/20 border border-amber-700/40 rounded-xl p-3 w-full text-xs text-amber-200 space-y-2">
+          <div className="w-full space-y-2 rounded-instrument border border-crit/30 bg-crit/10 p-3 text-xs text-crit" role="alert">
             <div>Your shift doesn't start until {earlyBlock.shiftStart}. Early clock-in is not authorized.</div>
             <button
               onClick={() => { setOverrideError(''); setShowOverrideModal(true) }}
-              className="bg-amber-700/30 hover:bg-amber-700/50 border border-amber-700/50 text-amber-100 px-3 py-1.5 rounded-lg text-xs font-semibold"
+              className="rounded-lg border border-crit/30 bg-panel px-3 py-1.5 text-xs font-semibold text-crit transition-colors hover:bg-crit/10"
             >
               Request Admin Override
             </button>
@@ -355,59 +361,58 @@ export default function TimeClock() {
         )}
 
         {(locError || actionErr) && (
-          <div className="bg-red-900/20 border border-red-700/40 rounded-xl p-3 flex items-start gap-2 text-xs text-red-300 w-full">
-            <MapPin size={14} className="text-red-400 flex-shrink-0 mt-0.5"/>
+          <div className="flex w-full items-start gap-2 rounded-instrument border border-crit/30 bg-crit/10 p-3 text-xs text-crit" role="alert">
+            <MapPin size={14} className="mt-0.5 flex-shrink-0 text-crit"/>
             <span>{locError || actionErr}</span>
           </div>
         )}
-        <p className="text-[10px] text-slate-600 flex items-center gap-1"><MapPin size={10}/> Location is verified at clock-in and clock-out</p>
-      </div>
+        <p className="flex items-center gap-1 text-[10px] text-faint"><MapPin size={10}/> Location is verified at clock-in and clock-out</p>
+      </Panel>
 
-      <div className="bg-[#1a1d2e] rounded-2xl border border-[#2a2d3e] p-4">
-        <h2 className="text-sm font-bold text-white mb-3">{admin ? 'All Time Entries' : 'My Time Entries'}</h2>
-        {entries.length === 0 && <p className="text-xs text-slate-500 py-4 text-center">No entries yet.</p>}
-        <div className="space-y-2">
+      <Panel title={admin ? 'All time entries' : 'My time entries'}>
+        {entries.length === 0 && <EmptyState icon={Clock} title="No time entries" description="Completed clock sessions will appear here." className="min-h-40" />}
+        <div className="space-y-2 p-3">
           {entries.map(e => (
             <div
               key={e.id}
               onClick={admin ? () => setAdjustEntry(e) : undefined}
-              className={`bg-[#0f1117] rounded-xl p-3 flex items-start gap-3 ${admin ? 'cursor-pointer hover:ring-1 hover:ring-indigo-500/40 transition' : ''}`}
+              className={`flex items-start gap-3 rounded-instrument border border-line bg-panel-2 p-3 ${admin ? 'cursor-pointer transition hover:border-brand' : ''}`}
             >
               <div className="flex-1 min-w-0">
-                {admin && <div className="text-xs font-semibold text-indigo-400 mb-0.5">{e.user?.name}</div>}
-                <div className="text-xs text-white">
-                  {fmtDate(e.clock_in)} · In: {fmtTime(e.clock_in)} → Out: {fmtTime(e.clock_out)}
+                {admin && <div className="mb-0.5 text-xs font-semibold text-brand">{e.user?.name}</div>}
+                <div className="text-xs text-ink">
+                  {fmtDate(e.clock_in)} - In: {fmtTime(e.clock_in)} - Out: {fmtTime(e.clock_out)}
                 </div>
                 <div className="flex flex-wrap items-center gap-2 mt-1">
-                  <span className="text-xs text-slate-400">{fmtHours(e.total_hours)}</span>
+                  <span className="font-mono text-xs tabular-nums text-muted">{fmtHours(e.total_hours)}</span>
                   {e.is_late ? (
-                    <span className="text-[10px] bg-amber-900/40 text-amber-400 px-2 py-0.5 rounded-full font-semibold">
+                    <span className="rounded-full bg-crit/10 px-2 py-0.5 text-[10px] font-semibold text-crit">
                       Late {e.late_minutes}min
                     </span>
                   ) : e.clock_in ? (
-                    <span className="text-[10px] bg-emerald-900/40 text-emerald-400 px-2 py-0.5 rounded-full font-semibold">
+                    <span className="rounded-full bg-good/10 px-2 py-0.5 text-[10px] font-semibold text-good">
                       On Time
                     </span>
                   ) : null}
                   {!e.clock_out && (
-                    <span className="text-[10px] bg-indigo-900/40 text-indigo-400 px-2 py-0.5 rounded-full font-semibold animate-pulse">
+                    <span className="animate-pulse rounded-full bg-brand/10 px-2 py-0.5 text-[10px] font-semibold text-brand">
                       Active
                     </span>
                   )}
                   {e.adjusted_by && (
-                    <span className="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-raised px-2 py-0.5 text-[10px] text-muted">
                       <Edit2 size={10} /> Adjusted
                     </span>
                   )}
                 </div>
-                {e.admin_note && <div className="text-[10px] text-slate-500 mt-1 italic">{e.admin_note}</div>}
+                {e.admin_note && <div className="mt-1 text-[10px] italic text-faint">{e.admin_note}</div>}
               </div>
               {admin && (
                 <div className="flex gap-1 flex-shrink-0">
-                  <button onClick={(evt) => { evt.stopPropagation(); setAdjustEntry(e) }} className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-400 hover:bg-indigo-900/20 transition-colors">
+                  <button type="button" onClick={(evt) => { evt.stopPropagation(); setAdjustEntry(e) }} className="rounded-lg p-1.5 text-muted transition-colors hover:bg-brand/10 hover:text-brand" aria-label={`Adjust ${e.user?.name || 'time'} entry`}>
                     <Edit2 size={14}/>
                   </button>
-                  <button onClick={(evt) => { evt.stopPropagation(); deleteEntry(e.id) }} className="p-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-900/20 transition-colors">
+                  <button type="button" onClick={(evt) => { evt.stopPropagation(); deleteEntry(e.id) }} className="rounded-lg p-1.5 text-muted transition-colors hover:bg-crit/10 hover:text-crit" aria-label={`Delete ${e.user?.name || 'time'} entry`}>
                     <Trash2 size={14}/>
                   </button>
                 </div>
@@ -415,7 +420,7 @@ export default function TimeClock() {
             </div>
           ))}
         </div>
-      </div>
+      </Panel>
 
       {adjustEntry && (
         <AdminAdjustModal

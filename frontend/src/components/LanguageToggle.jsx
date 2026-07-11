@@ -12,7 +12,7 @@ export default function LanguageToggle() {
       type="button"
       onClick={() => setLang(isEnglish ? 'es' : 'en')}
       data-no-auto-i18n="true"
-      className="h-7 px-3 inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-full bg-[#1a1d2e] border border-[#2a2d3e] text-white text-xs font-semibold hover:border-indigo-500 transition-colors"
+      className="inline-flex h-7 items-center justify-center gap-1.5 whitespace-nowrap rounded-full border border-line-2 bg-panel px-3 text-xs font-semibold text-ink transition-colors hover:border-brand"
     >
       <span
         aria-hidden="true"

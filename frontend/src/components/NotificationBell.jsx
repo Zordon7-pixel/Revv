@@ -4,12 +4,12 @@ import { Bell, CheckCircle2, ClipboardList, CreditCard, MessageSquare, Package, 
 import api from '../lib/api'
 
 const TYPE_META = {
-  ro_created: { icon: ClipboardList, color: 'text-blue-400' },
-  status_change: { icon: Wrench, color: 'text-indigo-400' },
-  approval: { icon: CheckCircle2, color: 'text-emerald-400' },
-  parts_request: { icon: Package, color: 'text-amber-400' },
-  payment: { icon: CreditCard, color: 'text-green-400' },
-  customer_message: { icon: MessageSquare, color: 'text-cyan-400' },
+  ro_created: { icon: ClipboardList, color: 'text-brand' },
+  status_change: { icon: Wrench, color: 'text-brand' },
+  approval: { icon: CheckCircle2, color: 'text-good' },
+  parts_request: { icon: Package, color: 'text-brand' },
+  payment: { icon: CreditCard, color: 'text-good' },
+  customer_message: { icon: MessageSquare, color: 'text-brand' },
 }
 
 function relativeTime(input) {
@@ -94,52 +94,53 @@ export default function NotificationBell() {
     <div ref={rootRef} className="relative">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="relative text-slate-400 hover:text-white p-2 rounded-lg hover:bg-[#2a2d3e] transition-colors"
+        className="relative rounded-lg p-2 text-muted transition-colors hover:bg-raised hover:text-ink"
+        aria-label="Open notifications"
       >
         <Bell size={18} />
         {unread > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 bg-red-600 text-white text-[9px] font-bold rounded-full flex items-center justify-center">
+          <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-crit px-1 text-[9px] font-bold text-white">
             {unread > 9 ? '9+' : unread}
           </span>
         )}
       </button>
 
       {open && (
-        <div className="absolute right-0 top-10 w-96 max-w-[90vw] bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl shadow-2xl z-50 overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-[#2a2d3e]">
-            <div className="text-sm font-bold text-white">Notifications</div>
-            <button onClick={markAllRead} className="text-xs text-slate-400 hover:text-indigo-300">
+        <div className="absolute right-0 top-10 z-50 w-96 max-w-[90vw] overflow-hidden rounded-instrument border border-line bg-panel shadow-2xl">
+          <div className="flex items-center justify-between border-b border-line px-4 py-3">
+            <div className="font-display text-sm font-bold text-ink">Notifications</div>
+            <button onClick={markAllRead} className="text-xs text-muted hover:text-brand">
               Mark all read
             </button>
           </div>
 
           <div className="max-h-96 overflow-y-auto">
             {loading ? (
-              <div className="py-8 text-center text-xs text-slate-500">Loading...</div>
+              <div className="py-8 text-center text-xs text-faint" role="status">Loading...</div>
             ) : items.length === 0 ? (
-              <div className="py-8 text-center text-xs text-slate-500">No unread notifications</div>
+              <div className="py-8 text-center text-xs text-faint" role="status">No unread notifications</div>
             ) : (
               items.map((item) => {
-                const meta = TYPE_META[item.type] || { icon: Bell, color: 'text-slate-400' }
+                const meta = TYPE_META[item.type] || { icon: Bell, color: 'text-muted' }
                 const Icon = meta.icon
                 const message = item.body || item.title
                 return (
                   <button
                     key={item.id}
                     onClick={() => onNotificationClick(item)}
-                    className="w-full text-left px-4 py-3 border-b border-[#2a2d3e] hover:bg-[#2a2d3e]/40 transition-colors"
+                    className="w-full border-b border-line px-4 py-3 text-left transition-colors hover:bg-panel-2"
                   >
                     <div className="flex gap-3">
                       <Icon size={16} className={`mt-0.5 ${meta.color}`} />
                       <div className="flex-1 min-w-0">
-                        <div className="text-xs text-slate-500">{item.ro_number ? `RO #${item.ro_number}` : 'General update'}</div>
-                        <div className="text-sm text-white font-medium mt-0.5">{message}</div>
+                        <div className="text-xs text-faint">{item.ro_number ? `RO #${item.ro_number}` : 'General update'}</div>
+                        <div className="mt-0.5 text-sm font-medium text-ink">{message}</div>
                         {item.body && item.title !== item.body && (
-                          <div className="text-xs text-slate-400 mt-0.5">{item.title}</div>
+                          <div className="mt-0.5 text-xs text-muted">{item.title}</div>
                         )}
                         <div className="flex items-center justify-between mt-2">
-                          <div className="text-[11px] text-slate-500">{relativeTime(item.created_at)}</div>
-                          <div className="text-[11px] text-indigo-300">{item.ro_id ? 'Open RO' : 'Mark read'}</div>
+                          <div className="text-[11px] text-faint">{relativeTime(item.created_at)}</div>
+                          <div className="text-[11px] text-brand">{item.ro_id ? 'Open RO' : 'Mark read'}</div>
                         </div>
                       </div>
                     </div>

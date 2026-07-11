@@ -56,6 +56,45 @@ const ro = await dbGet('SELECT * FROM ros WHERE id = $1 AND shop_id = $2', [id, 
 await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 ```
 
+## Dispatch Log — 2026-07-11 REVV Redesign Phase 6C: Authenticated Work Surfaces
+
+**Time:** 2026-07-11 00:48 ET / 2026-07-11 04:48 UTC
+**Status:** READY FOR CLAUDE CODE QA — FEATURE BRANCH ONLY — NOT DEPLOYED — PHASE 6 CONTINUES
+
+**Scope**
+- Propagated the instrument design system through Settings, Time Clock, Floor Mode, and Tech View without changing their backend routes, roles, or workflow gates.
+- Settings retains shop/profile/logo, market rates, billing, monthly goals, customer notification toggles, owner activity digest, Twilio, tracking, QuickBooks, security, and danger-zone behavior. It now uses a responsive shared page header, real theme tokens, a wider desktop work area, and wrapped section tabs at phone width.
+- Time Clock retains the four startup reads, geolocation clock-in/out, lunch, early override, admin adjustment, and destructive confirmation. Runtime failures now render inline; the page has explicit loading and empty states and responsive tokenized overlays.
+- Floor Mode keeps technician-only access, assigned/open filtering, optimistic status advancement with rollback, clock actions, and quick photos. Generic workflow actions now use brand indigo rather than money-only gold.
+- Tech View keeps technician-only assignment filtering, note saves, and status advancement, with accessible labels and inline failures.
+- Tokenized LanguageToggle and NotificationBell while preserving language changes, polling, mark-read, mark-all, and RO navigation.
+- No backend, database, seed, reset, migration, destructive script, hosted DB, or customer/shop/RO data changed. Miles Automotive data was not touched; screenshots used mocked API responses only.
+
+**Files changed (8; batch cap respected)**
+- `frontend/src/components/LanguageToggle.jsx`
+- `frontend/src/components/NotificationBell.jsx`
+- `frontend/src/pages/Settings.jsx`
+- `frontend/src/pages/TimeClock.jsx`
+- `frontend/src/pages/FloorMode.jsx`
+- `frontend/src/pages/TechView.jsx`
+- `frontend/src/pages/__tests__/WorkSurfaces.test.jsx`
+- `CLAUDE.md`
+
+**Verification**
+```
+node --test native backend sweep  # 130/130 passed
+cd backend && npm run test:run  # extractor suite 7/7 passed
+cd frontend && npm run test:run -- WorkSurfaces FloorMode  # 2 files, 7/7 passed
+cd frontend && npm run test:run  # 35 files, 100/100 passed
+cd frontend && npm run build  # clean; pre-existing chunk-size warning only
+Playwright mocked app shell  # Settings dark 1440x1000 + light 390x844, Time Clock light 390x844, Floor light 1440x1000, Tech dark 390x844
+Playwright viewport results  # exact client/scroll widths at 1440 and 390; zero console/page errors
+Floor role/data check  # technician token, two assigned jobs rendered in repair/QC, action cards fully visible
+screenshots  # /tmp/revv-phase6c-settings-dark-desktop-viewport.png, /tmp/revv-phase6c-settings-light-phone.png, /tmp/revv-phase6c-timeclock-light-phone.png, /tmp/revv-phase6c-floor-light-desktop-with-jobs.png, /tmp/revv-phase6c-tech-dark-phone.png
+rg raw hex / indigo / legacy palette in all changed production files  # zero real matches; translate-x/y substring false positives only
+rm -rf frontend/dist && git diff --check && git ls-files frontend/dist | wc -l  # 0
+```
+
 ## Dispatch Log — 2026-07-11 REVV Redesign Phase 6B: Financial Surfaces + App Shell
 
 **Time:** 2026-07-11 00:22 ET / 2026-07-11 04:22 UTC
