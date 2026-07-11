@@ -1,6 +1,6 @@
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { LayoutDashboard, ArrowLeft, ClipboardList, ClipboardCheck, Users, BarChart3, Settings, UserCog, LogOut, Menu, Wrench, Clock, CalendarDays, Package, CreditCard, Radar, TrendingUp, Gauge, X, HelpCircle, Star, ChevronDown, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import { LayoutDashboard, ArrowLeft, ClipboardList, ClipboardCheck, Users, BarChart3, Settings, UserCog, LogOut, Menu, Wrench, Clock, CalendarDays, Package, CreditCard, Radar, TrendingUp, Gauge, X, HelpCircle, Star, ChevronDown, PanelLeftClose, PanelLeftOpen, Search } from 'lucide-react'
 import FeedbackButton from './FeedbackButton'
 import HelpPanel from './HelpPanel'
 import NotificationBell from './NotificationBell'
@@ -10,6 +10,7 @@ import { useLanguage } from '../contexts/LanguageContext'
 import { useTheme } from '../contexts/ThemeContext'
 import LanguageToggle from './LanguageToggle'
 import AppOverlay from './AppOverlay'
+import CommandPalette from './CommandPalette'
 
 const NAV_GROUPS = [
   { id: 'core', label: 'Core', defaultOpen: true },
@@ -67,6 +68,7 @@ export default function Layout() {
     try { return localStorage.getItem('revv_sidebar_collapsed') === '1' } catch { return false }
   })
   const [helpOpen, setHelpOpen] = useState(false)
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
   const [currentUserName, setCurrentUserName] = useState('')
   const [currentUserEmail, setCurrentUserEmail] = useState('')
   const [currentUserPhone, setCurrentUserPhone] = useState('')
@@ -404,6 +406,15 @@ export default function Layout() {
           >
             <ArrowLeft size={16} />
           </button>
+          <button
+            type="button"
+            onClick={() => setCommandPaletteOpen(true)}
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-md border border-line-2 bg-void text-muted transition-colors hover:border-brand hover:text-ink"
+            aria-label="Search repair orders"
+            title="Search"
+          >
+            <Search size={16} />
+          </button>
           <LanguageToggle />
           <button
             onClick={() => setHelpOpen(true)}
@@ -450,6 +461,17 @@ export default function Layout() {
             </button>
           </div>
           <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setCommandPaletteOpen(true)}
+              className="flex h-9 items-center gap-2 rounded-md border border-line-2 bg-void px-3 text-muted transition-colors hover:border-brand hover:text-ink"
+              aria-label="Search repair orders"
+              title="Search repair orders"
+            >
+              <Search size={16} />
+              <span className="text-xs">Search</span>
+              <kbd className="rounded border border-line bg-panel-2 px-1.5 py-0.5 font-mono text-[10px] text-faint">⌘K</kbd>
+            </button>
             <LanguageToggle />
             <button
               onClick={() => setHelpOpen(true)}
@@ -548,6 +570,7 @@ export default function Layout() {
           </AppOverlay>
         )}
         <HelpPanel isOpen={helpOpen} onClose={() => setHelpOpen(false)} />
+        <CommandPalette open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen} />
       </div>
     </div>
   )

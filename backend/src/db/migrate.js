@@ -564,6 +564,12 @@ async function runMigrations() {
       `ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS pickup_miles NUMERIC(10,2)`,
       `ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS delivery_zone TEXT`,
       `ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS pickup_zone TEXT`,
+      `CREATE INDEX IF NOT EXISTS idx_ro_search_shop_ro_number ON repair_orders (shop_id, LOWER(ro_number))`,
+      `CREATE INDEX IF NOT EXISTS idx_ro_search_shop_claim_number ON repair_orders (shop_id, LOWER(claim_number))`,
+      `CREATE INDEX IF NOT EXISTS idx_ro_search_shop_insurance_claim ON repair_orders (shop_id, LOWER(insurance_claim_number))`,
+      `CREATE INDEX IF NOT EXISTS idx_customer_search_shop_name ON customers (shop_id, LOWER(name))`,
+      `CREATE INDEX IF NOT EXISTS idx_vehicle_search_shop_plate ON vehicles (shop_id, LOWER(plate))`,
+      `CREATE INDEX IF NOT EXISTS idx_vehicle_search_shop_vin ON vehicles (shop_id, LOWER(vin))`,
     ];
 
     // Fix job_status_log FK to use ON DELETE CASCADE

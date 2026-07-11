@@ -2,6 +2,7 @@ const router = require('express').Router();
 const { dbGet, dbAll } = require('../db');
 const auth = require('../middleware/auth');
 const { requireTechnician } = require('../middleware/roles');
+const { dollarsToCents } = require('../services/roMoney');
 
 function requireOwnerAdminOnly(req, res, next) {
   if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
@@ -12,36 +13,87 @@ function requireOwnerAdminOnly(req, res, next) {
   return next();
 }
 
+async function getMonthlySupplementOpportunity(shopId) {
+  return dbGet(
+    `SELECT
+       COALESCE(SUM(
+         CASE
+           WHEN LOWER(COALESCE(eli.type, '')) = 'labor'
+            AND COALESCE(s.labor_rate, 0) > COALESCE(eli.unit_price, 0)
+           THEN (COALESCE(s.labor_rate, 0) - COALESCE(eli.unit_price, 0)) * COALESCE(eli.quantity, 0)
+           ELSE 0
+         END
+       ), 0)::numeric(12,2) AS total_supplement_opportunity,
+       COUNT(DISTINCT ro.id)::int AS ro_count
+     FROM repair_orders ro
+     JOIN estimate_line_items eli ON eli.ro_id = ro.id AND eli.shop_id = ro.shop_id
+     JOIN shops s ON s.id = ro.shop_id
+     WHERE ro.shop_id = $1
+       AND ro.created_at >= DATE_TRUNC('month', NOW())
+       AND ro.created_at < DATE_TRUNC('month', NOW()) + INTERVAL '1 month'`,
+    [shopId]
+  );
+}
+
+router.get('/instruments', auth, requireOwnerAdminOnly, async (req, res) => {
+  try {
+    const shopId = req.user.shop_id;
+    const [moneyRow, goalRow, supplementRow] = await Promise.all([
+      dbGet(
+        `SELECT
+           COALESCE(SUM(total), 0)::numeric(14,2) AS revenue_mtd,
+           COALESCE(SUM(true_profit), 0)::numeric(14,2) AS true_profit_mtd,
+           COUNT(*)::int AS ro_count
+         FROM repair_orders
+         WHERE shop_id = $1
+           AND COALESCE(NULLIF(billing_month, ''), TO_CHAR(created_at, 'YYYY-MM')) = TO_CHAR(NOW(), 'YYYY-MM')`,
+        [shopId]
+      ),
+      dbGet(
+        `SELECT revenue_goal
+         FROM monthly_goals
+         WHERE shop_id = $1 AND year_month = TO_CHAR(NOW(), 'YYYY-MM')`,
+        [shopId]
+      ),
+      getMonthlySupplementOpportunity(shopId),
+    ]);
+
+    const revenueMtdCents = dollarsToCents(moneyRow?.revenue_mtd);
+    const trueProfitCents = dollarsToCents(moneyRow?.true_profit_mtd);
+    const revenueGoalCents = dollarsToCents(goalRow?.revenue_goal);
+    const supplementOpportunityCents = dollarsToCents(supplementRow?.total_supplement_opportunity);
+    const marginBasisPoints = revenueMtdCents > 0
+      ? Math.round((trueProfitCents * 10000) / revenueMtdCents)
+      : 0;
+
+    return res.json({
+      revenue_mtd_cents: revenueMtdCents,
+      revenue_goal_cents: revenueGoalCents,
+      true_profit_cents: trueProfitCents,
+      profit_margin_percent: marginBasisPoints / 100,
+      supplement_opportunity_cents: supplementOpportunityCents,
+      supplement_ro_count: Number(supplementRow?.ro_count || 0),
+      ro_count: Number(moneyRow?.ro_count || 0),
+    });
+  } catch (err) {
+    console.error('[Dashboard] instrument KPIs error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 router.get('/supplements/monthly-opportunity', auth, requireOwnerAdminOnly, async (req, res) => {
   try {
     const shopId = req.user.shop_id;
 
     // Phase 1 does not persist analyze snapshots. Until a shop-scoped analyze-results
     // table exists, compute the month-to-date opportunity from stored RO estimate lines.
-    const row = await dbGet(
-      `SELECT
-         COALESCE(SUM(
-           CASE
-             WHEN LOWER(COALESCE(eli.type, '')) = 'labor'
-              AND COALESCE(s.labor_rate, 0) > COALESCE(eli.unit_price, 0)
-             THEN (COALESCE(s.labor_rate, 0) - COALESCE(eli.unit_price, 0)) * COALESCE(eli.quantity, 0)
-             ELSE 0
-           END
-         ), 0)::numeric(12,2) AS total_supplement_opportunity,
-         COUNT(DISTINCT ro.id)::int AS ro_count
-       FROM repair_orders ro
-       JOIN estimate_line_items eli ON eli.ro_id = ro.id AND eli.shop_id = ro.shop_id
-       JOIN shops s ON s.id = ro.shop_id
-       WHERE ro.shop_id = $1
-         AND ro.created_at >= DATE_TRUNC('month', NOW())
-         AND ro.created_at < DATE_TRUNC('month', NOW()) + INTERVAL '1 month'`,
-      [shopId]
-    );
+    const row = await getMonthlySupplementOpportunity(shopId);
 
     return res.json({
       success: true,
       month_start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString(),
       total_supplement_opportunity: Number(row?.total_supplement_opportunity || 0),
+      total_supplement_opportunity_cents: dollarsToCents(row?.total_supplement_opportunity),
       ro_count: Number(row?.ro_count || 0),
       source: 'estimate_line_items',
     });
@@ -210,7 +262,7 @@ router.get('/weekly', auth, requireTechnician, async (req, res) => {
       `SELECT COALESCE(SUM(amount_cents), 0)::bigint AS amount_cents
        FROM ro_payments
        WHERE shop_id = $1
-         AND status = 'succeeded'
+         AND LOWER(COALESCE(status, '')) IN ('succeeded', 'paid')
          AND paid_at::timestamptz >= DATE_TRUNC('week', NOW())
          AND paid_at::timestamptz < DATE_TRUNC('week', NOW()) + INTERVAL '7 days'`,
       [shopId]
@@ -263,6 +315,7 @@ router.get('/weekly', auth, requireTechnician, async (req, res) => {
         trend_percent: Number(trendPercent.toFixed(1)),
       },
       revenue_collected_this_week: Number(revenueRow?.amount_cents || 0) / 100,
+      revenue_collected_this_week_cents: Number(revenueRow?.amount_cents || 0),
       top_techs: topTechs || [],
       pending_parts_count: Number(pendingPartsRow?.pending_parts_count || 0),
       status_counts: statusCounts || [],

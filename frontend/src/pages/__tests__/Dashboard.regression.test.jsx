@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 
 vi.mock('../../lib/api', () => ({
   default: {
@@ -18,6 +18,7 @@ vi.mock('../../lib/auth', () => ({
 }))
 
 import api from '../../lib/api'
+import CommandPalette from '../../components/CommandPalette'
 import Dashboard from '../Dashboard'
 
 function shiftMonthLabel(label, offset) {
@@ -72,6 +73,20 @@ function stubDashboardApi({ ros = [], summaryOverrides = {} } = {}) {
       return Promise.resolve({ data: null })
     }
 
+    if (url === '/dashboard/instruments') {
+      return Promise.resolve({
+        data: {
+          revenue_mtd_cents: 12345,
+          revenue_goal_cents: 100000,
+          true_profit_cents: 4567,
+          profit_margin_percent: 37,
+          supplement_opportunity_cents: 8888,
+          supplement_ro_count: 1,
+          ro_count: 4,
+        },
+      })
+    }
+
     if (url === '/repair-orders') {
       return Promise.resolve({ data: { ros } })
     }
@@ -86,6 +101,11 @@ function renderDashboard() {
       <Dashboard />
     </MemoryRouter>
   )
+}
+
+function LocationProbe() {
+  const location = useLocation()
+  return <output data-testid="location-probe">{location.pathname}{location.search}</output>
 }
 
 describe('Dashboard regression coverage', () => {
@@ -149,6 +169,46 @@ describe('Dashboard regression coverage', () => {
     await waitFor(() => {
       expect(screen.getByTestId('stat-value-active-jobs')).toHaveTextContent('2')
       expect(screen.getByTestId('stat-value-completed')).toHaveTextContent('2')
+      expect(screen.getByTestId('stat-value-total-revenue')).toHaveTextContent('$123.45')
+      expect(screen.getByTestId('stat-value-true-profit')).toHaveTextContent('$45.67')
+      expect(screen.getByTestId('stat-value-supplement-opportunity')).toHaveTextContent('$88.88')
+      expect(screen.getByTestId('production-line')).toBeInTheDocument()
     }, { timeout: 2500 })
+  })
+
+  it('opens an own-shop command result and jumps to its repair order', async () => {
+    api.get.mockImplementation((url, config) => {
+      if (url === '/search' && config?.params?.q === 'RO-9001') {
+        return Promise.resolve({
+          data: {
+            results: [{
+              id: 'ro-search-1',
+              ro_number: 'RO-9001',
+              status: 'repair',
+              customer_name: 'Miles Customer',
+              year: 2024,
+              make: 'Honda',
+              model: 'Accord',
+              plate: 'MILES1',
+            }],
+          },
+        })
+      }
+      return Promise.reject(new Error(`Unhandled api.get call in command test: ${url}`))
+    })
+
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter initialEntries={['/dashboard']}>
+        <CommandPalette open onOpenChange={vi.fn()} />
+        <LocationProbe />
+      </MemoryRouter>
+    )
+
+    await user.type(screen.getByRole('textbox', { name: 'Search repair orders' }), 'RO-9001')
+    await user.click(await screen.findByRole('option', { name: /RO-9001/i }))
+
+    expect(screen.getByTestId('location-probe')).toHaveTextContent('/ros/ro-search-1')
+    expect(api.get).toHaveBeenCalledWith('/search', { params: { q: 'RO-9001' } })
   })
 })

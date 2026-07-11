@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ClipboardList, DollarSign, CheckCircle, TrendingUp, Hand, AlertCircle, CalendarDays, ChevronRight, Radar, ArrowUpRight, ArrowDownRight, Minus, ChevronLeft, Truck, BadgeDollarSign } from 'lucide-react'
+import { Hand, AlertCircle, CalendarDays, ChevronRight, Radar, ArrowUpRight, ArrowDownRight, Minus, ChevronLeft, Truck } from 'lucide-react'
 import api from '../lib/api'
 import { getRole, getTokenPayload, isAdmin } from '../lib/auth'
 import { STATUS_COLORS, STATUS_LABELS } from './RepairOrders'
 import StatusBadge from '../components/StatusBadge'
 import CarryoverModal from '../components/CarryoverModal'
+import { Money, StatInstrument } from '../components/ui'
 
 function useCountUp(target, duration = 1000) {
   const [count, setCount] = React.useState(0)
@@ -30,6 +31,7 @@ function useCountUp(target, duration = 1000) {
 }
 
 const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const PRODUCTION_STAGES = ['intake', 'estimate', 'approval', 'parts', 'repair', 'paint', 'qc', 'delivery']
 
 function toDateKey(value) {
   if (!value) return ''
@@ -124,12 +126,59 @@ function countFromStatusBuckets(rows) {
   }, { active: 0, completed: 0 })
 }
 
+function buildNeedsNow(ros) {
+  const safeRos = Array.isArray(ros) ? ros : []
+  const items = []
+  const seen = new Set()
+  const today = toDateKey(new Date())
+
+  function add(ro, item) {
+    if (!ro?.id || seen.has(ro.id) || items.length >= 3) return
+    seen.add(ro.id)
+    items.push({ ro, ...item })
+  }
+
+  safeRos
+    .filter((ro) => ['paid', 'succeeded'].includes(String(ro.payment_status || '').toLowerCase())
+      && ['ready', 'delivery'].includes(normalizeRoStatus(ro.status)))
+    .forEach((ro) => add(ro, {
+      tag: 'Close',
+      tone: 'good',
+      title: `${ro.ro_number} is paid and ready to close`,
+      detail: ro.customer_name || 'Customer on file',
+      path: `/ros/${ro.id}`,
+    }))
+
+  safeRos
+    .filter((ro) => String(ro.supplement_status || 'none').toLowerCase() === 'none'
+      && (Number(ro.supplement_amount || 0) > 0 || String(ro.supplement_notes || '').trim()))
+    .forEach((ro) => add(ro, {
+      tag: 'File',
+      tone: 'gold',
+      title: `${ro.ro_number} has an unfiled supplement`,
+      detail: ro.customer_name || 'Insurance repair',
+      path: `/ros/${ro.id}?tab=insurance`,
+    }))
+
+  safeRos
+    .filter((ro) => !isClosedRoStatus(ro.status) && toDateKey(ro.estimated_delivery) && toDateKey(ro.estimated_delivery) < today)
+    .sort((a, b) => String(a.estimated_delivery).localeCompare(String(b.estimated_delivery)))
+    .forEach((ro) => add(ro, {
+      tag: 'Text',
+      tone: 'crit',
+      title: `${ro.ro_number} missed its promise date`,
+      detail: `${ro.customer_name || 'Customer'} · due ${toDateLabel(toDateKey(ro.estimated_delivery))}`,
+      path: `/ros/${ro.id}?tab=comms`,
+    }))
+
+  return items
+}
+
 export default function Dashboard() {
   const [data, setData] = useState(null)
   const [techData, setTechData] = useState(null)
   const [weekly, setWeekly] = useState(null)
-  const [supplementOpportunity, setSupplementOpportunity] = useState(null)
-  const [goal, setGoal] = useState(null)
+  const [instruments, setInstruments] = useState(null)
   const [pendingCarryover, setPendingCarryover] = useState([])
   const [pendingAppointments, setPendingAppointments] = useState(0)
   const [adasQueue, setAdasQueue] = useState([])
@@ -149,21 +198,14 @@ export default function Dashboard() {
   const currentUser = getTokenPayload()
   const isTechAccount = !admin && ['employee', 'staff', 'technician'].includes(role || '')
 
-  const yearMonth = (() => {
-    const now = new Date()
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-  })()
-
   async function loadDashboardData() {
-    const [summaryRes, monthSummaryRes, carryoverRes, appointmentsRes, goalsRes, adasRes, weeklyRes, supplementRes, rosRes] = await Promise.all([
+    const [summaryRes, carryoverRes, appointmentsRes, adasRes, weeklyRes, instrumentsRes, rosRes] = await Promise.all([
       api.get('/reports/summary?scope=all').catch((err) => { console.error('[Dashboard] /reports/summary?scope=all failed:', err?.response?.status, err?.response?.data?.error || err?.message); return { data: {} } }),
-      api.get('/reports/summary').catch((err) => { console.error('[Dashboard] /reports/summary failed:', err?.response?.status, err?.response?.data?.error || err?.message); return { data: {} } }),
       api.get('/ros/carryover-pending').catch(() => ({ data: { ros: [] } })),
       api.get('/appointments').catch(() => ({ data: { requests: [] } })),
-      api.get(`/goals/${yearMonth}`).catch(() => ({ data: { goal: null } })),
       api.get('/adas/queue').catch(() => ({ data: { queue: [] } })),
       api.get('/dashboard/weekly').catch(() => ({ data: null })),
-      api.get('/dashboard/supplements/monthly-opportunity').catch(() => ({ data: null })),
+      api.get('/dashboard/instruments').catch((err) => { console.error('[Dashboard] /dashboard/instruments failed:', err?.response?.status, err?.response?.data?.error || err?.message); return { data: null } }),
       api.get('/repair-orders').catch((err) => { console.error('[Dashboard] /repair-orders failed:', err?.response?.status, err?.response?.data?.error || err?.message); return { data: { ros: [] } } }),
     ])
     const allRos = Array.isArray(rosRes?.data?.ros) ? rosRes.data.ros : []
@@ -185,16 +227,12 @@ export default function Dashboard() {
       ...summaryRes.data,
       active: resolvedActive,
       completed: resolvedCompleted,
-      monthly_total: Number(monthSummaryRes.data?.total || 0),
-      monthly_revenue: Number(monthSummaryRes.data?.revenue || 0),
-      monthly_profit: Number(monthSummaryRes.data?.profit || 0),
     })
     setPendingCarryover(carryoverRes.data?.ros || [])
     setPendingAppointments(appointmentsRes.data?.requests?.length || 0)
-    setGoal(goalsRes.data?.goal || null)
     setAdasQueue(adasRes.data?.queue || [])
     setWeekly(weeklyRes.data || null)
-    setSupplementOpportunity(supplementRes.data || null)
+    setInstruments(instrumentsRes.data || null)
     setCalendarRos(allRos)
   }
 
@@ -255,12 +293,11 @@ export default function Dashboard() {
 
   const displayActive = useCountUp(data?.active || 0)
   const displayCompleted = useCountUp(data?.completed || 0)
-  const displayRevenue = useCountUp(data?.monthly_revenue || 0)
-  const displayProfit = useCountUp(data?.monthly_profit || 0)
-  const revenueGoal = Number(goal?.revenue_goal || 0)
-  const roGoal = Number(goal?.ro_goal || 0)
-  const revenueProgress = revenueGoal > 0 ? Math.min((data?.monthly_revenue || 0) / revenueGoal, 1) * 100 : 0
-  const roProgress = roGoal > 0 ? Math.min((data?.monthly_total || 0) / roGoal, 1) * 100 : 0
+  const revenueMtdCents = Number(instruments?.revenue_mtd_cents || 0)
+  const revenueGoalCents = Number(instruments?.revenue_goal_cents || 0)
+  const trueProfitCents = Number(instruments?.true_profit_cents || 0)
+  const profitMargin = Number(instruments?.profit_margin_percent || 0)
+  const supplementOpportunityCents = Number(instruments?.supplement_opportunity_cents || 0)
   const weeklyTrendDirection = weekly?.ro_opened?.trend_direction || 'flat'
   const weeklyTrendPercent = Number(weekly?.ro_opened?.trend_percent || 0)
   const canEditCalendar = role !== 'assistant'
@@ -696,65 +733,16 @@ export default function Dashboard() {
     )
   }
 
-  const stats = [
-    {
-      id: 'active-jobs',
-      label: 'Active Jobs',
-      value: displayActive,
-      icon: ClipboardList,
-      color: 'text-indigo-300',
-      accent: 'bg-indigo-500',
-      card: 'bg-gradient-to-br from-indigo-900/40 to-[#1a1d2e]',
-      to: '/ros?status=open',
-      goalProgress: roGoal > 0 ? Math.round(roProgress) : null,
-    },
-    {
-      id: 'completed',
-      label: 'Completed',
-      value: displayCompleted,
-      icon: CheckCircle,
-      color: 'text-emerald-300',
-      accent: 'bg-emerald-500',
-      card: 'bg-gradient-to-br from-slate-800/60 to-[#1a1d2e]',
-      to: '/ros?status=completed',
-      goalProgress: null,
-    },
-    ...(admin ? [
-      {
-        id: 'total-revenue',
-        label: 'Total Revenue',
-        value: `$${displayRevenue.toLocaleString('en-US', { minimumFractionDigits: 0 })}`,
-        icon: DollarSign,
-        color: 'text-emerald-300',
-        accent: 'bg-emerald-500',
-        card: 'bg-gradient-to-br from-emerald-900/40 to-[#1a1d2e]',
-        to: '/monthly-report',
-        goalProgress: revenueGoal > 0 ? Math.round(revenueProgress) : null,
-      },
-      {
-        id: 'true-profit',
-        label: 'True Profit',
-        value: `$${displayProfit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-        icon: TrendingUp,
-        color: 'text-amber-300',
-        accent: 'bg-amber-500',
-        card: 'bg-gradient-to-br from-amber-900/40 to-[#1a1d2e]',
-        to: '/monthly-report',
-        goalProgress: null,
-      },
-      {
-        id: 'supplement-opportunity',
-        label: 'Supplement Opportunity',
-        value: `$${Number(supplementOpportunity?.total_supplement_opportunity || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-        icon: BadgeDollarSign,
-        color: 'text-yellow-300',
-        accent: 'bg-yellow-500',
-        card: 'bg-gradient-to-br from-yellow-900/30 to-[#1a1d2e]',
-        to: '/ros?status=estimate',
-        goalProgress: null,
-      },
-    ] : []),
-  ]
+  const needsNow = buildNeedsNow(calendarRos)
+  const productionStages = PRODUCTION_STAGES.map((status) => {
+    const count = Number(data?.byStatus?.find((row) => normalizeRoStatus(row.status) === status)?.count || 0)
+    const overdue = calendarRos.filter((ro) => normalizeRoStatus(ro.status) === status
+      && toDateKey(ro.estimated_delivery)
+      && toDateKey(ro.estimated_delivery) < todayDateKey).length
+    return { status, count, overdue }
+  })
+  const maxStageCount = Math.max(1, ...productionStages.map((stage) => stage.count))
+  const revenueGaugeMax = revenueGoalCents > 0 ? revenueGoalCents : Math.max(revenueMtdCents, 1)
 
   if (loadError) return <div className="flex items-center justify-center h-64 text-red-400 text-sm">Failed to load dashboard. Please refresh the page.</div>
   if (!data) return <div className="flex items-center justify-center h-64 text-slate-500">Loading your shop data...</div>
@@ -767,39 +755,124 @@ export default function Dashboard() {
         <h1 className="text-xl font-bold text-white">Dashboard</h1>
       </div>
 
-      {/* 2. Stats grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-        {stats.map(s => (
-          <div
-            key={s.label}
-            onClick={() => navigate(s.to)}
-            className={`${s.card} rounded-xl p-4 border border-[#2a2d3e] shadow-sm cursor-pointer hover:opacity-90 transition-opacity`}
-          >
-            <div className={`h-1.5 w-10 rounded-full ${s.accent} mb-3 opacity-90`} />
-            <div className="flex items-center justify-between mb-3">
-              <div className="text-xs text-slate-400">{s.label}</div>
-              <s.icon size={18} className={s.color} />
-            </div>
-            <div
-              className={`text-2xl font-bold ${s.color}`}
-              data-no-auto-i18n="true"
-              data-testid={`stat-value-${s.id}`}
-            >
-              {s.value}
-            </div>
-            {s.goalProgress != null && (
-              <div className="mt-2">
-                <div className="h-1 bg-[#0f1117] rounded-full overflow-hidden">
-                  <div className={`h-full ${s.accent} transition-all`} style={{ width: `${Math.min(s.goalProgress, 100)}%` }} />
-                </div>
-                <div className="text-[10px] text-slate-500 mt-0.5">{s.goalProgress}% of goal</div>
-              </div>
-            )}
-          </div>
-        ))}
+      {/* 2. Instrument KPI row */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatInstrument
+          label="Active Jobs"
+          value={(
+            <span>
+              <span className="font-mono tabular-nums" data-testid="stat-value-active-jobs">{displayActive}</span>
+              <span className="mt-3 grid grid-cols-8 gap-1" aria-label="Active jobs across eight production stages">
+                {productionStages.map((stage) => (
+                  <span key={stage.status} className="h-1.5 rounded-full bg-brand" style={{ opacity: 0.22 + (stage.count / maxStageCount) * 0.78 }} />
+                ))}
+              </span>
+            </span>
+          )}
+          detail={<span><span className="font-mono tabular-nums" data-testid="stat-value-completed">{displayCompleted}</span> completed</span>}
+          onClick={() => navigate('/ros?status=open')}
+        />
+        {admin && (
+          <StatInstrument
+            label="Revenue MTD"
+            value={<Money cents={revenueMtdCents} data-testid="stat-value-total-revenue" />}
+            detail={revenueGoalCents > 0 ? 'Against this month’s goal' : 'Set a monthly revenue goal'}
+            gauge={{ value: revenueMtdCents, max: revenueGaugeMax, tone: 'brand' }}
+            onClick={() => navigate('/monthly-report')}
+          />
+        )}
+        {admin && (
+          <StatInstrument
+            label="True Profit"
+            value={<Money cents={trueProfitCents} data-testid="stat-value-true-profit" />}
+            detail="Server-authoritative month-to-date margin"
+            gauge={{ value: Math.max(profitMargin, 0), max: 100, tone: 'good', label: `${profitMargin.toFixed(1)}%` }}
+            onClick={() => navigate('/monthly-report')}
+          />
+        )}
+        {admin && (
+          <StatInstrument
+            label="Supplement Opportunity"
+            value={<Money cents={supplementOpportunityCents} data-testid="stat-value-supplement-opportunity" className="text-gold" />}
+            detail={`${Number(instruments?.supplement_ro_count || 0)} ROs with labor-rate gaps`}
+            tone="gold"
+            className="border-gold/40 bg-[color-mix(in_srgb,var(--gold)_7%,var(--panel))] hover:border-gold"
+            onClick={() => navigate('/ros?status=estimate')}
+          />
+        )}
       </div>
 
-      {/* 3. Alert strip (conditional) */}
+      {/* 3. Production line tachometer */}
+      <section className="rounded-instrument border border-line bg-panel p-4" aria-labelledby="production-line-heading">
+        <div className="flex flex-wrap items-end justify-between gap-2">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-brand-lit">Production line</p>
+            <h2 id="production-line-heading" className="mt-1 font-display text-lg font-semibold text-ink">Shop load by stage</h2>
+          </div>
+          <p className="text-xs text-muted"><span className="text-gold">Gold</span> marks an over-promise stage</p>
+        </div>
+        <div className="mt-4 grid grid-cols-4 gap-2 lg:grid-cols-8" data-testid="production-line">
+          {productionStages.map((stage) => {
+            const redlined = stage.overdue > 0
+            const height = `${Math.max(12, Math.round((stage.count / maxStageCount) * 100))}%`
+            return (
+              <button
+                key={stage.status}
+                type="button"
+                onClick={() => navigate(`/ros?status=${stage.status}`)}
+                className="group min-w-0 rounded-md border border-line bg-panel-2 p-2 text-left transition-colors hover:border-brand focus:outline-none focus:ring-2 focus:ring-brand"
+                aria-label={`${STATUS_LABELS[stage.status]}: ${stage.count} jobs${redlined ? `, ${stage.overdue} overdue` : ''}`}
+              >
+                <span className="flex h-14 items-end rounded-sm bg-void/50 p-1">
+                  <span className={`block w-full rounded-sm ${redlined ? 'bg-gold' : 'bg-brand'}`} style={{ height }} />
+                </span>
+                <span className="mt-2 block truncate text-[10px] font-semibold uppercase text-muted">{STATUS_LABELS[stage.status]}</span>
+                <span className="mt-0.5 block font-mono text-sm font-semibold tabular-nums text-ink">{stage.count}</span>
+                {redlined && <span className="block font-mono text-[9px] text-gold">{stage.overdue} late</span>}
+              </button>
+            )
+          })}
+        </div>
+      </section>
+
+      {/* 4. Focus list */}
+      <section className="rounded-instrument border border-line bg-panel p-4" aria-labelledby="needs-now-heading">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">Needs you now</p>
+            <h2 id="needs-now-heading" className="mt-1 font-display text-lg font-semibold text-ink">Three moves that unblock the shop</h2>
+          </div>
+          <span className="font-mono text-xs tabular-nums text-faint">{needsNow.length}/3</span>
+        </div>
+        {needsNow.length === 0 ? (
+          <p role="status" className="mt-4 rounded-md border border-line bg-panel-2 px-3 py-4 text-sm text-muted">No payment-ready closeouts, unfiled supplements, or overdue promises need action.</p>
+        ) : (
+          <div className="mt-4 grid gap-2 lg:grid-cols-3">
+            {needsNow.map((item) => {
+              const toneColor = item.tone === 'gold' ? 'var(--gold)' : item.tone === 'good' ? 'var(--good)' : 'var(--crit)'
+              const actionClass = item.tone === 'gold'
+                ? 'border-gold bg-gold text-void hover:bg-gold-lit'
+                : item.tone === 'good'
+                  ? 'border-good/40 bg-good/10 text-good hover:bg-good/15'
+                  : 'border-brand/40 bg-brand/10 text-brand-lit hover:bg-brand/15'
+              return (
+                <article key={`${item.tag}-${item.ro.id}`} className="grid grid-cols-[3px_1fr_auto] gap-3 rounded-md border border-line bg-panel-2 p-3">
+                  <span className="rounded-full" style={{ backgroundColor: toneColor }} aria-hidden="true" />
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-semibold text-ink">{item.title}</span>
+                    <span className="mt-1 block truncate text-xs text-muted">{item.detail}</span>
+                  </span>
+                  <button type="button" onClick={() => navigate(item.path)} className={`self-center rounded-md border px-3 py-2 text-xs font-semibold transition-colors ${actionClass}`}>
+                    {item.tag}
+                  </button>
+                </article>
+              )
+            })}
+          </div>
+        )}
+      </section>
+
+      {/* 5. Alert strip (conditional) */}
       {(pendingCarryover.length > 0 || (admin && adasQueue.length > 0) || (admin && pendingAppointments > 0)) && (
         <div className="flex flex-wrap gap-2">
           {pendingCarryover.length > 0 && (
@@ -832,35 +905,11 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* 4. RO Calendar */}
+      {/* 6. RO Calendar */}
       {renderRoCalendar()}
 
-      {/* 5. Bottom grid: Jobs by Stage + Weekly */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
-          <h2 className="font-semibold text-sm text-white mb-3">Jobs by Stage</h2>
-          <div className="space-y-2">
-            {['intake', 'estimate', 'approval', 'parts', 'repair', 'paint', 'qc', 'delivery'].map(s => {
-              const found = data.byStatus?.find(x => x.status === s)
-              const count = found?.count || 0
-              return (
-                <div
-                  key={s}
-                  onClick={() => navigate(`/ros?status=${s}`)}
-                  className="flex items-center gap-3 cursor-pointer hover:bg-[#2a2d3e] rounded px-1 transition-colors"
-                >
-                  <div className={`w-2 h-2 rounded-full flex-shrink-0`} style={{ background: STATUS_COLORS[s] }} />
-                  <span className="text-xs text-slate-400 w-20 capitalize">{STATUS_LABELS[s]}</span>
-                  <div className="flex-1 bg-[#0f1117] rounded-full h-1.5">
-                    <div className="h-1.5 rounded-full transition-all" style={{ width: `${Math.min((count / (data.total || 1)) * 100, 100)}%`, background: STATUS_COLORS[s] }} />
-                  </div>
-                  <span className="text-xs text-slate-400 w-4 text-right">{count}</span>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-
+      {/* 7. Weekly operations */}
+      <div className="grid grid-cols-1 gap-4">
         {weekly && (
           <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 space-y-4">
             <div className="flex items-center justify-between">
@@ -889,9 +938,7 @@ export default function Dashboard() {
                 className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3 cursor-pointer hover:ring-1 hover:ring-indigo-500/40 transition"
               >
                 <div className="text-xs text-slate-400 mb-1">Revenue Collected</div>
-                <div className="text-2xl font-bold text-emerald-300">
-                  ${(Number(weekly.revenue_collected_this_week || 0)).toLocaleString('en-US', { maximumFractionDigits: 0 })}
-                </div>
+                <Money cents={weekly.revenue_collected_this_week_cents || 0} className="text-2xl font-bold text-emerald-300" />
                 <div className="text-xs text-slate-500 mt-1">Paid invoices this week</div>
               </div>
               <div

@@ -56,9 +56,55 @@ const ro = await dbGet('SELECT * FROM ros WHERE id = $1 AND shop_id = $2', [id, 
 await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 ```
 
+## Dispatch Log — 2026-07-10 Full Redesign Phase 2: Dashboard + Global Search
+
+**Time:** 2026-07-10 21:38 ET / 2026-07-11 01:38 UTC
+**Status:** READY FOR CLAUDE CODE QA — FEATURE BRANCH ONLY — NOT DEPLOYED
+
+**Scope**
+- Replaced the owner dashboard's legacy gradient stat cards with the approved Instrument KPI row: Active Jobs pipeline bars, Revenue MTD goal gauge, True Profit margin gauge, and a gold Supplement Opportunity surface.
+- Added `GET /api/dashboard/instruments`, which keeps every money value as integer cents at the API boundary via `services/roMoney.js`; React renders all KPI money through the shared `<Money cents>` primitive.
+- Added the eight-stage Production Line tachometer. Indigo shows normal shop load and gold appears only when a stage contains an overdue promise.
+- Added the top-three `Needs You Now` queue for paid closeouts, unfiled supplements, and overdue customer promises, with one explicit action per item.
+- Added a globally available Cmd/Ctrl-K command palette in `Layout.jsx` and a new authenticated `GET /api/search?q=` endpoint for RO number, customer, plate, VIN, and claim searches.
+- Search is hard-scoped through `repair_orders.shop_id`, scopes both customer/vehicle joins to the same shop, preserves the technician-assignment visibility rule, uses an explicit response column list, ranked results, a 20-result limit, escaped LIKE input, and additive search indexes.
+- Weekly collected revenue now exposes integer cents and recognizes both canonical `paid` and legacy `succeeded` payment statuses.
+- No hosted database/backend was opened. No customer, shop, RO, payment, feedback, seed, reset, or Miles Automotive data was read or changed.
+
+**Files changed (10; phase cap respected)**
+- `backend/src/routes/search.js`
+- `backend/src/routes/dashboard.js`
+- `backend/src/app.js`
+- `backend/src/db/migrate.js`
+- `backend/src/__tests__/redesign.phase2.test.js`
+- `frontend/src/components/CommandPalette.jsx`
+- `frontend/src/components/Layout.jsx`
+- `frontend/src/pages/Dashboard.jsx`
+- `frontend/src/pages/__tests__/Dashboard.regression.test.jsx`
+- `CLAUDE.md`
+
+**Verification**
+```text
+node --check backend/src/routes/search.js backend/src/routes/dashboard.js backend/src/db/migrate.js backend/src/app.js
+  -> all clean
+node --test backend/src/__tests__/*.test.js + Node-native backend/test files
+  -> 125/125 passed
+cd backend && npm run test:run
+  -> 3 files, 7/7 extractor tests passed
+cd frontend && npm run test:run
+  -> 29 files, 81/81 tests passed
+cd frontend && npm run build
+  -> clean production build
+Playwright mocked render at 1440x1000 and 1024x768
+  -> no horizontal overflow; dashboard instruments, eight-stage tachometer, Needs You Now, and live command search rendered
+  -> screenshots: /tmp/revv-phase2-dashboard.png, /tmp/revv-phase2-search.png, /tmp/revv-phase2-tablet.png
+rm -rf frontend/dist && git diff --check && git ls-files frontend/dist
+  -> clean; dist untracked
+```
+
 ## Dispatch Log — 2026-07-10 Full Redesign Phase 1: Design-System Foundation
 
-**Status:** READY FOR CLAUDE CODE QA — FEATURE BRANCH ONLY — NOT DEPLOYED
+**Status:** DEPLOYED + CLAUDE CODE QA PASS + LIVE HEALTH VERIFIED (`ab2210a`)
 
 **Scope**
 - Committed the approved six-phase master spec at `SPEC-revv-redesign.md`.
