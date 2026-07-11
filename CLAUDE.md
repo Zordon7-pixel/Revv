@@ -56,10 +56,56 @@ const ro = await dbGet('SELECT * FROM ros WHERE id = $1 AND shop_id = $2', [id, 
 await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 ```
 
+## Dispatch Log — 2026-07-10 Full Redesign Phase 3: Repair Orders + RO Detail
+
+**Time:** 2026-07-10 22:08 ET / 2026-07-11 02:08 UTC
+**Status:** READY FOR CLAUDE CODE QA — FEATURE BRANCH ONLY — NOT DEPLOYED
+
+**Scope**
+- Rebuilt the Repair Orders board around a restrained operational table: indigo mono RO numbers, customer, muted vehicle, shared status chip, promised date with red overdue state, server-authoritative total through `<Money cents>`, payment chip, and compact View action.
+- Added status filter chips while preserving search, technician, job-type, payment, date, bulk status, delete, assistant, and touch-device New RO behavior.
+- Normalized the paid filter so canonical `paid` and legacy `succeeded` ROs are both returned; the query remains authenticated and shop-scoped.
+- Replaced RO Detail's crowded header action row with one primary Advance action, one revenue-specific Supplement action, and an accessible overflow menu containing the existing secondary handlers.
+- Added the single horizontal production stepper and flattened nested navigation into Overview, Insurance, Parts, Customer, Comms, and Photos.
+- Added the Overview `Job & money` card using only `amount_owed_cents` and `amount_paid_cents`, paired with a gold hero treatment of the existing Supplement Finder. Analyze and parse continue to use the existing `/insurance-ocr/analyze` and `/insurance-ocr/parse` endpoints.
+- Preserved storage access in the overflow menu and preserved payment-before-close, SIU, reopen, total-loss, approval, payment, invoice, parts, communications, photos, and supplement handlers.
+- No hosted backend/database was opened. No customer, shop, RO, payment, feedback, seed, reset, migration, or Miles Automotive data was read or changed.
+
+**Files changed (10; phase cap respected)**
+- `backend/src/routes/ros.js`
+- `backend/src/__tests__/ros.roleVisibility.test.js`
+- `frontend/src/components/SupplementFinderPanel.jsx`
+- `frontend/src/components/__tests__/SupplementFinderPanel.draft.test.jsx`
+- `frontend/src/index.css`
+- `frontend/src/pages/RepairOrders.jsx`
+- `frontend/src/pages/RODetail.jsx`
+- `frontend/src/pages/__tests__/RepairOrders.redesign.test.jsx`
+- `frontend/src/pages/__tests__/RODetail.totalLoss.test.jsx`
+- `CLAUDE.md`
+
+**Verification**
+```text
+node --check backend/src/routes/ros.js
+  -> clean
+node --test backend/src/__tests__/*.test.js + Node-native backend/test files
+  -> 127/127 passed, including payment-before-close, technician reopen, SIU hold, and paid close side-effect gates
+cd backend && npm run test:run
+  -> 3 files, 7/7 extractor tests passed
+cd frontend && npm run test:run
+  -> 30 files, 83/83 tests passed
+cd frontend && npm run build
+  -> clean production build
+Playwright mocked render at 1440x1000 and 1024x768
+  -> Repair Orders and RO Detail have zero page-level horizontal overflow and stay fully inside the content column beside the sidebar
+  -> screenshots: /tmp/revv-phase3-repair-orders.png, /tmp/revv-phase3-ro-detail.png, /tmp/revv-phase3-ro-actions.png, /tmp/revv-phase3-tablet.png
+git diff --check && git ls-files frontend/dist
+  -> clean; dist untracked
+```
+
 ## Dispatch Log — 2026-07-10 Full Redesign Phase 2: Dashboard + Global Search
 
 **Time:** 2026-07-10 21:38 ET / 2026-07-11 01:38 UTC
-**Status:** READY FOR CLAUDE CODE QA — FEATURE BRANCH ONLY — NOT DEPLOYED
+**Status:** DEPLOYED + CLAUDE CODE QA PASS + LIVE HEALTH VERIFIED (`e18df11c9e083a8e5810522d31a8015fe3df5e7c`)
 
 **Scope**
 - Replaced the owner dashboard's legacy gradient stat cards with the approved Instrument KPI row: Active Jobs pipeline bars, Revenue MTD goal gauge, True Profit margin gauge, and a gold Supplement Opportunity surface.

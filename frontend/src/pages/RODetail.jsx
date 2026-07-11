@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Pencil, Save, X, Package, PackageCheck, PackageX, Plus, CheckCircle, AlertCircle, Clock, Truck, RefreshCw, ExternalLink, Car, DollarSign, ClipboardList, Smartphone, AlertTriangle, Copy, Printer, User, Phone, MessageSquare, Mail, Users, CreditCard, Search, Camera, Trash2, ChevronDown, ChevronUp } from 'lucide-react'
+import { ArrowLeft, Pencil, Save, X, Package, PackageCheck, PackageX, Plus, CheckCircle, AlertCircle, Clock, Truck, RefreshCw, ExternalLink, Car, DollarSign, ClipboardList, Smartphone, AlertTriangle, Copy, Printer, User, Phone, MessageSquare, Mail, Users, CreditCard, Search, Camera, Trash2, ChevronDown, ChevronUp, MoreHorizontal, ChevronRight } from 'lucide-react'
 import api from '../lib/api'
 import { tryCopyToClipboard } from '../lib/clipboard'
 import { STATUS_COLORS, STATUS_LABELS } from './RepairOrders'
-import StatusBadge from '../components/StatusBadge'
+import { Money, StatusBadge } from '../components/ui'
 import PaymentStatusBadge, { normalizePaymentStatus } from '../components/PaymentStatusBadge'
 import PaymentPanel from '../components/PaymentPanel'
 import LibraryAutocomplete from '../components/LibraryAutocomplete'
@@ -146,6 +146,7 @@ export default function RODetail() {
   const [updatingSupp, setUpdatingSupp] = useState(null)
   const [activeTab, setActiveTab] = useState('overview')
   const [overviewTab, setOverviewTab] = useState('core')
+  const [showActionMenu, setShowActionMenu] = useState(false)
   const [customerForm, setCustomerForm] = useState({
     name: '',
     phone: '',
@@ -941,124 +942,166 @@ export default function RODetail() {
   return (
     <div className="max-w-4xl mx-auto space-y-4">
       {/* Header */}
-      <div className="relative overflow-hidden rounded-2xl border border-[#2a2d3e] bg-[#161a2b] p-4 sm:p-5 shadow-[0_12px_40px_rgba(2,6,23,0.35)]">
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_14%_20%,rgba(59,130,246,0.16),transparent_40%),radial-gradient(circle_at_86%_78%,rgba(16,185,129,0.12),transparent_46%)]" />
-        <div className="relative flex flex-col gap-4">
-          <div className="flex items-start gap-3">
+      <div className="relative rounded-instrument border border-line bg-panel p-4 shadow-[0_16px_48px_rgba(0,0,0,0.18)] sm:p-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="flex min-w-0 items-start gap-3">
             <button
+              type="button"
+              aria-label="Back to repair orders"
               onClick={() => navigate('/ros')}
-              className="mt-0.5 inline-flex h-9 w-9 items-center justify-center rounded-lg border border-[#2f344a] bg-[#111526] text-slate-300 transition-colors hover:border-indigo-400/60 hover:text-white"
+              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-line bg-panel-2 text-muted transition-colors hover:border-brand/50 hover:text-ink"
             >
               <ArrowLeft size={18} />
             </button>
-            <div className="min-w-0 flex-1">
-              <p className="text-[10px] uppercase tracking-[0.14em] text-slate-500">Repair Order</p>
-              <h1 className="text-xl font-bold text-white">{ro.ro_number}</h1>
-              <p className="text-sm text-slate-400 truncate">{ro.vehicle?.year} {ro.vehicle?.make} {ro.vehicle?.model} · {ro.customer?.name}</p>
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-faint">Repair order</p>
+              <h1 className="font-display text-2xl font-semibold text-ink">{ro.ro_number}</h1>
+              <p className="truncate text-sm text-muted">
+                {[ro.vehicle?.year, ro.vehicle?.make, ro.vehicle?.model].filter(Boolean).join(' ') || 'Vehicle not set'}
+              </p>
+              <p className="mt-1 font-mono text-xs text-faint">
+                Claim {ro.claim_number || ro.insurance_claim_number || 'not assigned'}
+              </p>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                {!hideHeaderFinancialForTech && <StatusBadge status={ro.status} claimStatus={ro.claim_status} />}
+                {!hideHeaderFinancialForTech && <PaymentStatusBadge status={paymentStatus} paymentReceived={ro.payment_received} />}
+                <span className={`rounded-full border border-line px-2.5 py-1 font-mono text-xs ${daysColor}`}>{daysIn}d in shop</span>
+              </div>
             </div>
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className={`text-xs font-bold px-2.5 py-1 rounded-lg border border-[#334155] bg-[#0f1322] ${daysColor}`}>{daysIn}d in shop</span>
-            {ro.status === 'closed' && !isClosedTotalLoss && (
-              <span className="flex items-center gap-1.5 text-slate-300 text-xs font-bold bg-slate-700/60 border border-slate-600 px-3 py-1.5 rounded-lg tracking-wide">TICKET CLOSED</span>
-            )}
-            {(ro.status === 'total_loss' || isClosedTotalLoss) && (
-              <span className="flex items-center gap-1.5 text-red-300 text-xs font-bold bg-red-950/50 border border-red-700/60 px-3 py-1.5 rounded-lg tracking-wide">
-                <AlertTriangle size={12} /> TOTAL LOSS CLOSED
-              </span>
-            )}
-            {!hideHeaderFinancialForTech && <StatusBadge status={ro.status} claimStatus={ro.claim_status} />}
-            {!hideHeaderFinancialForTech && <PaymentStatusBadge status={paymentStatus} paymentReceived={ro.payment_received} />}
-            {ro.payment_received === 1 && (
-              <span className="flex items-center gap-1 text-emerald-400 text-xs font-medium bg-emerald-900/30 border border-emerald-700/40 px-3 py-1.5 rounded-lg">
-                <CheckCircle size={12} /> Paid {ro.payment_received_at && `· ${new Date(ro.payment_received_at).toLocaleDateString()}`}
-              </span>
-            )}
-            {ro.status === 'estimate_sent' && !ro.estimate_approved_at && !userIsAssistant && (
-              <button onClick={approveEstimate} disabled={approvingEstimate} className="w-full sm:w-auto flex items-center justify-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
-                <CheckCircle size={12} /> {approvingEstimate ? 'Approving...' : `${t('portal.approveBtn')} ${t('ro.estimate')}`}
-              </button>
-            )}
-            {ro.status === 'estimate' && !userIsAssistant && (
-              <button
-                onClick={sendForApproval}
-                disabled={sendingForApproval}
-                className="w-full sm:w-auto flex items-center justify-center gap-1 bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
-              >
-                <Mail size={12} /> {sendingForApproval ? 'Generating Link...' : 'Send for Approval'}
-              </button>
-            )}
-            {!ro.payment_received && canMarkPaymentFromRo && (
-              <button onClick={() => setShowMarkPaidModal(true)} className="w-full sm:w-auto flex items-center justify-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
-                <DollarSign size={12} /> {t('ro.paymentReceived')}
-              </button>
-            )}
-            {canStepBack && (
-              <button onClick={goBack} className="w-full sm:w-auto flex items-center justify-center gap-1 bg-slate-600 hover:bg-slate-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
-                <ArrowLeft size={12} /> ← Back
-              </button>
-            )}
-            {canAdvance && (
-              <button onClick={advance} className="w-full sm:w-auto flex items-center justify-center gap-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
-                → {STATUS_LABELS[STAGES[currentIdx+1]]}
-              </button>
-            )}
-            {ro.status === 'delivery' && !userIsAssistant && (
-              <button
-                onClick={async () => {
-                  if (!window.confirm('Close this ticket and mark vehicle as delivered?')) return
-                  await api.put(`/ros/${id}/status`, { status: 'closed' })
-                  load()
-                }}
-                className="w-full sm:w-auto flex items-center justify-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
-              >
-                <CheckCircle size={12} /> Mark Delivered &amp; Close Ticket
-              </button>
-            )}
-            {ro.status !== 'total_loss' && !isClosedTotalLoss && !userIsAssistant && (
-              <button
-                onClick={() => setShowTotalLossModal(true)}
-                className="w-full sm:w-auto flex items-center justify-center gap-1 bg-red-700 hover:bg-red-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
-              >
-                <AlertTriangle size={12} /> Mark Total Loss
-              </button>
-            )}
-            <button onClick={() => window.open(`/invoice/${id}`, '_blank')}
-              className="w-full sm:w-auto flex items-center justify-center gap-1 bg-[#2a2d3e] hover:bg-[#3a3d4e] text-slate-300 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
-              <Printer size={12} /> {t('ro.invoice')}
-            </button>
-            {canEditRo && (!editing
-              ? <button onClick={() => setEditing(true)} className="w-full sm:w-auto flex items-center justify-center gap-1 bg-[#2a2d3e] hover:bg-[#3a3d4e] text-slate-300 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
-                  <Pencil size={12} /> {t('common.edit')}
+
+          <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+            {editing ? (
+              <>
+                <button type="button" onClick={save} disabled={saving} className="revv-btn revv-btn-primary">
+                  <Save size={14} /> {saving ? 'Saving...' : t('common.save')}
                 </button>
-              : <div className="flex gap-1 w-full sm:w-auto">
-                  <button onClick={save} disabled={saving} className="flex-1 sm:flex-none w-full sm:w-auto flex items-center justify-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
-                    <Save size={12} /> {saving ? 'Saving...' : t('common.save')}
+                <button type="button" onClick={() => { setEditing(false); setForm(buildFormFromRo(ro)) }} className="revv-btn revv-btn-secondary" aria-label="Cancel editing">
+                  <X size={14} />
+                </button>
+              </>
+            ) : (
+              <>
+                {canAdvance && (
+                  <button type="button" onClick={advance} className="revv-btn revv-btn-primary">
+                    Advance <ChevronRight size={14} /> {STATUS_LABELS[STAGES[currentIdx + 1]]}
                   </button>
-                  <button onClick={() => { setEditing(false); setForm(buildFormFromRo(ro)) }} className="flex-1 sm:flex-none w-full sm:w-auto flex items-center justify-center gap-1 bg-[#2a2d3e] text-slate-400 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
-                    <X size={12} />
+                )}
+                {ro.status === 'delivery' && !userIsAssistant && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!window.confirm('Close this ticket and mark vehicle as delivered?')) return
+                      await api.put(`/ros/${id}/status`, { status: 'closed' })
+                      load()
+                    }}
+                    className="revv-btn revv-btn-primary"
+                  >
+                    <CheckCircle size={14} /> Close ticket
                   </button>
-                </div>
+                )}
+                {userIsAdmin && (ro.payment_type === 'insurance' || ro.claim_number || ro.insurance_claim_number) && (
+                  <button
+                    type="button"
+                    onClick={() => { setActiveTab('overview'); setOverviewTab('insurance') }}
+                    className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-gold/40 bg-gold/10 px-3 text-xs font-semibold text-gold transition-colors hover:bg-gold/15"
+                  >
+                    <Plus size={13} /> Supplement
+                  </button>
+                )}
+              </>
             )}
+
+            <div
+              className="relative"
+              onBlur={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget)) setShowActionMenu(false)
+              }}
+            >
+              <button
+                type="button"
+                aria-label="More repair order actions"
+                aria-expanded={showActionMenu}
+                onClick={() => setShowActionMenu((open) => !open)}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-line bg-panel-2 text-muted hover:border-brand/50 hover:text-ink"
+              >
+                <MoreHorizontal size={17} />
+              </button>
+              {showActionMenu && (
+                <div className="absolute right-0 top-11 z-30 w-56 rounded-instrument border border-line bg-raised p-1.5 shadow-2xl" role="menu">
+                  {ro.status === 'estimate_sent' && !ro.estimate_approved_at && !userIsAssistant && (
+                    <button type="button" role="menuitem" onClick={() => { setShowActionMenu(false); approveEstimate() }} disabled={approvingEstimate} className="revv-menu-item">Approve estimate</button>
+                  )}
+                  {ro.status === 'estimate' && !userIsAssistant && (
+                    <button type="button" role="menuitem" onClick={() => { setShowActionMenu(false); sendForApproval() }} disabled={sendingForApproval} className="revv-menu-item">Send for approval</button>
+                  )}
+                  {!ro.payment_received && canMarkPaymentFromRo && (
+                    <button type="button" role="menuitem" onClick={() => { setShowActionMenu(false); setShowMarkPaidModal(true) }} className="revv-menu-item">Mark payment received</button>
+                  )}
+                  {canStepBack && <button type="button" role="menuitem" onClick={() => { setShowActionMenu(false); goBack() }} className="revv-menu-item">Move to previous stage</button>}
+                  <button type="button" role="menuitem" onClick={() => { setShowActionMenu(false); setActiveTab('storage') }} className="revv-menu-item">Storage hold</button>
+                  <button type="button" role="menuitem" onClick={() => { setShowActionMenu(false); window.open(`/invoice/${id}`, '_blank') }} className="revv-menu-item">Open invoice</button>
+                  {canEditRo && !editing && <button type="button" role="menuitem" onClick={() => { setShowActionMenu(false); setEditing(true) }} className="revv-menu-item">Edit RO details</button>}
+                  {ro.status !== 'total_loss' && !isClosedTotalLoss && !userIsAssistant && (
+                    <button type="button" role="menuitem" onClick={() => { setShowActionMenu(false); setShowTotalLossModal(true) }} className="revv-menu-item text-crit">Mark total loss</button>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
 
-      <div className="overflow-x-auto">
-      <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-1 flex items-center gap-1 w-fit">
-        <button
-          onClick={() => setActiveTab('overview')}
-          className={`text-xs px-3 py-1.5 rounded-lg font-medium whitespace-nowrap ${activeTab === 'overview' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-[#2a2d3e]'}`}
-        >
-          Overview
-        </button>
-        <button
-          onClick={() => setActiveTab('storage')}
-          className={`text-xs px-3 py-1.5 rounded-lg font-medium whitespace-nowrap ${activeTab === 'storage' ? 'bg-amber-400 text-[#0f1117]' : 'text-slate-300 hover:bg-[#2a2d3e]'}`}
-        >
-          Storage Hold
-        </button>
+      <div className="overflow-x-auto rounded-instrument border border-line bg-panel px-3 py-3" aria-label="Repair order progress">
+        <div className="min-w-[620px]">
+          <div className="flex items-start">
+            {STAGES.slice(0, -1).map((stage, index) => {
+              const complete = index < currentIdx
+              const current = index === currentIdx
+              const canClick = !userIsAssistant && stage !== ro.status && !(ro.status === 'closed' && !userIsAdmin)
+              return (
+                <button
+                  key={stage}
+                  type="button"
+                  disabled={!canClick}
+                  onClick={() => canClick && api.put(`/ros/${id}/status`, { status: stage }).then(() => load())}
+                  className="group relative flex min-w-0 flex-1 flex-col items-center gap-2 px-1 text-center"
+                >
+                  {index > 0 && <span className={`absolute right-1/2 top-2.5 h-px w-full ${complete || current ? 'bg-brand' : 'bg-line-2'}`} aria-hidden="true" />}
+                  <span className={`relative z-10 h-5 w-5 rounded-full border-4 ${complete ? 'border-brand bg-brand' : current ? 'border-gold bg-panel shadow-[0_0_0_3px_color-mix(in_srgb,var(--gold)_18%,transparent)]' : 'border-line-2 bg-panel'}`} />
+                  <span className={`text-[10px] ${current ? 'font-semibold text-gold' : complete ? 'text-brand-lit' : 'text-faint'}`}>{STATUS_LABELS[stage] || stage}</span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
       </div>
+
+      <div className="overflow-x-auto border-b border-line">
+        <div className="flex min-w-max items-center gap-5 px-1" role="tablist" aria-label="Repair order sections">
+          {[
+            ['core', 'Overview'],
+            ['insurance', 'Insurance'],
+            ['parts', 'Parts'],
+            ['customer', 'Customer'],
+            ['communication', 'Comms'],
+            ['photos', 'Photos'],
+          ].map(([key, label]) => {
+            const selected = activeTab === 'overview' && overviewTab === key
+            return (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                onClick={() => { setActiveTab('overview'); setOverviewTab(key) }}
+                className={`border-b-2 px-1 py-3 text-sm font-semibold transition-colors ${selected ? 'border-brand text-ink' : 'border-transparent text-muted hover:text-ink'}`}
+              >
+                {label}
+              </button>
+            )
+          })}
+        </div>
       </div>
 
       {activeTab === 'storage' && (
@@ -1214,47 +1257,6 @@ export default function RODetail() {
 
       {activeTab === 'overview' && (
         <>
-      <div className="overflow-x-auto">
-      <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-1 flex items-center gap-1 w-fit">
-        <button
-          onClick={() => setOverviewTab('core')}
-          className={`text-xs px-3 py-1.5 rounded-lg font-medium whitespace-nowrap ${overviewTab === 'core' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-[#2a2d3e]'}`}
-        >
-          Core
-        </button>
-        <button
-          onClick={() => setOverviewTab('insurance')}
-          className={`text-xs px-3 py-1.5 rounded-lg font-medium whitespace-nowrap ${overviewTab === 'insurance' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-[#2a2d3e]'}`}
-        >
-          Insurance
-        </button>
-        <button
-          onClick={() => setOverviewTab('customer')}
-          className={`text-xs px-3 py-1.5 rounded-lg font-medium whitespace-nowrap ${overviewTab === 'customer' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-[#2a2d3e]'}`}
-        >
-          Customer
-        </button>
-        <button
-          onClick={() => setOverviewTab('technician')}
-          className={`text-xs px-3 py-1.5 rounded-lg font-medium whitespace-nowrap ${overviewTab === 'technician' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-[#2a2d3e]'}`}
-        >
-          Technician
-        </button>
-        <button
-          onClick={() => setOverviewTab('parts')}
-          className={`text-xs px-3 py-1.5 rounded-lg font-medium whitespace-nowrap ${overviewTab === 'parts' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-[#2a2d3e]'}`}
-        >
-          Parts
-        </button>
-        <button
-          onClick={() => setOverviewTab('communication')}
-          className={`text-xs px-3 py-1.5 rounded-lg font-medium whitespace-nowrap ${overviewTab === 'communication' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-[#2a2d3e]'}`}
-        >
-          Communication
-        </button>
-      </div>
-      </div>
-
       {overviewTab === 'core' && (
         <>
       {(ro.status === 'total_loss' || isClosedTotalLoss) && (
@@ -1269,42 +1271,43 @@ export default function RODetail() {
         </div>
       )}
 
-      {/* Progress */}
-      <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
-        <div className="overflow-x-auto pb-1">
-          <div className="min-w-[640px] flex items-start justify-between gap-1">
-            {STAGES.slice(0, -1).map((s, i) => {
-              const isActive = i === currentIdx
-              const isComplete = i < currentIdx
-              const isFuture = i > currentIdx
-              const canClick = !userIsAssistant && s !== ro.status && !(ro.status === 'closed' && !userIsAdmin)
-              return (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => {
-                    if (!canClick) return
-                    api.put(`/ros/${id}/status`, { status: s }).then(() => load())
-                  }}
-                  disabled={!canClick}
-                  className={`flex flex-col items-center gap-1.5 flex-1 min-w-0 group ${canClick ? 'cursor-pointer' : 'cursor-default'}`}
-                >
-                  <div
-                    className="w-5 h-5 rounded-full flex-shrink-0 transition-all"
-                    style={{
-                      background: isActive || isComplete ? STATUS_COLORS[s] : '#2a2d3e',
-                      boxShadow: isActive ? `0 0 0 2px white` : undefined,
-                    }}
-                  />
-                  <span className={`text-[9px] text-center leading-tight ${isActive ? 'text-white font-semibold' : isFuture ? 'text-slate-600' : 'text-slate-400'}`}>
-                    {STATUS_LABELS[s] || s}
-                  </span>
-                  {isActive && <span className="text-[8px] text-slate-500 text-center leading-tight">You are here</span>}
-                </button>
-              )
-            })}
+      <div className={`grid gap-4 ${userIsAdmin && (ro.payment_type === 'insurance' || ro.claim_number || ro.insurance_claim_number) ? 'xl:grid-cols-[minmax(0,0.72fr)_minmax(0,1.28fr)]' : ''}`}>
+        <section className="rounded-instrument border border-line bg-panel p-4" aria-labelledby="job-money-heading">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-faint">Overview</p>
+              <h2 id="job-money-heading" className="font-display text-lg font-semibold text-ink">Job &amp; money</h2>
+            </div>
+            <StatusBadge status={ro.status} claimStatus={ro.claim_status} />
           </div>
-        </div>
+          <dl className="mt-5 divide-y divide-line">
+            <div className="flex items-baseline justify-between gap-4 py-3">
+              <dt className="text-xs text-muted">Amount owed</dt>
+              <dd><Money cents={ro.amount_owed_cents ?? 0} className="text-xl font-semibold text-ink" /></dd>
+            </div>
+            <div className="flex items-baseline justify-between gap-4 py-3">
+              <dt className="text-xs text-muted">Amount paid</dt>
+              <dd><Money cents={ro.amount_paid_cents ?? 0} className="text-base font-semibold text-good" /></dd>
+            </div>
+            <div className="flex items-baseline justify-between gap-4 py-3">
+              <dt className="text-xs text-muted">Promised</dt>
+              <dd className="font-mono text-sm text-ink">{ro.estimated_delivery ? new Date(`${String(ro.estimated_delivery).slice(0, 10)}T12:00:00`).toLocaleDateString() : 'Not set'}</dd>
+            </div>
+            <div className="flex items-baseline justify-between gap-4 py-3">
+              <dt className="text-xs text-muted">Assigned</dt>
+              <dd className="text-sm font-medium text-ink">{ro.assigned_tech?.name || 'Unassigned'}</dd>
+            </div>
+          </dl>
+        </section>
+        {userIsAdmin && (ro.payment_type === 'insurance' || ro.claim_number || ro.insurance_claim_number) && (
+          <SupplementFinderPanel
+            roId={id}
+            importedItems={estimateImport.items}
+            importedSummary={estimateImport.summary}
+            variant="hero"
+            onFileSupplement={() => setOverviewTab('insurance')}
+          />
+        )}
       </div>
 
       {showStripePanel && (
@@ -1393,7 +1396,7 @@ export default function RODetail() {
           <button
             onClick={startInspection}
             disabled={creatingInspection}
-            className="text-xs bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] font-semibold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60"
+            className="text-xs bg-brand hover:bg-brand-lit text-white font-semibold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60"
           >
             {creatingInspection ? 'Starting...' : 'Start Inspection'}
           </button>
@@ -2063,14 +2066,6 @@ export default function RODetail() {
         />
       )}
 
-      {userIsAdmin && (ro.payment_type === 'insurance' || ro.claim_number || ro.insurance_claim_number) && (
-        <SupplementFinderPanel
-          roId={id}
-          importedItems={estimateImport.items}
-          importedSummary={estimateImport.summary}
-        />
-      )}
-
       {(ro.payment_type === 'insurance' || ro.claim_number || ro.insurance_claim_number) && (
         <InsurancePanel roId={id} ro={ro} onUpdated={() => { load(); loadEstimateImport() }} />
       )}
@@ -2120,7 +2115,7 @@ export default function RODetail() {
       </>
       )}
 
-      {overviewTab === 'technician' && userIsAdmin && (
+      {overviewTab === 'core' && userIsAdmin && (
         <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
           <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">🔒 Internal Notes</h2>
           <form onSubmit={submitInternalNote} className="space-y-2 mb-3">
@@ -2252,10 +2247,10 @@ export default function RODetail() {
       )}
 
       {/* Photos */}
-      {overviewTab === 'technician' && <ROPhotos roId={ro.id} isAdmin={userIsAdmin} canDelete={!userIsAssistant} />}
+      {overviewTab === 'photos' && <ROPhotos roId={ro.id} isAdmin={userIsAdmin} canDelete={!userIsAssistant} />}
 
       {/* Assigned Tech */}
-      {overviewTab === 'technician' && userIsEmployee && (
+      {overviewTab === 'core' && userIsEmployee && (
         <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
           <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3 flex items-center gap-1.5">
             <User size={12} /> {t('ro.technician')}
@@ -2288,7 +2283,7 @@ export default function RODetail() {
       )}
 
       {/* Job Operations — multi-tech assignment */}
-      {overviewTab === 'technician' && userIsEmployee && (
+      {overviewTab === 'core' && userIsEmployee && (
         <ROOperations
           roId={ro.id}
           technicians={shopUsers.filter(u => ['owner', 'admin', 'technician', 'employee', 'staff'].includes(u.role))}
@@ -2297,7 +2292,7 @@ export default function RODetail() {
       )}
 
       {/* Tech Notes */}
-      {overviewTab === 'technician' && userIsEmployee && (
+      {overviewTab === 'core' && userIsEmployee && (
         <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
           <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-2 flex items-center gap-1.5">
             <ClipboardList size={12} /> {t('common.notes')}

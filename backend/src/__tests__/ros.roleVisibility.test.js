@@ -139,3 +139,17 @@ for (const role of ['assistant', 'admin', 'owner']) {
     });
   });
 }
+
+for (const paymentStatus of ['paid', 'succeeded']) {
+  test(`GET /ros treats ${paymentStatus} as a paid-status filter`, async () => {
+    await assertRoleQuery({
+      role: 'owner',
+      userId: 'owner-1',
+      query: { payment_status: paymentStatus },
+      assertSql: ({ sql, params }) => {
+        assert.match(sql, /payment_status[\s\S]*IN \('paid', 'succeeded'\)/);
+        assert.deepEqual(params, ['shop-1']);
+      },
+    });
+  });
+}

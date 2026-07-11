@@ -947,9 +947,12 @@ router.get('/', auth, async (req, res) => {
 
     if (normalizedPaymentStatus && normalizedPaymentStatus !== 'all') {
       const paymentStatusExpr = `COALESCE(NULLIF(LOWER(ro.payment_status), ''), CASE WHEN COALESCE(ro.payment_received, 0) = 1 THEN 'succeeded' ELSE 'unpaid' END)`;
-      const effectivePaymentStatus = normalizedPaymentStatus === 'paid' ? 'succeeded' : normalizedPaymentStatus;
-      params.push(effectivePaymentStatus);
-      where.push(`${paymentStatusExpr} = $${params.length}`);
+      if (['paid', 'succeeded'].includes(normalizedPaymentStatus)) {
+        where.push(`${paymentStatusExpr} IN ('paid', 'succeeded')`);
+      } else {
+        params.push(normalizedPaymentStatus);
+        where.push(`${paymentStatusExpr} = $${params.length}`);
+      }
     }
 
     if (normalizedPaymentType && normalizedPaymentType !== 'all') {

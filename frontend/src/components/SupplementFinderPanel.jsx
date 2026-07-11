@@ -99,7 +99,7 @@ function FlagGroup({ type, flags }) {
   )
 }
 
-export default function SupplementFinderPanel({ roId, importedItems = [], importedSummary = null }) {
+export default function SupplementFinderPanel({ roId, importedItems = [], importedSummary = null, variant = 'default', onFileSupplement }) {
   const fileInputRef = useRef(null)
   const [running, setRunning] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -200,12 +200,13 @@ export default function SupplementFinderPanel({ roId, importedItems = [], import
 
   const summary = analysis?.summary || null
   const busy = running || uploading
+  const hero = variant === 'hero'
 
   return (
-    <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 space-y-4">
+    <div className={`${hero ? 'border-gold/40 bg-gold/5' : 'border-line bg-panel'} rounded-instrument border p-4 space-y-4`}>
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
+          <h2 className={`text-xs font-bold uppercase tracking-wide flex items-center gap-1.5 ${hero ? 'text-gold' : 'text-muted'}`}>
             <BadgeDollarSign size={13} /> Supplement Finder
           </h2>
           <p className="text-xs text-slate-500 mt-1">
@@ -279,6 +280,15 @@ export default function SupplementFinderPanel({ roId, importedItems = [], import
             <div className="text-[10px] text-amber-400 uppercase font-semibold">Supplement Opportunity</div>
             <div className="text-lg font-bold text-amber-300">{money(summary.total_supplement_opportunity)}</div>
           </div>
+          {hero && onFileSupplement && Number(summary.total_supplement_opportunity || 0) > 0 && (
+            <button
+              type="button"
+              onClick={onFileSupplement}
+              className="sm:col-span-3 inline-flex items-center justify-center gap-2 rounded-lg bg-gold px-4 py-2.5 text-sm font-semibold text-[#0F1117] transition-colors hover:bg-gold-lit"
+            >
+              <BadgeDollarSign size={15} /> File supplement
+            </button>
+          )}
         </div>
       )}
 

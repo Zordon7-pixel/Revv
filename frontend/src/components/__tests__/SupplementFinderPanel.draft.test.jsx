@@ -23,6 +23,7 @@ describe('SupplementFinderPanel staged appraisal reuse', () => {
 
   it('analyzes the estimate staged during RO creation without another upload', async () => {
     const user = userEvent.setup()
+    const onFileSupplement = vi.fn()
     const lineItems = [
       { type: 'parts', description: 'Bumper cover', quantity: 1, unit_price: 500 },
       { type: 'labor', description: 'Body labor', quantity: 2, unit_price: 75 },
@@ -44,12 +45,12 @@ describe('SupplementFinderPanel staged appraisal reuse', () => {
         summary: {
           total_insurance_allowed: 650,
           total_shop_value: 650,
-          total_supplement_opportunity: 0,
+          total_supplement_opportunity: 50,
         },
       },
     })
 
-    render(<SupplementFinderPanel roId="ro-1" />)
+    render(<SupplementFinderPanel roId="ro-1" variant="hero" onFileSupplement={onFileSupplement} />)
 
     expect(await screen.findByRole('status')).toHaveTextContent('ready with 2 estimate lines')
     expect(screen.getByRole('status')).toHaveTextContent('no upload is needed')
@@ -61,6 +62,8 @@ describe('SupplementFinderPanel staged appraisal reuse', () => {
       line_items: lineItems,
     }))
     expect(await screen.findAllByText('$650.00')).toHaveLength(2)
+    await user.click(screen.getByRole('button', { name: 'File supplement' }))
+    expect(onFileSupplement).toHaveBeenCalledOnce()
   })
 
   it('can parse and analyze appraisal pages already attached to an existing RO', async () => {

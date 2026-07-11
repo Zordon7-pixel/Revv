@@ -64,13 +64,15 @@ vi.mock('../../components/PaymentStatusBadge', () => ({
 }))
 vi.mock('../../components/PaymentPanel', () => ({ default: () => null }))
 vi.mock('../../components/LibraryAutocomplete', () => ({ default: () => null }))
-vi.mock('../../components/ROPhotos', () => ({ default: () => null }))
+vi.mock('../../components/ROPhotos', () => ({ default: () => <div>Photo workspace</div> }))
 vi.mock('../../components/TurnaroundEstimator', () => ({ default: () => null }))
 vi.mock('../../components/PartsSearch', () => ({ default: () => null }))
 vi.mock('../../components/VehicleDiagram', () => ({ default: () => null }))
 vi.mock('../../components/ClaimStatusCard', () => ({ default: () => null }))
-vi.mock('../../components/InsurancePanel', () => ({ default: () => null }))
-vi.mock('../../components/SupplementFinderPanel', () => ({ default: () => null }))
+vi.mock('../../components/InsurancePanel', () => ({ default: () => <div>Insurance workspace</div> }))
+vi.mock('../../components/SupplementFinderPanel', () => ({
+  default: ({ variant }) => <div data-testid="supplement-finder" data-variant={variant}>Supplement Finder workspace</div>,
+}))
 vi.mock('../../components/ROOperations', () => ({ default: () => null }))
 vi.mock('../../components/ClaimTrackerPanel', () => ({ default: () => null }))
 
@@ -180,7 +182,8 @@ describe('RODetail total loss action', () => {
     renderRODetail()
 
     await screen.findByText('RO-1')
-    await user.click(screen.getByRole('button', { name: /mark total loss/i }))
+    await user.click(screen.getByRole('button', { name: /more repair order actions/i }))
+    await user.click(screen.getByRole('menuitem', { name: /mark total loss/i }))
 
     const modal = await screen.findByRole('dialog', { name: /mark total loss/i })
     expect(modal.parentElement).toBe(document.body)
@@ -195,7 +198,7 @@ describe('RODetail total loss action', () => {
         note: 'Insurer declared total loss',
       })
     })
-    expect(await screen.findByText(/total loss closed/i)).toBeInTheDocument()
+    expect((await screen.findAllByText(/^total loss$/i)).length).toBeGreaterThan(0)
 
     const setButtons = screen.getAllByRole('button', { name: /\+ set/i })
     await user.click(setButtons[0])
@@ -252,5 +255,41 @@ describe('RODetail total loss action', () => {
       const galleryLoads = api.get.mock.calls.filter(([url]) => url === '/photos/ro/ro-1/predropoff')
       expect(galleryLoads).toHaveLength(2)
     })
+  })
+
+  it('renders one action cluster and exposes every primary RO workspace from one tab row', async () => {
+    stubApi(makeRo({
+      payment_type: 'insurance',
+      claim_number: 'CLM-9001',
+      amount_owed_cents: 125050,
+      amount_paid_cents: 25000,
+      estimated_delivery: '2026-07-20',
+    }))
+    const user = userEvent.setup()
+    renderRODetail()
+
+    expect(await screen.findByRole('button', { name: /advance.*paint/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^supplement$/i })).toBeInTheDocument()
+    expect(screen.getByText('$1,250.50')).toBeInTheDocument()
+    expect(screen.getByText('$250.00')).toBeInTheDocument()
+    expect(screen.getByTestId('supplement-finder')).toHaveAttribute('data-variant', 'hero')
+
+    const tabs = screen.getAllByRole('tab')
+    expect(tabs.map((tab) => tab.textContent)).toEqual(['Overview', 'Insurance', 'Parts', 'Customer', 'Comms', 'Photos'])
+
+    await user.click(screen.getByRole('tab', { name: 'Insurance' }))
+    expect(await screen.findByText('Insurance workspace')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('tab', { name: 'Parts' }))
+    expect(await screen.findByRole('heading', { name: 'ro.parts' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('tab', { name: 'Customer' }))
+    expect(await screen.findByRole('heading', { name: 'Customer' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('tab', { name: 'Comms' }))
+    expect(await screen.findByRole('heading', { name: 'Customer Text Messages' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('tab', { name: 'Photos' }))
+    expect(await screen.findByText('Photo workspace')).toBeInTheDocument()
   })
 })

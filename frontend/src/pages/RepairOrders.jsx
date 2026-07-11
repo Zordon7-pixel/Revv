@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Plus, Search, Shield, AlertTriangle, Trash2 } from 'lucide-react'
+import { Plus, Search, Shield, AlertTriangle, Trash2, ArrowUpRight } from 'lucide-react'
 import api from '../lib/api'
 import { isAdmin, isAssistant, isOwner } from '../lib/auth'
 import AddROModal from '../components/AddROModal'
-import StatusBadge from '../components/StatusBadge'
+import { Money, StatusBadge } from '../components/ui'
 
 export const STATUS_COLORS = {
   intake: '#64748b', estimate: '#3b82f6', approval: '#eab308',
@@ -39,6 +39,37 @@ const PAYMENT_STATUSES = [
   { value: 'canceled', label: 'Payment Canceled' },
   { value: 'succeeded', label: 'Paid' },
 ]
+
+const STATUS_FILTERS = [
+  { value: 'all', label: 'All' },
+  { value: 'open', label: 'Open' },
+  { value: 'in-progress', label: 'In progress' },
+  { value: 'completed', label: 'Complete' },
+  { value: 'total_loss', label: 'Total loss' },
+]
+
+function promiseMeta(ro) {
+  if (!ro.estimated_delivery) return { label: 'Not set', overdue: false }
+  const promise = new Date(`${String(ro.estimated_delivery).slice(0, 10)}T12:00:00`)
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const overdue = promise < today && !['closed', 'completed', 'total_loss'].includes(String(ro.status || '').toLowerCase())
+  return {
+    label: promise.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+    overdue,
+  }
+}
+
+function paymentMeta(ro) {
+  const normalized = String(ro.payment_status || '').trim().toLowerCase()
+  if (ro.payment_received === 1 || ['paid', 'succeeded'].includes(normalized)) {
+    return { label: 'Paid', className: 'border-good/30 bg-good/10 text-good' }
+  }
+  if (normalized === 'partial') {
+    return { label: 'Partial', className: 'border-brand/30 bg-brand/10 text-brand-lit' }
+  }
+  return { label: 'Due', className: 'border-line-2 bg-raised text-muted' }
+}
 
 export default function RepairOrders() {
   const navigate = useNavigate()
@@ -136,10 +167,12 @@ export default function RepairOrders() {
     })
   }, [ros])
 
-  const techById = useMemo(() => Object.fromEntries(techs.map((t) => [t.id, t.name])), [techs])
   const allVisibleSelected = ros.length > 0 && ros.every((ro) => selected.has(ro.id))
   const loadedPaymentStatuses = useMemo(() => {
-    return new Set(ros.map((ro) => String(ro.payment_status || '').trim().toLowerCase()).filter(Boolean))
+    return new Set(ros
+      .map((ro) => String(ro.payment_status || '').trim().toLowerCase())
+      .map((status) => status === 'paid' ? 'succeeded' : status)
+      .filter(Boolean))
   }, [ros])
   const loadedJobTypes = useMemo(() => {
     return new Set(ros.map((ro) => String(ro.job_type || '').trim().toLowerCase()).filter(Boolean))
@@ -249,6 +282,25 @@ export default function RepairOrders() {
       </div>
 
       <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-3">
+        <div className="mb-3 flex flex-wrap gap-2" aria-label="Repair order status filters">
+          {STATUS_FILTERS.map((filter) => {
+            const active = filters.status === filter.value
+            return (
+              <button
+                key={filter.value}
+                type="button"
+                onClick={() => updateFilter('status', filter.value)}
+                className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                  active
+                    ? 'border-brand bg-brand text-white'
+                    : 'border-line bg-panel-2 text-muted hover:border-brand/50 hover:text-ink'
+                }`}
+              >
+                {filter.label}
+              </button>
+            )
+          })}
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-8 gap-2">
           <div className="md:col-span-2 relative w-full">
             <Search size={14} className="absolute left-3 top-2.5 text-slate-500" />
@@ -333,7 +385,7 @@ export default function RepairOrders() {
         </div>
       ) : (
         <div className="space-y-3">
-          <table className="hidden md:table w-full bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl overflow-hidden">
+          <table className="hidden md:table w-full bg-panel border border-line rounded-instrument overflow-hidden">
             <thead className="bg-[#0f1117] border-b border-[#2a2d3e]">
               <tr className="text-left text-xs text-slate-400">
                 {canBulk && !assistant && (
@@ -350,13 +402,18 @@ export default function RepairOrders() {
                 <th className="px-3 py-2">Customer</th>
                 <th className="px-3 py-2">Vehicle</th>
                 <th className="px-3 py-2">Status</th>
-                <th className="px-3 py-2">Assigned</th>
-                <th className="px-3 py-2 text-right">Action</th>
+                <th className="px-3 py-2">Promise</th>
+                <th className="px-3 py-2 text-right">Total</th>
+                <th className="px-3 py-2">Pay</th>
+                <th className="px-3 py-2 text-right"><span className="sr-only">Action</span></th>
               </tr>
             </thead>
             <tbody>
-              {ros.map((ro) => (
-                <tr key={ro.id} className="border-b border-[#2a2d3e] last:border-b-0 hover:bg-[#1e2235]">
+              {ros.map((ro) => {
+                const promise = promiseMeta(ro)
+                const payment = paymentMeta(ro)
+                return (
+                <tr key={ro.id} className="border-b border-line last:border-b-0 hover:bg-raised/60">
                   {canBulk && !assistant && (
                     <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
                       <input
@@ -367,7 +424,7 @@ export default function RepairOrders() {
                       />
                     </td>
                   )}
-                  <td className="px-3 py-2 text-xs font-bold text-[#EAB308]">
+                  <td className="px-3 py-2 font-mono text-xs font-semibold text-brand-lit">
                     <div className="inline-flex items-center gap-1.5">
                       <span>{ro.ro_number || '—'}</span>
                       {hasInsuranceClaim(ro) && <Shield size={12} className="text-sky-400" />}
@@ -378,19 +435,16 @@ export default function RepairOrders() {
                       )}
                     </div>
                   </td>
-                  <td className="px-3 py-2 text-sm text-white">{ro.customer_name || '—'}</td>
-                  <td className="px-3 py-2 text-sm text-slate-300">
-                    <span>{[ro.year, ro.make, ro.model].filter(Boolean).join(' ') || '—'}</span>
-                    {(() => {
-                      if (ro.actual_delivery) return null
-                      const days = Math.floor((Date.now() - new Date(ro.intake_date || ro.created_at).getTime()) / 86400000)
-                      if (days >= 60) return <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded-full bg-red-900/50 border border-red-600/40 text-red-300 text-[10px] font-semibold">🔴 {days}d</span>
-                      if (days >= 30) return <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded-full bg-yellow-900/50 border border-yellow-600/40 text-yellow-300 text-[10px] font-semibold">⚠️ {days}d</span>
-                      return null
-                    })()}
-                  </td>
+                  <td className="px-3 py-2 text-sm font-medium text-ink">{ro.customer_name || '—'}</td>
+                  <td className="px-3 py-2 text-sm text-muted">{[ro.year, ro.make, ro.model].filter(Boolean).join(' ') || '—'}</td>
                   <td className="px-3 py-2"><StatusBadge status={ro.status} claimStatus={ro.claim_status} /></td>
-                  <td className="px-3 py-2 text-xs text-slate-400">{techById[ro.assigned_to] || 'Unassigned'}</td>
+                  <td className={`px-3 py-2 font-mono text-xs tabular-nums ${promise.overdue ? 'font-semibold text-crit' : 'text-muted'}`}>
+                    {promise.label}{promise.overdue ? ' overdue' : ''}
+                  </td>
+                  <td className="px-3 py-2 text-right text-sm text-ink"><Money cents={ro.amount_owed_cents ?? 0} /></td>
+                  <td className="px-3 py-2">
+                    <span className={`inline-flex rounded-full border px-2 py-1 text-[10px] font-semibold ${payment.className}`}>{payment.label}</span>
+                  </td>
                   <td className="px-3 py-2 text-right">
                     <div className="inline-flex items-center gap-2">
                       {!assistant && (
@@ -404,20 +458,23 @@ export default function RepairOrders() {
                       )}
                       <button
                         onClick={() => navigate(`/ros/${ro.id}`)}
-                        className="text-xs bg-indigo-600 hover:bg-indigo-500 text-white font-medium px-3 py-1.5 rounded-lg transition-colors"
+                        className="inline-flex items-center gap-1 rounded-lg border border-brand/30 bg-brand/10 px-3 py-1.5 text-xs font-semibold text-brand-lit transition-colors hover:bg-brand/20"
                       >
-                        View
+                        View <ArrowUpRight size={12} />
                       </button>
                     </div>
                   </td>
                 </tr>
-              ))}
+              )})}
             </tbody>
           </table>
 
           <div className="md:hidden space-y-2">
-            {ros.map((ro) => (
-              <div key={ro.id} className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-3">
+            {ros.map((ro) => {
+              const promise = promiseMeta(ro)
+              const payment = paymentMeta(ro)
+              return (
+              <div key={ro.id} className="bg-panel border border-line rounded-instrument p-3">
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     {canBulk && !assistant && (
@@ -431,21 +488,12 @@ export default function RepairOrders() {
                         Select
                       </label>
                     )}
-                    <p className="text-[#EAB308] text-xs font-bold flex items-center gap-1.5">
+                    <p className="font-mono text-brand-lit text-xs font-semibold flex items-center gap-1.5">
                       <span>{ro.ro_number || '—'}</span>
                       {hasInsuranceClaim(ro) && <Shield size={11} className="text-sky-400" />}
                     </p>
-                    <p className="text-white font-semibold text-sm">{ro.customer_name || '—'}</p>
-                    <p className="text-slate-400 text-xs">
-                      {[ro.year, ro.make, ro.model].filter(Boolean).join(' ') || '—'}
-                      {(() => {
-                        if (ro.actual_delivery) return null
-                        const days = Math.floor((Date.now() - new Date(ro.intake_date || ro.created_at).getTime()) / 86400000)
-                        if (days >= 60) return <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded-full bg-red-900/50 border border-red-600/40 text-red-300 text-[10px] font-semibold">🔴 {days}d</span>
-                        if (days >= 30) return <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded-full bg-yellow-900/50 border border-yellow-600/40 text-yellow-300 text-[10px] font-semibold">⚠️ {days}d</span>
-                        return null
-                      })()}
-                    </p>
+                    <p className="text-ink font-semibold text-sm">{ro.customer_name || '—'}</p>
+                    <p className="text-muted text-xs">{[ro.year, ro.make, ro.model].filter(Boolean).join(' ') || '—'}</p>
                     {hasOpenSupplement(ro) && (
                       <p className="text-yellow-300 text-[10px] mt-1 inline-flex items-center gap-1">
                         <AlertTriangle size={10} /> Supplement {String(ro.supplement_status).toLowerCase()}
@@ -453,6 +501,11 @@ export default function RepairOrders() {
                     )}
                   </div>
                   <StatusBadge status={ro.status} claimStatus={ro.claim_status} />
+                </div>
+                <div className="mt-3 grid grid-cols-3 gap-2 border-t border-line pt-3 text-xs">
+                  <div><p className="text-faint">Promise</p><p className={`font-mono ${promise.overdue ? 'font-semibold text-crit' : 'text-ink'}`}>{promise.label}</p></div>
+                  <div><p className="text-faint">Total</p><Money cents={ro.amount_owed_cents ?? 0} className="text-ink" /></div>
+                  <div><p className="text-faint">Payment</p><span className={payment.className.split(' ').at(-1)}>{payment.label}</span></div>
                 </div>
                 <div className="mt-3">
                   <div className="flex gap-2">
@@ -474,7 +527,7 @@ export default function RepairOrders() {
                   </div>
                 </div>
               </div>
-            ))}
+            )})}
           </div>
         </div>
       )}
