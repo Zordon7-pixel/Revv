@@ -55,18 +55,18 @@ export default function LeadCaptureForm() {
 
   if (submitted) {
     return (
-      <div className="flex items-center gap-3 rounded-xl border border-emerald-700/40 bg-emerald-950/40 p-5">
-        <CheckCircle size={22} className="shrink-0 text-emerald-400" />
+      <div className="flex items-center gap-3 rounded-instrument border border-good/30 bg-good/10 p-5" role="status">
+        <CheckCircle size={22} className="shrink-0 text-good" />
         <div>
-          <p className="text-sm font-semibold text-emerald-300">Thanks, {form.name.split(' ')[0]}!</p>
-          <p className="text-xs text-slate-400 mt-0.5">We'll be in touch shortly.</p>
+          <p className="text-sm font-semibold text-good">Thanks, {form.name.split(' ')[0]}!</p>
+          <p className="mt-0.5 text-xs text-muted">We'll be in touch shortly.</p>
         </div>
       </div>
     )
   }
 
   const inputClass =
-    'w-full rounded-lg border border-[#2a2d3e] bg-[#1a1d2e] px-4 py-3 text-sm text-white placeholder-slate-500 outline-none focus:border-indigo-500 transition'
+    'w-full rounded-instrument border border-line-2 bg-panel px-4 py-3 text-sm text-ink placeholder:text-faint outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/20'
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
@@ -75,6 +75,7 @@ export default function LeadCaptureForm() {
           type="text"
           required
           placeholder="Your Name *"
+          aria-label="Your name"
           value={form.name}
           onChange={update('name')}
           className={inputClass}
@@ -83,6 +84,7 @@ export default function LeadCaptureForm() {
           type="email"
           required
           placeholder="Email Address *"
+          aria-label="Email address"
           value={form.email}
           onChange={update('email')}
           className={inputClass}
@@ -92,6 +94,7 @@ export default function LeadCaptureForm() {
         <input
           type="tel"
           placeholder="Phone (optional)"
+          aria-label="Phone"
           value={form.phone}
           onChange={update('phone')}
           className={inputClass}
@@ -99,6 +102,7 @@ export default function LeadCaptureForm() {
         <input
           type="text"
           placeholder="Business Name (optional)"
+          aria-label="Business name"
           value={form.businessName}
           onChange={update('businessName')}
           className={inputClass}
@@ -106,16 +110,17 @@ export default function LeadCaptureForm() {
       </div>
       <textarea
         placeholder="How can we help? (optional)"
+        aria-label="How can we help?"
         value={form.message}
         onChange={update('message')}
         rows={3}
         className={inputClass + ' resize-none'}
       />
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && <p className="text-sm text-crit" role="alert">{error}</p>}
       <button
         type="submit"
         disabled={submitting}
-        className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-60"
+        className="inline-flex w-full items-center justify-center gap-2 rounded-instrument bg-brand px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-lit disabled:opacity-60"
       >
         <Send size={15} />
         {submitting ? 'Sending...' : 'Get in Touch'}

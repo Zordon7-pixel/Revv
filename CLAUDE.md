@@ -56,6 +56,46 @@ const ro = await dbGet('SELECT * FROM ros WHERE id = $1 AND shop_id = $2', [id, 
 await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 ```
 
+## Dispatch Log — 2026-07-11 REVV Redesign Phase 6H: Shared Overlays, Support, and Photos
+
+**Time:** 2026-07-11 03:14 ET / 2026-07-11 07:14 UTC
+**Status:** READY FOR CLAUDE CODE QA — FEATURE BRANCH ONLY — NOT DEPLOYED
+
+**Scope**
+- Migrated the shared carryover-revenue dialog, feedback workflow, diagnostics HelpDesk, quick-start drawer, lead form, autocomplete, RO photo workspace, and photo lightbox to the semantic dark/light token system. The audited surfaces now contain no raw hex colors, legacy indigo/blue/slate/yellow utilities, or gradients.
+- Kept gold limited to the revenue-period action and payment wording. Generic workflows use brand, successful states use good, and damage/failure/destructive states use crit.
+- Replaced blocking browser alerts in carryover assignment, feedback submission, and photo deletion with visible `role="alert"` feedback. Existing API endpoints, payloads, confirmation gates, multi-photo upload behavior, diagnostics behavior, and callbacks remain unchanged.
+- Preserved body-level `AppOverlay` architecture for centered dialogs and the photo viewer, so they remain above the app sidebar. The quick-start guide remains an intentional right-side drawer and is bounded inside the viewport.
+- Added explicit button types, control labels, accordion state, and icon-based close/help controls on the touched surfaces.
+- Expanded `tokenConformance.test.js` to lock all eight migrated production files, the no-browser-alert contract, and shared overlay usage against regression.
+- No backend, API contract, auth rule, workflow, financial calculation, database, seed, reset, migration, destructive script, hosted DB, customer/shop/RO data, or Miles Automotive data changed. Browser data was fully mocked.
+
+**Files changed (10; batch cap respected)**
+- `frontend/src/components/CarryoverModal.jsx`
+- `frontend/src/components/FeedbackButton.jsx`
+- `frontend/src/components/HelpDesk.jsx`
+- `frontend/src/components/HelpPanel.jsx`
+- `frontend/src/components/LeadCaptureForm.jsx`
+- `frontend/src/components/LibraryAutocomplete.jsx`
+- `frontend/src/components/PhotoLightbox.jsx`
+- `frontend/src/components/ROPhotos.jsx`
+- `frontend/src/lib/__tests__/tokenConformance.test.js`
+- `CLAUDE.md`
+
+**Verification**
+```
+cd frontend && npm run test:run -- src/lib/__tests__/tokenConformance.test.js src/components/__tests__/AppOverlay.architecture.test.jsx src/components/__tests__/ROPhotos.phase31.test.jsx  # 3 files, 12/12 passed
+node --test native backend sweep  # 130/130 passed
+cd backend && npm run test:run  # extractor suite 7/7 passed
+cd frontend && npm run test:run  # 38 files, 114/114 passed
+cd frontend && npm run build  # clean; pre-existing chunk-size warning only
+Playwright mocked route checks  # carryover, feedback, help drawer, and RO photo viewer
+viewport results  # 390x844 and 1024x768 exact client/scroll widths; centered overlays have centerDelta=0; all panels inside viewport; zero console/page errors
+screenshots  # /tmp/revv-phase6h-carryover-tablet-dark.png, /tmp/revv-phase6h-feedback-tablet-dark.png, /tmp/revv-phase6h-help-tablet-dark.png, /tmp/revv-phase6h-photo-tablet-dark.png, /tmp/revv-phase6h-photo-phone-light.png
+rg raw hex / legacy palette / gradients / browser alerts across 8 migrated production files  # zero matches
+rm -rf frontend/dist && git diff --check && git ls-files frontend/dist | wc -l  # expected 0
+```
+
 ## Dispatch Log — 2026-07-11 REVV Redesign Phase 6G: Auth, Legal, and Fallback Surfaces
 
 **Time:** 2026-07-11 02:53 ET / 2026-07-11 06:53 UTC

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { CheckCircle, XCircle } from 'lucide-react'
+import { CheckCircle, CircleHelp, Wrench, X, XCircle } from 'lucide-react'
 import AppOverlay from './AppOverlay'
 
 export default function HelpDesk() {
@@ -55,51 +55,52 @@ export default function HelpDesk() {
   return (
     <>
       <button
+        type="button"
         onClick={() => setOpen(true)}
-        className="fixed bottom-5 right-5 z-50 w-12 h-12 rounded-full bg-[#6366f1] text-white text-xl font-bold shadow-lg hover:brightness-110"
+        className="fixed bottom-5 right-5 z-50 grid h-12 w-12 place-items-center rounded-full bg-brand text-white shadow-lg transition-colors hover:bg-brand-lit"
         aria-label="Open Help Desk"
       >
-        ?
+        <CircleHelp size={20} />
       </button>
 
       {open && (
-        <AppOverlay label="REVV HelpDesk" onClose={() => setOpen(false)} className="bg-black/60 px-4">
-          <div className="w-full max-w-2xl rounded-xl border border-[#2a2d3e] bg-[#1a1d2e] text-white p-5">
+        <AppOverlay label="REVV HelpDesk" onClose={() => setOpen(false)} className="bg-black/60 p-4">
+          <div className="max-h-[90dvh] w-full max-w-2xl overflow-y-auto rounded-instrument border border-line-2 bg-panel p-5 text-ink">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold">REVV HelpDesk</h2>
-              <button onClick={() => setOpen(false)} className="text-slate-300 hover:text-white">Close</button>
+              <button type="button" onClick={() => setOpen(false)} className="rounded-md p-2 text-muted transition-colors hover:bg-raised hover:text-ink" aria-label="Close Help Desk"><X size={18} /></button>
             </div>
 
             {loading ? (
               <div className="flex items-center justify-center py-12">
-                <div className="w-8 h-8 border-4 border-[#2a2d3e] border-t-[#6366f1] rounded-full animate-spin" />
+                <div className="h-8 w-8 animate-spin rounded-full border-4 border-line-2 border-t-brand" />
               </div>
             ) : error ? (
-              <div className="text-red-400 text-sm bg-red-950/30 border border-red-800 rounded-lg p-3">{error}</div>
+              <div role="alert" className="rounded-instrument border border-crit/30 bg-crit/10 p-3 text-sm text-crit">{error}</div>
             ) : (
               <>
                 <div className="mb-4 text-sm font-medium flex items-center gap-1.5">
                   {diagnostics?.ok
-                    ? <><CheckCircle size={14} className="text-emerald-400" /> All systems healthy</>
-                    : <><XCircle size={14} className="text-red-400" /> Issues detected</>}
+                    ? <><CheckCircle size={14} className="text-good" /> All systems healthy</>
+                    : <><XCircle size={14} className="text-crit" /> Issues detected</>}
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-4">
                   {(diagnostics?.checks || []).map((check, idx) => (
-                    <div key={`${check.name}-${idx}`} className="border border-[#2a2d3e] rounded-lg p-3 bg-[#151827]">
+                    <div key={`${check.name}-${idx}`} className="rounded-instrument border border-line-2 bg-panel-2 p-3">
                       <div className="text-sm font-medium flex items-center gap-2">
-                        {check.ok ? <CheckCircle size={14} className="text-emerald-400" /> : <XCircle size={14} className="text-red-400" />}
+                        {check.ok ? <CheckCircle size={14} className="text-good" /> : <XCircle size={14} className="text-crit" />}
                         <span>{check.name}</span>
                       </div>
-                      <div className="text-xs text-slate-400 mt-1">{check.detail}</div>
+                      <div className="mt-1 text-xs text-muted">{check.detail}</div>
                     </div>
                   ))}
                 </div>
 
                 {actions.length > 0 && (
-                  <div className="mb-4 border border-[#2a2d3e] rounded-lg p-3 bg-[#151827]">
+                  <div className="mb-4 rounded-instrument border border-line-2 bg-panel-2 p-3">
                     <div className="text-sm font-semibold mb-2">Auto-Fix Actions</div>
-                    <ul className="list-disc list-inside text-sm text-slate-300 space-y-1">
+                    <ul className="list-inside list-disc space-y-1 text-sm text-muted">
                       {actions.map((a, i) => <li key={i}>{a}</li>)}
                     </ul>
                   </div>
@@ -107,13 +108,14 @@ export default function HelpDesk() {
 
                 <div className="flex gap-2 justify-end">
                   <button
+                    type="button"
                     onClick={runHeal}
                     disabled={healing}
-                    className="px-4 py-2 rounded-lg bg-[#6366f1] text-white text-sm font-semibold disabled:opacity-50"
+                    className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-lit disabled:opacity-50"
                   >
-                    {healing ? 'Running...' : 'Run Auto-Fix'}
+                    <Wrench size={15} /> {healing ? 'Running...' : 'Run Auto-Fix'}
                   </button>
-                  <button onClick={() => setOpen(false)} className="px-4 py-2 rounded-lg border border-[#2a2d3e] text-slate-300 text-sm">Close</button>
+                  <button type="button" onClick={() => setOpen(false)} className="min-h-10 rounded-lg border border-line-2 bg-panel-2 px-4 py-2 text-sm text-muted transition-colors hover:border-brand/50 hover:text-ink">Close</button>
                 </div>
               </>
             )}

@@ -7,15 +7,15 @@ import { safeExternalErrorMessage } from '../lib/safeErrors'
 import PhotoLightbox from './PhotoLightbox'
 
 const PHOTO_TYPE_META = {
-  damage:   { label: 'Damage',   cls: 'text-red-400 bg-red-900/30 border-red-700/40' },
-  progress: { label: 'Progress', cls: 'text-blue-400 bg-blue-900/30 border-blue-700/40' },
-  complete: { label: 'Complete', cls: 'text-emerald-400 bg-emerald-900/30 border-emerald-700/40' },
+  damage:   { label: 'Damage',   cls: 'border-crit/40 bg-crit/10 text-crit' },
+  progress: { label: 'Progress', cls: 'border-brand/40 bg-brand/10 text-brand' },
+  complete: { label: 'Complete', cls: 'border-good/40 bg-good/10 text-good' },
 }
 
 const SEVERITY_META = {
-  minor:    { label: 'Minor',    cls: 'text-yellow-400 bg-yellow-900/30 border-yellow-600/40' },
-  moderate: { label: 'Moderate', cls: 'text-orange-400 bg-orange-900/30 border-orange-600/40' },
-  severe:   { label: 'Severe',   cls: 'text-red-300 bg-red-800/40 border-red-500/50' },
+  minor:    { label: 'Minor',    cls: 'border-good/40 bg-good/10 text-good' },
+  moderate: { label: 'Moderate', cls: 'border-brand/40 bg-brand/10 text-brand' },
+  severe:   { label: 'Severe',   cls: 'border-crit/40 bg-crit/10 text-crit' },
 }
 
 export default function ROPhotos({ roId, isAdmin, canDelete = isAdmin }) {
@@ -111,12 +111,15 @@ export default function ROPhotos({ roId, isAdmin, canDelete = isAdmin }) {
   async function deletePhoto(photoId) {
     if (!confirm('Delete this photo?')) return
     try {
+      setPhotoUploadError('')
       await api.delete(`/photos/${photoId}`)
       setPhotos((current) => current.filter((photo) => photo.id !== photoId))
       setLightbox((current) => current?.id === photoId ? null : current)
       load()
     } catch (err) {
-      alert(safeExternalErrorMessage(err, 'Failed to delete photo'))
+      console.error('[ROPhotos] Photo delete failed')
+      setLightbox((current) => current?.id === photoId ? null : current)
+      setPhotoUploadError(safeExternalErrorMessage(err, 'Failed to delete photo'))
     }
   }
 
@@ -148,18 +151,19 @@ export default function ROPhotos({ roId, isAdmin, canDelete = isAdmin }) {
     await uploadPhotoFiles(files)
   }
 
-  const inp = 'bg-[#0f1117] border border-[#2a2d3e] rounded-lg text-xs text-slate-300 px-2 py-1.5 focus:outline-none focus:border-indigo-500'
+  const inp = 'rounded-lg border border-line-2 bg-void px-2 py-1.5 text-xs text-ink focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20'
 
   return (
-    <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
+    <div className="rounded-instrument border border-line-2 bg-panel p-4">
       <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-        <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
+        <h2 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-muted">
           <Camera size={12} /> Photos
         </h2>
         <div className="flex items-center gap-2 flex-wrap">
           <select
             value={photoType}
             onChange={e => setPhotoType(e.target.value)}
+            aria-label="Photo type"
             className={inp}
           >
             <option value="damage">Damage</option>
@@ -171,13 +175,14 @@ export default function ROPhotos({ roId, isAdmin, canDelete = isAdmin }) {
             placeholder="Caption (optional)"
             value={caption}
             onChange={e => setCaption(e.target.value)}
+            aria-label="Photo caption"
             className={`${inp} w-36`}
           />
           <label
             className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg cursor-pointer transition-colors ${
               uploading
-                ? 'bg-indigo-800 text-indigo-300 opacity-50 pointer-events-none'
-                : 'bg-indigo-600 hover:bg-indigo-500 text-white'
+                ? 'pointer-events-none bg-brand/40 text-white opacity-50'
+                : 'bg-brand text-white hover:bg-brand-lit'
             }`}
           >
             {uploading
@@ -200,19 +205,19 @@ export default function ROPhotos({ roId, isAdmin, canDelete = isAdmin }) {
 
       {/* Damage AI hint */}
       {photoType === 'damage' && !uploading && (
-        <p className="text-[10px] text-indigo-400/70 flex items-center gap-1 mb-3">
+        <p className="mb-3 flex items-center gap-1 text-[10px] text-brand">
           <Sparkles size={10} /> AI will auto-analyze damage severity and zones
         </p>
       )}
 
       {photoLoadError && (
-        <div className="mb-3 rounded-lg border border-red-800/50 bg-red-950/30 px-3 py-2 text-xs text-red-300">
+        <div role="alert" className="mb-3 rounded-instrument border border-crit/30 bg-crit/10 px-3 py-2 text-xs text-crit">
           {photoLoadError}
         </div>
       )}
 
       {photoUploadError && (
-        <div role="alert" className="mb-3 rounded-lg border border-red-800/50 bg-red-950/30 px-3 py-2 text-xs text-red-300">
+        <div role="alert" className="mb-3 rounded-instrument border border-crit/30 bg-crit/10 px-3 py-2 text-xs text-crit">
           {photoUploadError}
         </div>
       )}
@@ -226,15 +231,15 @@ export default function ROPhotos({ roId, isAdmin, canDelete = isAdmin }) {
           onDrop={handleDrop}
           className={`flex flex-col items-center justify-center py-10 border-2 border-dashed rounded-xl cursor-pointer transition-colors ${
             isDragActive
-              ? 'border-indigo-500 bg-indigo-900/20'
-              : 'border-[#2a2d3e] hover:border-indigo-600/50'
+              ? 'border-brand bg-brand/10'
+              : 'border-line-2 hover:border-brand/50'
           }`}
         >
-          <Camera size={28} className={`mb-2 ${isDragActive ? 'text-indigo-400' : 'text-slate-600'}`} />
-          <p className={`text-sm ${isDragActive ? 'text-indigo-400' : 'text-slate-500'}`}>
+          <Camera size={28} className={`mb-2 ${isDragActive ? 'text-brand' : 'text-faint'}`} />
+          <p className={`text-sm ${isDragActive ? 'text-brand' : 'text-faint'}`}>
             {isDragActive ? 'Drop photos here' : 'No photos yet'}
           </p>
-          <p className="text-slate-600 text-xs">Drag & drop or click upload button</p>
+          <p className="text-xs text-faint">Drag & drop or click upload button</p>
         </div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -263,7 +268,7 @@ export default function ROPhotos({ roId, isAdmin, canDelete = isAdmin }) {
                     setLightbox(photo)
                   }
                 }}
-                className="relative group rounded-xl overflow-hidden border border-[#2a2d3e] aspect-video bg-[#0f1117] cursor-zoom-in"
+                className="group relative aspect-video cursor-zoom-in overflow-hidden rounded-instrument border border-line-2 bg-void"
               >
                 {photoUrl && !photoFailed ? (
                   <img
@@ -273,17 +278,17 @@ export default function ROPhotos({ roId, isAdmin, canDelete = isAdmin }) {
                     onError={() => setFailedPhotoIds((prev) => ({ ...prev, [photo.id]: true }))}
                   />
                 ) : (
-                  <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-slate-500">
-                    <Camera size={22} className="text-slate-600" />
+                  <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-faint">
+                    <Camera size={22} className="text-faint" />
                     <span className="text-xs font-medium">Photo unavailable</span>
                   </div>
                 )}
 
                 {/* AI assessed badge — top right */}
                 {photo.ai_severity && (
-                  <div className="absolute top-1.5 left-1.5 flex items-center gap-0.5 bg-indigo-900/80 border border-indigo-700/50 rounded-full px-1.5 py-0.5">
-                    <Sparkles size={8} className="text-indigo-300" />
-                    <span className="text-[8px] text-indigo-300 font-semibold">AI</span>
+                  <div className="absolute left-1.5 top-1.5 flex items-center gap-0.5 rounded-full border border-brand/40 bg-panel/90 px-1.5 py-0.5">
+                    <Sparkles size={8} className="text-brand" />
+                    <span className="text-[8px] font-semibold text-brand">AI</span>
                   </div>
                 )}
 
@@ -294,7 +299,7 @@ export default function ROPhotos({ roId, isAdmin, canDelete = isAdmin }) {
                       e.stopPropagation()
                       deletePhoto(photo.id)
                     }}
-                    className="absolute right-1.5 top-1.5 z-20 rounded-md border border-red-500/40 bg-black/75 p-1.5 text-red-300 hover:bg-red-500/20 hover:text-red-200"
+                    className="absolute right-1.5 top-1.5 z-20 rounded-md border border-crit/40 bg-black/75 p-1.5 text-crit transition-colors hover:bg-crit/15"
                     aria-label={`Delete ${displayCaption || 'photo'}`}
                     title="Delete photo"
                   >
@@ -304,6 +309,7 @@ export default function ROPhotos({ roId, isAdmin, canDelete = isAdmin }) {
 
                 <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity flex items-center justify-center z-10 pointer-events-none">
                   <button
+                    type="button"
                     onClick={(e) => {
                       e.stopPropagation()
                       setLightbox(photo)
@@ -315,7 +321,7 @@ export default function ROPhotos({ roId, isAdmin, canDelete = isAdmin }) {
                   </button>
                 </div>
 
-                <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/80">
+                <div className="absolute bottom-0 left-0 right-0 bg-black/80 p-2">
                   <div className="flex flex-wrap items-center gap-1 mb-0.5">
                     <span className={`text-[9px] px-1.5 py-0.5 rounded-full border font-semibold ${meta.cls}`}>
                       {meta.label}
@@ -327,12 +333,12 @@ export default function ROPhotos({ roId, isAdmin, canDelete = isAdmin }) {
                     )}
                   </div>
                   {zones.length > 0 && (
-                    <p className="text-[9px] text-slate-400 truncate">
+                    <p className="truncate text-[9px] text-white/70">
                       {zones.join(', ')}
                     </p>
                   )}
                   {displayCaption && (
-                    <p className="text-[10px] text-slate-300 truncate mt-0.5">{displayCaption}</p>
+                    <p className="mt-0.5 truncate text-[10px] text-white/90">{displayCaption}</p>
                   )}
                 </div>
               </div>
@@ -355,8 +361,8 @@ export default function ROPhotos({ roId, isAdmin, canDelete = isAdmin }) {
               {lightbox.ai_severity && (
                 <>
                   <div className="flex items-center gap-2 mb-1.5">
-                    <Sparkles size={11} className="text-indigo-400" />
-                    <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wide">AI Assessment</span>
+                    <Sparkles size={11} className="text-brand" />
+                    <span className="text-[10px] font-bold uppercase tracking-wide text-brand">AI Assessment</span>
                     {SEVERITY_META[lightbox.ai_severity] && (
                       <span className={`text-[9px] px-1.5 py-0.5 rounded-full border font-semibold ${SEVERITY_META[lightbox.ai_severity].cls}`}>
                         {SEVERITY_META[lightbox.ai_severity].label}
@@ -372,18 +378,18 @@ export default function ROPhotos({ roId, isAdmin, canDelete = isAdmin }) {
                     return z.length > 0 ? (
                       <div className="flex flex-wrap gap-1 mb-1">
                         {z.map((zone, i) => (
-                          <span key={i} className="text-[9px] bg-slate-700/60 text-slate-300 px-1.5 py-0.5 rounded-full">{zone}</span>
+                          <span key={i} className="rounded-full bg-raised px-1.5 py-0.5 text-[9px] text-muted">{zone}</span>
                         ))}
                       </div>
                     ) : null
                   })()}
                   {lightbox.ai_description && (
-                    <p className="text-slate-300 text-xs">{lightbox.ai_description}</p>
+                    <p className="text-xs text-muted">{lightbox.ai_description}</p>
                   )}
                 </>
               )}
               {!lightbox.ai_severity && (lightbox.caption || lightbox.ai_description) && (
-                <p className="text-center text-slate-300 text-sm">
+                <p className="text-center text-sm text-muted">
                   {lightbox.caption || lightbox.ai_description}
                 </p>
               )}

@@ -33,13 +33,13 @@ const sections = [
     title: 'Creating a Repair Order',
     icon: CarFront,
     content: (
-      <ul className="space-y-2 text-sm text-slate-300">
-        <li>Click <span className="text-indigo-400 font-medium">+ New RO</span> (top right).</li>
+      <ul className="space-y-2 text-sm text-muted">
+        <li>Click <span className="font-medium text-brand">+ New RO</span> (top right).</li>
         <li>Fill in customer name, phone, vehicle info, and VIN.</li>
         <li>Mark damaged panels on the diagram.</li>
         <li>Set payment type: Insurance or Cash.</li>
         <li>If Insurance: enter insurer, claim #, and adjuster info.</li>
-        <li>Hit <span className="text-indigo-400 font-medium">Create RO</span>.</li>
+        <li>Hit <span className="font-medium text-brand">Create RO</span>.</li>
       </ul>
     )
   },
@@ -52,22 +52,22 @@ const sections = [
         <div className="flex flex-wrap items-center gap-2 text-xs">
           {PIPELINE_STEPS.map((step, idx) => (
             <div key={step.name} className="flex items-center gap-2">
-              <span className="px-2 py-1 rounded-md bg-[#0f1117] border border-[#2a2d3e] text-slate-200">
+              <span className="rounded-md border border-line-2 bg-void px-2 py-1 text-ink">
                 {step.name}
               </span>
-              {idx < PIPELINE_STEPS.length - 1 && <span className="text-indigo-400">→</span>}
+              {idx < PIPELINE_STEPS.length - 1 && <span className="text-brand">→</span>}
             </div>
           ))}
         </div>
         <div className="space-y-2 text-sm">
           {PIPELINE_STEPS.map((step) => (
-            <div key={step.name} className="text-slate-300">
-              <span className="text-slate-100 font-medium">{step.name}:</span> {step.desc}
+            <div key={step.name} className="text-muted">
+              <span className="font-medium text-ink">{step.name}:</span> {step.desc}
             </div>
           ))}
         </div>
-        <p className="text-sm text-slate-300">
-          Insurance jobs may be marked <span className="text-indigo-400 font-medium">Total Loss</span> when repair is not approved.
+        <p className="text-sm text-muted">
+          Insurance jobs may be marked <span className="font-medium text-crit">Total Loss</span> when repair is not approved.
         </p>
       </div>
     )
@@ -77,8 +77,8 @@ const sections = [
     title: 'Collecting Payment',
     icon: CreditCard,
     content: (
-      <ul className="space-y-2 text-sm text-slate-300">
-        <li>Open RO → Payment section → <span className="text-indigo-400 font-medium">Collect Payment</span>.</li>
+      <ul className="space-y-2 text-sm text-muted">
+        <li>Open RO → Payment section → <span className="font-medium text-gold">Collect Payment</span>.</li>
         <li>Enter card info in the secure Stripe form.</li>
         <li>The RO is marked paid automatically after success.</li>
       </ul>
@@ -89,7 +89,7 @@ const sections = [
     title: 'Customer Links',
     icon: Link2,
     content: (
-      <ul className="space-y-2 text-sm text-slate-300">
+      <ul className="space-y-2 text-sm text-muted">
         <li>Customers do not create REVV accounts.</li>
         <li>Open RO → send tracking link and payment link directly by SMS/email.</li>
         <li>After RO is closed and paid, invoice email sends automatically when customer email is on file.</li>
@@ -101,13 +101,13 @@ const sections = [
     title: 'Texting Customers (SMS)',
     icon: MessageSquare,
     content: (
-      <ul className="space-y-2 text-sm text-slate-300">
-        <li><span className="text-indigo-400 font-medium">One-time setup:</span> add Twilio credentials in Shop Settings before SMS can send.</li>
+      <ul className="space-y-2 text-sm text-muted">
+        <li><span className="font-medium text-brand">One-time setup:</span> add Twilio credentials in Shop Settings before SMS can send.</li>
         <li>Create the RO with the customer phone number filled in.</li>
         <li>Open the RO and scroll to the SMS / Messages section; the customer phone auto-fills.</li>
-        <li>Type your message and hit <span className="text-indigo-400 font-medium">Send</span>. The full text thread lives on the RO.</li>
+        <li>Type your message and hit <span className="font-medium text-brand">Send</span>. The full text thread lives on the RO.</li>
         <li>Status texts auto-send on every RO status change (In Progress, Ready, Delivered).</li>
-        <li>Customers consent in person at intake; if they reply <span className="text-indigo-400 font-medium">STOP</span> they are auto-opted out.</li>
+        <li>Customers consent in person at intake; if they reply <span className="font-medium text-crit">STOP</span> they are auto-opted out.</li>
       </ul>
     )
   },
@@ -116,9 +116,9 @@ const sections = [
     title: 'Insurance Claims',
     icon: ShieldCheck,
     content: (
-      <ul className="space-y-2 text-sm text-slate-300">
+      <ul className="space-y-2 text-sm text-muted">
         <li>Claim Status card appears at the bottom of RO for insurance jobs only.</li>
-        <li>Set status: <span className="text-slate-100">Approved for Work</span>, <span className="text-slate-100">Total Loss</span>, or <span className="text-slate-100">SIU Hold</span>.</li>
+        <li>Set status: <span className="text-ink">Approved for Work</span>, <span className="text-ink">Total Loss</span>, or <span className="text-ink">SIU Hold</span>.</li>
         <li>Total Loss skips repair steps and waits for release/closeout.</li>
       </ul>
     )
@@ -128,7 +128,7 @@ const sections = [
     title: 'Photos & Inspections',
     icon: Camera,
     content: (
-      <ul className="space-y-2 text-sm text-slate-300">
+      <ul className="space-y-2 text-sm text-muted">
         <li>Open RO → Photos tab → upload damage photos.</li>
         <li>Use the Inspection tab for digital vehicle inspection (DVI).</li>
       </ul>
@@ -139,26 +139,26 @@ const sections = [
     title: 'Users & Roles',
     icon: Users,
     content: (
-      <div className="overflow-hidden rounded-lg border border-[#2a2d3e]">
+      <div className="overflow-hidden rounded-instrument border border-line-2">
         <table className="w-full text-sm">
-          <thead className="bg-[#0f1117] text-slate-300">
+          <thead className="bg-void text-muted">
             <tr>
               <th className="text-left px-3 py-2 font-medium">Role</th>
               <th className="text-left px-3 py-2 font-medium">Access</th>
             </tr>
           </thead>
           <tbody>
-            <tr className="border-t border-[#2a2d3e]">
-              <td className="px-3 py-2 text-slate-100">Owner</td>
-              <td className="px-3 py-2 text-slate-300">Full access</td>
+            <tr className="border-t border-line-2">
+              <td className="px-3 py-2 text-ink">Owner</td>
+              <td className="px-3 py-2 text-muted">Full access</td>
             </tr>
-            <tr className="border-t border-[#2a2d3e]">
-              <td className="px-3 py-2 text-slate-100">Admin</td>
-              <td className="px-3 py-2 text-slate-300">Full access except billing</td>
+            <tr className="border-t border-line-2">
+              <td className="px-3 py-2 text-ink">Admin</td>
+              <td className="px-3 py-2 text-muted">Full access except billing</td>
             </tr>
-            <tr className="border-t border-[#2a2d3e]">
-              <td className="px-3 py-2 text-slate-100">Technician</td>
-              <td className="px-3 py-2 text-slate-300">Own ROs only</td>
+            <tr className="border-t border-line-2">
+              <td className="px-3 py-2 text-ink">Technician</td>
+              <td className="px-3 py-2 text-muted">Own ROs only</td>
             </tr>
           </tbody>
         </table>
@@ -170,7 +170,7 @@ const sections = [
     title: 'Pro Tips',
     icon: Lightbulb,
     content: (
-      <ul className="space-y-2 text-sm text-slate-300">
+      <ul className="space-y-2 text-sm text-muted">
         <li>Duplicate warning appears when a similar open RO already exists.</li>
         <li>SMS updates auto-send on every RO status change.</li>
         <li>Always mark the damage diagram during intake for insurance documentation.</li>
@@ -194,17 +194,18 @@ export default function HelpPanel({ isOpen, onClose }) {
   return (
     <AppOverlay label="Quick start help" onClose={onClose} className="bg-black/60 p-0">
       <aside
-        className="absolute right-0 top-0 h-full w-full max-w-xl bg-[#0f1117] border-l border-[#2a2d3e] shadow-2xl"
+        className="absolute right-0 top-0 h-full w-full max-w-xl border-l border-line-2 bg-void shadow-2xl"
       >
         <div className="h-full flex flex-col">
-          <div className="flex items-center justify-between px-5 py-4 border-b border-[#2a2d3e] bg-[#1a1d2e]">
+          <div className="flex items-center justify-between border-b border-line-2 bg-panel px-5 py-4">
             <div>
-              <h2 className="text-white font-semibold">Quick Start / Cheat Sheet</h2>
-              <p className="text-xs text-slate-400 mt-1">REVV workflow and shortcuts</p>
+              <h2 className="font-semibold text-ink">Quick Start / Cheat Sheet</h2>
+              <p className="mt-1 text-xs text-muted">REVV workflow and shortcuts</p>
             </div>
             <button
+              type="button"
               onClick={onClose}
-              className="w-8 h-8 rounded-md border border-[#2a2d3e] bg-[#0f1117] text-slate-300 hover:text-white hover:border-indigo-400 transition-colors"
+              className="h-8 w-8 rounded-md border border-line-2 bg-void text-muted transition-colors hover:border-brand hover:text-ink"
               aria-label="Close help panel"
             >
               <X size={16} className="mx-auto" />
@@ -215,22 +216,24 @@ export default function HelpPanel({ isOpen, onClose }) {
             {sections.map(({ id, title, icon: Icon, content }) => {
               const isSectionOpen = openSections.includes(id)
               return (
-                <section key={id} className="rounded-xl border border-[#2a2d3e] bg-[#1a1d2e] overflow-hidden">
+                <section key={id} className="overflow-hidden rounded-instrument border border-line-2 bg-panel">
                   <button
+                    type="button"
                     onClick={() => toggleSection(id)}
-                    className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-[#202439] transition-colors"
+                    aria-expanded={isSectionOpen}
+                    className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-raised"
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <Icon size={16} className="text-indigo-400 flex-shrink-0" />
-                      <span className="text-sm font-medium text-slate-100">{title}</span>
+                      <Icon size={16} className="flex-shrink-0 text-brand" />
+                      <span className="text-sm font-medium text-ink">{title}</span>
                     </div>
                     {isSectionOpen ? (
-                      <ChevronUp size={16} className="text-slate-400" />
+                      <ChevronUp size={16} className="text-muted" />
                     ) : (
-                      <ChevronDown size={16} className="text-slate-400" />
+                      <ChevronDown size={16} className="text-muted" />
                     )}
                   </button>
-                  {isSectionOpen && <div className="px-4 pb-4 border-t border-[#2a2d3e] pt-3">{content}</div>}
+                  {isSectionOpen && <div className="border-t border-line-2 px-4 pb-4 pt-3">{content}</div>}
                 </section>
               )
             })}

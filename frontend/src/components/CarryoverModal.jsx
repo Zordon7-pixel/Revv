@@ -11,6 +11,7 @@ function monthLabel(yearMonth) {
 export default function CarryoverModal({ ros, onClose, onDone }) {
   const [items, setItems] = useState(ros || [])
   const [savingId, setSavingId] = useState(null)
+  const [error, setError] = useState('')
 
   useEffect(() => {
     setItems(ros || [])
@@ -29,6 +30,7 @@ export default function CarryoverModal({ ros, onClose, onDone }) {
   async function assignRevenuePeriod(roId, revenuePeriod) {
     try {
       setSavingId(roId)
+      setError('')
       await api.put(`/ros/${roId}/revenue-period`, { revenue_period: revenuePeriod })
       setItems(prev => {
         const next = prev.filter(ro => ro.id !== roId)
@@ -38,41 +40,47 @@ export default function CarryoverModal({ ros, onClose, onDone }) {
         return next
       })
     } catch (err) {
-      alert(err?.response?.data?.error || 'Failed to update revenue period')
+      console.error('[CarryoverModal] Revenue period update failed')
+      setError(err?.response?.data?.error || 'Failed to update revenue period')
     } finally {
       setSavingId(null)
     }
   }
 
   return (
-    <AppOverlay label="Revenue period" onClose={onClose} className="bg-black/70 p-4">
-      <div className="bg-[#1a1d2e] rounded-2xl border border-[#2a2d3e] w-full max-w-3xl max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-5 border-b border-[#2a2d3e]">
+    <AppOverlay label="Revenue period" onClose={onClose} className="bg-black/70 p-3 sm:p-4">
+      <div className="max-h-[90dvh] w-full max-w-3xl overflow-y-auto rounded-instrument border border-line-2 bg-panel">
+        <div className="flex items-center justify-between border-b border-line-2 p-5">
           <div className="flex items-center gap-2">
-            <AlertCircle size={18} className="text-amber-300" />
-            <h2 className="font-bold text-white">Assign Carryover Revenue Period</h2>
+            <AlertCircle size={18} className="text-gold" />
+            <h2 className="font-bold text-ink">Assign Carryover Revenue Period</h2>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-white">
+          <button type="button" onClick={onClose} className="rounded-md p-2 text-muted transition-colors hover:bg-raised hover:text-ink" aria-label="Close revenue period dialog">
             <X size={18} />
           </button>
         </div>
 
         <div className="p-5 space-y-3">
+          {error && (
+            <div role="alert" className="rounded-instrument border border-crit/30 bg-crit/10 px-3 py-2 text-sm text-crit">
+              {error}
+            </div>
+          )}
           {!items.length && (
-            <div className="text-sm text-slate-400">No carried-over jobs pending.</div>
+            <div className="text-sm text-muted">No carried-over jobs pending.</div>
           )}
 
           {items.map(ro => (
-            <div key={ro.id} className="bg-[#0f1117] border border-[#2a2d3e] rounded-xl p-4">
+            <div key={ro.id} className="rounded-instrument border border-line-2 bg-void p-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="text-sm font-semibold text-white">{ro.customer_name || 'Unknown Customer'}</div>
-                  <div className="text-xs text-slate-400">{ro.vehicle || 'Vehicle not set'}</div>
-                  <div className="text-xs text-slate-500 mt-1">
+                  <div className="text-sm font-semibold text-ink">{ro.customer_name || 'Unknown Customer'}</div>
+                  <div className="text-xs text-muted">{ro.vehicle || 'Vehicle not set'}</div>
+                  <div className="mt-1 text-xs text-faint">
                     RO {ro.ro_number || ro.id.slice(0, 8)} · ${Number(ro.total_cost || 0).toLocaleString()}
                   </div>
                 </div>
-                <div className="inline-flex items-center gap-1 text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-md px-2 py-1">
+                <div className="inline-flex items-center gap-1 rounded-md border border-gold/30 bg-gold/10 px-2 py-1 text-[11px] text-gold">
                   <Calendar size={12} />
                   Original: {monthLabel(ro.billing_month)}
                 </div>
@@ -80,17 +88,19 @@ export default function CarryoverModal({ ros, onClose, onDone }) {
 
               <div className="mt-4 grid sm:grid-cols-2 gap-2">
                 <button
+                  type="button"
                   disabled={savingId === ro.id}
                   onClick={() => assignRevenuePeriod(ro.id, 'previous')}
-                  className="inline-flex items-center justify-center gap-1 bg-[#23273a] hover:bg-[#2a2d3e] text-slate-200 text-xs font-medium px-3 py-2 rounded-lg border border-[#30344a] transition-colors disabled:opacity-60"
+                  className="inline-flex min-h-10 items-center justify-center gap-1 rounded-lg border border-line-2 bg-panel-2 px-3 py-2 text-xs font-medium text-muted transition-colors hover:border-brand/50 hover:text-ink disabled:opacity-60"
                 >
                   Last Month ({monthLabel(previousMonth)})
                   <ChevronRight size={14} />
                 </button>
                 <button
+                  type="button"
                   disabled={savingId === ro.id}
                   onClick={() => assignRevenuePeriod(ro.id, 'current')}
-                  className="inline-flex items-center justify-center gap-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium px-3 py-2 rounded-lg transition-colors disabled:opacity-60"
+                  className="inline-flex min-h-10 items-center justify-center gap-1 rounded-lg bg-gold px-3 py-2 text-xs font-semibold text-[var(--on-gold)] transition-colors hover:bg-gold-lit disabled:opacity-60"
                 >
                   This Month ({monthLabel(currentMonth)})
                   <ChevronRight size={14} />

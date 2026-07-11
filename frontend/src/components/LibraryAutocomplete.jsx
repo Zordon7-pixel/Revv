@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { ChevronDown, X } from 'lucide-react'
+import { X } from 'lucide-react'
 
 /**
  * LibraryAutocomplete
@@ -60,7 +60,7 @@ export default function LibraryAutocomplete({
     }
   }, [])
 
-  const base = 'w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition-colors'
+  const base = 'w-full rounded-instrument border border-line-2 bg-void px-3 py-2.5 text-sm text-ink placeholder:text-faint transition-colors focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20'
 
   return (
     <div ref={ref} className="relative">
@@ -71,25 +71,27 @@ export default function LibraryAutocomplete({
         onKeyDown={handleKey}
         onFocus={() => value.length > 0 && results.length > 0 && setOpen(true)}
         placeholder={placeholder}
+        aria-label={placeholder}
         className={`${base} ${className}`}
       />
       {value && (
         <button type="button" onClick={() => { onChange(''); setOpen(false); setResults([]) }}
-          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white transition-colors">
+          className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-faint transition-colors hover:bg-raised hover:text-ink"
+          aria-label="Clear autocomplete value">
           <X size={13} />
         </button>
       )}
       {open && results.length > 0 && (
-        <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl shadow-xl overflow-hidden max-h-72 overflow-y-auto">
+        <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-72 overflow-y-auto overflow-x-hidden rounded-instrument border border-line-2 bg-panel shadow-xl">
           {results.map((item, i) => (
             <button key={i} type="button"
               onMouseDown={e => { e.preventDefault(); handleSelect(item) }}
               onTouchEnd={e => { e.preventDefault(); handleSelect(item) }}
-              className={`w-full text-left px-3 py-2.5 transition-colors border-b border-[#2a2d3e] last:border-0 ${i === active ? 'bg-indigo-600/30' : 'hover:bg-[#2a2d3e]'}`}>
+              className={`w-full border-b border-line-2 px-3 py-2.5 text-left text-ink transition-colors last:border-0 ${i === active ? 'bg-brand/15 text-brand' : 'hover:bg-raised'}`}>
               {renderItem(item)}
             </button>
           ))}
-          <div className="px-3 py-1.5 text-[9px] text-slate-600 text-right border-t border-[#2a2d3e]">
+          <div className="border-t border-line-2 px-3 py-1.5 text-right text-[9px] text-faint">
             Built-in library — start typing to search
           </div>
         </div>
