@@ -6,7 +6,7 @@ import AppOverlay from './AppOverlay'
 function availabilityClass(availability) {
   const v = String(availability || '').toLowerCase()
   if (v.includes('in stock')) return 'border-good/50 bg-good/10 text-good'
-  if (v.includes('limited')) return 'text-amber-300 bg-amber-900/30 border-amber-700/50'
+  if (v.includes('limited')) return 'border-crit/40 bg-crit/10 text-crit'
   if (v.includes('backorder')) return 'border-crit/50 bg-crit/10 text-crit'
   return 'border-line-2 bg-raised text-muted'
 }
@@ -31,6 +31,7 @@ export default function PartsSearch({ roId, initialVehicle = {}, onClose, onPart
   const [loadingMakes, setLoadingMakes] = useState(true)
   const [addingPartNumber, setAddingPartNumber] = useState('')
   const [hasSearched, setHasSearched] = useState(false)
+  const [error, setError] = useState('')
 
   const years = useMemo(() => {
     const current = new Date().getFullYear() + 1
@@ -94,6 +95,7 @@ export default function PartsSearch({ roId, initialVehicle = {}, onClose, onPart
 
   async function addToRO(part) {
     setAddingPartNumber(part.partNumber)
+    setError('')
     try {
       const { data } = await api.post(`/parts/ro/${roId}`, {
         part_name: part.description,
@@ -104,21 +106,22 @@ export default function PartsSearch({ roId, initialVehicle = {}, onClose, onPart
       })
       if (onPartAdded) onPartAdded(data)
     } catch (err) {
-      alert(err?.response?.data?.error || 'Could not add part to RO')
+      console.error('[PartsSearch] Add-to-RO failed')
+      setError(err?.response?.data?.error || 'Could not add part to RO')
     } finally {
       setAddingPartNumber('')
     }
   }
 
   return (
-    <AppOverlay label="Supplier catalog search" onClose={onClose} className="bg-black/70 p-3 sm:p-6">
+    <AppOverlay label="Supplier catalog search" onClose={onClose} className="bg-void/75 p-3 sm:p-6">
       <div className="w-full max-w-5xl max-h-[calc(var(--app-viewport-height)-1.5rem)] overflow-y-auto overscroll-contain rounded-instrument border border-line-2 bg-panel p-4 shadow-2xl sm:p-5">
         <div className="flex items-center justify-between mb-4">
           <div>
             <h3 className="font-display text-base font-semibold text-ink">Supplier Catalog Search</h3>
             <p className="text-xs text-muted">Search by vehicle + keyword across common supplier references (Advance Auto Parts, AutoZone, dealership/OEM) and add parts to this RO.</p>
           </div>
-          <button onClick={onClose} className="text-muted transition-colors hover:text-ink" aria-label="Close supplier catalog search">
+          <button type="button" onClick={onClose} className="text-muted transition-colors hover:text-ink" aria-label="Close supplier catalog search">
             <X size={18} />
           </button>
         </div>
@@ -162,6 +165,12 @@ export default function PartsSearch({ roId, initialVehicle = {}, onClose, onPart
           </div>
         </form>
 
+        {error && (
+          <div role="alert" className="mb-4 rounded-instrument border border-crit/35 bg-crit/10 px-3 py-2 text-sm text-crit">
+            {error}
+          </div>
+        )}
+
         {loading ? (
           <div className="py-8 text-center text-sm text-muted">Searching supplier catalog...</div>
         ) : !hasSearched ? (
@@ -203,6 +212,7 @@ export default function PartsSearch({ roId, initialVehicle = {}, onClose, onPart
                     </td>
                     <td className="px-3 py-2 text-right">
                       <button
+                        type="button"
                         onClick={() => addToRO(part)}
                         disabled={addingPartNumber === part.partNumber}
                         className="rounded-lg bg-brand px-3 py-1.5 text-[11px] font-semibold text-white transition-colors hover:bg-brand-lit disabled:opacity-50"

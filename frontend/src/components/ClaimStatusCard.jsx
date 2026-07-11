@@ -7,33 +7,30 @@ const OPTIONS = [
     value: 'approved',
     label: 'Approved for Work',
     icon: CheckCircle,
-    color: 'emerald',
-    bg: 'bg-emerald-900/30',
-    border: 'border-emerald-700',
-    text: 'text-emerald-300',
-    iconColor: 'text-emerald-400',
+    bg: 'bg-good/10',
+    border: 'border-good/40',
+    text: 'text-good',
+    iconColor: 'text-good',
     desc: 'Claim approved. Repair workflow continues normally.',
   },
   {
     value: 'total_loss',
     label: 'Total Loss',
     icon: XCircle,
-    color: 'red',
-    bg: 'bg-red-900/30',
-    border: 'border-red-700',
-    text: 'text-red-300',
-    iconColor: 'text-red-400',
+    bg: 'bg-crit/10',
+    border: 'border-crit/40',
+    text: 'text-crit',
+    iconColor: 'text-crit',
     desc: 'Vehicle is a total loss. All repair steps are skipped. Awaiting tow pickup or release.',
   },
   {
     value: 'siu',
     label: 'Under Investigation (SIU)',
     icon: AlertTriangle,
-    color: 'violet',
-    bg: 'bg-violet-900/30',
-    border: 'border-violet-700',
-    text: 'text-violet-300',
-    iconColor: 'text-violet-400',
+    bg: 'bg-crit/10',
+    border: 'border-crit/40',
+    text: 'text-crit',
+    iconColor: 'text-crit',
     desc: 'Claim is under Special Investigation. All repair steps paused until SIU hold is cleared.',
   },
 ]
@@ -77,10 +74,10 @@ export default function ClaimStatusCard({ ro, onUpdate, isAdmin, onOpenStorage }
 
       {/* SIU Banner */}
       {(ro.status === 'siu_hold' || ro.claim_status === 'siu') && (
-        <div className="bg-violet-900/20 border border-violet-700/50 rounded-lg p-3 mb-4 flex items-start gap-2">
-          <AlertTriangle size={14} className="text-violet-400 mt-0.5 shrink-0" />
+        <div className="mb-4 flex items-start gap-2 rounded-instrument border border-crit/40 bg-crit/10 p-3">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0 text-crit" />
           <div>
-            <p className="text-xs font-semibold text-violet-300">SIU Hold Active</p>
+            <p className="text-xs font-semibold text-crit">SIU Hold Active</p>
             <p className="mt-0.5 text-xs text-muted">All repair steps are paused. Update claim status to Approved or Total Loss to resume workflow.</p>
           </div>
         </div>
@@ -88,10 +85,10 @@ export default function ClaimStatusCard({ ro, onUpdate, isAdmin, onOpenStorage }
 
       {/* Total Loss Banner */}
       {(ro.status === 'total_loss' || ro.claim_status === 'total_loss') && (
-        <div className="bg-red-900/20 border border-red-700/50 rounded-lg p-3 mb-4 flex items-start gap-2">
-          <XCircle size={14} className="text-red-400 mt-0.5 shrink-0" />
+        <div className="mb-4 flex items-start gap-2 rounded-instrument border border-crit/40 bg-crit/10 p-3">
+          <XCircle size={14} className="mt-0.5 shrink-0 text-crit" />
           <div>
-            <p className="text-xs font-semibold text-red-300">Total Loss — Storage + Pickup / Release</p>
+            <p className="text-xs font-semibold text-crit">Total Loss — Storage + Pickup / Release</p>
             <p className="mt-0.5 text-xs text-muted">No repair labor or deductible is collected. Track storage charges, then coordinate tow pickup or customer release.</p>
             {onOpenStorage && (
               <button
@@ -114,6 +111,7 @@ export default function ClaimStatusCard({ ro, onUpdate, isAdmin, onOpenStorage }
             const isSelected = current === opt.value
             return (
               <button
+                type="button"
                 key={opt.value}
                 onClick={() => select(opt.value)}
                 disabled={saving}

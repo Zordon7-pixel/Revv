@@ -40,16 +40,16 @@ function CheckoutForm({ totalAmount, onSuccess }) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
-      <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-xl p-3">
+      <div className="rounded-instrument border border-line-2 bg-void p-3">
         <PaymentElement />
       </div>
 
-      {error && <div className="text-xs text-red-300">{error}</div>}
+      {error && <div role="alert" className="rounded-instrument border border-crit/35 bg-crit/10 px-3 py-2 text-xs text-crit">{error}</div>}
 
       <button
         type="submit"
         disabled={!stripe || submitting}
-        className="w-full bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] font-semibold text-sm rounded-lg py-2.5 disabled:opacity-50"
+        className="w-full rounded-instrument bg-gold py-2.5 font-mono text-sm font-semibold tabular-nums text-on-gold transition-colors hover:bg-gold-lit disabled:opacity-50"
       >
         {submitting ? 'Processing...' : `Pay $${Number(totalAmount || 0).toFixed(2)}`}
       </button>
@@ -100,25 +100,26 @@ export default function PaymentPanel({ roId, totalAmount, onSuccess, onMarkManua
   }
 
   return (
-    <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 space-y-3">
+    <section className="space-y-3 rounded-instrument border border-line-2 bg-panel p-4" aria-label="Payment">
       <div className="flex items-center justify-between gap-2">
         <div>
-          <h3 className="text-sm font-semibold text-white">Payment</h3>
-          <p className="text-xs text-slate-400">Total due: ${Number(totalAmount || 0).toFixed(2)}</p>
+          <h3 className="text-sm font-semibold text-ink">Payment</h3>
+          <p className="text-xs text-muted">Total due: <span className="font-mono font-semibold tabular-nums text-gold">${Number(totalAmount || 0).toFixed(2)}</span></p>
         </div>
       </div>
 
       {paid ? (
-        <div className="text-sm text-emerald-300 bg-emerald-900/20 border border-emerald-700/30 rounded-lg px-3 py-2 flex items-center gap-2">
-          <CheckCircle size={14} /> Payment received
+        <div role="status" className="flex items-center gap-2 rounded-instrument border border-good/35 bg-good/10 px-3 py-2 text-sm text-good">
+          <CheckCircle size={14} aria-hidden="true" /> Payment received
         </div>
       ) : (
         <>
           {!showCheckout && (
             <button
+              type="button"
               onClick={startCardPayment}
               disabled={initializing}
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-1 bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] text-xs font-semibold px-3 py-2 rounded-lg transition-colors disabled:opacity-50"
+              className="inline-flex w-full items-center justify-center gap-1 rounded-instrument bg-gold px-3 py-2 text-xs font-semibold text-on-gold transition-colors hover:bg-gold-lit disabled:opacity-50 sm:w-auto"
             >
               {initializing ? <Loader2 size={12} className="animate-spin" /> : <CreditCard size={12} />}
               {initializing ? 'Starting...' : 'Pay by Card'}
@@ -138,18 +139,19 @@ export default function PaymentPanel({ roId, totalAmount, onSuccess, onMarkManua
             </Elements>
           )}
 
-          {error && <div className="text-xs text-red-300">{error}</div>}
+          {error && <div role="alert" className="rounded-instrument border border-crit/35 bg-crit/10 px-3 py-2 text-xs text-crit">{error}</div>}
 
           {typeof onMarkManual === 'function' && (
             <button
+              type="button"
               onClick={onMarkManual}
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-3 py-2 rounded-lg transition-colors"
+              className="inline-flex w-full items-center justify-center gap-1 rounded-instrument bg-good px-3 py-2 text-xs font-semibold text-white transition-colors hover:opacity-90 sm:w-auto"
             >
               Mark as Cash/Check
             </button>
           )}
         </>
       )}
-    </div>
+    </section>
   )
 }

@@ -242,7 +242,7 @@ export default function EstimateImportWizard({ onClose, onImported }) {
                   e.target.value = ''
                 }}
               />
-              {error && <p role="alert" className="text-sm text-red-400">{error}</p>}
+              {error && <p role="alert" className="text-sm text-crit">{error}</p>}
               <button
                 type="button"
                 disabled={!files.length || parsing}
@@ -352,7 +352,7 @@ export default function EstimateImportWizard({ onClose, onImported }) {
                 </div>
               </div>
 
-              {error && <p role="alert" className="text-sm text-red-400">{error}</p>}
+              {error && <p role="alert" className="text-sm text-crit">{error}</p>}
               <div className="flex flex-wrap gap-3">
                 <button
                   type="button"

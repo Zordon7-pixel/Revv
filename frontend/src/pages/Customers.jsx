@@ -151,7 +151,7 @@ function CustomerFormModal({ title, form, error, loading, onChange, onClose, onS
         </div>
         <div className="sheet-modal-body px-5 sm:px-6 py-4 space-y-3">
           <CustomerFormFields form={form} onChange={onChange} />
-          {error && <p role="alert" className="text-sm text-red-300">{error}</p>}
+          {error && <p role="alert" className="text-sm text-crit">{error}</p>}
         </div>
         <div className="sheet-modal-footer border-t border-line-2 px-5 sm:px-6 py-4 flex flex-col-reverse sm:flex-row items-stretch sm:items-center gap-3 sm:justify-end">
           <button
@@ -206,7 +206,7 @@ function CustomerDrawer({ customerId, onClose, adminUser, onEdit, onDelete }) {
                 </button>
                 <button
                   onClick={() => onDelete(data.customer)}
-                  className="p-1.5 rounded-lg text-muted hover:text-red-300 hover:bg-void transition-colors"
+                  className="rounded-lg p-1.5 text-muted transition-colors hover:bg-crit/10 hover:text-crit"
                   title="Delete customer"
                 >
                   <Trash2 size={16} />
@@ -325,7 +325,7 @@ function CustomerDrawer({ customerId, onClose, adminUser, onEdit, onDelete }) {
                         </div>
                         <div className="flex items-center justify-between">
                           <span className="text-[10px] text-faint capitalize">{ro.job_type} · {new Date(ro.created_at).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' })}</span>
-                          {ro.total > 0 && <span className="text-[10px] font-semibold text-emerald-400">${Number(ro.total).toLocaleString()}</span>}
+                          {ro.total > 0 && <span className="font-mono text-[10px] font-semibold tabular-nums text-gold">${Number(ro.total).toLocaleString()}</span>}
                         </div>
                         {ro.notes && <div className="text-[10px] text-faint mt-1 truncate">{ro.notes}</div>}
                       </div>
@@ -518,7 +518,7 @@ export default function Customers() {
       />
 
       {deleteError && (
-        <div role="alert" className="bg-red-900/40 border border-red-700/50 text-red-100 text-sm px-3 py-2 rounded-lg">
+        <div role="alert" className="rounded-instrument border border-crit/40 bg-crit/10 px-3 py-2 text-sm text-crit">
           {deleteError}
         </div>
       )}
@@ -607,7 +607,7 @@ export default function Customers() {
                       e.stopPropagation()
                       deleteCustomer(c)
                     }}
-                    className="p-1.5 rounded-lg text-muted hover:text-red-300 hover:bg-void transition-colors"
+                    className="rounded-lg p-1.5 text-muted transition-colors hover:bg-crit/10 hover:text-crit"
                     title="Delete customer"
                   >
                     <Trash2 size={14} />

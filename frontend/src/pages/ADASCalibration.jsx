@@ -86,7 +86,7 @@ export default function ADASCalibration() {
         {lookup && (
           <div className="mt-4 rounded-instrument border border-line-2 bg-void p-4">
             <div className="flex items-center gap-2 mb-2">
-              <Radar size={14} className="text-cyan-300" />
+              <Radar size={14} className="text-brand" />
               <p className="text-sm font-semibold text-ink">
                 {lookup.found ? 'Calibration Profile Found' : 'No Direct Profile Match'}
               </p>
@@ -131,7 +131,7 @@ export default function ADASCalibration() {
                     <p className="text-xs text-faint">{item.customer_name || 'Unknown customer'} · Stage: {item.status}</p>
                     <p className="mt-1 text-[11px] text-brand">Click to open RO</p>
                   </div>
-                  <span className="inline-flex items-center gap-1 text-xs bg-cyan-900/30 text-cyan-300 border border-cyan-700/40 px-2 py-1 rounded-full">
+                  <span className="inline-flex items-center gap-1 rounded-full border border-brand/40 bg-brand/10 px-2 py-1 text-xs text-brand">
                     <Wrench size={12} /> {item.systems_count} systems
                   </span>
                 </div>

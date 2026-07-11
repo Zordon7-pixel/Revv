@@ -56,6 +56,47 @@ const ro = await dbGet('SELECT * FROM ros WHERE id = $1 AND shop_id = $2', [id, 
 await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 ```
 
+## Dispatch Log — 2026-07-11 REVV Redesign Phase 6J: Shared Payment, Status, and Review Semantics
+
+**Time:** 2026-07-11 04:23 ET / 2026-07-11 08:23 UTC
+**Status:** READY FOR CLAUDE CODE QA — FEATURE BRANCH ONLY — NOT DEPLOYED
+
+**Scope**
+- Finished semantic-token propagation for the live Stripe payment panel, global RO status badges, estimate-review warning/import errors, claim-state cards, supplier catalog overlay, ADAS queue, and the remaining Customer-page status/destructive colors.
+- Collapsed the legacy rainbow status system into the locked roles: neutral intake, brand workflow stages, good closed/approved/payment success, and crit total-loss/SIU/error/destructive states. Gold is limited to payment actions, money values, and Customer RO totals.
+- Preserved the live payment endpoint and integer-cent payload, Stripe confirmation callbacks, manual payment callback, claim-status PATCH, estimate-import behavior, catalog search/add payload, Customer CRUD, and ADAS lookup/queue behavior.
+- Replaced the final PartsSearch browser alert with non-PII logging plus visible `role="alert"` feedback. Retained every consequential gate and added explicit button types where missing.
+- Kept PartsSearch on the shared body-level `AppOverlay`; mocked tablet verification shows the overlay above rather than behind the sidebar, fully inside the viewport.
+- Expanded `tokenConformance.test.js` to lock all eight migrated production files against raw hex, legacy named palettes, gradients, and browser alerts, while pinning payment cents/Stripe callbacks and PartsSearch API/overlay contracts.
+- No backend, API contract, auth rule, workflow, money math, database, seed, reset, migration, destructive script, hosted DB, customer/shop/RO data, or Miles Automotive data changed. Browser data was fully mocked.
+
+**Files changed (10; batch cap respected)**
+- `frontend/src/components/PaymentPanel.jsx`
+- `frontend/src/components/StatusBadge.jsx`
+- `frontend/src/components/EstimateReviewWarning.jsx`
+- `frontend/src/components/ClaimStatusCard.jsx`
+- `frontend/src/components/EstimateImportWizard.jsx`
+- `frontend/src/components/PartsSearch.jsx`
+- `frontend/src/pages/ADASCalibration.jsx`
+- `frontend/src/pages/Customers.jsx`
+- `frontend/src/lib/__tests__/tokenConformance.test.js`
+- `CLAUDE.md`
+
+**Verification**
+```
+cd frontend && npm run test:run -- tokenConformance ClaimStatusCard EstimateImportWizard StatusBadge Customers.mobile  # 6 files, 21/21 passed
+node --test native backend sweep  # 130/130 passed
+cd backend && npm run test:run  # extractor suite 7/7 passed
+cd frontend && npm run test:run  # 38 files, 116/116 passed
+cd frontend && npm run build  # clean; pre-existing Sentry/chunk-size warnings only
+Playwright fully mocked browser checks  # PaymentPanel, ClaimStatusCard, PartsSearch overlay, Customers, ADAS queue
+viewport results  # 1024x768 dark tablet and 390x844 real light phone exact client/scroll widths; zero console/page errors
+light-theme computed proof  # --panel=#FFFFFF and Customer article background rgb(255,255,255) after the 150ms theme transition
+screenshots  # /tmp/revv-phase6j-payment-tablet-dark.png, /tmp/revv-phase6j-claim-status-tablet-dark.png, /tmp/revv-phase6j-parts-overlay-tablet-dark.png, /tmp/revv-phase6j-customers-phone-light.png, /tmp/revv-phase6j-adas-tablet-dark.png
+rg raw hex / legacy named palettes / gradients / browser alerts across 8 production files  # zero matches
+rm -rf frontend/dist && git diff --check && git ls-files frontend/dist | wc -l  # 0
+```
+
 ## Dispatch Log — 2026-07-11 REVV Redesign Phase 6I: RO Money, Insurance, and Evidence Surfaces
 
 **Time:** 2026-07-11 03:43 ET / 2026-07-11 07:43 UTC

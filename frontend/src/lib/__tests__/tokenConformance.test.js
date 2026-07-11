@@ -27,6 +27,25 @@ const tokenizedFiles = [
   'src/components/AppraisalQuickIntake.jsx',
   'src/components/EstimateFinancialReview.jsx',
   'src/components/PaymentModal.jsx',
+  'src/components/PaymentPanel.jsx',
+  'src/components/StatusBadge.jsx',
+  'src/components/EstimateReviewWarning.jsx',
+  'src/components/ClaimStatusCard.jsx',
+  'src/components/EstimateImportWizard.jsx',
+  'src/components/PartsSearch.jsx',
+  'src/pages/ADASCalibration.jsx',
+  'src/pages/Customers.jsx',
+]
+
+const phase6JFiles = [
+  'src/components/PaymentPanel.jsx',
+  'src/components/StatusBadge.jsx',
+  'src/components/EstimateReviewWarning.jsx',
+  'src/components/ClaimStatusCard.jsx',
+  'src/components/EstimateImportWizard.jsx',
+  'src/components/PartsSearch.jsx',
+  'src/pages/ADASCalibration.jsx',
+  'src/pages/Customers.jsx',
 ]
 
 function read(relativePath) {
@@ -91,5 +110,23 @@ describe('redesign token conformance', () => {
     expect(read('src/components/PaymentModal.jsx')).toMatch(/AppOverlay/)
     expect(read('src/App.jsx')).not.toMatch(/PaymentModal/)
     expect(diagram).not.toMatch(/<linearGradient/)
+  })
+
+  it('keeps shared payment, status, estimate, parts, ADAS, and customer surfaces on semantic roles', () => {
+    for (const relativePath of phase6JFiles) {
+      const source = read(relativePath)
+      expect(source, relativePath).not.toMatch(/#[0-9a-f]{3,8}/i)
+      expect(source, relativePath).not.toMatch(/(?:bg|text|border|ring|from|to|via)-(?:indigo|blue|slate|yellow|red|green|emerald|amber|violet|purple|cyan|teal|orange|lime|pink|rose)-/)
+      expect(source, relativePath).not.toMatch(/(?:bg-gradient-|<linearGradient|\balert\s*\()/)
+    }
+
+    const payment = read('src/components/PaymentPanel.jsx')
+    const parts = read('src/components/PartsSearch.jsx')
+    expect(payment).toMatch(/api\.post\('\/payments\/intent'/)
+    expect(payment).toMatch(/amount: amountCents/)
+    expect(payment).toMatch(/stripe\.confirmPayment/)
+    expect(payment).toMatch(/onMarkManual/)
+    expect(parts).toMatch(/AppOverlay/)
+    expect(parts).toMatch(/api\.post\(`\/parts\/ro\/\$\{roId\}`/)
   })
 })
