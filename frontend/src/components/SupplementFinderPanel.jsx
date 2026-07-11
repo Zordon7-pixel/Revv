@@ -1,7 +1,8 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, BadgeDollarSign, CheckCircle, FileSearch, RefreshCw, Upload } from 'lucide-react'
 import api from '../lib/api'
 import { safeExternalErrorMessage } from '../lib/safeErrors'
+import { attachedEvidenceToFiles, findAttachedAppraisalEvidence } from '../lib/attachedAppraisal'
 
 const FLAG_META = {
   undervalue: {
@@ -105,8 +106,35 @@ export default function SupplementFinderPanel({ roId, importedItems = [], import
   const [error, setError] = useState('')
   const [sourceLabel, setSourceLabel] = useState('')
   const [analysis, setAnalysis] = useState(null)
+  const [stagedEstimate, setStagedEstimate] = useState(null)
+  const [attachedAppraisalEvidence, setAttachedAppraisalEvidence] = useState([])
 
-  const hasImportedItems = importedItems.length > 0
+  useEffect(() => {
+    if (importedItems.length) {
+      setStagedEstimate(null)
+      return undefined
+    }
+    let active = true
+    api.get(`/estimate-metadata/metadata/${roId}`)
+      .then(({ data }) => {
+        if (!active) return
+        const rawDraft = data?.metadata?.import_draft
+        const draft = typeof rawDraft === 'string' ? JSON.parse(rawDraft) : rawDraft
+        if (Array.isArray(draft?.line_items) && draft.line_items.length) {
+          setStagedEstimate(draft)
+          return
+        }
+        return api.get(`/claim-tracker/ro/${roId}`).then((tracker) => {
+          if (active) setAttachedAppraisalEvidence(findAttachedAppraisalEvidence(tracker.data?.evidence))
+        })
+      })
+      .catch(() => { if (active) setStagedEstimate(null) })
+    return () => { active = false }
+  }, [roId, importedItems.length])
+
+  const stagedItems = Array.isArray(stagedEstimate?.line_items) ? stagedEstimate.line_items : []
+  const estimateItems = importedItems.length ? importedItems : stagedItems
+  const hasImportedItems = estimateItems.length > 0
   const groupedFlags = useMemo(() => {
     const flags = Array.isArray(analysis?.flags) ? analysis.flags : []
     return {
@@ -160,6 +188,16 @@ export default function SupplementFinderPanel({ roId, importedItems = [], import
     }
   }
 
+  async function analyzeAttachedAppraisal() {
+    setError('')
+    try {
+      const files = await attachedEvidenceToFiles(attachedAppraisalEvidence)
+      await parseAndAnalyze(files)
+    } catch (err) {
+      setError(safeExternalErrorMessage(err, 'Could not load the appraisal attached to this RO.'))
+    }
+  }
+
   const summary = analysis?.summary || null
   const busy = running || uploading
 
@@ -177,7 +215,10 @@ export default function SupplementFinderPanel({ roId, importedItems = [], import
         <div className="flex flex-wrap justify-end gap-2">
           <button
             type="button"
-            onClick={() => analyzeItems(importedItems, 'imported RO estimate')}
+            onClick={() => analyzeItems(
+              estimateItems,
+              importedItems.length ? 'imported RO estimate' : 'appraisal staged during RO creation'
+            )}
             disabled={busy || !hasImportedItems}
             className="inline-flex items-center gap-1.5 text-xs bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg disabled:opacity-50"
           >
@@ -197,12 +238,28 @@ export default function SupplementFinderPanel({ roId, importedItems = [], import
               onChange={(event) => parseAndAnalyze(event.target.files)}
             />
           </label>
+          {attachedAppraisalEvidence.length > 0 && !hasImportedItems && (
+            <button
+              type="button"
+              onClick={analyzeAttachedAppraisal}
+              disabled={busy}
+              className="inline-flex items-center gap-1.5 text-xs border border-[#EAB308]/40 bg-[#EAB308]/10 text-[#EAB308] hover:bg-[#EAB308]/15 px-3 py-1.5 rounded-lg disabled:opacity-50"
+            >
+              <FileSearch size={12} /> Use Attached Appraisal
+            </button>
+          )}
         </div>
       </div>
 
       {!hasImportedItems && (
         <p className="text-xs text-slate-500 bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3">
           No stored estimate lines are available for this RO yet. Upload an insurer estimate here or import one through Estimate Builder.
+        </p>
+      )}
+
+      {!importedItems.length && stagedItems.length > 0 && (
+        <p role="status" className="text-xs text-emerald-200 bg-emerald-950/20 border border-emerald-700/40 rounded-lg p-3">
+          The appraisal used to create this RO is ready with {stagedItems.length} estimate line{stagedItems.length === 1 ? '' : 's'}. Choose Analyze RO; no upload is needed.
         </p>
       )}
 
@@ -246,6 +303,12 @@ export default function SupplementFinderPanel({ roId, importedItems = [], import
       {importedSummary && hasImportedItems && !analysis && (
         <p className="text-[11px] text-slate-500">
           Current REVV estimate total: {money(importedSummary.grand_total)}.
+        </p>
+      )}
+
+      {!importedSummary && stagedEstimate?.estimate_totals && !analysis && (
+        <p className="text-xs text-slate-500">
+          Staged insurer gross: {money(stagedEstimate.estimate_totals.total_cost_of_repairs || stagedEstimate.estimate_totals.gross_total || 0)}.
         </p>
       )}
     </div>

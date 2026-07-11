@@ -494,9 +494,11 @@ async function runMigrations() {
         shop_id TEXT NOT NULL,
         adjuster_totals JSONB,
         adjuster_raw_text TEXT,
+        import_draft JSONB,
         created_at TIMESTAMPTZ DEFAULT NOW(),
         updated_at TIMESTAMPTZ DEFAULT NOW()
       )`,
+      `ALTER TABLE estimate_metadata ADD COLUMN IF NOT EXISTS import_draft JSONB`,
       `CREATE UNIQUE INDEX IF NOT EXISTS idx_estimate_metadata_ro_shop ON estimate_metadata(ro_id, shop_id)`,
       // RO Operations — multi-technician job operation rows
       `CREATE TABLE IF NOT EXISTS ro_operations (

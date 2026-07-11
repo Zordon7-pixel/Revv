@@ -77,6 +77,7 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
   const [newRoCustomerId, setNewRoCustomerId] = useState('')
   const [entryMode, setEntryMode] = useState('manual')
   const [appraisalFiles, setAppraisalFiles] = useState([])
+  const [appraisalEstimateDraft, setAppraisalEstimateDraft] = useState(null)
   const [intakeNotice, setIntakeNotice] = useState('')
   const [intakeClaimMatches, setIntakeClaimMatches] = useState([])
   const [createdRoWithPendingDocuments, setCreatedRoWithPendingDocuments] = useState(null)
@@ -291,7 +292,7 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
   const inp = 'w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500'
   const lbl = 'block text-xs font-medium text-slate-400 mb-1'
 
-  async function applyAppraisalIntake({ fields, files }) {
+  async function applyAppraisalIntake({ fields, files, estimateDraft }) {
     const customerMatch = findAppraisalCustomerMatch(customers, fields)
     let matchedVehicles = []
     let matchedCustomer = customerMatch?.customer || null
@@ -348,6 +349,7 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
       deductible: fields.deductible,
     }))
     setAppraisalFiles(files)
+    setAppraisalEstimateDraft(estimateDraft)
     setIntakeClaimMatches(claimMatches)
     setEntryMode('manual')
     setStep(1)
@@ -373,14 +375,37 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
     return results.flatMap((result, index) => result.status === 'rejected' ? [files[index]] : [])
   }
 
+  async function stageAppraisalEstimate(roId, estimateDraft = appraisalEstimateDraft, files = appraisalFiles) {
+    if (!roId || !estimateDraft) return
+    await api.post(`/estimate-metadata/metadata/${roId}`, {
+      adjuster_totals: estimateDraft.estimate_totals || null,
+      import_draft: {
+        ...estimateDraft,
+        source: 'appraisal_quick_intake',
+        source_files: files.map((file) => file.name),
+      },
+    })
+  }
+
   async function retryPendingDocuments() {
     if (!createdRoWithPendingDocuments) return
     setLoading(true)
     const failed = await uploadAppraisalDocuments(createdRoWithPendingDocuments.id, failedAppraisalFiles)
+    let estimateStageFailed = false
+    try {
+      await stageAppraisalEstimate(createdRoWithPendingDocuments.id)
+    } catch (err) {
+      estimateStageFailed = true
+      console.error('[AddROModal] appraisal estimate staging failed:', err)
+    }
     setLoading(false)
     if (failed.length) {
       setFailedAppraisalFiles(failed)
       setFormError(`RO ${createdRoWithPendingDocuments.ro_number || ''} is created, but ${failed.length} appraisal document${failed.length === 1 ? '' : 's'} still need to be attached.`)
+      return
+    }
+    if (estimateStageFailed) {
+      setFormError(`RO ${createdRoWithPendingDocuments.ro_number || ''} is created and the documents are attached, but the estimate still needs to be staged. Retry setup or open the RO and use Insurance Import.`)
       return
     }
     onSaved(createdRoWithPendingDocuments)
@@ -490,11 +515,22 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
         preferred_contact_method: form.sms_consent && form.email_consent ? 'both' : form.email_consent ? 'email' : form.sms_consent ? 'sms' : 'none',
       })
       const failedDocuments = await uploadAppraisalDocuments(ro?.id)
-      if (failedDocuments.length) {
+      let estimateStageFailed = false
+      try {
+        await stageAppraisalEstimate(ro?.id)
+      } catch (stageErr) {
+        estimateStageFailed = true
+        console.error('[AddROModal] appraisal estimate staging failed:', stageErr)
+      }
+      if (failedDocuments.length || estimateStageFailed) {
         console.error('[AddROModal] appraisal document upload failed:', failedDocuments.map((file) => file.name))
         setCreatedRoWithPendingDocuments(ro)
         setFailedAppraisalFiles(failedDocuments)
-        setFormError(`RO ${ro?.ro_number || ''} was created, but ${failedDocuments.length} appraisal document${failedDocuments.length === 1 ? '' : 's'} could not be attached. Retry the documents or open the RO and attach them in Claim Tracker.`)
+        if (failedDocuments.length) {
+          setFormError(`RO ${ro?.ro_number || ''} was created, but ${failedDocuments.length} appraisal document${failedDocuments.length === 1 ? '' : 's'} could not be attached. Retry setup or open the RO and attach them in Claim Tracker.`)
+        } else {
+          setFormError(`RO ${ro?.ro_number || ''} was created and the documents are attached, but the estimate could not be staged. Retry setup or open the RO and use Insurance Import.`)
+        }
         return
       }
       if (ro?.duplicate_warning) {
@@ -855,9 +891,9 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
             </>
           ) : createdRoWithPendingDocuments ? (
             <>
-              <button type="button" onClick={() => onSaved(createdRoWithPendingDocuments)} className="text-sm text-slate-400 transition-colors hover:text-white">Open RO without documents</button>
+              <button type="button" onClick={() => onSaved(createdRoWithPendingDocuments)} className="text-sm text-slate-400 transition-colors hover:text-white">Open RO now</button>
               <span className="text-xs text-amber-300">RO already created</span>
-              <button type="button" onClick={retryPendingDocuments} disabled={loading} className="rounded-lg bg-[#EAB308] px-4 py-2 text-sm font-semibold text-[#0f1117] hover:bg-yellow-400 disabled:opacity-50">{loading ? 'Retrying...' : 'Retry Documents'}</button>
+              <button type="button" onClick={retryPendingDocuments} disabled={loading} className="rounded-lg bg-[#EAB308] px-4 py-2 text-sm font-semibold text-[#0f1117] hover:bg-yellow-400 disabled:opacity-50">{loading ? 'Retrying...' : 'Retry Appraisal Setup'}</button>
             </>
           ) : (
             <>

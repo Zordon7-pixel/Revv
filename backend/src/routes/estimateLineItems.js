@@ -39,6 +39,64 @@ function parseJsonMaybe(value) {
   }
 }
 
+function normalizeImportDraft(raw) {
+  if (raw === null) return null;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new Error('import_draft must be an object or null');
+  }
+
+  const rawItems = Array.isArray(raw.line_items) ? raw.line_items : [];
+  if (rawItems.length > 300) throw new Error('import_draft has too many line items');
+  const lineItems = rawItems.map((item) => ({
+    type: normalizeType(item?.type) || 'other',
+    description: String(item?.description || '').trim().slice(0, 500),
+    quantity: toNumber(item?.quantity, 1),
+    unit_price: toNumber(item?.unit_price, 0),
+  })).filter((item) => item.description);
+
+  const estimateTotals = {};
+  if (raw.estimate_totals && typeof raw.estimate_totals === 'object' && !Array.isArray(raw.estimate_totals)) {
+    for (const [key, value] of Object.entries(raw.estimate_totals).slice(0, 100)) {
+      if (!/^[a-z0-9_]{1,80}$/i.test(key)) continue;
+      if (value === null) estimateTotals[key] = null;
+      else {
+        const number = Number(value);
+        if (Number.isFinite(number)) estimateTotals[key] = number;
+      }
+    }
+  }
+
+  const draft = {
+    source: String(raw.source || 'estimate_upload').trim().slice(0, 80),
+    source_files: (Array.isArray(raw.source_files) ? raw.source_files : [])
+      .slice(0, 12)
+      .map((name) => String(name || '').trim().slice(0, 255))
+      .filter(Boolean),
+    detected_format: String(raw.detected_format || 'unknown').trim().slice(0, 40),
+    needs_review: raw.needs_review === true,
+    review_reasons: (Array.isArray(raw.review_reasons) ? raw.review_reasons : [])
+      .slice(0, 30)
+      .map((reason) => String(reason || '').trim().slice(0, 120))
+      .filter(Boolean),
+    line_items: lineItems,
+    estimate_totals: Object.keys(estimateTotals).length ? estimateTotals : null,
+  };
+
+  for (const field of [
+    'insurance_company', 'claim_number', 'adjuster_name', 'adjuster_phone', 'adjuster_email',
+    'customer_name', 'customer_phone', 'vehicle', 'vin', 'vehicle_year', 'vehicle_make', 'vehicle_model',
+  ]) {
+    draft[field] = raw[field] === null || raw[field] === undefined
+      ? null
+      : String(raw[field]).trim().slice(0, 255);
+  }
+
+  if (Buffer.byteLength(JSON.stringify(draft), 'utf8') > 1024 * 1024) {
+    throw new Error('import_draft is too large');
+  }
+  return draft;
+}
+
 function firstMoney(...values) {
   for (const value of values) {
     if (value === null || value === undefined || value === '') continue;
@@ -537,7 +595,7 @@ router.get('/metadata/:roId', auth, async (req, res) => {
     if (!ro) return res.status(404).json({ error: 'Repair order not found' });
 
     const metadata = await dbGet(
-      `SELECT id, ro_id, shop_id, adjuster_totals, adjuster_raw_text, created_at, updated_at
+      `SELECT id, ro_id, shop_id, adjuster_totals, adjuster_raw_text, import_draft, created_at, updated_at
        FROM estimate_metadata
        WHERE ro_id = $1 AND shop_id = $2`,
       [roId, req.user.shop_id]
@@ -561,6 +619,15 @@ router.post('/metadata/:roId', auth, async (req, res) => {
     const adjusterRawText = req.body?.adjuster_raw_text !== undefined
       ? String(req.body.adjuster_raw_text || '')
       : undefined;
+    const hasImportDraft = Object.prototype.hasOwnProperty.call(req.body || {}, 'import_draft');
+    let importDraft;
+    if (hasImportDraft) {
+      try {
+        importDraft = normalizeImportDraft(req.body.import_draft);
+      } catch (validationErr) {
+        return res.status(400).json({ error: validationErr.message });
+      }
+    }
 
     const existing = await dbGet(
       `SELECT id FROM estimate_metadata WHERE ro_id = $1 AND shop_id = $2`,
@@ -573,21 +640,25 @@ router.post('/metadata/:roId', auth, async (req, res) => {
         `UPDATE estimate_metadata
          SET adjuster_totals = COALESCE($1, adjuster_totals),
              adjuster_raw_text = COALESCE($2, adjuster_raw_text),
+             import_draft = CASE WHEN $3::boolean THEN $4::jsonb ELSE import_draft END,
              updated_at = NOW()
-         WHERE ro_id = $3 AND shop_id = $4
-         RETURNING id, ro_id, shop_id, adjuster_totals, adjuster_raw_text, created_at, updated_at`,
+         WHERE ro_id = $5 AND shop_id = $6
+         RETURNING id, ro_id, shop_id, adjuster_totals, adjuster_raw_text, import_draft, created_at, updated_at`,
         [adjusterTotals !== undefined ? JSON.stringify(adjusterTotals) : null,
          adjusterRawText !== undefined ? adjusterRawText : null,
+         hasImportDraft,
+         hasImportDraft && importDraft !== null ? JSON.stringify(importDraft) : null,
          roId, req.user.shop_id]
       );
     } else {
       metadata = await dbGet(
-        `INSERT INTO estimate_metadata (id, ro_id, shop_id, adjuster_totals, adjuster_raw_text, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
-         RETURNING id, ro_id, shop_id, adjuster_totals, adjuster_raw_text, created_at, updated_at`,
+        `INSERT INTO estimate_metadata (id, ro_id, shop_id, adjuster_totals, adjuster_raw_text, import_draft, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+         RETURNING id, ro_id, shop_id, adjuster_totals, adjuster_raw_text, import_draft, created_at, updated_at`,
         [uuidv4(), roId, req.user.shop_id,
          adjusterTotals !== undefined ? JSON.stringify(adjusterTotals) : null,
-         adjusterRawText !== undefined ? adjusterRawText : null]
+         adjusterRawText !== undefined ? adjusterRawText : null,
+         hasImportDraft && importDraft !== null ? JSON.stringify(importDraft) : null]
       );
     }
 
@@ -601,3 +672,4 @@ router.post('/metadata/:roId', auth, async (req, res) => {
 module.exports = router;
 module.exports.buildFinancialsFromAdjusterTotals = buildFinancialsFromAdjusterTotals;
 module.exports.syncRepairOrderFinancials = syncRepairOrderFinancials;
+module.exports.normalizeImportDraft = normalizeImportDraft;

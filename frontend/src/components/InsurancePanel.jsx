@@ -3,6 +3,7 @@ import { BadgeDollarSign, ChevronDown, ChevronUp, FileImage, Mail, Phone, Shield
 import api from '../lib/api'
 import { computeEstimateCrossCheck } from '../lib/estimateCrossCheck'
 import { safeExternalErrorMessage } from '../lib/safeErrors'
+import { attachedEvidenceToFiles, findAttachedAppraisalEvidence } from '../lib/attachedAppraisal'
 import EstimateReviewWarning from './EstimateReviewWarning'
 import EstimateFinancialReview from './EstimateFinancialReview'
 import EstimateSelectionToolbar from './EstimateSelectionToolbar'
@@ -74,6 +75,41 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
   const [ocrError, setOcrError] = useState(null)
   const [ocrNotice, setOcrNotice] = useState(null)
   const [ocrImportedCount, setOcrImportedCount] = useState(0)
+  const [attachedAppraisalEvidence, setAttachedAppraisalEvidence] = useState([])
+
+  useEffect(() => {
+    let active = true
+    async function loadReusableAppraisal() {
+      try {
+        const { data } = await api.get(`/estimate-metadata/metadata/${roId}`)
+        if (!active) return
+        const rawDraft = data?.metadata?.import_draft
+        const draft = typeof rawDraft === 'string' ? JSON.parse(rawDraft) : rawDraft
+        const items = Array.isArray(draft?.line_items) ? draft.line_items : []
+        if (items.length) {
+          const parsed = {
+            ...draft,
+            detected_format: draft.detected_format || 'unknown',
+            needs_review: Boolean(draft.needs_review || draft.review_reasons?.length),
+          }
+          const selected = {}
+          items.forEach((_, index) => { selected[index] = true })
+          setOcrItems(items)
+          setOcrParsedMeta(parsed)
+          setOcrSelected(selected)
+          setOcrCrossCheck(computeEstimateCrossCheck(parsed, ro))
+          setOcrNotice(`Appraisal from RO creation is ready: ${items.length} line${items.length === 1 ? '' : 's'} staged for review. No re-upload needed.`)
+          return
+        }
+        const tracker = await api.get(`/claim-tracker/ro/${roId}`)
+        if (active) setAttachedAppraisalEvidence(findAttachedAppraisalEvidence(tracker.data?.evidence))
+      } catch {
+        if (active) setAttachedAppraisalEvidence([])
+      }
+    }
+    loadReusableAppraisal()
+    return () => { active = false }
+  }, [roId])
 
   function handleFileChange(e) {
     const nextFiles = Array.from(e.target.files || [])
@@ -98,13 +134,13 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
     e.target.value = ''
   }
 
-  async function parseEstimate() {
-    if (!ocrFiles.length) return
+  async function parseEstimate(files = ocrFiles) {
+    if (!files.length) return
     setOcrParsing(true)
     setOcrError(null)
     try {
       const form = new FormData()
-      ocrFiles.forEach((file) => form.append('estimate_images', file))
+      files.forEach((file) => form.append('estimate_images', file))
       const { data } = await api.post('/insurance-ocr/parse', form, {
         headers: { 'Content-Type': 'multipart/form-data' },
       })
@@ -186,6 +222,17 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
     }
   }
 
+  async function parseAttachedAppraisal() {
+    setOcrError(null)
+    try {
+      const files = await attachedEvidenceToFiles(attachedAppraisalEvidence)
+      setOcrFiles(files)
+      await parseEstimate(files)
+    } catch (err) {
+      setOcrError(safeExternalErrorMessage(err, 'Could not load the appraisal attached to this RO.'))
+    }
+  }
+
   async function importSelected() {
     if (!ocrItems?.length) return
     if (ocrCrossCheck?.hasMismatch) {
@@ -210,11 +257,10 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
       }
       let financialNotice = 'Estimate lines and financials imported to this RO.'
       try {
-        if (ocrParsedMeta?.estimate_totals) {
-          await api.post(`/estimate-metadata/metadata/${roId}`, {
-            adjuster_totals: ocrParsedMeta.estimate_totals,
-          })
-        }
+        await api.post(`/estimate-metadata/metadata/${roId}`, {
+          adjuster_totals: ocrParsedMeta?.estimate_totals || undefined,
+          import_draft: null,
+        })
         await api.post(`/estimate-items/${roId}/import-financials`)
       } catch (financialErr) {
         financialNotice = `Imported ${imported} line${imported !== 1 ? 's' : ''}. ${financialErr?.response?.data?.error || 'Financial totals need review before they can be synced.'}`
@@ -363,7 +409,7 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
               <h3 className="text-xs font-semibold text-white flex items-center gap-1.5">
                 <FileImage size={12} /> Import Insurance Estimate
               </h3>
-              {ocrFiles.length > 0 && (
+              {(ocrFiles.length > 0 || ocrItems) && (
                 <button type="button" onClick={() => {
                   setOcrFiles([])
                   setOcrPreview(null)
@@ -404,9 +450,19 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
               </a>
             )}
 
-            {!ocrFiles.length && (
+            {!ocrFiles.length && !ocrItems && (
               <>
                 <input ref={fileInputRef} type="file" accept="image/*,.pdf" multiple className="hidden" onChange={handleFileChange} />
+                {attachedAppraisalEvidence.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={parseAttachedAppraisal}
+                    disabled={ocrParsing}
+                    className="mb-2 w-full flex items-center justify-center gap-2 border border-[#EAB308]/40 bg-[#EAB308]/10 rounded-lg py-3 text-sm font-semibold text-[#EAB308] hover:bg-[#EAB308]/15 disabled:opacity-50"
+                  >
+                    <FileImage size={15} /> {ocrParsing ? 'Reading attached appraisal…' : `Use ${attachedAppraisalEvidence.length} Attached Appraisal Page${attachedAppraisalEvidence.length === 1 ? '' : 's'}`}
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
@@ -438,7 +494,7 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
                 {ocrError && <p role="alert" className="text-xs text-red-400">{ocrError}</p>}
                 <button
                   type="button"
-                  onClick={parseEstimate}
+                  onClick={() => parseEstimate()}
                   disabled={ocrParsing}
                   className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-semibold py-2 rounded-lg"
                 >

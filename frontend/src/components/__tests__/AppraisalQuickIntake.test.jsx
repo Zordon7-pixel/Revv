@@ -19,7 +19,7 @@ describe('AppraisalQuickIntake', () => {
     vi.restoreAllMocks()
   })
 
-  it('reads multiple pages in intake mode and applies editable metadata only', async () => {
+  it('reads multiple pages once and carries editable intake fields plus the estimate draft', async () => {
     const onApply = vi.fn().mockResolvedValue()
     const user = userEvent.setup()
     api.post.mockResolvedValue({
@@ -32,8 +32,9 @@ describe('AppraisalQuickIntake', () => {
           vehicle_model: 'Camry',
           insurance_company: 'Progressive',
           claim_number: 'CLM-100',
-          line_items: [],
-          estimate_totals: null,
+          detected_format: 'ccc',
+          line_items: [{ type: 'parts', description: 'Bumper cover', quantity: 1, unit_price: 500 }],
+          estimate_totals: { total_cost_of_repairs: 550, deductible: 100, net_cost_of_repairs: 450 },
         },
       },
     })
@@ -44,19 +45,26 @@ describe('AppraisalQuickIntake', () => {
       new File(['page 2'], 'appraisal-2.jpg', { type: 'image/jpeg' }),
     ]
     fireEvent.change(screen.getByLabelText('Appraisal files'), { target: { files } })
-    await user.click(screen.getByRole('button', { name: 'Read Intake Details' }))
+    await user.click(screen.getByRole('button', { name: 'Read Appraisal' }))
 
     await screen.findByDisplayValue('Miles Customer')
     expect(screen.getByText('2 of 12 pages selected')).toBeInTheDocument()
     const body = api.post.mock.calls[0][1]
-    expect(body.get('mode')).toBe('intake')
+    expect(body.get('mode')).toBeNull()
     expect(body.getAll('estimate_images')).toHaveLength(2)
     expect(screen.queryByRole('heading', { name: 'Line Items' })).not.toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('1 estimate line')
+    expect(screen.getByRole('status')).toHaveTextContent('You will not need to upload these pages again')
 
     fireEvent.change(screen.getByLabelText('Claim number'), { target: { value: 'CLM-101' } })
     await user.click(screen.getByRole('button', { name: 'Use Details in New RO' }))
     await waitFor(() => expect(onApply).toHaveBeenCalledTimes(1))
     expect(onApply.mock.calls[0][0].fields.claim_number).toBe('CLM-101')
     expect(onApply.mock.calls[0][0].files).toHaveLength(2)
+    expect(onApply.mock.calls[0][0].estimateDraft).toEqual(expect.objectContaining({
+      claim_number: 'CLM-101',
+      line_items: [expect.objectContaining({ description: 'Bumper cover' })],
+      estimate_totals: expect.objectContaining({ total_cost_of_repairs: 550 }),
+    }))
   })
 })

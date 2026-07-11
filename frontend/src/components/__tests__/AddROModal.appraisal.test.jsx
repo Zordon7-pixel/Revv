@@ -38,9 +38,10 @@ describe('AddROModal appraisal quick intake', () => {
       return Promise.resolve({ data: {} })
     })
     api.post.mockImplementation((url) => {
-      if (url === '/insurance-ocr/parse') return Promise.resolve({ data: { parsed: { customer_name: 'Miles Customer', customer_phone: '(718) 555-0100', customer_email: 'miles@example.com', vehicle_year: '2024', vehicle_make: 'Toyota', vehicle_model: 'Camry', vin: '1HGBH41JXMN109186', insurance_company: 'Progressive', claim_number: 'CLM-100', policy_number: 'POL-200' } } })
+      if (url === '/insurance-ocr/parse') return Promise.resolve({ data: { parsed: { customer_name: 'Miles Customer', customer_phone: '(718) 555-0100', customer_email: 'miles@example.com', vehicle_year: '2024', vehicle_make: 'Toyota', vehicle_model: 'Camry', vin: '1HGBH41JXMN109186', insurance_company: 'Progressive', claim_number: 'CLM-100', policy_number: 'POL-200', detected_format: 'ccc', needs_review: false, review_reasons: [], line_items: [{ type: 'parts', description: 'Bumper cover', quantity: 1, unit_price: 500 }], estimate_totals: { parts: 500, total_cost_of_repairs: 550, deductible: 100, net_cost_of_repairs: 450 } } } })
       if (url === '/ros') return Promise.resolve({ data: { id: 'ro-1', ro_number: 'RO-100' } })
       if (url === '/claim-tracker/ro/ro-1/evidence') return Promise.resolve({ data: { evidence: {} } })
+      if (url === '/estimate-metadata/metadata/ro-1') return Promise.resolve({ data: { success: true } })
       return Promise.reject(new Error(`Unexpected POST ${url}`))
     })
   })
@@ -61,7 +62,7 @@ describe('AddROModal appraisal quick intake', () => {
       new File(['two'], 'page-2.jpg', { type: 'image/jpeg' }),
     ]
     fireEvent.change(screen.getByLabelText('Appraisal files'), { target: { files } })
-    await user.click(screen.getByRole('button', { name: 'Read Intake Details' }))
+    await user.click(screen.getByRole('button', { name: 'Read Appraisal' }))
     await screen.findByDisplayValue('Miles Customer')
     await user.click(screen.getByRole('button', { name: 'Use Details in New RO' }))
     await screen.findByText(/Matched Miles Customer/)
@@ -83,5 +84,13 @@ describe('AddROModal appraisal quick intake', () => {
       policy_number: 'POL-200',
     }))
     expect(api.post.mock.calls.filter(([url]) => url === '/claim-tracker/ro/ro-1/evidence')).toHaveLength(2)
+    expect(api.post).toHaveBeenCalledWith('/estimate-metadata/metadata/ro-1', {
+      adjuster_totals: expect.objectContaining({ total_cost_of_repairs: 550 }),
+      import_draft: expect.objectContaining({
+        source: 'appraisal_quick_intake',
+        source_files: ['page-1.jpg', 'page-2.jpg'],
+        line_items: [expect.objectContaining({ description: 'Bumper cover' })],
+      }),
+    })
   })
 })

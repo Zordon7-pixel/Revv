@@ -56,6 +56,76 @@ const ro = await dbGet('SELECT * FROM ros WHERE id = $1 AND shop_id = $2', [id, 
 await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 ```
 
+## Dispatch Log — 2026-07-10 Estimate Upload Reuse + Zero-Line OCR Recovery
+
+**Status:** READY FOR CLAUDE CODE QA — NOT DEPLOYED
+
+**Reported behavior**
+- Insurance Import showed `Review this CCC estimate before import` but returned 0 selectable rows.
+- Supplement Finder returned `No line items were extracted` for the same estimate.
+- Appraisal Quick Intake created the RO and attached the source pages, but its parsed estimate data was not carried into Insurance Import or Supplement Finder, forcing a duplicate upload.
+
+**Root cause**
+- `backend/src/routes/insuranceOcr.js` returned the strict CCC/Mitchell parser result immediately whenever a known format was detected, including when that parser produced zero detailed rows. That bypassed the existing relaxed AI retry and totals-derived fallback.
+- Appraisal Quick Intake intentionally used `mode=intake`, which discarded estimate rows and totals after filling the New RO fields.
+- Existing attached appraisal pages had no reuse path into the two estimate tools.
+
+**Behavior shipped for QA**
+- Known-format estimates with real detailed rows keep the deterministic fast path.
+- A known-format zero-row result now continues through the full-text relaxed retry, rendered-page visual retry, then a reviewable parts/labor/paint/other category fallback derived from insurer totals. A valid totals page no longer ends at an unselectable 0-item result.
+- Appraisal Quick Intake parses the uploaded pages once, still fills editable customer/vehicle/claim fields, attaches every source page to the RO, and stages a bounded `import_draft` for explicit review.
+- Insurance Import automatically opens that staged draft with all rows selected. Importing the rows clears the draft. Insurer money is never silently posted before the user chooses Import.
+- Supplement Finder analyzes the staged draft without another upload.
+- Existing ROs whose Claim Tracker contains `Appraisal quick intake source` evidence offer `Use Attached Appraisal`, reusing the shop-scoped attached files in Insurance Import and Supplement Finder.
+- `estimate_metadata.import_draft` is additive JSONB, persisted through the existing RO-and-shop-scoped metadata endpoints.
+
+**Files changed**
+- `backend/src/routes/insuranceOcr.js`
+- `backend/src/routes/estimateLineItems.js`
+- `backend/src/db/migrate.js`
+- `backend/src/__tests__/insuranceOcr.review.test.js`
+- `backend/src/__tests__/estimateMetadataDraft.test.js`
+- `frontend/src/components/AppraisalQuickIntake.jsx`
+- `frontend/src/components/AddROModal.jsx`
+- `frontend/src/components/InsurancePanel.jsx`
+- `frontend/src/components/SupplementFinderPanel.jsx`
+- `frontend/src/lib/attachedAppraisal.js`
+- `frontend/src/lib/estimateReview.js`
+- `frontend/src/components/__tests__/AppraisalQuickIntake.test.jsx`
+- `frontend/src/components/__tests__/AddROModal.appraisal.test.jsx`
+- `frontend/src/components/__tests__/InsurancePanel.phase31.test.jsx`
+- `frontend/src/components/__tests__/SupplementFinderPanel.draft.test.jsx`
+- `CLAUDE.md`
+
+**Verification**
+```text
+node --check backend/src/routes/insuranceOcr.js backend/src/routes/estimateLineItems.js backend/src/db/migrate.js
+  -> passed
+node --test backend/src/__tests__/*.test.js <Node backend/test suites>
+  -> 123/123 passed
+cd backend && npm run test:run
+  -> 3 files, 7/7 extractor tests passed
+cd frontend && npm run test:run
+  -> 28 files, 77/77 tests passed
+cd frontend && npm run build
+  -> built cleanly in 2.02s
+rm -rf frontend/dist && git diff --check && git ls-files frontend/dist
+  -> clean; dist untracked
+Rendered-app smoke at 1180x820 with synthetic shop/RO responses only
+  -> staged notice visible
+  -> parts and body-labor rows visible
+  -> Import 2 items enabled
+  -> Supplement Finder analyzed the staged draft without upload
+  -> estimate content remained clear of the sidebar
+  -> no page-level horizontal overflow
+  -> screenshot: /tmp/revv-staged-estimate-review.png
+```
+
+**Data safety**
+- No hosted database/backend was opened.
+- No production API, AI provider, customer, shop, RO, estimate, or Miles Automotive data was read or mutated.
+- Tests and the rendered-app smoke used mocks/synthetic data only.
+
 ## Dispatch Log — 2026-07-10 Multi-Photo Intake
 
 **Status:** DEPLOYED + HEALTH VERIFIED — PHYSICAL IPAD PICKER SPOT CHECK PENDING

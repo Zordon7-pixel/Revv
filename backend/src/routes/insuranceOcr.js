@@ -579,6 +579,77 @@ function buildLineItemsFromTotals(totals) {
   return items;
 }
 
+function mergeEstimateTotals(...sources) {
+  const merged = {};
+  let hasValue = false;
+  for (const source of sources) {
+    if (!source || typeof source !== 'object') continue;
+    for (const [key, value] of Object.entries(source)) {
+      if (value === null || value === undefined || value === '') continue;
+      merged[key] = value;
+      hasValue = true;
+    }
+  }
+  return hasValue ? normalizeEstimateTotals(merged) : null;
+}
+
+function shouldReturnDeterministicParse(parsed) {
+  return Array.isArray(parsed?.line_items) && parsed.line_items.length > 0;
+}
+
+function reviewReasonsAfterRecovery(reviewReasons, hasItems) {
+  const reasons = Array.isArray(reviewReasons) ? reviewReasons : [];
+  return [...new Set(reasons.filter((reason) => {
+    if (!hasItems) return true;
+    return !['ccc_line_items_missing', 'mitchell_line_items_missing'].includes(reason);
+  }))];
+}
+
+function mergeRecoveredParsed(deterministicParsed, recoveredParsed) {
+  if (!deterministicParsed) return recoveredParsed || {};
+  const recovered = recoveredParsed && typeof recoveredParsed === 'object' ? recoveredParsed : {};
+  const merged = { ...deterministicParsed, ...recovered };
+  for (const field of [
+    'insurance_company', 'claim_number', 'adjuster_name', 'adjuster_phone', 'adjuster_email',
+    'customer_name', 'customer_phone', 'vehicle', 'vin', 'vehicle_year', 'vehicle_make', 'vehicle_model',
+  ]) {
+    if (recovered[field] === null || recovered[field] === undefined || recovered[field] === '') {
+      merged[field] = deterministicParsed[field] ?? null;
+    }
+  }
+  const recoveredItems = Array.isArray(recovered.line_items) ? recovered.line_items : [];
+  merged.line_items = recoveredItems.length ? recoveredItems : (deterministicParsed.line_items || []);
+  merged.estimate_totals = mergeEstimateTotals(
+    recovered.estimate_totals,
+    deterministicParsed.estimate_totals
+  );
+  merged.review_reasons = reviewReasonsAfterRecovery(
+    [...(deterministicParsed.review_reasons || []), ...(recovered.review_reasons || [])],
+    merged.line_items.length > 0
+  );
+  merged.needs_review = Boolean(merged.review_reasons.length || recovered.needs_review);
+  return merged;
+}
+
+function buildDeterministicSummaryFallback(parsed, detectedFormat) {
+  if (!parsed) return null;
+  const estimateTotals = normalizeEstimateTotals(parsed.estimate_totals);
+  const lineItems = buildLineItemsFromTotals(estimateTotals);
+  if (!lineItems.length) return null;
+  const summaryReason = `${detectedFormat || parsed.detected_format || FORMATS.UNKNOWN}_summary_items_from_totals`;
+  return {
+    ...parsed,
+    detected_format: detectedFormat || parsed.detected_format || FORMATS.UNKNOWN,
+    estimate_totals: estimateTotals,
+    line_items: lineItems,
+    needs_review: true,
+    review_reasons: [...new Set([
+      ...reviewReasonsAfterRecovery(parsed.review_reasons, true),
+      summaryReason,
+    ])],
+  };
+}
+
 function sanitizeTextForOpenAI(input, { aggressive = false } = {}) {
   const str = String(input || '');
   const out = [];
@@ -850,6 +921,7 @@ router.post('/parse', auth, insuranceOcrLimiter, upload.fields([
   { name: 'estimate_image', maxCount: MAX_ESTIMATE_UPLOAD_FILES },
   { name: 'estimate_images', maxCount: MAX_ESTIMATE_UPLOAD_FILES },
 ]), async (req, res) => {
+  let deterministicSummaryFallback = null;
   try {
     const files = collectEstimateUploadFiles(req);
     if (!files.length) {
@@ -899,12 +971,17 @@ router.post('/parse', auth, insuranceOcrLimiter, upload.fields([
       signals: [],
     };
 
+    let deterministicParsed = null;
     if (extractedTextForTotals && formatDetection.format === FORMATS.CCC) {
       const parsed = parseCccEstimate(extractedTextForTotals);
       if (intakeMode) {
         return res.json({ success: true, parsed: normalizeIntakeParsed(parsed, formatDetection.format) });
       }
-      return res.json(buildDeterministicParseResponse(parsed, formatDetection.format));
+      if (shouldReturnDeterministicParse(parsed)) {
+        return res.json(buildDeterministicParseResponse(parsed, formatDetection.format));
+      }
+      deterministicParsed = parsed;
+      deterministicSummaryFallback = buildDeterministicSummaryFallback(parsed, formatDetection.format);
     }
 
     if (extractedTextForTotals && formatDetection.format === FORMATS.MITCHELL) {
@@ -912,11 +989,18 @@ router.post('/parse', auth, insuranceOcrLimiter, upload.fields([
       if (intakeMode) {
         return res.json({ success: true, parsed: normalizeIntakeParsed(parsed, formatDetection.format) });
       }
-      return res.json(buildDeterministicParseResponse(parsed, formatDetection.format));
+      if (shouldReturnDeterministicParse(parsed)) {
+        return res.json(buildDeterministicParseResponse(parsed, formatDetection.format));
+      }
+      deterministicParsed = parsed;
+      deterministicSummaryFallback = buildDeterministicSummaryFallback(parsed, formatDetection.format);
     }
 
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey && !process.env.ANTHROPIC_API_KEY) {
+      if (deterministicSummaryFallback) {
+        return res.json(buildDeterministicParseResponse(deterministicSummaryFallback, formatDetection.format));
+      }
       return res.status(503).json({ success: false, error: AI_CONFIG_ERROR });
     }
 
@@ -972,17 +1056,22 @@ router.post('/parse', auth, insuranceOcrLimiter, upload.fields([
       parsed = parseModelJson(raw);
     } catch {
       console.error('[InsuranceOCR] Failed to parse OpenAI response. raw length:', raw?.length, '| preview:', raw?.slice(0, 300));
-      return res.status(422).json({ success: false, error: 'Could not extract estimate data from file. Try a clearer upload.' });
+      if (!deterministicParsed) {
+        return res.status(422).json({ success: false, error: 'Could not extract estimate data from file. Try a clearer upload.' });
+      }
+      parsed = deterministicParsed;
     }
 
     if (intakeMode) {
       return res.json({ success: true, parsed: normalizeIntakeParsed(parsed, formatDetection.format) });
     }
 
+    parsed = mergeRecoveredParsed(deterministicParsed, parsed);
     let items = normalizeLineItems(parsed.line_items);
     let modelTotals = normalizeEstimateTotals(parsed.estimate_totals);
+    const deterministicTotals = normalizeEstimateTotals(deterministicParsed?.estimate_totals);
     const textTotals = extractedTextForTotals ? parseEstimateTotalsFromPdfText(extractedTextForTotals) : null;
-    let estimateTotals = textTotals || modelTotals || null;
+    let estimateTotals = mergeEstimateTotals(modelTotals, deterministicTotals, textTotals);
 
     if (!items.length && retryWithRelaxedPrompt) {
       try {
@@ -991,25 +1080,69 @@ router.post('/parse', auth, insuranceOcrLimiter, upload.fields([
         const retryParsed = parseModelJson(retryRaw);
         const retryItems = normalizeLineItems(retryParsed.line_items);
         if (retryItems.length) {
-          parsed = { ...parsed, ...retryParsed };
+          parsed = mergeRecoveredParsed(parsed, retryParsed);
           items = retryItems;
         }
-        modelTotals = normalizeEstimateTotals(retryParsed.estimate_totals) || modelTotals;
-        estimateTotals = textTotals || modelTotals || estimateTotals;
+        modelTotals = mergeEstimateTotals(modelTotals, retryParsed.estimate_totals);
+        estimateTotals = mergeEstimateTotals(modelTotals, deterministicTotals, textTotals);
       } catch (retryErr) {
         console.warn('[InsuranceOCR] Relaxed line-item retry failed:', retryErr?.message || retryErr);
       }
     }
 
+    if (!items.length && extractedTextForTotals && imageDataUrls.length === 0) {
+      for (const file of files) {
+        const mimeType = file.mimetype || 'application/octet-stream';
+        const filename = String(file.originalname || '').toLowerCase();
+        const isPdf = mimeType === 'application/pdf' || filename.endsWith('.pdf');
+        if (!isPdf) continue;
+        try {
+          imageDataUrls.push(...await extractPdfPageImages(file.buffer, PDF_IMAGE_PAGE_LIMIT));
+        } catch (imgErr) {
+          console.warn('[InsuranceOCR] Visual line-item retry could not render PDF pages:', imgErr?.message || imgErr);
+        }
+      }
+
+      if (imageDataUrls.length) {
+        try {
+          console.warn('[InsuranceOCR] Text extraction returned zero lines; retrying from rendered PDF pages.');
+          const visualRaw = await parseEstimateImageUrlsWithFallback(openai, imageDataUrls, RELAXED_LINE_ITEM_PROMPT);
+          const visualParsed = parseModelJson(visualRaw);
+          const visualItems = normalizeLineItems(visualParsed.line_items);
+          if (visualItems.length) {
+            parsed = mergeRecoveredParsed(parsed, visualParsed);
+            items = visualItems;
+          }
+          modelTotals = mergeEstimateTotals(modelTotals, visualParsed.estimate_totals);
+          estimateTotals = mergeEstimateTotals(modelTotals, deterministicTotals, textTotals);
+        } catch (visualErr) {
+          console.warn('[InsuranceOCR] Visual line-item retry failed:', visualErr?.message || visualErr);
+        }
+      }
+    }
+
+    let usedSummaryFallback = false;
     if (!items.length && estimateTotals) {
       items = buildLineItemsFromTotals(estimateTotals);
       if (items.length) {
+        usedSummaryFallback = true;
         console.warn('[InsuranceOCR] Built estimate line items from totals because detailed rows were unreadable.');
       }
     }
 
+    let reviewReasons = reviewReasonsAfterRecovery(parsed.review_reasons, items.length > 0);
+    if (usedSummaryFallback) {
+      reviewReasons = [...new Set([
+        ...reviewReasons,
+        `${formatDetection.format || FORMATS.UNKNOWN}_summary_items_from_totals`,
+      ])];
+    }
+    const needsReview = Boolean(parsed.needs_review || reviewReasons.length);
+
     return res.json({
       success: true,
+      needs_review: needsReview,
+      detected_format: formatDetection.format,
       parsed: {
         insurance_company: parsed.insurance_company || null,
         claim_number: parsed.claim_number || null,
@@ -1024,6 +1157,8 @@ router.post('/parse', auth, insuranceOcrLimiter, upload.fields([
         vehicle_make: parsed.vehicle_make || null,
         vehicle_model: parsed.vehicle_model || null,
         detected_format: formatDetection.format,
+        needs_review: needsReview,
+        review_reasons: reviewReasons,
         total_allowed: parsed.total_allowed || null,
         estimate_totals: estimateTotals,
         line_items: items,
@@ -1037,7 +1172,19 @@ router.post('/parse', auth, insuranceOcrLimiter, upload.fields([
         shop_id: req.user.shop_id,
         ro_id: req.body?.ro_id || req.body?.roId || 'n/a',
       });
+      if (deterministicSummaryFallback) {
+        return res.json(buildDeterministicParseResponse(
+          deterministicSummaryFallback,
+          deterministicSummaryFallback.detected_format
+        ));
+      }
       return res.status(503).json({ success: false, error: AI_CONFIG_ERROR });
+    }
+    if (deterministicSummaryFallback) {
+      return res.json(buildDeterministicParseResponse(
+        deterministicSummaryFallback,
+        deterministicSummaryFallback.detected_format
+      ));
     }
     const status = isAiProviderConfigError(err) ? 503 : 500;
     return res.status(status).json({ success: false, error: safeInsuranceOcrError(err) });
@@ -1175,4 +1322,6 @@ module.exports.insuranceOcrLimiterKeyGenerator = insuranceOcrLimiterKeyGenerator
 module.exports.parseEstimateTotalsFromPdfText = parseEstimateTotalsFromPdfText;
 module.exports.normalizeIntakeParsed = normalizeIntakeParsed;
 module.exports.buildDeterministicParseResponse = buildDeterministicParseResponse;
+module.exports.buildDeterministicSummaryFallback = buildDeterministicSummaryFallback;
+module.exports.shouldReturnDeterministicParse = shouldReturnDeterministicParse;
 module.exports.INTAKE_PROMPT = INTAKE_PROMPT;
