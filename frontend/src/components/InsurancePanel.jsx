@@ -22,11 +22,11 @@ const INSURANCE_COMPANIES = [
 ]
 
 const SUPPLEMENT_META = {
-  none: { label: 'None', cls: 'bg-slate-900/40 text-slate-300 border-slate-700/40' },
-  requested: { label: 'Requested', cls: 'bg-amber-900/40 text-amber-300 border-amber-700/40' },
-  pending: { label: 'Pending', cls: 'bg-yellow-900/40 text-yellow-300 border-yellow-700/40' },
-  approved: { label: 'Approved', cls: 'bg-emerald-900/40 text-emerald-300 border-emerald-700/40' },
-  denied: { label: 'Denied', cls: 'bg-red-900/40 text-red-300 border-red-700/40' },
+  none: { label: 'None', cls: 'border-line-2 bg-raised text-muted' },
+  requested: { label: 'Requested', cls: 'border-gold/40 bg-gold/10 text-gold' },
+  pending: { label: 'Pending', cls: 'border-gold/40 bg-gold/10 text-gold' },
+  approved: { label: 'Approved', cls: 'border-good/40 bg-good/10 text-good' },
+  denied: { label: 'Denied', cls: 'border-crit/40 bg-crit/10 text-crit' },
 }
 
 function centsToDollars(cents) {
@@ -61,6 +61,7 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
   const [saving, setSaving] = useState(false)
   const [requesting, setRequesting] = useState(false)
   const [requestError, setRequestError] = useState('')
+  const [saveError, setSaveError] = useState('')
 
   // OCR import state
   const fileInputRef = useRef(null)
@@ -326,16 +327,18 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
   }, [form.insurance_approved_amount, form.supplement_amount])
 
   const supplementMeta = SUPPLEMENT_META[form.supplement_status] || SUPPLEMENT_META.none
-  const inp = 'w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand'
+  const inp = 'w-full rounded-instrument border border-line-2 bg-void px-3 py-2 text-sm text-ink placeholder:text-faint focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20'
   const selectedOcrCount = Object.values(ocrSelected).filter(Boolean).length
 
   function set(key, value) {
     setForm((prev) => ({ ...prev, [key]: value }))
     if (requestError) setRequestError('')
+    if (saveError) setSaveError('')
   }
 
   async function saveInsurance() {
     setSaving(true)
+    setSaveError('')
     try {
       const payload = {
         insurance_company: form.insurance_company || null,
@@ -354,7 +357,8 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
       await api.patch(`/ros/${roId}/insurance`, payload)
       onUpdated?.()
     } catch (err) {
-      alert(err?.response?.data?.error || 'Could not save insurance details')
+      console.error('[InsurancePanel] Save insurance failed')
+      setSaveError(err?.response?.data?.error || 'Could not save insurance details')
     } finally {
       setSaving(false)
     }
@@ -375,7 +379,7 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
       })
       onUpdated?.()
     } catch (err) {
-      console.error('[InsurancePanel] request supplement failed:', err)
+      console.error('[InsurancePanel] Request supplement failed')
       setRequestError(err?.response?.data?.error || 'Could not request supplement.')
     } finally {
       setRequesting(false)
@@ -383,30 +387,31 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
   }
 
   return (
-    <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4 col-span-full">
+    <div className="col-span-full rounded-instrument border border-line-2 bg-panel p-4">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         className="w-full flex items-center justify-between text-left"
+        aria-expanded={open}
       >
         <div>
-          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
+          <h2 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-muted">
             <ShieldCheck size={12} /> Insurance
           </h2>
-          <p className="text-xs text-slate-500 mt-1">
+          <p className="mt-1 text-xs text-faint">
             {form.insurance_company || 'No carrier'} {form.insurance_claim_number ? `· Claim ${form.insurance_claim_number}` : ''}
           </p>
         </div>
-        {open ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
+        {open ? <ChevronUp size={16} className="text-muted" /> : <ChevronDown size={16} className="text-muted" />}
       </button>
 
       {open && (
         <div className="mt-4 space-y-4">
 
           {/* ── Insurance Estimate OCR Import ── */}
-          <div className="border border-dashed border-[#2a2d3e] rounded-xl p-3 bg-[#111423]">
+          <div className="rounded-instrument border border-dashed border-line-2 bg-panel-2 p-3">
             <div className="flex items-center justify-between mb-2">
-              <h3 className="text-xs font-semibold text-white flex items-center gap-1.5">
+              <h3 className="flex items-center gap-1.5 text-xs font-semibold text-ink">
                 <FileImage size={12} /> Import Insurance Estimate
               </h3>
               {(ocrFiles.length > 0 || ocrItems) && (
@@ -418,17 +423,17 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
                   setOcrCrossCheck(null)
                   setOcrError(null)
                   setOcrNotice(null)
-                }} className="text-slate-500 hover:text-red-400">
+                }} className="rounded-md p-1 text-faint transition-colors hover:bg-crit/10 hover:text-crit" aria-label="Clear imported estimate">
                   <X size={14} />
                 </button>
               )}
             </div>
-            <p className="text-[10px] text-slate-500 mb-3">
+            <p className="mb-3 text-[10px] text-faint">
               Upload a photo or scan of the adjuster's estimate. AI will extract line items you can import directly into the estimate.
             </p>
-            {ocrNotice && <p className="text-xs text-emerald-300 mb-2">{ocrNotice}</p>}
+            {ocrNotice && <p role="status" className="mb-2 text-xs text-good">{ocrNotice}</p>}
             {ocrParsedMeta && (ocrParsedMeta.insurance_company || ocrParsedMeta.claim_number || ocrParsedMeta.adjuster_name || ocrParsedMeta.vehicle) && (
-              <p className="text-[10px] text-indigo-300 mb-2">
+              <p className="mb-2 text-[10px] text-brand">
                 Parsed: {[ocrParsedMeta.insurance_company, ocrParsedMeta.claim_number, ocrParsedMeta.adjuster_name, ocrParsedMeta.vehicle].filter(Boolean).join(' · ')}
               </p>
             )}
@@ -438,21 +443,21 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
               className="mb-2"
             />
             {ocrCrossCheck?.hasMismatch && (
-              <div className="mb-2 rounded border border-red-700/40 bg-red-950/20 p-2 space-y-1">
+              <div role="alert" className="mb-2 space-y-1 rounded-instrument border border-crit/30 bg-crit/10 p-2">
                 {ocrCrossCheck.messages.map((msg, idx) => (
-                  <p key={idx} className="text-[10px] text-red-300">{msg}</p>
+                  <p key={idx} className="text-[10px] text-crit">{msg}</p>
                 ))}
               </div>
             )}
             {ocrImportedCount > 0 && (
-              <a href={`/estimate-builder/${roId}`} className="inline-block mb-2 text-[11px] text-indigo-300 hover:text-indigo-200 underline">
+              <a href={`/estimate-builder/${roId}`} className="mb-2 inline-block text-[11px] text-brand underline transition-colors hover:text-brand-lit">
                 Open Estimate Builder to review imported items
               </a>
             )}
 
             {!ocrFiles.length && !ocrItems && (
               <>
-                <input ref={fileInputRef} type="file" accept="image/*,.pdf" multiple className="hidden" onChange={handleFileChange} />
+                <input ref={fileInputRef} type="file" accept="image/*,.pdf" multiple className="hidden" aria-label="Insurance estimate files" onChange={handleFileChange} />
                 {attachedAppraisalEvidence.length > 0 && (
                   <button
                     type="button"
@@ -466,7 +471,7 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="w-full flex items-center justify-center gap-2 border border-[#2a2d3e] rounded-lg py-3 text-sm text-slate-400 hover:text-white hover:border-indigo-500 transition-colors"
+                  className="flex w-full items-center justify-center gap-2 rounded-lg border border-line-2 bg-void py-3 text-sm text-muted transition-colors hover:border-brand/50 hover:text-ink"
                 >
                   <Upload size={15} /> Upload estimate photos / PDF
                 </button>
@@ -476,27 +481,27 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
             {ocrFiles.length > 0 && !ocrItems && (
               <div className="space-y-2">
                 {ocrPreview && (
-                  <img src={ocrPreview} alt="Estimate preview" className="w-full max-h-40 object-contain rounded-lg border border-[#2a2d3e]" />
+                  <img src={ocrPreview} alt="Estimate preview" className="max-h-40 w-full rounded-lg border border-line-2 object-contain" />
                 )}
                 {!ocrPreview && (
-                  <p className="text-xs text-slate-400 italic">{ocrFiles.map((file) => file.name).join(', ')}</p>
+                  <p className="text-xs italic text-muted">{ocrFiles.map((file) => file.name).join(', ')}</p>
                 )}
-                <p className="text-[10px] text-slate-500">{ocrFiles.length} file{ocrFiles.length === 1 ? '' : 's'} selected</p>
-                <input ref={fileInputRef} type="file" accept="image/*,.pdf" multiple className="hidden" onChange={handleFileChange} />
+                <p className="text-[10px] text-faint">{ocrFiles.length} file{ocrFiles.length === 1 ? '' : 's'} selected</p>
+                <input ref={fileInputRef} type="file" accept="image/*,.pdf" multiple className="hidden" aria-label="Additional insurance estimate files" onChange={handleFileChange} />
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
                   disabled={ocrParsing || ocrFiles.length >= 12}
-                  className="w-full border border-[#2a2d3e] hover:border-brand/60 disabled:opacity-50 text-slate-300 text-xs font-semibold py-2 rounded-lg"
+                  className="w-full rounded-lg border border-line-2 bg-void py-2 text-xs font-semibold text-muted transition-colors hover:border-brand/60 hover:text-ink disabled:opacity-50"
                 >
                   Add another photo / PDF
                 </button>
-                {ocrError && <p role="alert" className="text-xs text-red-400">{ocrError}</p>}
+                {ocrError && <p role="alert" className="text-xs text-crit">{ocrError}</p>}
                 <button
                   type="button"
                   onClick={() => parseEstimate()}
                   disabled={ocrParsing}
-                  className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-semibold py-2 rounded-lg"
+                  className="w-full rounded-lg bg-brand py-2 text-xs font-semibold text-white transition-colors hover:bg-brand-lit disabled:opacity-50"
                 >
                   {ocrParsing ? 'Reading estimate…' : 'Extract Line Items with AI'}
                 </button>
@@ -505,21 +510,21 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
 
             {ocrItems && (
               <div className="space-y-2">
-                <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wide">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">
                   {ocrItems.length} items found — select to import:
                 </p>
                 <div className="max-h-48 overflow-y-auto space-y-1">
                   {ocrItems.map((item, i) => (
-                    <label key={i} className="flex items-start gap-2 cursor-pointer hover:bg-[#1a1d2e] rounded p-1">
+                    <label key={i} className="flex cursor-pointer items-start gap-2 rounded p-1 transition-colors hover:bg-raised">
                       <input
                         type="checkbox"
                         checked={!!ocrSelected[i]}
                         onChange={e => setOcrSelected(prev => ({ ...prev, [i]: e.target.checked }))}
-                        className="mt-0.5 accent-indigo-500"
+                        className="mt-0.5 accent-brand"
                       />
                       <div className="flex-1 min-w-0">
-                        <p className="text-xs text-white truncate">{item.description}</p>
-                        <p className="text-[10px] text-slate-500">
+                        <p className="truncate text-xs text-ink">{item.description}</p>
+                        <p className="font-mono text-[10px] tabular-nums text-faint">
                           {item.type} · qty {item.quantity ?? 1} · ${Number(item.unit_price ?? 0).toFixed(2)}
                         </p>
                       </div>
@@ -527,7 +532,7 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
                   ))}
                 </div>
                 <EstimateFinancialReview totals={ocrParsedMeta?.estimate_totals} />
-                {ocrError && <p role="alert" className="text-xs text-red-400">{ocrError}</p>}
+                {ocrError && <p role="alert" className="text-xs text-crit">{ocrError}</p>}
                 <EstimateSelectionToolbar items={ocrItems} selected={ocrSelected} onChange={setOcrSelected} />
                 <div className="flex justify-end">
                   <button
@@ -545,7 +550,7 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
-              <label className="text-[10px] text-slate-500 block mb-1">Insurance Company</label>
+              <label className="mb-1 block text-[10px] text-faint">Insurance Company</label>
               <input
                 list="insurance-company-options"
                 className={inp}
@@ -558,41 +563,41 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
               </datalist>
             </div>
             <div>
-              <label className="text-[10px] text-slate-500 block mb-1">Claim Number</label>
-              <input className={inp} value={form.insurance_claim_number} onChange={(e) => set('insurance_claim_number', e.target.value)} />
+              <label className="mb-1 block text-[10px] text-faint">Claim Number</label>
+              <input aria-label="Claim number" className={inp} value={form.insurance_claim_number} onChange={(e) => set('insurance_claim_number', e.target.value)} />
             </div>
             <div>
-              <label className="text-[10px] text-slate-500 block mb-1">Policy Number</label>
-              <input className={inp} value={form.policy_number} onChange={(e) => set('policy_number', e.target.value)} />
+              <label className="mb-1 block text-[10px] text-faint">Policy Number</label>
+              <input aria-label="Policy number" className={inp} value={form.policy_number} onChange={(e) => set('policy_number', e.target.value)} />
             </div>
             <div>
-              <label className="text-[10px] text-slate-500 block mb-1">Deductible ($)</label>
+              <label className="mb-1 block text-[10px] text-faint">Deductible ($)</label>
               <input aria-label="Deductible ($)" type="number" step="0.01" className={inp} value={form.deductible} onChange={(e) => set('deductible', e.target.value)} />
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
-              <label className="text-[10px] text-slate-500 block mb-1">Adjuster Name</label>
-              <input className={inp} value={form.adjuster_name} onChange={(e) => set('adjuster_name', e.target.value)} />
+              <label className="mb-1 block text-[10px] text-faint">Adjuster Name</label>
+              <input aria-label="Adjuster name" className={inp} value={form.adjuster_name} onChange={(e) => set('adjuster_name', e.target.value)} />
             </div>
             <div>
-              <label className="text-[10px] text-slate-500 block mb-1">Adjuster Phone</label>
+              <label className="mb-1 block text-[10px] text-faint">Adjuster Phone</label>
               <div className="flex gap-2">
-                <input className={inp} value={form.adjuster_phone} onChange={(e) => set('adjuster_phone', e.target.value)} />
+                <input aria-label="Adjuster phone" className={inp} value={form.adjuster_phone} onChange={(e) => set('adjuster_phone', e.target.value)} />
                 {form.adjuster_phone && (
-                  <a href={`tel:${form.adjuster_phone}`} className="px-2.5 py-2 rounded-lg bg-[#0f1117] border border-[#2a2d3e] text-slate-300 hover:text-white">
+                  <a href={`tel:${form.adjuster_phone}`} className="rounded-lg border border-line-2 bg-void px-2.5 py-2 text-muted transition-colors hover:border-brand/50 hover:text-ink" aria-label="Call adjuster">
                     <Phone size={14} />
                   </a>
                 )}
               </div>
             </div>
             <div>
-              <label className="text-[10px] text-slate-500 block mb-1">Adjuster Email</label>
+              <label className="mb-1 block text-[10px] text-faint">Adjuster Email</label>
               <div className="flex gap-2">
-                <input className={inp} value={form.adjuster_email} onChange={(e) => set('adjuster_email', e.target.value)} />
+                <input aria-label="Adjuster email" className={inp} value={form.adjuster_email} onChange={(e) => set('adjuster_email', e.target.value)} />
                 {form.adjuster_email && (
-                  <a href={`mailto:${form.adjuster_email}`} className="px-2.5 py-2 rounded-lg bg-[#0f1117] border border-[#2a2d3e] text-slate-300 hover:text-white">
+                  <a href={`mailto:${form.adjuster_email}`} className="rounded-lg border border-line-2 bg-void px-2.5 py-2 text-muted transition-colors hover:border-brand/50 hover:text-ink" aria-label="Email adjuster">
                     <Mail size={14} />
                   </a>
                 )}
@@ -600,15 +605,16 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
             </div>
           </div>
 
-          <div className="flex items-center justify-between bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2">
+          <div className="flex items-center justify-between rounded-instrument border border-line-2 bg-void px-3 py-2">
             <div>
-              <p className="text-xs text-white font-medium">Is this a Direct Repair Program job?</p>
-              <p className="text-[10px] text-slate-500">Preferred insurer list work (DRP)</p>
+              <p className="text-xs font-medium text-ink">Is this a Direct Repair Program job?</p>
+              <p className="text-[10px] text-faint">Preferred insurer list work (DRP)</p>
             </div>
             <button
               type="button"
               onClick={() => set('is_drp', !form.is_drp)}
-              className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${form.is_drp ? 'bg-emerald-900/40 text-emerald-300 border-emerald-700/40' : 'bg-slate-900/30 text-slate-300 border-slate-700/40'}`}
+              className={`rounded-lg border px-3 py-1.5 text-xs transition-colors ${form.is_drp ? 'border-good/40 bg-good/10 text-good' : 'border-line-2 bg-panel-2 text-muted'}`}
+              aria-pressed={form.is_drp}
             >
               {form.is_drp ? 'Yes' : 'No'}
             </button>
@@ -616,20 +622,20 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
-              <label className="text-[10px] text-slate-500 block mb-1">Insurance Approved Amount ($)</label>
-              <input type="number" step="0.01" className={inp} value={form.insurance_approved_amount} onChange={(e) => set('insurance_approved_amount', e.target.value)} />
+              <label className="mb-1 block text-[10px] text-faint">Insurance Approved Amount ($)</label>
+              <input aria-label="Insurance approved amount" type="number" step="0.01" className={`${inp} font-mono tabular-nums`} value={form.insurance_approved_amount} onChange={(e) => set('insurance_approved_amount', e.target.value)} />
             </div>
             <div>
-              <label className="text-[10px] text-slate-500 block mb-1">Total Insurer Owed ($)</label>
-              <div className="h-[38px] px-3 rounded-lg border border-[#2a2d3e] bg-[#0f1117] text-sm text-emerald-300 flex items-center">
+              <label className="mb-1 block text-[10px] text-faint">Total Insurer Owed ($)</label>
+              <div className="flex h-[38px] items-center rounded-lg border border-gold/30 bg-gold/5 px-3 font-mono text-sm tabular-nums text-gold">
                 ${form.total_insurer_owed || totalPreview}
               </div>
             </div>
           </div>
 
-          <div className="border border-[#2a2d3e] rounded-xl p-3 space-y-3 bg-[#111423]">
+          <div className="space-y-3 rounded-instrument border border-gold/30 bg-gold/5 p-3">
             <div className="flex items-center justify-between">
-              <h3 className="text-xs font-semibold text-white flex items-center gap-1.5">
+              <h3 className="flex items-center gap-1.5 text-xs font-semibold text-gold">
                 <BadgeDollarSign size={12} /> Supplement
               </h3>
               <span className={`text-[10px] px-2 py-1 rounded-full border font-semibold ${supplementMeta.cls}`}>
@@ -639,11 +645,12 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
-                <label className="text-[10px] text-slate-500 block mb-1">Supplement Status</label>
+                <label className="mb-1 block text-[10px] text-faint">Supplement Status</label>
                 <select
                   value={form.supplement_status}
                   onChange={(e) => set('supplement_status', e.target.value)}
                   className={inp}
+                  aria-label="Supplement status"
                 >
                   <option value="none">None</option>
                   <option value="requested">Requested</option>
@@ -653,11 +660,12 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
                 </select>
               </div>
               <div>
-                <label className="text-[10px] text-slate-500 block mb-1">Supplement Amount ($)</label>
+                <label className="mb-1 block text-[10px] text-faint">Supplement Amount ($)</label>
                 <input
                   type="number"
                   step="0.01"
-                  className={inp}
+                  className={`${inp} font-mono tabular-nums`}
+                  aria-label="Supplement amount"
                   value={form.supplement_amount}
                   onChange={(e) => set('supplement_amount', e.target.value)}
                 />
@@ -665,20 +673,25 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
             </div>
 
             <div>
-              <label className="text-[10px] text-slate-500 block mb-1">Notes</label>
+              <label className="mb-1 block text-[10px] text-faint">Notes</label>
               <textarea
                 rows={3}
                 className={inp}
                 value={form.supplement_notes}
                 onChange={(e) => set('supplement_notes', e.target.value)}
                 placeholder="Additional damage found, teardown photos attached, etc."
+                aria-label="Supplement notes"
               />
             </div>
 
             {requestError && (
-              <p role="alert" className="text-xs text-red-300">
+              <p role="alert" className="text-xs text-crit">
                 {requestError}
               </p>
+            )}
+
+            {saveError && (
+              <p role="alert" className="text-xs text-crit">{saveError}</p>
             )}
 
             <div className="flex gap-2">

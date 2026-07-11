@@ -10,10 +10,10 @@ const STATUS_LABELS = {
   blocked: 'Blocked',
 }
 const STATUS_COLORS = {
-  queued: 'bg-slate-700 text-slate-300',
-  in_progress: 'bg-indigo-600/30 text-indigo-300 border border-indigo-600/40',
-  done: 'bg-emerald-600/30 text-emerald-300 border border-emerald-600/40',
-  blocked: 'bg-red-600/30 text-red-300 border border-red-600/40',
+  queued: 'border border-line-2 bg-raised text-muted',
+  in_progress: 'border border-brand/40 bg-brand/10 text-brand',
+  done: 'border border-good/40 bg-good/10 text-good',
+  blocked: 'border border-crit/40 bg-crit/10 text-crit',
 }
 const OPERATION_TYPES = ['body', 'paint', 'assembly', 'molding', 'glass', 'mechanical', 'detail', 'general']
 const TYPE_LABELS = {
@@ -27,14 +27,14 @@ const TYPE_LABELS = {
   general: 'General',
 }
 const TYPE_COLORS = {
-  body: 'bg-blue-700/30 text-blue-300',
-  paint: 'bg-purple-700/30 text-purple-300',
-  assembly: 'bg-cyan-700/30 text-cyan-300',
-  molding: 'bg-amber-700/30 text-amber-300',
-  glass: 'bg-sky-700/30 text-sky-300',
-  mechanical: 'bg-orange-700/30 text-orange-300',
-  detail: 'bg-pink-700/30 text-pink-300',
-  general: 'bg-slate-700/30 text-slate-300',
+  body: 'border border-brand/30 bg-brand/10 text-brand',
+  paint: 'border border-brand/30 bg-brand/10 text-brand',
+  assembly: 'border border-brand/30 bg-brand/10 text-brand',
+  molding: 'border border-brand/30 bg-brand/10 text-brand',
+  glass: 'border border-brand/30 bg-brand/10 text-brand',
+  mechanical: 'border border-brand/30 bg-brand/10 text-brand',
+  detail: 'border border-brand/30 bg-brand/10 text-brand',
+  general: 'border border-line-2 bg-raised text-muted',
 }
 
 const emptyForm = {
@@ -76,6 +76,7 @@ export default function ROOperations({ roId, technicians = [], readOnly = false 
     const title = form.title.trim()
     if (!title) return
     setSaving(true)
+    setError(null)
     try {
       const { data } = await api.post(`/ro-operations/${roId}`, {
         title,
@@ -89,7 +90,8 @@ export default function ROOperations({ roId, technicians = [], readOnly = false 
       setForm(emptyForm)
       setShowAddForm(false)
     } catch (err) {
-      alert(err?.response?.data?.error || 'Could not add operation')
+      console.error('[ROOperations] Add operation failed')
+      setError(err?.response?.data?.error || 'Could not add operation')
     } finally {
       setSaving(false)
     }
@@ -99,33 +101,39 @@ export default function ROOperations({ roId, technicians = [], readOnly = false 
     const currentIdx = STATUS_CYCLE.indexOf(op.status)
     const nextStatus = STATUS_CYCLE[(currentIdx + 1) % STATUS_CYCLE.length]
     setCyclingId(op.id)
+    setError(null)
     try {
       const { data } = await api.put(`/ro-operations/${roId}/${op.id}`, { status: nextStatus })
       setOperations((prev) => prev.map((o) => o.id === op.id ? data.operation : o))
     } catch (err) {
-      console.error('[ROOperations] status cycle failed:', err.message)
+      console.error('[ROOperations] Status update failed')
+      setError(err?.response?.data?.error || 'Could not update operation status')
     } finally {
       setCyclingId(null)
     }
   }
 
   async function updateTech(op, technicianId) {
+    setError(null)
     try {
       const { data } = await api.put(`/ro-operations/${roId}/${op.id}`, { technician_id: technicianId || null })
       setOperations((prev) => prev.map((o) => o.id === op.id ? data.operation : o))
     } catch (err) {
-      console.error('[ROOperations] tech update failed:', err.message)
+      console.error('[ROOperations] Technician update failed')
+      setError(err?.response?.data?.error || 'Could not update operation technician')
     }
   }
 
   async function deleteOp(opId) {
     if (!window.confirm('Delete this operation?')) return
     setDeletingId(opId)
+    setError(null)
     try {
       await api.delete(`/ro-operations/${roId}/${opId}`)
       setOperations((prev) => prev.filter((o) => o.id !== opId))
     } catch (err) {
-      alert(err?.response?.data?.error || 'Could not delete operation')
+      console.error('[ROOperations] Delete operation failed')
+      setError(err?.response?.data?.error || 'Could not delete operation')
     } finally {
       setDeletingId(null)
     }
@@ -140,30 +148,37 @@ export default function ROOperations({ roId, technicians = [], readOnly = false 
     ;[newOps[idx], newOps[swapIdx]] = [newOps[swapIdx], newOps[idx]]
     setOperations(newOps)
     // Persist new sort orders
-    await Promise.all([
-      api.put(`/ro-operations/${roId}/${newOps[idx].id}`, { sort_order: idx }).catch(() => {}),
-      api.put(`/ro-operations/${roId}/${newOps[swapIdx].id}`, { sort_order: swapIdx }).catch(() => {}),
-    ])
+    try {
+      setError(null)
+      await Promise.all([
+        api.put(`/ro-operations/${roId}/${newOps[idx].id}`, { sort_order: idx }),
+        api.put(`/ro-operations/${roId}/${newOps[swapIdx].id}`, { sort_order: swapIdx }),
+      ])
+    } catch {
+      console.error('[ROOperations] Reorder failed')
+      setError('Could not save the new operation order')
+    }
   }
 
   return (
-    <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
+    <div className="rounded-instrument border border-line-2 bg-panel p-4">
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <button
           type="button"
           onClick={() => setCollapsed((v) => !v)}
-          className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-wide hover:text-white transition-colors"
+          className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-muted transition-colors hover:text-ink"
+          aria-expanded={!collapsed}
         >
           {collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
           Job Operations
-          <span className="text-slate-600 font-normal normal-case">({operations.length})</span>
+          <span className="font-mono font-normal normal-case tabular-nums text-faint">({operations.length})</span>
         </button>
         {!readOnly && !collapsed && (
           <button
             type="button"
             onClick={() => setShowAddForm((v) => !v)}
-            className="inline-flex items-center gap-1 text-xs bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-2.5 py-1 rounded-lg transition-colors"
+            className="inline-flex items-center gap-1 rounded-lg bg-brand px-2.5 py-1 text-xs font-semibold text-white transition-colors hover:bg-brand-lit"
           >
             <Plus size={11} /> Add Operation
           </button>
@@ -173,21 +188,21 @@ export default function ROOperations({ roId, technicians = [], readOnly = false 
       {!collapsed && (
         <>
           {error && (
-            <div className="text-xs text-rose-300 bg-rose-900/20 border border-rose-700/40 rounded-lg px-3 py-2 mb-3">
+            <div role="alert" className="mb-3 rounded-instrument border border-crit/30 bg-crit/10 px-3 py-2 text-xs text-crit">
               {error}
             </div>
           )}
 
           {loading ? (
-            <p className="text-xs text-slate-500">Loading operations...</p>
+            <p className="text-xs text-faint">Loading operations...</p>
           ) : operations.length === 0 && !showAddForm ? (
-            <p className="text-xs text-slate-500">No job operations yet.{!readOnly && ' Add one to assign work by tech.'}</p>
+            <p className="text-xs text-faint">No job operations yet.{!readOnly && ' Add one to assign work by tech.'}</p>
           ) : (
             <div className="space-y-2">
               {operations.map((op, idx) => (
                 <div
                   key={op.id}
-                  className="bg-[#0f1117] border border-[#2a2d3e] rounded-xl px-3 py-2.5 flex flex-col gap-2"
+                  className="flex flex-col gap-2 rounded-instrument border border-line-2 bg-void px-3 py-2.5"
                 >
                   <div className="flex items-center gap-2 flex-wrap">
                     {/* Type badge */}
@@ -196,7 +211,7 @@ export default function ROOperations({ roId, technicians = [], readOnly = false 
                     </span>
 
                     {/* Title */}
-                    <span className="text-xs text-white font-medium flex-1 min-w-0 truncate">{op.title}</span>
+                    <span className="min-w-0 flex-1 truncate text-xs font-medium text-ink">{op.title}</span>
 
                     {/* Status badge — click to cycle */}
                     {!readOnly ? (
@@ -218,8 +233,8 @@ export default function ROOperations({ roId, technicians = [], readOnly = false 
                     {/* Sort order buttons */}
                     {!readOnly && (
                       <div className="flex flex-col gap-0.5">
-                        <button type="button" onClick={() => moveOp(op.id, 'up')} disabled={idx === 0} className="text-slate-600 hover:text-slate-300 disabled:opacity-30"><ChevronUp size={11} /></button>
-                        <button type="button" onClick={() => moveOp(op.id, 'down')} disabled={idx === operations.length - 1} className="text-slate-600 hover:text-slate-300 disabled:opacity-30"><ChevronDown size={11} /></button>
+                        <button type="button" onClick={() => moveOp(op.id, 'up')} disabled={idx === 0} className="text-faint transition-colors hover:text-ink disabled:opacity-30" aria-label={`Move ${op.title} up`}><ChevronUp size={11} /></button>
+                        <button type="button" onClick={() => moveOp(op.id, 'down')} disabled={idx === operations.length - 1} className="text-faint transition-colors hover:text-ink disabled:opacity-30" aria-label={`Move ${op.title} down`}><ChevronDown size={11} /></button>
                       </div>
                     )}
 
@@ -229,7 +244,8 @@ export default function ROOperations({ roId, technicians = [], readOnly = false 
                         type="button"
                         onClick={() => deleteOp(op.id)}
                         disabled={deletingId === op.id}
-                        className="text-slate-600 hover:text-red-400 disabled:opacity-40 transition-colors"
+                        className="rounded-md p-1 text-faint transition-colors hover:bg-crit/10 hover:text-crit disabled:opacity-40"
+                        aria-label={`Delete ${op.title || 'operation'}`}
                       >
                         <Trash2 size={13} />
                       </button>
@@ -242,7 +258,8 @@ export default function ROOperations({ roId, technicians = [], readOnly = false 
                       <select
                         value={op.technician_id || ''}
                         onChange={(e) => updateTech(op, e.target.value)}
-                        className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-lg px-2 py-1 text-xs text-white focus:outline-none focus:border-indigo-500"
+                        className="rounded-lg border border-line-2 bg-panel px-2 py-1 text-xs text-ink focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20"
+                        aria-label={`Assign technician for ${op.title}`}
                       >
                         <option value="">Unassigned</option>
                         {technicians.map((t) => (
@@ -250,19 +267,19 @@ export default function ROOperations({ roId, technicians = [], readOnly = false 
                         ))}
                       </select>
                     ) : (
-                      <span className="text-xs text-slate-500">
+                      <span className="text-xs text-faint">
                         {op.technician_name || op.technician_email || 'Unassigned'}
                       </span>
                     )}
 
                     {op.estimated_hours != null && (
-                      <span className="text-[10px] text-slate-500">{op.estimated_hours}h est.</span>
+                      <span className="font-mono text-[10px] tabular-nums text-faint">{op.estimated_hours}h est.</span>
                     )}
                     {op.labor_rate != null && (
-                      <span className="text-[10px] text-slate-500">${op.labor_rate}/hr</span>
+                      <span className="font-mono text-[10px] tabular-nums text-gold">${op.labor_rate}/hr</span>
                     )}
                     {op.notes && (
-                      <span className="text-[10px] text-slate-500 italic truncate max-w-[200px]" title={op.notes}>{op.notes}</span>
+                      <span className="max-w-[200px] truncate text-[10px] italic text-faint" title={op.notes}>{op.notes}</span>
                     )}
                   </div>
                 </div>
@@ -272,26 +289,26 @@ export default function ROOperations({ roId, technicians = [], readOnly = false 
 
           {/* Add form */}
           {showAddForm && !readOnly && (
-            <form onSubmit={addOperation} className="mt-3 bg-[#0f1117] border border-[#2a2d3e] rounded-xl p-3 space-y-3">
-              <p className="text-xs font-semibold text-white">New Operation</p>
+            <form onSubmit={addOperation} className="mt-3 space-y-3 rounded-instrument border border-line-2 bg-void p-3">
+              <p className="text-xs font-semibold text-ink">New Operation</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <div>
-                  <label className="text-[10px] text-slate-500 block mb-0.5">Title *</label>
+                  <label className="mb-0.5 block text-[10px] text-faint">Title *</label>
                   <input
                     type="text"
                     value={form.title}
                     onChange={(e) => setField('title', e.target.value)}
                     placeholder="e.g. Paint roof"
-                    className="w-full bg-[#1a1d2e] border border-[#2a2d3e] rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+                    className="w-full rounded-lg border border-line-2 bg-panel px-2 py-1.5 text-xs text-ink focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20"
                     required
                   />
                 </div>
                 <div>
-                  <label className="text-[10px] text-slate-500 block mb-0.5">Type</label>
+                  <label className="mb-0.5 block text-[10px] text-faint">Type</label>
                   <select
                     value={form.operation_type}
                     onChange={(e) => setField('operation_type', e.target.value)}
-                    className="w-full bg-[#1a1d2e] border border-[#2a2d3e] rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+                    className="w-full rounded-lg border border-line-2 bg-panel px-2 py-1.5 text-xs text-ink focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20"
                   >
                     {OPERATION_TYPES.map((t) => (
                       <option key={t} value={t}>{TYPE_LABELS[t]}</option>
@@ -300,11 +317,11 @@ export default function ROOperations({ roId, technicians = [], readOnly = false 
                 </div>
                 {technicians.length > 0 && (
                   <div>
-                    <label className="text-[10px] text-slate-500 block mb-0.5">Assign Tech</label>
+                    <label className="mb-0.5 block text-[10px] text-faint">Assign Tech</label>
                     <select
                       value={form.technician_id}
                       onChange={(e) => setField('technician_id', e.target.value)}
-                      className="w-full bg-[#1a1d2e] border border-[#2a2d3e] rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+                      className="w-full rounded-lg border border-line-2 bg-panel px-2 py-1.5 text-xs text-ink focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20"
                     >
                       <option value="">Unassigned</option>
                       {technicians.map((t) => (
@@ -314,7 +331,7 @@ export default function ROOperations({ roId, technicians = [], readOnly = false 
                   </div>
                 )}
                 <div>
-                  <label className="text-[10px] text-slate-500 block mb-0.5">Est. Hours</label>
+                  <label className="mb-0.5 block text-[10px] text-faint">Est. Hours</label>
                   <input
                     type="number"
                     min="0"
@@ -322,11 +339,11 @@ export default function ROOperations({ roId, technicians = [], readOnly = false 
                     value={form.estimated_hours}
                     onChange={(e) => setField('estimated_hours', e.target.value)}
                     placeholder="0.0"
-                    className="w-full bg-[#1a1d2e] border border-[#2a2d3e] rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+                    className="w-full rounded-lg border border-line-2 bg-panel px-2 py-1.5 text-xs text-ink focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20"
                   />
                 </div>
                 <div>
-                  <label className="text-[10px] text-slate-500 block mb-0.5">Labor Rate ($/hr)</label>
+                  <label className="mb-0.5 block text-[10px] text-faint">Labor Rate ($/hr)</label>
                   <input
                     type="number"
                     min="0"
@@ -334,17 +351,17 @@ export default function ROOperations({ roId, technicians = [], readOnly = false 
                     value={form.labor_rate}
                     onChange={(e) => setField('labor_rate', e.target.value)}
                     placeholder="0.00"
-                    className="w-full bg-[#1a1d2e] border border-[#2a2d3e] rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+                    className="w-full rounded-lg border border-line-2 bg-panel px-2 py-1.5 font-mono text-xs tabular-nums text-ink focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20"
                   />
                 </div>
                 <div className="sm:col-span-2">
-                  <label className="text-[10px] text-slate-500 block mb-0.5">Notes</label>
+                  <label className="mb-0.5 block text-[10px] text-faint">Notes</label>
                   <input
                     type="text"
                     value={form.notes}
                     onChange={(e) => setField('notes', e.target.value)}
                     placeholder="Optional notes"
-                    className="w-full bg-[#1a1d2e] border border-[#2a2d3e] rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+                    className="w-full rounded-lg border border-line-2 bg-panel px-2 py-1.5 text-xs text-ink focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20"
                   />
                 </div>
               </div>
@@ -352,14 +369,14 @@ export default function ROOperations({ roId, technicians = [], readOnly = false 
                 <button
                   type="submit"
                   disabled={saving || !form.title.trim()}
-                  className="text-xs bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors"
+                  className="rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-brand-lit disabled:opacity-50"
                 >
                   {saving ? 'Adding...' : 'Add Operation'}
                 </button>
                 <button
                   type="button"
                   onClick={() => { setShowAddForm(false); setForm(emptyForm) }}
-                  className="text-xs text-slate-400 hover:text-white px-3 py-1.5 rounded-lg transition-colors"
+                  className="rounded-lg px-3 py-1.5 text-xs text-muted transition-colors hover:bg-raised hover:text-ink"
                 >
                   Cancel
                 </button>

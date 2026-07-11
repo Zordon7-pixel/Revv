@@ -43,16 +43,16 @@ const INTERIOR_PANELS = [
 const INTERIOR_PANEL_IDS = new Set(INTERIOR_PANELS.map((panel) => panel.id))
 
 const COLORS = {
-  body: '#1e2235',
-  undercarriage: '#182034',
-  tire: '#0b1220',
-  rim: '#334155',
-  interior: '#1f2937',
-  hover: '#2d3258',
-  selected: '#ef4444',
-  stroke: '#3a3f6e',
-  tireStroke: '#475569',
-  selectedStroke: '#ff6b6b',
+  body: 'var(--panel-2)',
+  undercarriage: 'var(--panel)',
+  tire: 'var(--void)',
+  rim: 'var(--faint)',
+  interior: 'var(--raised)',
+  hover: 'var(--brand-deep)',
+  selected: 'var(--crit)',
+  stroke: 'var(--line-2)',
+  tireStroke: 'var(--muted)',
+  selectedStroke: 'var(--crit)',
 }
 
 function fallbackLabel(id) {
@@ -128,19 +128,13 @@ export default function VehicleDiagram({ value = [], onChange, readOnly = false 
   function renderExteriorCanvas() {
     return (
       <>
-        <defs>
-          <linearGradient id="vehicle-shell-gradient" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#171b2d" />
-            <stop offset="100%" stopColor="#0f1322" />
-          </linearGradient>
-        </defs>
-        <ellipse cx="160" cy="230" rx="120" ry="220" fill="url(#vehicle-shell-gradient)" stroke="#2f365a" strokeWidth="1.25" />
-        <path d="M96,52 L224,52 L236,228 L224,406 L96,406 L84,228 Z" fill="#0f1426" opacity="0.36" />
+        <ellipse cx="160" cy="230" rx="120" ry="220" fill="var(--panel)" stroke="var(--line-2)" strokeWidth="1.25" />
+        <path d="M96,52 L224,52 L236,228 L224,406 L96,406 L84,228 Z" fill="var(--void)" opacity="0.36" />
         {activePanels.map((panel) => renderPanel(panel))}
-        <text x="160" y="14" textAnchor="middle" fontSize="9" fill="#64748b">FRONT</text>
-        <text x="160" y="456" textAnchor="middle" fontSize="9" fill="#64748b">REAR</text>
-        <text x="10" y="230" textAnchor="middle" fontSize="9" fill="#64748b" transform="rotate(-90,10,230)">LEFT</text>
-        <text x="310" y="230" textAnchor="middle" fontSize="9" fill="#64748b" transform="rotate(90,310,230)">RIGHT</text>
+        <text x="160" y="14" textAnchor="middle" fontSize="9" fill="var(--faint)">FRONT</text>
+        <text x="160" y="456" textAnchor="middle" fontSize="9" fill="var(--faint)">REAR</text>
+        <text x="10" y="230" textAnchor="middle" fontSize="9" fill="var(--faint)" transform="rotate(-90,10,230)">LEFT</text>
+        <text x="310" y="230" textAnchor="middle" fontSize="9" fill="var(--faint)" transform="rotate(90,310,230)">RIGHT</text>
       </>
     )
   }
@@ -148,17 +142,11 @@ export default function VehicleDiagram({ value = [], onChange, readOnly = false 
   function renderInteriorCanvas() {
     return (
       <>
-        <defs>
-          <linearGradient id="interior-shell-gradient" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#1a1f31" />
-            <stop offset="100%" stopColor="#101628" />
-          </linearGradient>
-        </defs>
-        <rect x="76" y="38" width="168" height="384" rx="64" fill="url(#interior-shell-gradient)" stroke="#2f365a" strokeWidth="1.25" />
-        <rect x="96" y="58" width="128" height="344" rx="42" fill="#0f1426" opacity="0.4" />
+        <rect x="76" y="38" width="168" height="384" rx="64" fill="var(--panel)" stroke="var(--line-2)" strokeWidth="1.25" />
+        <rect x="96" y="58" width="128" height="344" rx="42" fill="var(--void)" opacity="0.4" />
         {activePanels.map((panel) => renderPanel(panel))}
-        <text x="160" y="18" textAnchor="middle" fontSize="9" fill="#64748b">DASH / FRONT</text>
-        <text x="160" y="452" textAnchor="middle" fontSize="9" fill="#64748b">REAR CABIN</text>
+        <text x="160" y="18" textAnchor="middle" fontSize="9" fill="var(--faint)">DASH / FRONT</text>
+        <text x="160" y="452" textAnchor="middle" fontSize="9" fill="var(--faint)">REAR CABIN</text>
       </>
     )
   }
@@ -166,18 +154,18 @@ export default function VehicleDiagram({ value = [], onChange, readOnly = false 
   return (
     <div className="flex flex-col items-center gap-3">
       {!readOnly && (
-        <div className="inline-flex items-center rounded-lg border border-[#2a2d3e] bg-[#0f1117] p-1">
+        <div className="inline-flex items-center rounded-instrument border border-line-2 bg-void p-1">
           <button
             type="button"
             onClick={() => setMode('exterior')}
-            className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors ${mode === 'exterior' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}
+            className={`rounded-md px-3 py-1 text-xs font-semibold transition-colors ${mode === 'exterior' ? 'bg-brand text-white' : 'text-muted hover:text-ink'}`}
           >
             Exterior ({selectedExteriorCount})
           </button>
           <button
             type="button"
             onClick={() => setMode('interior')}
-            className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors ${mode === 'interior' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}
+            className={`rounded-md px-3 py-1 text-xs font-semibold transition-colors ${mode === 'interior' ? 'bg-brand text-white' : 'text-muted hover:text-ink'}`}
           >
             Interior ({selectedInteriorCount})
           </button>
@@ -190,7 +178,7 @@ export default function VehicleDiagram({ value = [], onChange, readOnly = false 
         </svg>
 
         {hovered && (
-          <div className="absolute top-2 left-1/2 -translate-x-1/2 bg-[#0f1117] border border-[#2a2d3e] text-white text-xs px-2 py-1 rounded-lg pointer-events-none whitespace-nowrap z-10">
+          <div className="pointer-events-none absolute left-1/2 top-2 z-10 -translate-x-1/2 whitespace-nowrap rounded-lg border border-line-2 bg-void px-2 py-1 text-xs text-ink">
             {panelMap[hovered]?.label || fallbackLabel(hovered)}
             {selected.includes(hovered) ? ' — click to remove' : ' — click to mark damaged'}
           </div>
@@ -202,13 +190,15 @@ export default function VehicleDiagram({ value = [], onChange, readOnly = false 
           {selected.map((id) => (
             <span
               key={id}
-              className="flex items-center gap-1 bg-red-900/40 border border-red-700/50 text-red-300 text-xs px-2 py-0.5 rounded-full"
+              className="flex items-center gap-1 rounded-full border border-crit/40 bg-crit/10 px-2 py-0.5 text-xs text-crit"
             >
               {panelMap[id]?.label || fallbackLabel(id)}
               {!readOnly && (
                 <button
+                  type="button"
                   onClick={() => toggle(id)}
-                  className="text-red-400 hover:text-red-200 ml-0.5 leading-none"
+                  className="ml-0.5 leading-none text-crit transition-opacity hover:opacity-70"
+                  aria-label={`Remove ${panelMap[id]?.label || fallbackLabel(id)}`}
                 >
                   x
                 </button>
@@ -219,7 +209,7 @@ export default function VehicleDiagram({ value = [], onChange, readOnly = false 
       )}
 
       {!readOnly && (
-        <p className="text-xs text-slate-500 text-center">
+        <p className="text-center text-xs text-faint">
           {mode === 'interior'
             ? `Mark interior damage for steering column, ignition switch, dash, console, and seats • ${selected.length} zone${selected.length !== 1 ? 's' : ''} selected`
             : `Mark exterior damage, including undercarriage, tires, and rims • ${selected.length} zone${selected.length !== 1 ? 's' : ''} selected`}

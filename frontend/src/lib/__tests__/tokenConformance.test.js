@@ -19,6 +19,14 @@ const tokenizedFiles = [
   'src/components/LibraryAutocomplete.jsx',
   'src/components/PhotoLightbox.jsx',
   'src/components/ROPhotos.jsx',
+  'src/components/InsurancePanel.jsx',
+  'src/components/ROOperations.jsx',
+  'src/components/ClaimTrackerPanel.jsx',
+  'src/components/VehicleDiagram.jsx',
+  'src/components/SupplementFinderPanel.jsx',
+  'src/components/AppraisalQuickIntake.jsx',
+  'src/components/EstimateFinancialReview.jsx',
+  'src/components/PaymentModal.jsx',
 ]
 
 function read(relativePath) {
@@ -66,5 +74,22 @@ describe('redesign token conformance', () => {
     ]) {
       expect(read(relativePath), relativePath).not.toMatch(/\balert\s*\(/)
     }
+  })
+
+  it('keeps RO money and evidence workflows tokenized without weakening consequential gates', () => {
+    const insurance = read('src/components/InsurancePanel.jsx')
+    const operations = read('src/components/ROOperations.jsx')
+    const tracker = read('src/components/ClaimTrackerPanel.jsx')
+    const diagram = read('src/components/VehicleDiagram.jsx')
+
+    expect(insurance).not.toMatch(/\balert\s*\(/)
+    expect(operations).not.toMatch(/\balert\s*\(/)
+    expect(insurance).toMatch(/window\.confirm/)
+    expect(operations).toMatch(/window\.confirm/)
+    expect(tracker).toMatch(/window\.confirm/)
+    expect(existsSync(resolve(frontendRoot, 'src/components/PaymentModal.jsx'))).toBe(true)
+    expect(read('src/components/PaymentModal.jsx')).toMatch(/AppOverlay/)
+    expect(read('src/App.jsx')).not.toMatch(/PaymentModal/)
+    expect(diagram).not.toMatch(/<linearGradient/)
   })
 })

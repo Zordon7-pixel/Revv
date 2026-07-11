@@ -1,22 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
-import { X, CreditCard, CheckCircle, AlertCircle, Loader2 } from 'lucide-react'
+import { AlertCircle, CheckCircle, CreditCard, Loader2, X } from 'lucide-react'
 import { loadStripe } from '@stripe/stripe-js'
-import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js'
+import { CardElement, Elements, useElements, useStripe } from '@stripe/react-stripe-js'
 import api from '../lib/api'
 import AppOverlay from './AppOverlay'
 
 const CARD_OPTIONS = {
   style: {
     base: {
-      color: '#f8fafc',
+      color: 'var(--ink)',
       fontSize: '16px',
-      '::placeholder': {
-        color: '#64748b',
-      },
+      '::placeholder': { color: 'var(--muted)' },
     },
-    invalid: {
-      color: '#f87171',
-    },
+    invalid: { color: 'var(--crit)' },
   },
 }
 
@@ -26,66 +22,55 @@ function CheckoutForm({ amount, clientSecret, onSuccess }) {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
-
   const amountLabel = Number(amount || 0).toLocaleString(undefined, {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })
 
-  async function handleSubmit(e) {
-    e.preventDefault()
+  async function handleSubmit(event) {
+    event.preventDefault()
     if (!stripe || !elements || !clientSecret) return
 
     setSubmitting(true)
     setError('')
-
     const card = elements.getElement(CardElement)
-    const result = await stripe.confirmCardPayment(clientSecret, {
-      payment_method: {
-        card,
-      },
-    })
+    const result = await stripe.confirmCardPayment(clientSecret, { payment_method: { card } })
 
     if (result.error) {
       setError(result.error.message || 'Payment failed')
       setSubmitting(false)
       return
     }
-
     if (result.paymentIntent?.status === 'succeeded') {
       setSuccess(true)
       setSubmitting(false)
-      if (onSuccess) onSuccess()
+      onSuccess?.()
       return
     }
-
     setError('Payment did not complete. Please try again.')
     setSubmitting(false)
   }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-xl p-3">
-        <label className="text-[11px] text-slate-500 block mb-2">Card Details</label>
+      <div className="rounded-instrument border border-line-2 bg-void p-3">
+        <label className="mb-2 block text-[11px] text-muted">Card details</label>
         <CardElement options={CARD_OPTIONS} />
       </div>
-
       {error && (
-        <div className="text-xs text-red-300 bg-red-900/20 border border-red-700/30 rounded-lg px-3 py-2 flex items-center gap-2">
-          <AlertCircle size={14} /> {error}
+        <div role="alert" className="flex items-center gap-2 rounded-instrument border border-crit/35 bg-crit/10 px-3 py-2 text-xs text-crit">
+          <AlertCircle size={14} aria-hidden="true" /> {error}
         </div>
       )}
-
       {success && (
-        <div className="text-xs text-emerald-300 bg-emerald-900/20 border border-emerald-700/30 rounded-lg px-3 py-2 flex items-center gap-2">
-          <CheckCircle size={14} /> Payment successful.
+        <div role="status" className="flex items-center gap-2 rounded-instrument border border-good/35 bg-good/10 px-3 py-2 text-xs text-good">
+          <CheckCircle size={14} aria-hidden="true" /> Payment successful.
         </div>
       )}
-
       <button
         type="submit"
         disabled={!stripe || submitting || success}
-        className="w-full bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] font-semibold text-sm rounded-lg py-2.5 disabled:opacity-50 disabled:cursor-not-allowed"
+        className="w-full rounded-instrument bg-gold py-2.5 text-sm font-semibold text-on-gold transition-colors hover:bg-gold-lit disabled:cursor-not-allowed disabled:opacity-50"
       >
         {submitting ? 'Processing...' : `Pay $${amountLabel}`}
       </button>
@@ -99,14 +84,12 @@ export default function PaymentModal({ roId, amount, onClose, onSuccess }) {
     () => (publishableKey ? loadStripe(publishableKey) : null),
     [publishableKey]
   )
-
   const [loadingIntent, setLoadingIntent] = useState(true)
   const [clientSecret, setClientSecret] = useState('')
   const [error, setError] = useState('')
 
   useEffect(() => {
     let mounted = true
-
     async function createIntent() {
       if (!roId || !amount || Number(amount) <= 0) {
         if (mounted) {
@@ -115,26 +98,22 @@ export default function PaymentModal({ roId, amount, onClose, onSuccess }) {
         }
         return
       }
-
       setLoadingIntent(true)
       setError('')
-
       try {
         const { data } = await api.post('/payments/create-intent', { roId, amount })
         if (mounted) {
           setClientSecret(data.clientSecret)
           setLoadingIntent(false)
         }
-      } catch (err) {
+      } catch (requestError) {
         if (mounted) {
-          setError(err?.response?.data?.error || 'Unable to initialize payment.')
+          setError(requestError?.response?.data?.error || 'Unable to initialize payment.')
           setLoadingIntent(false)
         }
       }
     }
-
     createIntent()
-
     return () => {
       mounted = false
     }
@@ -143,53 +122,51 @@ export default function PaymentModal({ roId, amount, onClose, onSuccess }) {
   const appearance = {
     theme: 'night',
     variables: {
-      colorPrimary: '#EAB308',
-      colorBackground: '#0f1117',
-      colorText: '#f8fafc',
-      colorDanger: '#ef4444',
+      colorPrimary: 'var(--gold)',
+      colorBackground: 'var(--void)',
+      colorText: 'var(--ink)',
+      colorDanger: 'var(--crit)',
       borderRadius: '10px',
     },
   }
 
   return (
-    <AppOverlay label="Collect payment" onClose={onClose} className="bg-black/60 p-4 backdrop-blur-[1px]">
-      <div className="w-full max-w-md bg-[#1a1d2e] border border-[#2a2d3e] rounded-2xl shadow-2xl">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[#2a2d3e]">
+    <AppOverlay label="Collect payment" onClose={onClose} className="bg-void/75 p-4 backdrop-blur-[1px]">
+      <section className="w-full max-w-md rounded-instrument border border-line-2 bg-panel shadow-2xl">
+        <header className="flex items-center justify-between border-b border-line-2 px-5 py-4">
           <div className="flex items-center gap-2">
-            <CreditCard size={16} className="text-[#EAB308]" />
-            <h2 className="text-base font-bold text-white">Collect Payment</h2>
+            <CreditCard size={16} className="text-gold" aria-hidden="true" />
+            <h2 className="text-base font-bold text-ink">Collect payment</h2>
           </div>
-          <button onClick={onClose} className="text-slate-500 hover:text-white transition-colors">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close payment dialog"
+            className="rounded-instrument p-1 text-muted transition-colors hover:bg-raised hover:text-ink"
+          >
             <X size={18} />
           </button>
-        </div>
-
-        <div className="p-5 space-y-4">
+        </header>
+        <div className="space-y-4 p-5">
           {!publishableKey || !stripePromise ? (
-            <div className="text-sm text-red-300 bg-red-900/20 border border-red-700/30 rounded-lg px-3 py-2">
+            <div role="alert" className="rounded-instrument border border-crit/35 bg-crit/10 px-3 py-2 text-sm text-crit">
               VITE_STRIPE_PUBLISHABLE_KEY is not configured.
             </div>
           ) : loadingIntent ? (
-            <div className="text-sm text-slate-300 flex items-center gap-2">
-              <Loader2 size={15} className="animate-spin" /> Creating secure payment session...
+            <div role="status" className="flex items-center gap-2 text-sm text-muted">
+              <Loader2 size={15} className="animate-spin" aria-hidden="true" /> Creating secure payment session...
             </div>
           ) : error ? (
-            <div className="text-sm text-red-300 bg-red-900/20 border border-red-700/30 rounded-lg px-3 py-2">
+            <div role="alert" className="rounded-instrument border border-crit/35 bg-crit/10 px-3 py-2 text-sm text-crit">
               {error}
             </div>
           ) : (
             <Elements stripe={stripePromise} options={{ clientSecret, appearance }}>
-              <CheckoutForm
-                amount={amount}
-                clientSecret={clientSecret}
-                onSuccess={() => {
-                  if (onSuccess) onSuccess()
-                }}
-              />
+              <CheckoutForm amount={amount} clientSecret={clientSecret} onSuccess={onSuccess} />
             </Elements>
           )}
         </div>
-      </div>
+      </section>
     </AppOverlay>
   )
 }

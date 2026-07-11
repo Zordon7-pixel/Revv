@@ -51,23 +51,23 @@ export default function EstimateFinancialReview({ totals, title = 'Extracted Est
   ]
 
   return (
-    <section className="rounded-xl border border-[#2a2d3e] bg-[#111423] p-4" aria-label={title}>
+    <section className="rounded-instrument border border-line-2 bg-panel-2 p-4" aria-label={title}>
       <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h3 className="text-sm font-semibold text-white">{title}</h3>
-          <p className="mt-1 text-xs text-slate-400">
+          <h3 className="text-sm font-semibold text-ink">{title}</h3>
+          <p className="mt-1 text-xs text-muted">
             Line selection controls detailed estimate rows; this complete insurer financial snapshot stays intact. REVV calculates profit after the shop's actual costs are recorded.
           </p>
         </div>
-        <span className="mt-2 shrink-0 rounded-lg border border-[#EAB308]/40 bg-[#EAB308]/10 px-3 py-2 text-sm font-semibold text-[#EAB308] sm:mt-0">
+        <span className="mt-2 shrink-0 rounded-lg border border-gold/40 bg-gold/10 px-3 py-2 font-mono text-sm font-semibold tabular-nums text-gold sm:mt-0">
           Net {money(net || Math.max(0, gross - deductible))}
         </span>
       </div>
       <dl className="mt-3 grid grid-cols-1 gap-x-5 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">
         {rows.map(([label, value]) => (
-          <div key={label} className="flex items-center justify-between gap-3 border-b border-[#2a2d3e]/70 py-1.5 text-xs">
-            <dt className="text-slate-500">{label}</dt>
-            <dd className="text-right font-medium text-slate-200">{value}</dd>
+          <div key={label} className="flex items-center justify-between gap-3 border-b border-line-2 py-1.5 text-xs">
+            <dt className="text-faint">{label}</dt>
+            <dd className="text-right font-mono font-medium tabular-nums text-ink">{value}</dd>
           </div>
         ))}
       </dl>

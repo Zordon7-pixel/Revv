@@ -138,6 +138,7 @@ export default function ClaimTrackerPanel({ roId, canEdit }) {
       setSelectedEvidencePhoto((current) => current?.id === evidenceId ? null : current)
       await loadTracker()
     } catch (err) {
+      setSelectedEvidencePhoto((current) => current?.id === evidenceId ? null : current)
       setActionError(safeExternalErrorMessage(err, 'Could not delete evidence file'))
     } finally {
       setDeletingEvidenceId('')
@@ -222,12 +223,12 @@ export default function ClaimTrackerPanel({ roId, canEdit }) {
     }
   }
 
-  const inp = 'w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand'
+  const inp = 'w-full rounded-instrument border border-line-2 bg-void px-3 py-2 text-sm text-ink placeholder:text-faint focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20'
 
   if (loading) {
     return (
-      <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4">
-        <p className="text-sm text-slate-500">Loading claim tracker...</p>
+      <div className="rounded-instrument border border-line-2 bg-panel p-4">
+        <p className="text-sm text-faint">Loading claim tracker...</p>
       </div>
     )
   }
@@ -235,23 +236,23 @@ export default function ClaimTrackerPanel({ roId, canEdit }) {
   return (
     <div className="space-y-4">
       {loadError && (
-        <div role="alert" className="bg-red-900/20 border border-red-700/40 rounded-xl p-3 text-sm text-red-200 flex items-center gap-2">
+        <div role="alert" className="flex items-center gap-2 rounded-instrument border border-crit/30 bg-crit/10 p-3 text-sm text-crit">
           <AlertTriangle size={14} /> {loadError}
         </div>
       )}
 
       {actionError && (
-        <div role="alert" className="bg-red-900/20 border border-red-700/40 rounded-xl p-3 text-sm text-red-200 flex items-center gap-2">
+        <div role="alert" className="flex items-center gap-2 rounded-instrument border border-crit/30 bg-crit/10 p-3 text-sm text-crit">
           <AlertTriangle size={14} /> {actionError}
         </div>
       )}
 
-      <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 space-y-3">
+      <div className="space-y-3 rounded-instrument border border-line-2 bg-panel p-4">
         <div>
-          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
+          <h3 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-muted">
             <Upload size={12} /> Claim Documentation
           </h3>
-          <p className="text-xs text-slate-500 mt-1">Upload photos, videos, PDFs, and appraisal documents directly to this job.</p>
+          <p className="mt-1 text-xs text-faint">Upload photos, videos, PDFs, and appraisal documents directly to this job.</p>
         </div>
 
         {canEdit && (
@@ -273,6 +274,7 @@ export default function ClaimTrackerPanel({ roId, canEdit }) {
                 value={evidenceCaption}
                 onChange={(e) => setEvidenceCaption(e.target.value)}
                 placeholder="Caption (optional)"
+                aria-label="Evidence caption"
                 className={inp}
                 disabled={uploadingEvidence}
               />
@@ -285,7 +287,7 @@ export default function ClaimTrackerPanel({ roId, canEdit }) {
               {uploadingEvidence ? evidenceUploadProgress : `Add ${selectedEvidenceFiles.length > 1 ? `${selectedEvidenceFiles.length} Files` : 'Evidence'}`}
             </button>
             {selectedEvidenceFiles.length > 0 && (
-              <p aria-live="polite" className="sm:col-span-3 text-xs text-slate-400">
+              <p aria-live="polite" className="text-xs text-muted sm:col-span-3">
                 {selectedEvidenceFiles.length} file{selectedEvidenceFiles.length === 1 ? '' : 's'} selected
               </p>
             )}
@@ -293,7 +295,7 @@ export default function ClaimTrackerPanel({ roId, canEdit }) {
         )}
 
         {evidence.length === 0 ? (
-          <p className="text-sm text-slate-500">No claim evidence files yet.</p>
+          <p className="text-sm text-faint">No claim evidence files yet.</p>
         ) : (
           <div className="grid sm:grid-cols-2 gap-3">
             {evidence.map((item) => {
@@ -301,8 +303,8 @@ export default function ClaimTrackerPanel({ roId, canEdit }) {
               const mediaFailed = !!failedEvidenceIds[item.id]
 
               return (
-                <div key={item.id} className="bg-[#0f1117] border border-[#2a2d3e] rounded-xl p-3">
-                  <div className="rounded-lg overflow-hidden border border-[#2a2d3e] bg-black mb-2">
+                <div key={item.id} className="rounded-instrument border border-line-2 bg-void p-3">
+                  <div className="mb-2 overflow-hidden rounded-lg border border-line-2 bg-black">
                     {mediaUrl && !mediaFailed && item.media_type === 'document' ? (
                       <a href={mediaUrl} target="_blank" rel="noreferrer" className="flex h-40 w-full flex-col items-center justify-center gap-2 text-brand hover:bg-brand/5">
                         <FileText size={28} />
@@ -330,15 +332,15 @@ export default function ClaimTrackerPanel({ roId, canEdit }) {
                         />
                       </button>
                     ) : (
-                      <div className="flex h-40 w-full flex-col items-center justify-center gap-1 text-slate-500">
-                        {item.media_type === 'document' ? <FileText size={22} className="text-slate-600" /> : item.media_type === 'video' ? <Film size={22} className="text-slate-600" /> : <Camera size={22} className="text-slate-600" />}
+                      <div className="flex h-40 w-full flex-col items-center justify-center gap-1 text-faint">
+                        {item.media_type === 'document' ? <FileText size={22} className="text-faint" /> : item.media_type === 'video' ? <Film size={22} className="text-faint" /> : <Camera size={22} className="text-faint" />}
                         <span className="text-xs font-medium">Evidence unavailable</span>
                       </div>
                     )}
                   </div>
 
                   <div className="flex items-center justify-between gap-2 mb-1">
-                    <span className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold ${item.media_type === 'photo' ? 'text-emerald-300 bg-emerald-900/20 border-emerald-700/40' : 'text-brand bg-brand/10 border-brand/40'}`}>
+                    <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${item.media_type === 'photo' ? 'border-good/40 bg-good/10 text-good' : 'border-brand/40 bg-brand/10 text-brand'}`}>
                       {item.media_type === 'document' ? <span className="inline-flex items-center gap-1"><FileText size={10} /> Document</span> : item.media_type === 'video' ? <span className="inline-flex items-center gap-1"><Film size={10} /> Video</span> : <span className="inline-flex items-center gap-1"><Camera size={10} /> Photo</span>}
                     </span>
                     {canEdit && (
@@ -346,16 +348,17 @@ export default function ClaimTrackerPanel({ roId, canEdit }) {
                         type="button"
                         onClick={() => removeEvidence(item.id)}
                         disabled={deletingEvidenceId === item.id}
-                        className="text-slate-500 hover:text-red-400 disabled:opacity-50"
+                        className="rounded-md p-1 text-faint transition-colors hover:bg-crit/10 hover:text-crit disabled:opacity-50"
                         title="Delete evidence"
+                        aria-label={`Delete ${item.caption || 'evidence file'}`}
                       >
                         <Trash2 size={13} />
                       </button>
                     )}
                   </div>
 
-                  {item.caption && <p className="text-sm text-slate-200 whitespace-pre-wrap">{item.caption}</p>}
-                  <p className="text-[11px] text-slate-500 mt-1">
+                  {item.caption && <p className="whitespace-pre-wrap text-sm text-ink">{item.caption}</p>}
+                  <p className="mt-1 text-[11px] text-faint">
                     Added {formatDateTime(item.created_at)} by {item.uploaded_by_name || 'Unknown'}
                   </p>
                 </div>
@@ -378,12 +381,12 @@ export default function ClaimTrackerPanel({ roId, canEdit }) {
         />
       )}
 
-      <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 space-y-3">
+      <div className="space-y-3 rounded-instrument border border-line-2 bg-panel p-4">
         <div>
-          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
+          <h3 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-muted">
             <PhoneCall size={12} /> Insurer Contact Log
           </h3>
-          <p className="text-xs text-slate-500 mt-1">Track every adjuster communication and next step.</p>
+          <p className="mt-1 text-xs text-faint">Track every adjuster communication and next step.</p>
         </div>
 
         {canEdit && (
@@ -392,6 +395,7 @@ export default function ClaimTrackerPanel({ roId, canEdit }) {
               <input
                 className={inp}
                 placeholder="Insurer"
+                aria-label="Insurer"
                 value={contactForm.insurer_name}
                 onChange={(e) => setContactForm((prev) => ({ ...prev, insurer_name: e.target.value }))}
                 disabled={savingContact}
@@ -399,12 +403,14 @@ export default function ClaimTrackerPanel({ roId, canEdit }) {
               <input
                 className={inp}
                 placeholder="Contact name *"
+                aria-label="Contact name"
                 value={contactForm.contact_name}
                 onChange={(e) => setContactForm((prev) => ({ ...prev, contact_name: e.target.value }))}
                 disabled={savingContact}
               />
               <select
                 className={inp}
+                aria-label="Contact channel"
                 value={contactForm.channel}
                 onChange={(e) => setContactForm((prev) => ({ ...prev, channel: e.target.value }))}
                 disabled={savingContact}
@@ -419,6 +425,7 @@ export default function ClaimTrackerPanel({ roId, canEdit }) {
               <input
                 type="datetime-local"
                 className={inp}
+                aria-label="Contact date and time"
                 value={contactForm.contact_at}
                 onChange={(e) => setContactForm((prev) => ({ ...prev, contact_at: e.target.value }))}
                 disabled={savingContact}
@@ -426,6 +433,7 @@ export default function ClaimTrackerPanel({ roId, canEdit }) {
               <input
                 className={inp}
                 placeholder="Outcome"
+                aria-label="Contact outcome"
                 value={contactForm.outcome}
                 onChange={(e) => setContactForm((prev) => ({ ...prev, outcome: e.target.value }))}
                 disabled={savingContact}
@@ -436,6 +444,7 @@ export default function ClaimTrackerPanel({ roId, canEdit }) {
               rows={3}
               className={inp}
               placeholder="Summary *"
+              aria-label="Contact summary"
               value={contactForm.summary}
               onChange={(e) => setContactForm((prev) => ({ ...prev, summary: e.target.value }))}
               disabled={savingContact}
@@ -444,6 +453,7 @@ export default function ClaimTrackerPanel({ roId, canEdit }) {
             <input
               className={inp}
               placeholder="Follow-up plan"
+              aria-label="Follow-up plan"
               value={contactForm.follow_up}
               onChange={(e) => setContactForm((prev) => ({ ...prev, follow_up: e.target.value }))}
               disabled={savingContact}
@@ -460,18 +470,18 @@ export default function ClaimTrackerPanel({ roId, canEdit }) {
         )}
 
         {contacts.length === 0 ? (
-          <p className="text-sm text-slate-500">No insurer contact entries yet.</p>
+          <p className="text-sm text-faint">No insurer contact entries yet.</p>
         ) : (
           <div className="space-y-2">
             {contacts.map((entry) => (
-              <div key={entry.id} className="bg-[#0f1117] border border-[#2a2d3e] rounded-xl p-3">
+              <div key={entry.id} className="rounded-instrument border border-line-2 bg-void p-3">
                 <div className="flex items-start justify-between gap-2 mb-1">
                   <div>
-                    <div className="text-sm text-white font-medium">
+                    <div className="text-sm font-medium text-ink">
                       {entry.contact_name}
                       {entry.insurer_name ? ` · ${entry.insurer_name}` : ''}
                     </div>
-                    <div className="text-[11px] text-slate-500">
+                    <div className="text-[11px] text-faint">
                       {CHANNEL_LABELS[entry.channel] || entry.channel} · {formatDateTime(entry.contact_at)} · Logged by {entry.logged_by_name || 'Unknown'}
                     </div>
                   </div>
@@ -480,28 +490,29 @@ export default function ClaimTrackerPanel({ roId, canEdit }) {
                       type="button"
                       onClick={() => removeContact(entry.id)}
                       disabled={deletingContactId === entry.id}
-                      className="text-slate-500 hover:text-red-400 disabled:opacity-50"
+                      className="rounded-md p-1 text-faint transition-colors hover:bg-crit/10 hover:text-crit disabled:opacity-50"
                       title="Delete contact entry"
+                      aria-label={`Delete contact entry for ${entry.contact_name}`}
                     >
                       <Trash2 size={13} />
                     </button>
                   )}
                 </div>
-                <p className="text-sm text-slate-200 whitespace-pre-wrap">{entry.summary}</p>
-                {entry.outcome && <p className="text-xs text-emerald-300 mt-1">Outcome: {entry.outcome}</p>}
-                {entry.follow_up && <p className="text-xs text-amber-300 mt-1">Follow-up: {entry.follow_up}</p>}
+                <p className="whitespace-pre-wrap text-sm text-ink">{entry.summary}</p>
+                {entry.outcome && <p className="mt-1 text-xs text-good">Outcome: {entry.outcome}</p>}
+                {entry.follow_up && <p className="mt-1 text-xs text-brand">Follow-up: {entry.follow_up}</p>}
               </div>
             ))}
           </div>
         )}
       </div>
 
-      <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 space-y-3">
+      <div className="space-y-3 rounded-instrument border border-line-2 bg-panel p-4">
         <div>
-          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
+          <h3 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-muted">
             <ShieldAlert size={12} /> Dispute Notes
           </h3>
-          <p className="text-xs text-slate-500 mt-1">Capture denied items, evidence references, and appeal rationale.</p>
+          <p className="mt-1 text-xs text-faint">Capture denied items, evidence references, and appeal rationale.</p>
         </div>
 
         {canEdit && (
@@ -510,6 +521,7 @@ export default function ClaimTrackerPanel({ roId, canEdit }) {
               rows={3}
               className={inp}
               placeholder="Example: Carrier denied blend time on right quarter panel despite adjacent refinish lines in estimate."
+              aria-label="Dispute note"
               value={disputeNote}
               onChange={(e) => setDisputeNote(e.target.value)}
               disabled={savingDispute}
@@ -525,26 +537,27 @@ export default function ClaimTrackerPanel({ roId, canEdit }) {
         )}
 
         {disputes.length === 0 ? (
-          <p className="text-sm text-slate-500">No dispute notes yet.</p>
+          <p className="text-sm text-faint">No dispute notes yet.</p>
         ) : (
           <div className="space-y-2">
             {disputes.map((entry) => (
-              <div key={entry.id} className="bg-[#0f1117] border border-[#2a2d3e] rounded-xl p-3">
+              <div key={entry.id} className="rounded-instrument border border-line-2 bg-void p-3">
                 <div className="flex items-start justify-between gap-2 mb-1">
-                  <span className="text-[11px] text-slate-500">{formatDateTime(entry.created_at)} · {entry.created_by_name || 'Unknown'}</span>
+                  <span className="text-[11px] text-faint">{formatDateTime(entry.created_at)} · {entry.created_by_name || 'Unknown'}</span>
                   {canEdit && (
                     <button
                       type="button"
                       onClick={() => removeDispute(entry.id)}
                       disabled={deletingDisputeId === entry.id}
-                      className="text-slate-500 hover:text-red-400 disabled:opacity-50"
+                      className="rounded-md p-1 text-faint transition-colors hover:bg-crit/10 hover:text-crit disabled:opacity-50"
                       title="Delete dispute note"
+                      aria-label="Delete dispute note"
                     >
                       <Trash2 size={13} />
                     </button>
                   )}
                 </div>
-                <p className="text-sm text-slate-200 whitespace-pre-wrap">{entry.note}</p>
+                <p className="whitespace-pre-wrap text-sm text-ink">{entry.note}</p>
               </div>
             ))}
           </div>

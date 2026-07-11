@@ -56,6 +56,46 @@ const ro = await dbGet('SELECT * FROM ros WHERE id = $1 AND shop_id = $2', [id, 
 await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 ```
 
+## Dispatch Log — 2026-07-11 REVV Redesign Phase 6I: RO Money, Insurance, and Evidence Surfaces
+
+**Time:** 2026-07-11 03:43 ET / 2026-07-11 07:43 UTC
+**Status:** READY FOR CLAUDE CODE QA — FEATURE BRANCH ONLY — NOT DEPLOYED
+
+**Scope**
+- Migrated appraisal quick intake, insurance import/editing, extracted estimate financials, supplement analysis, job operations, claim evidence/contact tracking, the vehicle damage diagram, and the dormant Stripe payment dialog to the semantic dark/light token system. The audited surfaces contain no raw hex colors, legacy named color utilities, CSS/SVG gradients, or browser alerts.
+- Kept gold limited to money and supplement actions/values. Generic workflow controls use brand, successful states use good, and failures/destructive states use crit. All financial values use monospaced tabular numerals.
+- Preserved every existing endpoint, payload, import draft, line selection, multi-file upload, supplement, operation assignment/reordering, evidence/contact/dispute, vehicle panel selection, Stripe intent, confirmation gate, and callback contract.
+- Replaced blocking save/operation errors with visible `role="alert"` feedback while retaining consequential `window.confirm` gates. Added missing button types and control labels.
+- Replaced the vehicle diagram's hardcoded SVG fills and gradients with flat semantic tokens. Retained `PaymentModal.jsx` because the overlay architecture guard inventories it; it remains unmounted from `App.jsx`, but now conforms to the shared body-level `AppOverlay` contract instead of being deleted.
+- Expanded `tokenConformance.test.js` to lock all eight migrated components, no-alert behavior, consequential confirms, the flat vehicle SVG, and PaymentModal's overlay/unmounted state.
+- No backend, endpoint, payload, auth rule, workflow, money math, database, seed, reset, migration, destructive script, hosted DB, customer/shop/RO data, or Miles Automotive data changed. Browser data was fully mocked.
+
+**Files changed (10; batch cap respected)**
+- `frontend/src/components/AppraisalQuickIntake.jsx`
+- `frontend/src/components/ClaimTrackerPanel.jsx`
+- `frontend/src/components/EstimateFinancialReview.jsx`
+- `frontend/src/components/InsurancePanel.jsx`
+- `frontend/src/components/PaymentModal.jsx`
+- `frontend/src/components/ROOperations.jsx`
+- `frontend/src/components/SupplementFinderPanel.jsx`
+- `frontend/src/components/VehicleDiagram.jsx`
+- `frontend/src/lib/__tests__/tokenConformance.test.js`
+- `CLAUDE.md`
+
+**Verification**
+```
+cd frontend && npm run test:run -- tokenConformance AppraisalQuickIntake ClaimTrackerPanel EstimateFinancialReview InsurancePanel SupplementFinderPanel AppOverlay RODetail.totalLoss  # 8 files, 28/28 passed
+node --test native backend sweep  # 130/130 passed
+cd backend && npm run test:run  # extractor suite 7/7 passed
+cd frontend && npm run test:run  # 38 files, 115/115 passed
+cd frontend && npm run build  # clean; pre-existing chunk-size warning only
+Playwright fully mocked browser checks  # supplement review, damage diagram, job operations, insurance import/financials, claim documentation, appraisal intake
+viewport results  # 1024x768 dark tablet and 390x844 light phone exact client/scroll widths; zero console/page errors
+screenshots  # /tmp/revv-phase6i-supplement-tablet-dark.png, /tmp/revv-phase6i-vehicle-tablet-dark.png, /tmp/revv-phase6i-operations-tablet-dark.png, /tmp/revv-phase6i-insurance-tablet-dark.png, /tmp/revv-phase6i-tracker-tablet-dark.png, /tmp/revv-phase6i-insurance-phone-light.png, /tmp/revv-phase6i-appraisal-tablet-dark.png
+rg raw hex / named legacy palettes / gradients / SVG gradients / browser alerts across 8 production files  # zero matches
+rm -rf frontend/dist && git diff --check && git ls-files frontend/dist | wc -l  # 0
+```
+
 ## Dispatch Log — 2026-07-11 REVV Redesign Phase 6H: Shared Overlays, Support, and Photos
 
 **Time:** 2026-07-11 03:14 ET / 2026-07-11 07:14 UTC

@@ -8,28 +8,28 @@ const FLAG_META = {
   undervalue: {
     label: 'Undervalue',
     title: 'Undervalued Lines',
-    cls: 'text-amber-300 bg-amber-900/30 border-amber-700/40',
+    cls: 'border-gold/40 bg-gold/10 text-gold',
     Icon: AlertTriangle,
   },
   review: {
     label: 'Review',
     title: 'Needs Review',
-    cls: 'text-yellow-300 bg-yellow-900/30 border-yellow-700/40',
+    cls: 'border-brand/40 bg-brand/10 text-brand',
     Icon: FileSearch,
   },
   ok: {
     label: 'OK',
     title: 'OK Lines',
-    cls: 'text-emerald-300 bg-emerald-900/30 border-emerald-700/40',
+    cls: 'border-good/40 bg-good/10 text-good',
     Icon: CheckCircle,
   },
 }
 
 const SEVERITY_META = {
-  high: 'text-red-300 bg-red-900/30 border-red-700/40',
-  medium: 'text-amber-300 bg-amber-900/30 border-amber-700/40',
-  low: 'text-yellow-300 bg-yellow-900/30 border-yellow-700/40',
-  none: 'text-slate-300 bg-slate-900/40 border-slate-700/40',
+  high: 'border-crit/40 bg-crit/10 text-crit',
+  medium: 'border-brand/40 bg-brand/10 text-brand',
+  low: 'border-line-2 bg-raised text-muted',
+  none: 'border-line-2 bg-panel-2 text-muted',
 }
 
 function money(value) {
@@ -59,36 +59,36 @@ function FlagGroup({ type, flags }) {
   const meta = FLAG_META[type]
   const Icon = meta.Icon
   return (
-    <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg overflow-hidden">
-      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-[#2a2d3e]">
-        <h4 className="text-xs font-semibold text-white flex items-center gap-1.5">
+    <div className="overflow-hidden rounded-instrument border border-line-2 bg-void">
+      <div className="flex items-center justify-between gap-2 border-b border-line-2 px-3 py-2">
+        <h4 className="flex items-center gap-1.5 text-xs font-semibold text-ink">
           <Icon size={13} className={meta.cls.split(' ')[0]} />
           {meta.title}
         </h4>
         <span className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold ${meta.cls}`}>{flags.length}</span>
       </div>
       {flags.length === 0 ? (
-        <p className="text-xs text-slate-500 px-3 py-3">No {meta.label.toLowerCase()} lines.</p>
+        <p className="px-3 py-3 text-xs text-faint">No {meta.label.toLowerCase()} lines.</p>
       ) : (
-        <div className="divide-y divide-[#2a2d3e]">
+        <div className="divide-y divide-line-2">
           {flags.map((flag, idx) => (
             <div key={`${type}-${idx}-${flag.description || 'line'}`} className="p-3">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-600/20 text-indigo-300 border border-indigo-700/40 uppercase font-semibold">
+                    <span className="rounded-full border border-brand/40 bg-brand/10 px-2 py-0.5 text-[10px] font-semibold uppercase text-brand">
                       {flag.item_type || 'line'}
                     </span>
                     <SeverityBadge severity={flag.severity} />
                   </div>
-                  <p className="text-sm text-white mt-1 truncate">{flag.description || 'Estimate line'}</p>
-                  {flag.message && <p className="text-xs text-slate-400 mt-1">{flag.message}</p>}
+                  <p className="mt-1 truncate text-sm text-ink">{flag.description || 'Estimate line'}</p>
+                  {flag.message && <p className="mt-1 text-xs text-muted">{flag.message}</p>}
                 </div>
                 <div className="text-right flex-shrink-0">
-                  <div className={Number(flag.supplement_opportunity || 0) > 0 ? 'text-amber-300 font-semibold text-sm' : 'text-slate-500 text-sm'}>
+                  <div className={`font-mono text-sm tabular-nums ${Number(flag.supplement_opportunity || 0) > 0 ? 'font-semibold text-gold' : 'text-faint'}`}>
                     {Number(flag.supplement_opportunity || 0) > 0 ? money(flag.supplement_opportunity) : '—'}
                   </div>
-                  <div className="text-[10px] text-slate-500">Opportunity</div>
+                  <div className="text-[10px] text-faint">Opportunity</div>
                 </div>
               </div>
             </div>
@@ -209,7 +209,7 @@ export default function SupplementFinderPanel({ roId, importedItems = [], import
           <h2 className={`text-xs font-bold uppercase tracking-wide flex items-center gap-1.5 ${hero ? 'text-gold' : 'text-muted'}`}>
             <BadgeDollarSign size={13} /> Supplement Finder
           </h2>
-          <p className="text-xs text-slate-500 mt-1">
+          <p className="mt-1 text-xs text-faint">
             Finds labor-rate gaps and review lines from this RO estimate.
           </p>
         </div>
@@ -221,12 +221,12 @@ export default function SupplementFinderPanel({ roId, importedItems = [], import
               importedItems.length ? 'imported RO estimate' : 'appraisal staged during RO creation'
             )}
             disabled={busy || !hasImportedItems}
-            className="inline-flex items-center gap-1.5 text-xs bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-3 py-1.5 text-xs text-white transition-colors hover:bg-brand-lit disabled:opacity-50"
           >
             <RefreshCw size={12} className={running ? 'animate-spin' : ''} />
             Analyze RO
           </button>
-          <label className={`inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg cursor-pointer ${busy ? 'bg-slate-800 text-slate-500 pointer-events-none' : 'bg-[#0f1117] hover:bg-[#202437] text-slate-200 border border-[#2a2d3e]'}`}>
+          <label className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs ${busy ? 'pointer-events-none bg-raised text-faint' : 'border border-line-2 bg-void text-muted transition-colors hover:border-brand/50 hover:text-ink'}`}>
             <Upload size={12} />
             Upload Estimate
             <input
@@ -244,7 +244,7 @@ export default function SupplementFinderPanel({ roId, importedItems = [], import
               type="button"
               onClick={analyzeAttachedAppraisal}
               disabled={busy}
-              className="inline-flex items-center gap-1.5 text-xs border border-[#EAB308]/40 bg-[#EAB308]/10 text-[#EAB308] hover:bg-[#EAB308]/15 px-3 py-1.5 rounded-lg disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-brand/40 bg-brand/10 px-3 py-1.5 text-xs text-brand transition-colors hover:bg-brand/15 disabled:opacity-50"
             >
               <FileSearch size={12} /> Use Attached Appraisal
             </button>
@@ -253,38 +253,38 @@ export default function SupplementFinderPanel({ roId, importedItems = [], import
       </div>
 
       {!hasImportedItems && (
-        <p className="text-xs text-slate-500 bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3">
+        <p className="rounded-instrument border border-line-2 bg-void p-3 text-xs text-faint">
           No stored estimate lines are available for this RO yet. Upload an insurer estimate here or import one through Estimate Builder.
         </p>
       )}
 
       {!importedItems.length && stagedItems.length > 0 && (
-        <p role="status" className="text-xs text-emerald-200 bg-emerald-950/20 border border-emerald-700/40 rounded-lg p-3">
+        <p role="status" className="rounded-instrument border border-good/30 bg-good/10 p-3 text-xs text-good">
           The appraisal used to create this RO is ready with {stagedItems.length} estimate line{stagedItems.length === 1 ? '' : 's'}. Choose Analyze RO; no upload is needed.
         </p>
       )}
 
-      {error && <div className="text-xs text-red-300 bg-red-950/30 border border-red-800/40 rounded-lg p-3">{error}</div>}
+      {error && <div role="alert" className="rounded-instrument border border-crit/30 bg-crit/10 p-3 text-xs text-crit">{error}</div>}
 
       {summary && (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3">
-            <div className="text-[10px] text-slate-500 uppercase font-semibold">Insurer Allowed</div>
-            <div className="text-lg font-bold text-white">{money(summary.total_insurance_allowed)}</div>
+          <div className="rounded-instrument border border-line-2 bg-void p-3">
+            <div className="text-[10px] font-semibold uppercase text-faint">Insurer Allowed</div>
+            <div className="font-mono text-lg font-bold tabular-nums text-ink">{money(summary.total_insurance_allowed)}</div>
           </div>
-          <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3">
-            <div className="text-[10px] text-slate-500 uppercase font-semibold">Shop Value</div>
-            <div className="text-lg font-bold text-indigo-300">{money(summary.total_shop_value)}</div>
+          <div className="rounded-instrument border border-line-2 bg-void p-3">
+            <div className="text-[10px] font-semibold uppercase text-faint">Shop Value</div>
+            <div className="font-mono text-lg font-bold tabular-nums text-ink">{money(summary.total_shop_value)}</div>
           </div>
-          <div className="bg-[#0f1117] border border-amber-700/40 rounded-lg p-3">
-            <div className="text-[10px] text-amber-400 uppercase font-semibold">Supplement Opportunity</div>
-            <div className="text-lg font-bold text-amber-300">{money(summary.total_supplement_opportunity)}</div>
+          <div className="rounded-instrument border border-gold/40 bg-gold/5 p-3">
+            <div className="text-[10px] font-semibold uppercase text-gold">Supplement Opportunity</div>
+            <div className="font-mono text-lg font-bold tabular-nums text-gold">{money(summary.total_supplement_opportunity)}</div>
           </div>
           {hero && onFileSupplement && Number(summary.total_supplement_opportunity || 0) > 0 && (
             <button
               type="button"
               onClick={onFileSupplement}
-              className="sm:col-span-3 inline-flex items-center justify-center gap-2 rounded-lg bg-gold px-4 py-2.5 text-sm font-semibold text-[#0F1117] transition-colors hover:bg-gold-lit"
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-gold px-4 py-2.5 text-sm font-semibold text-[var(--on-gold)] transition-colors hover:bg-gold-lit sm:col-span-3"
             >
               <BadgeDollarSign size={15} /> File supplement
             </button>
@@ -294,7 +294,7 @@ export default function SupplementFinderPanel({ roId, importedItems = [], import
 
       {analysis && (
         <div className="space-y-3">
-          <div className="flex items-center justify-between text-xs text-slate-500">
+          <div className="flex items-center justify-between text-xs text-faint">
             <span>Source: {sourceLabel || 'estimate analysis'}</span>
             <span>{analysis.flags?.length || 0} line{analysis.flags?.length === 1 ? '' : 's'} checked</span>
           </div>
@@ -305,19 +305,19 @@ export default function SupplementFinderPanel({ roId, importedItems = [], import
       )}
 
       {!analysis && !error && (
-        <div className="text-sm text-slate-500 bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-4 text-center">
+        <div className="rounded-instrument border border-line-2 bg-void p-4 text-center text-sm text-faint">
           Run analysis to surface supplement opportunities for this RO.
         </div>
       )}
 
       {importedSummary && hasImportedItems && !analysis && (
-        <p className="text-[11px] text-slate-500">
+        <p className="text-[11px] text-faint">
           Current REVV estimate total: {money(importedSummary.grand_total)}.
         </p>
       )}
 
       {!importedSummary && stagedEstimate?.estimate_totals && !analysis && (
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-faint">
           Staged insurer gross: {money(stagedEstimate.estimate_totals.total_cost_of_repairs || stagedEstimate.estimate_totals.gross_total || 0)}.
         </p>
       )}
