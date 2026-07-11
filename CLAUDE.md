@@ -56,6 +56,56 @@ const ro = await dbGet('SELECT * FROM ros WHERE id = $1 AND shop_id = $2', [id, 
 await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 ```
 
+## Dispatch Log — 2026-07-10 Full Redesign Phase 1: Design-System Foundation
+
+**Status:** READY FOR CLAUDE CODE QA — FEATURE BRANCH ONLY — NOT DEPLOYED
+
+**Scope**
+- Committed the approved six-phase master spec at `SPEC-revv-redesign.md`.
+- Added the locked Instrument token palette to `:root` and a real `data-theme="light"` palette. Removed the root `filter: invert(...)` compatibility hack completely.
+- Added explicit light-theme remaps for the existing dark utility classes so current screens remain legible while later phases migrate them to semantic tokens. Paid/success stays green, danger/total-loss stays red, and indigo controls retain white foregrounds.
+- Self-hosted the official OFL Google Fonts variable Bricolage Grotesque file and applied it to headings/titles. Body and tabular-mono tokens are centralized.
+- Produced tightly cropped transparent mark and wordmark derivatives from the approved gauge-R PNGs using edge-connected background removal; the enclosed gauge details were preserved and no logo was regenerated.
+- Added shared `Logo`, `Money`, `GaugeArc`, `StatusBadge`, and `StatInstrument` primitives under `frontend/src/components/ui`.
+- `Money` accepts integer cents and uses BigInt formatting, preventing display float drift.
+- No backend, database, route, role, money, status, customer, RO, or Miles Automotive data was accessed or changed.
+
+**Files changed (10; phase cap respected)**
+- `SPEC-revv-redesign.md`
+- `frontend/tailwind.config.js`
+- `frontend/src/index.css`
+- `frontend/public/fonts/BricolageGrotesque-Variable.ttf`
+- `frontend/public/fonts/OFL-BricolageGrotesque.txt`
+- `frontend/public/revv-mark-transparent.png`
+- `frontend/public/revv-wordmark-transparent.png`
+- `frontend/src/components/ui/index.jsx`
+- `frontend/src/components/__tests__/DesignSystem.test.jsx`
+- `CLAUDE.md`
+
+**Verification**
+```text
+node --test backend/src/__tests__/*.test.js <Node backend/test suites>
+  -> 123/123 passed
+cd backend && npm run test:run
+  -> 3 files, 7/7 extractor tests passed
+cd frontend && npm run test:run
+  -> 29 files, 80/80 tests passed
+cd frontend && npm run build
+  -> clean production build
+rm -rf frontend/dist && git diff --check && git ls-files frontend/dist
+  -> clean; dist untracked
+rg 'filter:\\s*invert' frontend/src/index.css
+  -> zero matches
+Playwright at 1024x768, dark + light login renders
+  -> dark body rgb(15,17,23), panel rgb(26,29,46)
+  -> light body rgb(247,248,251), panel rgb(255,255,255)
+  -> root filter none in both modes
+  -> Bricolage Grotesque loaded in both modes
+  -> white foreground retained on indigo controls
+  -> no horizontal overflow
+  -> screenshots: /tmp/revv-phase1-dark.png, /tmp/revv-phase1-light.png
+```
+
 ## Dispatch Log — 2026-07-10 Estimate Upload Reuse + Zero-Line OCR Recovery
 
 **Status:** DEPLOYED + CLAUDE QA PASS + LIVE HEALTH VERIFIED

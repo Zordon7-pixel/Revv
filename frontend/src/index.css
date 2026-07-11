@@ -2,7 +2,44 @@
 @tailwind components;
 @tailwind utilities;
 
+@font-face {
+  font-family: 'Bricolage Grotesque';
+  src: url('/fonts/BricolageGrotesque-Variable.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 200 800;
+  font-stretch: 75% 100%;
+  font-display: swap;
+}
+
 :root {
+  color-scheme: dark;
+  --void: #0F1117;
+  --panel: #1A1D2E;
+  --panel-2: #1D2132;
+  --raised: #242942;
+  --line: rgba(148, 163, 196, 0.10);
+  --line-2: rgba(148, 163, 196, 0.20);
+  --ink: #EAEEF7;
+  --muted: #94A0B8;
+  --faint: #5A6480;
+  --brand: #6366F1;
+  --brand-lit: #8B8FFF;
+  --brand-deep: #4844C7;
+  --gold: #EAB308;
+  --gold-lit: #FACC15;
+  --good: #10B981;
+  --crit: #F26D6D;
+  --on-brand: #FFFFFF;
+  --on-gold: #0F1117;
+  --font-display: 'Bricolage Grotesque', 'Arial Narrow', sans-serif;
+  --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, monospace;
+  --text-display: clamp(2.25rem, 5vw, 4.75rem);
+  --text-heading: 1.25rem;
+  --text-body: 0.9375rem;
+  --leading-display: 0.96;
+  --leading-heading: 1.15;
+  --leading-body: 1.55;
   --app-viewport-height: 100vh;
   --app-viewport-width: 100vw;
   --app-viewport-offset-top: 0px;
@@ -10,6 +47,28 @@
   --app-viewport-short: 100vw;
   --app-viewport-long: 100vh;
   --app-keyboard-inset: 0px;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --void: #F7F8FB;
+  --panel: #FFFFFF;
+  --panel-2: #F1F3F8;
+  --raised: #E7EAF2;
+  --line: rgba(20, 23, 31, 0.10);
+  --line-2: rgba(20, 23, 31, 0.18);
+  --ink: #14171F;
+  --muted: #5A6172;
+  --faint: #8A93A3;
+  --brand: #4F46E5;
+  --brand-lit: #6366F1;
+  --brand-deep: #3730A3;
+  --gold: #A16207;
+  --gold-lit: #CA8A04;
+  --good: #047857;
+  --crit: #C2414A;
+  --on-brand: #FFFFFF;
+  --on-gold: #14171F;
 }
 
 @supports (height: 100dvh) {
@@ -26,46 +85,93 @@ html, body, #root { min-height: 100%; }
 
 body {
   min-height: var(--app-viewport-height);
-  background: #0f1117;
-  color: #e2e8f0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: var(--void);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  font-variant-numeric: tabular-nums;
   /* Safe area for iPhone notch / home indicator */
   padding-left: env(safe-area-inset-left);
   padding-right: env(safe-area-inset-right);
 }
 
-html.theme-light {
-  color-scheme: light;
+h1, h2, h3, h4, h5, h6,
+.revv-display,
+.revv-heading {
+  font-family: var(--font-display);
+  letter-spacing: 0;
 }
 
-html.theme-light body {
-  background: #f4f7fb;
-  color: #0f172a;
+.revv-display {
+  font-size: var(--text-display);
+  line-height: var(--leading-display);
 }
 
-/* Light-mode compatibility layer:
-   the app currently uses dark-tailwind utility tokens heavily.
-   This transform gives a clean light version immediately across all accounts. */
-html.theme-light #root {
-  filter: invert(1) hue-rotate(180deg) saturate(0.92) brightness(1.04);
+.revv-heading {
+  font-size: var(--text-heading);
+  line-height: var(--leading-heading);
 }
 
-/* Keep media content natural after root inversion. */
-html.theme-light img,
-html.theme-light video,
-html.theme-light canvas,
-html.theme-light iframe {
-  filter: invert(1) hue-rotate(180deg) saturate(1.08);
+.revv-number,
+[data-numeric="true"],
+input[type="number"] {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
 }
+
+.revv-logo-image {
+  display: block;
+  max-width: 100%;
+  object-fit: contain;
+}
+
+:root[data-theme="dark"] .revv-logo-image {
+  filter: brightness(1.22) contrast(1.04);
+}
+
+/* Existing dark utility classes transition to the real light token theme here.
+   This is an explicit surface remap, not a visual inversion. */
+:root[data-theme="light"] [class~="bg-[#0f1117]"],
+:root[data-theme="light"] [class~="bg-[#10121a]"],
+:root[data-theme="light"] [class~="bg-[#11131b]"] { background-color: var(--void) !important; }
+:root[data-theme="light"] [class~="bg-[#1a1d2e]"],
+:root[data-theme="light"] [class~="bg-[#151823]"],
+:root[data-theme="light"] [class~="bg-[#171a26]"] { background-color: var(--panel) !important; }
+:root[data-theme="light"] [class~="bg-[#1c1f2e]"],
+:root[data-theme="light"] [class~="bg-[#1d2132]"],
+:root[data-theme="light"] [class~="bg-[#1e2234]"] { background-color: var(--panel-2) !important; }
+:root[data-theme="light"] [class~="border-[#2a2d3e]"] { border-color: var(--line-2) !important; }
+:root[data-theme="light"] [class~="text-white"],
+:root[data-theme="light"] [class~="text-slate-100"],
+:root[data-theme="light"] [class~="text-slate-200"] { color: var(--ink) !important; }
+:root[data-theme="light"] [class~="text-slate-300"],
+:root[data-theme="light"] [class~="text-slate-400"] { color: var(--muted) !important; }
+:root[data-theme="light"] [class~="text-slate-500"],
+:root[data-theme="light"] [class~="text-slate-600"] { color: var(--faint) !important; }
+:root[data-theme="light"] [class~="bg-indigo-600"][class~="text-white"],
+:root[data-theme="light"] [class~="bg-indigo-500"][class~="text-white"],
+:root[data-theme="light"] [class~="bg-brand"][class~="text-white"],
+:root[data-theme="light"] [class~="bg-indigo-600"] [class~="text-white"],
+:root[data-theme="light"] [class~="bg-indigo-500"] [class~="text-white"],
+:root[data-theme="light"] [class~="bg-brand"] [class~="text-white"] { color: var(--on-brand) !important; }
+:root[data-theme="light"] .bg-emerald-900\/40,
+:root[data-theme="light"] .bg-green-900\/60 { background-color: color-mix(in srgb, var(--good) 12%, transparent) !important; }
+:root[data-theme="light"] .text-emerald-300,
+:root[data-theme="light"] .text-green-300 { color: var(--good) !important; }
+:root[data-theme="light"] .bg-red-950\/70,
+:root[data-theme="light"] .bg-red-900\/40 { background-color: color-mix(in srgb, var(--crit) 12%, transparent) !important; }
+:root[data-theme="light"] .text-red-300 { color: var(--crit) !important; }
 
 /* Scrollable table wrapper — use on any wide table */
 .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .table-scroll::-webkit-scrollbar { height: 5px; }
-.table-scroll::-webkit-scrollbar-thumb { background: #2a2d3e; border-radius: 3px; }
+.table-scroll::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 3px; }
 
 .kanban-scroll { overflow-x: auto; padding-bottom: 12px; -webkit-overflow-scrolling: touch; }
 .kanban-scroll::-webkit-scrollbar { height: 6px; }
-.kanban-scroll::-webkit-scrollbar-thumb { background: #2a2d3e; border-radius: 3px; }
+.kanban-scroll::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 3px; }
 
 .app-shell {
   min-height: var(--app-viewport-height);
@@ -220,7 +326,7 @@ html.theme-light iframe {
     z-index: 4;
     bottom: 0;
     padding: 0.45rem 0.75rem calc(0.45rem + env(safe-area-inset-bottom));
-    background: #1a1d2e;
+    background: var(--panel);
   }
 
   html[data-touch="true"] .add-ro-page.add-ro-compact-mode {
@@ -361,9 +467,9 @@ html[data-touch="true"][data-text-entry-focus="true"] .sheet-modal-body {
   .sheet-modal-card textarea:focus,
   html[data-touch="true"] .sheet-modal-card select:focus,
   .sheet-modal-card select:focus {
-    border-color: #EAB308;
+    border-color: var(--gold);
     font-size: 16px;
-    box-shadow: 0 0 0 3px rgba(234,179,8,0.22);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--gold) 22%, transparent);
   }
 }
 
