@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { Logo } from '../components/ui'
 
 export default function SuperAdminLogin() {
   const [email, setEmail] = useState('')
@@ -36,48 +37,48 @@ export default function SuperAdminLogin() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0f1117] flex items-center justify-center p-4 text-white">
+    <div className="flex min-h-screen items-center justify-center bg-void p-4 text-ink">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-[#EAB308] rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-yellow-900/40">
-            <span className="text-[#0f1117] font-bold text-xl tracking-tight">REVV</span>
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-instrument border border-brand/30 bg-panel shadow-lg">
+            <Logo variant="mark" className="h-12 w-12 object-contain" />
           </div>
-          <h1 className="text-2xl font-bold tracking-wide">Master Access</h1>
-          <p className="text-xs font-semibold text-yellow-300 uppercase tracking-widest mt-2">Platform Control</p>
+          <h1 className="font-display text-2xl font-bold tracking-wide">Master Access</h1>
+          <p className="mt-2 text-xs font-semibold uppercase tracking-widest text-brand">Platform Control</p>
         </div>
 
-        <form onSubmit={submit} className="bg-[#141824] rounded-2xl p-6 border border-[#242837] space-y-4">
+        <form onSubmit={submit} className="space-y-4 rounded-instrument border border-line-2 bg-panel p-6">
           <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1.5">Master Username</label>
+            <label className="mb-1.5 block text-xs font-medium text-muted">Master Username</label>
             <input
               type="email"
               value={email}
               onChange={e => setEmail(e.target.value)}
               required
-              className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-[#EAB308] transition-colors"
+              className="w-full rounded-lg border border-line-2 bg-void px-3 py-2.5 text-sm text-ink placeholder:text-faint transition-colors focus:border-brand focus:outline-none"
               placeholder="superadmin@example.com"
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1.5">Password</label>
+            <label className="mb-1.5 block text-xs font-medium text-muted">Password</label>
             <input
               type="password"
               value={password}
               onChange={e => setPassword(e.target.value)}
               required
-              className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-[#EAB308] transition-colors"
+              className="w-full rounded-lg border border-line-2 bg-void px-3 py-2.5 text-sm text-ink placeholder:text-faint transition-colors focus:border-brand focus:outline-none"
               placeholder="••••••••"
             />
           </div>
-          {error && <p className="text-red-400 text-xs">{error}</p>}
+          {error && <p className="text-xs text-crit" role="alert">{error}</p>}
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-[#EAB308] hover:bg-[#f2c64b] text-[#0f1117] font-semibold rounded-lg py-2.5 text-sm transition-colors disabled:opacity-50"
+            className="w-full rounded-lg bg-brand py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-lit disabled:opacity-50"
           >
             {loading ? 'Signing in...' : 'Sign In'}
           </button>
-          <p className="text-xs text-slate-500">Use your master superadmin username and password.</p>
+          <p className="text-xs text-faint">Use your master superadmin username and password.</p>
         </form>
       </div>
     </div>

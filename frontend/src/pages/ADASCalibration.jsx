@@ -50,72 +50,72 @@ export default function ADASCalibration() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-xl font-bold text-white">ADAS Calibration Tracker</h1>
-        <p className="text-sm text-slate-400">Lookup calibration requirements and monitor vehicles in ADAS queue.</p>
+        <h1 className="font-display text-xl font-bold text-ink">ADAS Calibration Tracker</h1>
+        <p className="text-sm text-muted">Lookup calibration requirements and monitor vehicles in ADAS queue.</p>
       </div>
 
-      <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4">
+      <div className="rounded-instrument border border-line-2 bg-panel p-4">
         <form onSubmit={runLookup} className="grid md:grid-cols-4 gap-2">
           <input
             value={form.year}
             onChange={(e) => setField('year', e.target.value)}
             placeholder="Year"
-            className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white"
+            className="rounded-lg border border-line-2 bg-void px-3 py-2 text-sm text-ink focus:border-brand focus:outline-none"
           />
           <input
             value={form.make}
             onChange={(e) => setField('make', e.target.value)}
             placeholder="Make"
-            className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white"
+            className="rounded-lg border border-line-2 bg-void px-3 py-2 text-sm text-ink focus:border-brand focus:outline-none"
           />
           <input
             value={form.model}
             onChange={(e) => setField('model', e.target.value)}
             placeholder="Model"
-            className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white"
+            className="rounded-lg border border-line-2 bg-void px-3 py-2 text-sm text-ink focus:border-brand focus:outline-none"
           />
           <button
             type="submit"
             disabled={loadingLookup}
-            className="inline-flex items-center justify-center gap-2 bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] text-sm font-semibold px-3 py-2 rounded-lg disabled:opacity-50"
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-lit disabled:opacity-50"
           >
             <Search size={14} /> {loadingLookup ? 'Checking...' : 'Lookup'}
           </button>
         </form>
 
         {lookup && (
-          <div className="mt-4 bg-[#0f1117] border border-[#2a2d3e] rounded-xl p-4">
+          <div className="mt-4 rounded-instrument border border-line-2 bg-void p-4">
             <div className="flex items-center gap-2 mb-2">
               <Radar size={14} className="text-cyan-300" />
-              <p className="text-sm font-semibold text-white">
+              <p className="text-sm font-semibold text-ink">
                 {lookup.found ? 'Calibration Profile Found' : 'No Direct Profile Match'}
               </p>
             </div>
-            <p className="text-xs text-slate-400 mb-3">{lookup.recommendation}</p>
+            <p className="mb-3 text-xs text-muted">{lookup.recommendation}</p>
             {lookup.systems?.length > 0 ? (
               <div className="grid md:grid-cols-2 gap-2">
                 {lookup.systems.map((system) => (
-                  <div key={system} className="text-xs text-slate-200 bg-[#1a1d2e] border border-[#2a2d3e] rounded-lg px-3 py-2">
+                  <div key={system} className="rounded-lg border border-line-2 bg-panel px-3 py-2 text-xs text-ink">
                     {system}
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="text-xs text-slate-500">Use OEM procedures for verification.</p>
+              <p className="text-xs text-faint">Use OEM procedures for verification.</p>
             )}
           </div>
         )}
       </div>
 
-      <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4">
+      <div className="rounded-instrument border border-line-2 bg-panel p-4">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold text-white">Vehicles Needing ADAS Calibration</h2>
-          <button onClick={() => loadQueue().catch(() => {})} className="text-xs text-indigo-300 hover:text-indigo-200">Refresh</button>
+          <h2 className="font-display text-sm font-semibold text-ink">Vehicles Needing ADAS Calibration</h2>
+          <button onClick={() => loadQueue().catch(() => {})} className="text-xs text-brand transition-colors hover:text-brand-lit">Refresh</button>
         </div>
         {loadingQueue ? (
-          <p className="text-sm text-slate-500">Loading queue...</p>
+          <p className="text-sm text-faint">Loading queue...</p>
         ) : queue.length === 0 ? (
-          <p className="text-sm text-slate-500">No active vehicles currently flagged for ADAS calibration.</p>
+          <p className="text-sm text-faint">No active vehicles currently flagged for ADAS calibration.</p>
         ) : (
           <div className="space-y-2">
             {queue.map((item, idx) => (
@@ -123,13 +123,13 @@ export default function ADASCalibration() {
                 key={item.ro_id || `${item.ro_number || 'ro'}-${idx}`}
                 type="button"
                 onClick={() => item.ro_id && navigate(`/ros/${item.ro_id}`)}
-                className="w-full text-left bg-[#0f1117] border border-[#2a2d3e] rounded-xl p-3 transition-colors hover:border-indigo-500/70 hover:bg-[#141a2e]"
+                className="w-full rounded-instrument border border-line-2 bg-void p-3 text-left transition-colors hover:border-brand/60 hover:bg-brand/5"
               >
                 <div className="flex items-center justify-between gap-2">
                   <div>
-                    <p className="text-sm font-semibold text-white">{item.ro_number} · {item.vehicle}</p>
-                    <p className="text-xs text-slate-500">{item.customer_name || 'Unknown customer'} · Stage: {item.status}</p>
-                    <p className="mt-1 text-[11px] text-indigo-300">Click to open RO</p>
+                    <p className="text-sm font-semibold text-ink">{item.ro_number} · {item.vehicle}</p>
+                    <p className="text-xs text-faint">{item.customer_name || 'Unknown customer'} · Stage: {item.status}</p>
+                    <p className="mt-1 text-[11px] text-brand">Click to open RO</p>
                   </div>
                   <span className="inline-flex items-center gap-1 text-xs bg-cyan-900/30 text-cyan-300 border border-cyan-700/40 px-2 py-1 rounded-full">
                     <Wrench size={12} /> {item.systems_count} systems

@@ -56,6 +56,45 @@ const ro = await dbGet('SELECT * FROM ros WHERE id = $1 AND shop_id = $2', [id, 
 await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 ```
 
+## Dispatch Log — 2026-07-11 REVV Redesign Phase 6F: Remaining Workflow Color Semantics
+
+**Time:** 2026-07-11 02:25 ET / 2026-07-11 06:25 UTC
+**Status:** READY FOR CLAUDE CODE QA — FEATURE BRANCH ONLY — NOT DEPLOYED — FINAL PROPAGATION BATCH
+
+**Scope**
+- Completed the locked indigo-versus-gold color rule on the remaining standalone workflow surfaces. ADAS lookup, estimate parsing and selection, supplier search, total-loss storage navigation, onboarding navigation, and superadmin support actions now use brand indigo rather than money-only gold.
+- Preserved gold only where it communicates money or a revenue action: the onboarding `Create First RO` action, estimate-wizard `Create Repair Order`, and extracted job revenue. Existing New RO, supplement, and payment treatments outside this batch remain unchanged.
+- Migrated the touched standalone surfaces to semantic dark/light tokens for panels, borders, text, focus states, and form controls. The superadmin login now uses the real shared REVV mark and Bricolage display hierarchy.
+- Strengthened `colorSemantics.test.js` from a 280-character text window to inspection of the complete owning button. The guard covers all prior Phase 6E actions plus this batch and positively pins every approved gold exception.
+- Browser testing found the master support action cluster clipped at 1024px. Its controls now use two columns at tablet width, four only at wide desktop, and a wrapping action group. The re-capture shows every control fully visible with exact client/scroll width parity.
+- No API endpoint, payload, auth rule, role, workflow, financial calculation, backend file, database, seed, reset, migration, destructive script, hosted DB, or customer/shop/RO data changed. Miles Automotive data was not touched; all browser data was route-mocked.
+
+**Files changed (10; batch cap respected)**
+- `frontend/src/pages/ADASCalibration.jsx`
+- `frontend/src/pages/Onboarding.jsx`
+- `frontend/src/pages/SuperAdminDashboard.jsx`
+- `frontend/src/pages/SuperAdminLogin.jsx`
+- `frontend/src/components/PartsSearch.jsx`
+- `frontend/src/components/EstimateImportWizard.jsx`
+- `frontend/src/components/ClaimStatusCard.jsx`
+- `frontend/src/components/EstimateSelectionToolbar.jsx`
+- `frontend/src/lib/__tests__/colorSemantics.test.js`
+- `CLAUDE.md`
+
+**Verification**
+```
+cd frontend && npm run test:run -- colorSemantics EstimateImportWizard EstimateSelectionToolbar ClaimStatusCard  # 5 files, 11/11 passed
+node --test native backend sweep  # 130/130 passed
+cd backend && npm run test:run  # extractor suite 7/7 passed
+cd frontend && npm run test:run  # 37 files, 110/110 passed
+cd frontend && npm run build  # clean; pre-existing chunk-size warning only
+Playwright route-mocked browser checks  # onboarding/import light tablet, ADAS dark phone, superadmin login light desktop, support dashboard dark + light tablet
+viewport results  # exact client/scroll widths at 1440, 1024, and 390; zero console/page errors
+tablet support re-check  # clipped four-column action row reproduced, changed to 2-column tablet/4-column desktop, final capture fully visible
+screenshots  # /tmp/revv-phase6f-onboarding-wizard-light-tablet.png, /tmp/revv-phase6f-adas-dark-phone.png, /tmp/revv-phase6f-super-login-light-desktop.png, /tmp/revv-phase6f-super-dashboard-dark-tablet-final.png, /tmp/revv-phase6f-super-dashboard-light-tablet-final.png
+rm -rf frontend/dist && git diff --check && git ls-files frontend/dist | wc -l  # expected 0
+```
+
 ## Dispatch Log — 2026-07-11 REVV Redesign Phase 6E: Core Workflow Color Semantics
 
 **Time:** 2026-07-11 01:53 ET / 2026-07-11 05:53 UTC

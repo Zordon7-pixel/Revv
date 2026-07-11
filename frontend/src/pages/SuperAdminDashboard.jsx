@@ -37,13 +37,13 @@ function statusLabel(value) {
 
 function statusClass(value) {
   const normalized = String(value || 'new').toLowerCase()
-  if (['shipped', 'closed', 'wont_fix'].includes(normalized)) return 'text-slate-300 border-slate-700 bg-slate-900/40'
-  if (normalized === 'ready_for_qa') return 'text-cyan-200 border-cyan-700 bg-cyan-950/35'
-  if (normalized === 'qa_passed') return 'text-emerald-300 border-emerald-700 bg-emerald-950/35'
-  if (normalized === 'fixed') return 'text-lime-300 border-lime-700 bg-lime-950/30'
-  if (['assigned', 'in_progress'].includes(normalized)) return 'text-[#EAB308] border-[#EAB308]/50 bg-[#EAB308]/10'
-  if (normalized === 'triaged') return 'text-blue-300 border-blue-700 bg-blue-950/35'
-  return 'text-red-300 border-red-800 bg-red-950/40'
+  if (['shipped', 'closed', 'wont_fix'].includes(normalized)) return 'border-line-2 bg-raised/40 text-muted'
+  if (normalized === 'ready_for_qa') return 'border-brand/50 bg-brand/10 text-brand'
+  if (normalized === 'qa_passed') return 'border-good/50 bg-good/10 text-good'
+  if (normalized === 'fixed') return 'border-good/50 bg-good/10 text-good'
+  if (['assigned', 'in_progress'].includes(normalized)) return 'border-brand/50 bg-brand/10 text-brand'
+  if (normalized === 'triaged') return 'border-brand/50 bg-brand/10 text-brand'
+  return 'border-crit/50 bg-crit/10 text-crit'
 }
 
 export default function SuperAdminDashboard() {
@@ -197,40 +197,40 @@ export default function SuperAdminDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0f1117] text-white">
+    <div className="min-h-screen bg-void text-ink">
       <div className="max-w-7xl mx-auto px-5 py-7">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
           <div>
-            <div className="text-[11px] uppercase tracking-widest text-yellow-300">Master Support Console</div>
-            <h1 className="text-2xl font-bold mt-1">REVV Help Desk Dashboard</h1>
+            <div className="text-[11px] uppercase tracking-widest text-brand">Master Support Console</div>
+            <h1 className="mt-1 font-display text-2xl font-bold">REVV Help Desk Dashboard</h1>
           </div>
-          <button type="button" onClick={logoutMaster} className="inline-flex items-center justify-center gap-2 text-xs bg-[#1a1d2e] hover:bg-[#23283f] border border-[#2a2d3e] px-3 py-2 rounded-lg text-slate-200">
+          <button type="button" onClick={logoutMaster} className="inline-flex items-center justify-center gap-2 rounded-lg border border-line-2 bg-panel px-3 py-2 text-xs text-ink transition-colors hover:bg-raised">
             <LogOut size={14} />
             Sign Out
           </button>
         </div>
 
-        <div className="bg-[#141824] border border-[#242837] rounded-xl px-3 py-2 mb-4">
-          <button type="button" className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-[#EAB308] bg-[#EAB308]/10 border border-[#EAB308]/40 rounded-lg px-3 py-2">
+        <div className="mb-4 rounded-instrument border border-line bg-panel px-3 py-2">
+          <button type="button" className="inline-flex items-center gap-2 rounded-lg border border-brand/40 bg-brand/10 px-3 py-2 text-xs font-semibold uppercase tracking-widest text-brand">
             <LayoutDashboard size={14} />
             Dashboard
           </button>
         </div>
 
-        {error && <div className="bg-[#1a1d2e] border border-[#2a2d3e] text-red-300 text-sm rounded-lg p-3 mb-4" role="alert">{error}</div>}
-        {notice && <div className="bg-emerald-950/30 border border-emerald-800/60 text-emerald-200 text-sm rounded-lg p-3 mb-4" role="status">{notice}</div>}
+        {error && <div className="mb-4 rounded-lg border border-crit/40 bg-crit/10 p-3 text-sm text-crit" role="alert">{error}</div>}
+        {notice && <div className="mb-4 rounded-lg border border-good/40 bg-good/10 p-3 text-sm text-good" role="status">{notice}</div>}
 
-        <div className={`border rounded-xl p-3 mb-4 ${ownerAlerts.length ? 'bg-red-950/35 border-red-800/70' : 'bg-emerald-950/25 border-emerald-800/60'}`}>
+        <div className={`mb-4 rounded-instrument border p-3 ${ownerAlerts.length ? 'border-crit/50 bg-crit/10' : 'border-good/40 bg-good/10'}`}>
           <div className="flex items-center gap-2 text-sm font-semibold">
-            <BellRing size={14} className={ownerAlerts.length ? 'text-red-300' : 'text-emerald-300'} />
+            <BellRing size={14} className={ownerAlerts.length ? 'text-crit' : 'text-good'} />
             {ownerAlerts.length
               ? `${ownerAlerts.length} owner account${ownerAlerts.length === 1 ? '' : 's'} have open feedback`
               : 'No owner account alerts right now'}
           </div>
           {ownerAlerts.length > 0 && (
-            <div className="mt-2 text-xs text-slate-200 flex flex-wrap gap-2">
+            <div className="mt-2 flex flex-wrap gap-2 text-xs text-ink">
               {ownerAlerts.slice(0, 6).map((owner) => (
-                <button key={`alert-${owner.owner_id}`} type="button" onClick={() => setSelectedShopId(owner.shop_id)} className="px-2.5 py-1 rounded-md border border-red-700/70 bg-red-900/35 hover:bg-red-900/55">
+                <button key={`alert-${owner.owner_id}`} type="button" onClick={() => setSelectedShopId(owner.shop_id)} className="rounded-md border border-crit/50 bg-crit/10 px-2.5 py-1 text-crit transition-colors hover:bg-crit/15">
                   {owner.owner_name || 'Owner'} - {owner.open_issue_count ?? ((owner.error_count || 0) + (owner.feedback_count || 0))} open
                 </button>
               ))}
@@ -239,28 +239,28 @@ export default function SuperAdminDashboard() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
-          <div className="bg-[#141824] border border-[#242837] rounded-xl p-4">
-            <div className="text-xs text-slate-400">Owner Accounts</div>
-            <div className="text-2xl font-semibold text-white mt-1">{ownerAccounts.length}</div>
+          <div className="rounded-instrument border border-line bg-panel p-4">
+            <div className="text-xs text-muted">Owner Accounts</div>
+            <div className="mt-1 font-mono text-2xl font-semibold text-ink">{ownerAccounts.length}</div>
           </div>
-          <div className="bg-[#141824] border border-[#242837] rounded-xl p-4">
-            <div className="text-xs text-slate-400">Open</div>
-            <div className="text-2xl font-semibold text-[#EAB308] mt-1">{summary.open_issues || 0}</div>
+          <div className="rounded-instrument border border-line bg-panel p-4">
+            <div className="text-xs text-muted">Open</div>
+            <div className="mt-1 font-mono text-2xl font-semibold text-crit">{summary.open_issues || 0}</div>
           </div>
-          <div className="bg-[#141824] border border-[#242837] rounded-xl p-4">
-            <div className="text-xs text-slate-400">Assigned</div>
-            <div className="text-2xl font-semibold text-blue-300 mt-1">{summary.assigned_issues || 0}</div>
+          <div className="rounded-instrument border border-line bg-panel p-4">
+            <div className="text-xs text-muted">Assigned</div>
+            <div className="mt-1 font-mono text-2xl font-semibold text-brand">{summary.assigned_issues || 0}</div>
           </div>
-          <div className="bg-[#141824] border border-[#242837] rounded-xl p-4">
-            <div className="text-xs text-slate-400">Closed</div>
-            <div className="text-2xl font-semibold text-emerald-300 mt-1">{summary.closed_issues || 0}</div>
+          <div className="rounded-instrument border border-line bg-panel p-4">
+            <div className="text-xs text-muted">Closed</div>
+            <div className="mt-1 font-mono text-2xl font-semibold text-good">{summary.closed_issues || 0}</div>
           </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <section className="lg:col-span-1 bg-[#141824] border border-[#242837] rounded-xl overflow-hidden">
-            <div className="px-4 py-3 border-b border-[#242837]">
-              <h2 className="text-sm font-semibold text-slate-100 inline-flex items-center gap-2">
+          <section className="overflow-hidden rounded-instrument border border-line bg-panel lg:col-span-1">
+            <div className="border-b border-line px-4 py-3">
+              <h2 className="inline-flex items-center gap-2 font-display text-sm font-semibold text-ink">
                 <UserCog size={14} />
                 Owner Accounts Only
               </h2>
@@ -271,51 +271,51 @@ export default function SuperAdminDashboard() {
                   key={owner.owner_id}
                   type="button"
                   onClick={() => setSelectedShopId(owner.shop_id)}
-                  className={`w-full text-left px-4 py-3 border-b border-[#242837] hover:bg-[#1c2233] ${selectedShopId === owner.shop_id ? 'bg-[#1c2233]' : ''} ${((owner.open_issue_count ?? 0) > 0) ? 'bg-red-950/15' : ''}`}
+                  className={`w-full border-b border-line px-4 py-3 text-left transition-colors hover:bg-brand/5 ${selectedShopId === owner.shop_id ? 'bg-brand/10' : ''} ${((owner.open_issue_count ?? 0) > 0) ? 'border-l-2 border-l-crit bg-crit/5' : ''}`}
                 >
                   <div className="font-medium flex items-center gap-2">
                     <span>{owner.owner_name || 'Owner'}</span>
                     {((owner.open_issue_count ?? 0) > 0) && (
-                      <span className="text-[10px] uppercase tracking-widest text-red-300 border border-red-700/70 rounded px-1.5 py-0.5">Open</span>
+                      <span className="rounded border border-crit/50 px-1.5 py-0.5 text-[10px] uppercase tracking-widest text-crit">Open</span>
                     )}
                   </div>
-                  <div className="text-xs text-slate-400 mt-0.5">{owner.owner_email || '-'}</div>
-                  <div className="text-xs text-slate-500 mt-1">{owner.shop_name || '-'} - {owner.shop_city || '-'} / {owner.shop_state || '-'}</div>
-                  <div className="text-[11px] mt-1 text-slate-400">
+                  <div className="mt-0.5 text-xs text-muted">{owner.owner_email || '-'}</div>
+                  <div className="mt-1 text-xs text-faint">{owner.shop_name || '-'} - {owner.shop_city || '-'} / {owner.shop_state || '-'}</div>
+                  <div className="mt-1 text-[11px] text-muted">
                     {owner.open_issue_count ?? 0} open - {owner.assigned_issue_count || 0} assigned - {owner.closed_issue_count || 0} closed
                   </div>
                 </button>
               ))}
-              {!ownerAccounts.length && !loading && <div className="px-4 py-5 text-sm text-slate-500">No owner accounts found.</div>}
+              {!ownerAccounts.length && !loading && <div className="px-4 py-5 text-sm text-faint">No owner accounts found.</div>}
             </div>
           </section>
 
           <section className="lg:col-span-2 space-y-4">
-            <div className="bg-[#141824] border border-[#242837] rounded-xl overflow-hidden">
-              <div className="px-4 py-3 border-b border-[#242837]">
-                <h2 className="text-sm font-semibold text-slate-100 inline-flex items-center gap-2">
+            <div className="overflow-hidden rounded-instrument border border-line bg-panel">
+              <div className="border-b border-line px-4 py-3">
+                <h2 className="inline-flex items-center gap-2 font-display text-sm font-semibold text-ink">
                   <AlertTriangle size={14} />
                   App Issues and Feedback
                 </h2>
               </div>
-              <div className="p-4 border-b border-[#242837] bg-[#10131d]">
+              <div className="border-b border-line bg-panel-2 p-4">
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
                   <div className="md:col-span-2 relative">
-                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-faint" />
                     <input
                       type="text"
                       value={search}
                       onChange={(e) => setSearch(e.target.value)}
                       placeholder="Search issue message, page, tester, shop, agent..."
-                      className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg pl-9 pr-3 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-[#EAB308]"
+                      className="w-full rounded-lg border border-line-2 bg-void py-2.5 pl-9 pr-3 text-sm text-ink placeholder:text-faint focus:border-brand focus:outline-none"
                     />
                   </div>
-                  <select value={issueFilter} onChange={(e) => setIssueFilter(e.target.value)} className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-[#EAB308]">
+                  <select value={issueFilter} onChange={(e) => setIssueFilter(e.target.value)} className="w-full rounded-lg border border-line-2 bg-void px-3 py-2.5 text-sm text-ink focus:border-brand focus:outline-none">
                     <option value="all">All Issue Types</option>
                     <option value="error">Errors Only</option>
                     <option value="feedback">Feedback Only</option>
                   </select>
-                  <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-[#EAB308]">
+                  <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="w-full rounded-lg border border-line-2 bg-void px-3 py-2.5 text-sm text-ink focus:border-brand focus:outline-none">
                     <option value="open">Open Statuses</option>
                     <option value="all">All Statuses</option>
                     {ISSUE_STATUSES.map((status) => <option key={status.value} value={status.value}>{status.label}</option>)}
@@ -325,28 +325,28 @@ export default function SuperAdminDashboard() {
               </div>
 
               <div className="max-h-[620px] overflow-y-auto">
-                {loading && <div className="px-4 py-8 text-sm text-slate-500">Loading help desk feed...</div>}
+                {loading && <div className="px-4 py-8 text-sm text-faint">Loading help desk feed...</div>}
 
                 {!loading && filteredIssues.map((issue) => (
-                  <div key={issue.id} className="px-4 py-3 border-b border-[#242837] space-y-3">
+                  <div key={issue.id} className="space-y-3 border-b border-line px-4 py-3">
                     <div className="flex flex-wrap items-center gap-2 text-xs">
-                      <span className={`px-2 py-0.5 rounded-full border ${issue.issue_type === 'error' ? 'text-red-300 border-red-800 bg-red-950/40' : 'text-blue-200 border-blue-700 bg-blue-900/30'}`}>
+                      <span className={`rounded-full border px-2 py-0.5 ${issue.issue_type === 'error' ? 'border-crit/50 bg-crit/10 text-crit' : 'border-brand/50 bg-brand/10 text-brand'}`}>
                         {issue.issue_type === 'error' ? 'Error' : 'Feedback'}
                       </span>
                       <span className={`px-2 py-0.5 rounded-full border ${statusClass(issue.status)}`}>{statusLabel(issue.status || 'new')}</span>
                       {issue.status === 'shipped' ? (
-                        <span className={`px-2 py-0.5 rounded-full border ${issue.linked_ref ? 'text-cyan-200 border-cyan-700 bg-cyan-950/35' : 'text-slate-500 border-slate-700 bg-slate-900/40'}`}>
+                        <span className={`rounded-full border px-2 py-0.5 ${issue.linked_ref ? 'border-good/50 bg-good/10 text-good' : 'border-line-2 bg-raised/40 text-faint'}`}>
                           QA-PASS: {issue.linked_ref || '(no ref)'}
                         </span>
                       ) : null}
-                      {issue.routed_to ? <span className="px-2 py-0.5 rounded-full border border-[#EAB308]/40 bg-[#EAB308]/10 text-[#EAB308]">{issue.routed_to}</span> : null}
-                      <span className="text-slate-300 font-medium">{issue.shop_name || 'Unknown Shop'}</span>
-                      <span className="text-slate-500">{formatDate(issue.created_at)}</span>
+                      {issue.routed_to ? <span className="rounded-full border border-brand/40 bg-brand/10 px-2 py-0.5 text-brand">{issue.routed_to}</span> : null}
+                      <span className="font-medium text-ink">{issue.shop_name || 'Unknown Shop'}</span>
+                      <span className="text-faint">{formatDate(issue.created_at)}</span>
                     </div>
 
-                    <div className="text-sm text-slate-100">{issue.message || 'No message provided.'}</div>
-                    {issue.expected ? <div className="text-xs text-slate-400">Expected: {issue.expected}</div> : null}
-                    <div className="text-[11px] text-slate-500 flex flex-wrap items-center gap-2">
+                    <div className="text-sm text-ink">{issue.message || 'No message provided.'}</div>
+                    {issue.expected ? <div className="text-xs text-muted">Expected: {issue.expected}</div> : null}
+                    <div className="flex flex-wrap items-center gap-2 text-[11px] text-faint">
                       <span>Tester: {issue.tester_name || 'Anonymous'}</span>
                       <span>Category: {issue.category || 'general'}</span>
                       <span>Priority: {issue.priority || 'medium'}</span>
@@ -354,12 +354,12 @@ export default function SuperAdminDashboard() {
                       {issue.linked_ref ? <span>Fix: {issue.linked_ref}</span> : null}
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+                    <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-4">
                       <select
                         value={issue.routed_to || ''}
                         onChange={(e) => updateIssue(issue, { routed_to: e.target.value || null }, 'Agent updated.')}
                         disabled={actionIssueId === issue.id}
-                        className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-2 py-2 text-xs text-white focus:outline-none focus:border-[#EAB308]"
+                        className="rounded-lg border border-line-2 bg-void px-2 py-2 text-xs text-ink focus:border-brand focus:outline-none"
                         aria-label={`Agent for issue ${issue.id}`}
                       >
                         <option value="">Unassigned</option>
@@ -369,7 +369,7 @@ export default function SuperAdminDashboard() {
                         value={issue.status || 'new'}
                         onChange={(e) => updateIssue(issue, { status: e.target.value }, 'Status updated.')}
                         disabled={actionIssueId === issue.id}
-                        className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-2 py-2 text-xs text-white focus:outline-none focus:border-[#EAB308]"
+                        className="rounded-lg border border-line-2 bg-void px-2 py-2 text-xs text-ink focus:border-brand focus:outline-none"
                         aria-label={`Status for issue ${issue.id}`}
                       >
                         {ISSUE_STATUSES.map((status) => <option key={status.value} value={status.value}>{status.label}</option>)}
@@ -379,11 +379,11 @@ export default function SuperAdminDashboard() {
                         onChange={(e) => setIssues((prev) => prev.map((item) => (item.id === issue.id ? { ...item, linked_ref: e.target.value } : item)))}
                         onBlur={() => updateIssue(issue, { linked_ref: issue.linked_ref || '' }, 'Linked reference saved.')}
                         placeholder="Commit, Linear, CLAUDE ref"
-                        className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-2 py-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-[#EAB308]"
+                        className="rounded-lg border border-line-2 bg-void px-2 py-2 text-xs text-ink placeholder:text-faint focus:border-brand focus:outline-none"
                         aria-label={`Linked fix for issue ${issue.id}`}
                       />
-                      <div className="flex gap-2">
-                        <button type="button" onClick={() => sendToAgent(issue)} disabled={actionIssueId === issue.id} className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] px-2 py-2 text-xs font-semibold disabled:opacity-50">
+                      <div className="flex flex-wrap gap-2">
+                        <button type="button" onClick={() => sendToAgent(issue)} disabled={actionIssueId === issue.id} className="inline-flex flex-1 items-center justify-center gap-1 rounded-lg bg-brand px-2 py-2 text-xs font-semibold text-white transition-colors hover:bg-brand-lit disabled:opacity-50">
                           <Send size={12} /> Send
                         </button>
                         {CLAUDE_QA_ELIGIBLE_STATUSES.has(issue.status || 'new') ? (
@@ -391,16 +391,16 @@ export default function SuperAdminDashboard() {
                             type="button"
                             onClick={() => updateIssue(issue, { status: 'ready_for_qa' }, 'Sent to Claude QA.')}
                             disabled={actionIssueId === issue.id}
-                            className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg border border-cyan-700 bg-cyan-950/35 hover:bg-cyan-900/40 text-cyan-200 px-2 py-2 text-xs font-semibold disabled:opacity-50"
+                            className="inline-flex flex-1 items-center justify-center gap-1 rounded-lg border border-brand/40 bg-brand/10 px-2 py-2 text-xs font-semibold text-brand transition-colors hover:bg-brand/15 disabled:opacity-50"
                             aria-label={`Send issue ${issue.id} to Claude QA`}
                           >
                             <Send size={12} /> Claude QA
                           </button>
                         ) : null}
-                        <button type="button" onClick={() => copyAgentPrompt(issue)} disabled={actionIssueId === issue.id} className="inline-flex items-center justify-center rounded-lg border border-[#EAB308]/40 bg-[#EAB308]/10 hover:bg-[#EAB308]/15 text-[#EAB308] px-2 py-2 disabled:opacity-50" aria-label={`Copy prompt for issue ${issue.id}`}>
+                        <button type="button" onClick={() => copyAgentPrompt(issue)} disabled={actionIssueId === issue.id} className="inline-flex items-center justify-center rounded-lg border border-brand/40 bg-brand/10 px-2 py-2 text-brand transition-colors hover:bg-brand/15 disabled:opacity-50" aria-label={`Copy prompt for issue ${issue.id}`}>
                           <Clipboard size={13} />
                         </button>
-                        <button type="button" onClick={() => updateIssue(issue, { status: 'closed' }, 'Issue closed.')} disabled={actionIssueId === issue.id} className="inline-flex items-center justify-center rounded-lg border border-emerald-700/50 bg-emerald-950/30 hover:bg-emerald-900/40 text-emerald-300 px-2 py-2 disabled:opacity-50" aria-label={`Close issue ${issue.id}`}>
+                        <button type="button" onClick={() => updateIssue(issue, { status: 'closed' }, 'Issue closed.')} disabled={actionIssueId === issue.id} className="inline-flex items-center justify-center rounded-lg border border-good/50 bg-good/10 px-2 py-2 text-good transition-colors hover:bg-good/15 disabled:opacity-50" aria-label={`Close issue ${issue.id}`}>
                           <CheckCircle2 size={13} />
                         </button>
                       </div>
@@ -412,14 +412,14 @@ export default function SuperAdminDashboard() {
                       onBlur={() => updateIssue(issue, { support_note: issue.support_note || '' }, 'Support note saved.')}
                       rows={2}
                       placeholder="Support note / agent handoff context..."
-                      className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-[#EAB308] resize-none"
+                      className="w-full resize-none rounded-lg border border-line-2 bg-void px-3 py-2 text-xs text-ink placeholder:text-faint focus:border-brand focus:outline-none"
                       aria-label={`Support note for issue ${issue.id}`}
                     />
                   </div>
                 ))}
 
                 {!loading && !filteredIssues.length && (
-                  <div className="px-4 py-8 text-sm text-slate-500">
+                  <div className="px-4 py-8 text-sm text-faint">
                     <MessageSquare size={14} className="inline mr-1.5 -mt-0.5" />
                     No issues found for current filters.
                   </div>

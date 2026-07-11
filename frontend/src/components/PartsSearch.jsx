@@ -5,17 +5,17 @@ import AppOverlay from './AppOverlay'
 
 function availabilityClass(availability) {
   const v = String(availability || '').toLowerCase()
-  if (v.includes('in stock')) return 'text-emerald-300 bg-emerald-900/30 border-emerald-700/50'
+  if (v.includes('in stock')) return 'border-good/50 bg-good/10 text-good'
   if (v.includes('limited')) return 'text-amber-300 bg-amber-900/30 border-amber-700/50'
-  if (v.includes('backorder')) return 'text-red-300 bg-red-900/30 border-red-700/50'
-  return 'text-slate-300 bg-slate-800 border-slate-600'
+  if (v.includes('backorder')) return 'border-crit/50 bg-crit/10 text-crit'
+  return 'border-line-2 bg-raised text-muted'
 }
 
 function fitmentClass(fitmentType) {
   const v = String(fitmentType || '').toLowerCase()
-  if (v === 'oem') return 'text-blue-300 bg-blue-900/30 border-blue-700/50'
-  if (v === 'oem equivalent') return 'text-amber-300 bg-amber-900/30 border-amber-700/50'
-  return 'text-slate-300 bg-slate-800 border-slate-600'
+  if (v === 'oem') return 'border-brand/50 bg-brand/10 text-brand'
+  if (v === 'oem equivalent') return 'border-line-2 bg-raised text-ink'
+  return 'border-line-2 bg-raised text-muted'
 }
 
 export default function PartsSearch({ roId, initialVehicle = {}, onClose, onPartAdded }) {
@@ -112,19 +112,19 @@ export default function PartsSearch({ roId, initialVehicle = {}, onClose, onPart
 
   return (
     <AppOverlay label="Supplier catalog search" onClose={onClose} className="bg-black/70 p-3 sm:p-6">
-      <div className="w-full max-w-5xl max-h-[calc(var(--app-viewport-height)-1.5rem)] overflow-y-auto overscroll-contain bg-[#1a1d2e] border border-[#2a2d3e] rounded-2xl p-4 sm:p-5 shadow-2xl">
+      <div className="w-full max-w-5xl max-h-[calc(var(--app-viewport-height)-1.5rem)] overflow-y-auto overscroll-contain rounded-instrument border border-line-2 bg-panel p-4 shadow-2xl sm:p-5">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h3 className="text-white font-semibold text-base">Supplier Catalog Search</h3>
-            <p className="text-xs text-slate-400">Search by vehicle + keyword across common supplier references (Advance Auto Parts, AutoZone, dealership/OEM) and add parts to this RO.</p>
+            <h3 className="font-display text-base font-semibold text-ink">Supplier Catalog Search</h3>
+            <p className="text-xs text-muted">Search by vehicle + keyword across common supplier references (Advance Auto Parts, AutoZone, dealership/OEM) and add parts to this RO.</p>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors">
+          <button onClick={onClose} className="text-muted transition-colors hover:text-ink" aria-label="Close supplier catalog search">
             <X size={18} />
           </button>
         </div>
 
         <form onSubmit={runSearch} className="grid grid-cols-1 sm:grid-cols-4 gap-2 mb-4">
-          <select value={year} onChange={(e) => setYear(e.target.value)} className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#EAB308]">
+          <select value={year} onChange={(e) => setYear(e.target.value)} className="rounded-lg border border-line-2 bg-void px-3 py-2 text-sm text-ink focus:border-brand focus:outline-none">
             <option value="">Year</option>
             {years.map((y) => <option key={y} value={y}>{y}</option>)}
           </select>
@@ -133,7 +133,7 @@ export default function PartsSearch({ roId, initialVehicle = {}, onClose, onPart
             value={make}
             onChange={(e) => setMake(e.target.value)}
             disabled={loadingMakes}
-            className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#EAB308] disabled:opacity-50"
+            className="rounded-lg border border-line-2 bg-void px-3 py-2 text-sm text-ink focus:border-brand focus:outline-none disabled:opacity-50"
           >
             <option value="">{loadingMakes ? 'Loading makes...' : 'Make'}</option>
             {makes.map((m) => <option key={m} value={m}>{m}</option>)}
@@ -143,7 +143,7 @@ export default function PartsSearch({ roId, initialVehicle = {}, onClose, onPart
             value={model}
             onChange={(e) => setModel(e.target.value)}
             disabled={!make}
-            className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#EAB308] disabled:opacity-50"
+            className="rounded-lg border border-line-2 bg-void px-3 py-2 text-sm text-ink focus:border-brand focus:outline-none disabled:opacity-50"
           >
             <option value="">{make ? 'Model' : 'Select make first'}</option>
             {models.map((m) => <option key={m} value={m}>{m}</option>)}
@@ -154,24 +154,24 @@ export default function PartsSearch({ roId, initialVehicle = {}, onClose, onPart
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="bumper, hood, mirror..."
-              className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-[#EAB308]"
+              className="w-full rounded-lg border border-line-2 bg-void px-3 py-2 text-sm text-ink placeholder:text-faint focus:border-brand focus:outline-none"
             />
-            <button type="submit" disabled={loading} className="inline-flex items-center justify-center gap-1.5 bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] text-sm font-semibold px-4 rounded-lg transition-colors disabled:opacity-50">
+            <button type="submit" disabled={loading} className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-brand px-4 text-sm font-semibold text-white transition-colors hover:bg-brand-lit disabled:opacity-50">
               <Search size={14} /> {loading ? 'Searching...' : 'Search'}
             </button>
           </div>
         </form>
 
         {loading ? (
-          <div className="text-sm text-slate-400 py-8 text-center">Searching supplier catalog...</div>
+          <div className="py-8 text-center text-sm text-muted">Searching supplier catalog...</div>
         ) : !hasSearched ? (
-          <div className="text-sm text-slate-400 py-8 text-center">Pick vehicle details, enter a keyword, then search.</div>
+          <div className="py-8 text-center text-sm text-muted">Pick vehicle details, enter a keyword, then search.</div>
         ) : results.length === 0 && hasSearched ? (
-          <div className="text-sm text-slate-400 py-8 text-center">No parts found — try a different search</div>
+          <div className="py-8 text-center text-sm text-muted">No parts found — try a different search</div>
         ) : (
-          <div className="overflow-x-auto border border-[#2a2d3e] rounded-xl">
+          <div className="overflow-x-auto rounded-instrument border border-line-2">
             <table className="w-full text-xs">
-              <thead className="bg-[#0f1117] text-slate-400 uppercase">
+              <thead className="bg-void text-muted uppercase">
                 <tr>
                   <th className="text-left px-3 py-2 font-semibold">Part #</th>
                   <th className="text-left px-3 py-2 font-semibold">OEM Ref</th>
@@ -185,17 +185,17 @@ export default function PartsSearch({ roId, initialVehicle = {}, onClose, onPart
               </thead>
               <tbody>
                 {results.map((part) => (
-                  <tr key={`${part.partNumber}-${part.description}`} className="border-t border-[#2a2d3e]">
-                    <td className="px-3 py-2 text-slate-300 font-mono">{part.partNumber}</td>
-                    <td className="px-3 py-2 text-slate-300 font-mono">{part.oemPartNumber || part.oemEquivalentPartNumber || '—'}</td>
-                    <td className="px-3 py-2 text-white">{part.description}</td>
-                    <td className="px-3 py-2 text-slate-300">{part.supplier || part.brand}</td>
+                  <tr key={`${part.partNumber}-${part.description}`} className="border-t border-line-2">
+                    <td className="px-3 py-2 font-mono text-ink">{part.partNumber}</td>
+                    <td className="px-3 py-2 font-mono text-ink">{part.oemPartNumber || part.oemEquivalentPartNumber || '—'}</td>
+                    <td className="px-3 py-2 text-ink">{part.description}</td>
+                    <td className="px-3 py-2 text-muted">{part.supplier || part.brand}</td>
                     <td className="px-3 py-2">
                       <span className={`inline-flex border rounded-full px-2 py-0.5 ${fitmentClass(part.fitmentType)}`}>
                         {part.fitmentType || 'Aftermarket'}
                       </span>
                     </td>
-                    <td className="px-3 py-2 text-right text-white">${Number(part.price || 0).toFixed(2)}</td>
+                    <td className="px-3 py-2 text-right font-mono text-ink">${Number(part.price || 0).toFixed(2)}</td>
                     <td className="px-3 py-2">
                       <span className={`inline-flex border rounded-full px-2 py-0.5 ${availabilityClass(part.availability)}`}>
                         {part.availability}
@@ -205,7 +205,7 @@ export default function PartsSearch({ roId, initialVehicle = {}, onClose, onPart
                       <button
                         onClick={() => addToRO(part)}
                         disabled={addingPartNumber === part.partNumber}
-                        className="bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-semibold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+                        className="rounded-lg bg-brand px-3 py-1.5 text-[11px] font-semibold text-white transition-colors hover:bg-brand-lit disabled:opacity-50"
                       >
                         {addingPartNumber === part.partNumber ? 'Adding...' : 'Add to RO'}
                       </button>

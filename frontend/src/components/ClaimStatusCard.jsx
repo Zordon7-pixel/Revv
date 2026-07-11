@@ -60,10 +60,10 @@ export default function ClaimStatusCard({ ro, onUpdate, isAdmin, onOpenStorage }
   const activeOpt = OPTIONS.find(o => o.value === current)
 
   return (
-    <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-5 col-span-full">
+    <div className="col-span-full rounded-instrument border border-line-2 bg-panel p-5">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
+        <h2 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-muted">
           <AlertTriangle size={12} />
           Claim Status
         </h2>
@@ -72,7 +72,7 @@ export default function ClaimStatusCard({ ro, onUpdate, isAdmin, onOpenStorage }
             {activeOpt.label}
           </span>
         )}
-        {saving && <Loader size={14} className="animate-spin text-slate-400" />}
+        {saving && <Loader size={14} className="animate-spin text-muted" />}
       </div>
 
       {/* SIU Banner */}
@@ -81,7 +81,7 @@ export default function ClaimStatusCard({ ro, onUpdate, isAdmin, onOpenStorage }
           <AlertTriangle size={14} className="text-violet-400 mt-0.5 shrink-0" />
           <div>
             <p className="text-xs font-semibold text-violet-300">SIU Hold Active</p>
-            <p className="text-xs text-slate-400 mt-0.5">All repair steps are paused. Update claim status to Approved or Total Loss to resume workflow.</p>
+            <p className="mt-0.5 text-xs text-muted">All repair steps are paused. Update claim status to Approved or Total Loss to resume workflow.</p>
           </div>
         </div>
       )}
@@ -92,12 +92,12 @@ export default function ClaimStatusCard({ ro, onUpdate, isAdmin, onOpenStorage }
           <XCircle size={14} className="text-red-400 mt-0.5 shrink-0" />
           <div>
             <p className="text-xs font-semibold text-red-300">Total Loss — Storage + Pickup / Release</p>
-            <p className="text-xs text-slate-400 mt-0.5">No repair labor or deductible is collected. Track storage charges, then coordinate tow pickup or customer release.</p>
+            <p className="mt-0.5 text-xs text-muted">No repair labor or deductible is collected. Track storage charges, then coordinate tow pickup or customer release.</p>
             {onOpenStorage && (
               <button
                 type="button"
                 onClick={onOpenStorage}
-                className="mt-2 text-xs font-semibold rounded-lg border border-[#EAB308]/40 bg-[#EAB308]/10 px-3 py-1.5 text-[#EAB308] hover:bg-[#EAB308]/15"
+                className="mt-2 rounded-lg border border-brand/40 bg-brand/10 px-3 py-1.5 text-xs font-semibold text-brand transition-colors hover:bg-brand/15"
               >
                 Open Storage Hold
               </button>
@@ -120,16 +120,16 @@ export default function ClaimStatusCard({ ro, onUpdate, isAdmin, onOpenStorage }
                 className={`text-left p-4 rounded-xl border transition-all ${
                   isSelected
                     ? `${opt.bg} ${opt.border}`
-                    : 'bg-[#0f1117] border-[#2a2d3e] hover:border-slate-500'
+                    : 'border-line-2 bg-void hover:border-brand/50'
                 } disabled:opacity-50`}
               >
                 <div className="flex items-center gap-2 mb-1.5">
-                  <Icon size={16} className={isSelected ? opt.iconColor : 'text-slate-500'} />
-                  <span className={`text-sm font-semibold ${isSelected ? opt.text : 'text-slate-300'}`}>
+                  <Icon size={16} className={isSelected ? opt.iconColor : 'text-faint'} />
+                  <span className={`text-sm font-semibold ${isSelected ? opt.text : 'text-ink'}`}>
                     {opt.label}
                   </span>
                 </div>
-                <p className="text-xs text-slate-500 leading-relaxed">{opt.desc}</p>
+                <p className="text-xs leading-relaxed text-faint">{opt.desc}</p>
                 {isSelected && (
                   <div className={`mt-2 text-[10px] font-bold uppercase tracking-wide ${opt.text}`}>
                     ✓ Active
@@ -141,20 +141,20 @@ export default function ClaimStatusCard({ ro, onUpdate, isAdmin, onOpenStorage }
         </div>
       ) : (
         /* Read-only for non-admins */
-        <div className="text-sm text-slate-400">
+        <div className="text-sm text-muted">
           {activeOpt ? (
             <div className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg ${activeOpt.bg} border ${activeOpt.border}`}>
               <activeOpt.icon size={14} className={activeOpt.iconColor} />
               <span className={activeOpt.text}>{activeOpt.label}</span>
             </div>
           ) : (
-            <span className="text-slate-500 text-xs">Claim status not yet set</span>
+            <span className="text-xs text-faint">Claim status not yet set</span>
           )}
         </div>
       )}
 
       {error && (
-        <p className="mt-3 text-xs text-red-400">{error}</p>
+        <p className="mt-3 text-xs text-crit" role="alert">{error}</p>
       )}
     </div>
   )

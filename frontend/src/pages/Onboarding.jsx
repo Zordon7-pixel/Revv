@@ -54,33 +54,33 @@ export default function Onboarding() {
   function input(name, label, placeholder) {
     return (
       <div>
-        <label className="block text-xs font-medium text-slate-400 mb-1.5">{label}</label>
+        <label className="mb-1.5 block text-xs font-medium text-muted">{label}</label>
         <input
           value={form[name]}
           onChange={e => setForm(prev => ({ ...prev, [name]: e.target.value }))}
           required
           placeholder={placeholder}
-          className="w-full bg-[#121620] border border-[#2c3345] rounded-lg px-3 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-[#EAB308] transition-colors"
+          className="w-full rounded-lg border border-line-2 bg-void px-3 py-2.5 text-sm text-ink placeholder:text-faint transition-colors focus:border-brand focus:outline-none"
         />
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-[#0f1117] flex items-center justify-center p-4">
-      <div className="w-full max-w-2xl bg-[#171c27] rounded-2xl border border-[#2c3345] p-6 md:p-8">
+    <div className="flex min-h-screen items-center justify-center bg-void p-4">
+      <div className="w-full max-w-2xl rounded-instrument border border-line-2 bg-panel p-6 md:p-8">
         <div className="mb-6">
-          <p className="text-xs font-semibold text-[#EAB308] uppercase tracking-widest">REVV Onboarding</p>
-          <h1 className="text-2xl text-white font-bold mt-1">Step {step} of {TOTAL_STEPS}</h1>
-          <div className="w-full h-2 bg-[#232a3b] rounded-full mt-4 overflow-hidden">
-            <div className="h-full bg-[#EAB308] transition-all" style={{ width: progress }} />
+          <p className="text-xs font-semibold uppercase tracking-widest text-brand">REVV Onboarding</p>
+          <h1 className="mt-1 font-display text-2xl font-bold text-ink">Step {step} of {TOTAL_STEPS}</h1>
+          <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-raised">
+            <div className="h-full bg-brand transition-all" style={{ width: progress }} />
           </div>
         </div>
 
         {step === 1 && (
           <form onSubmit={saveStepOne} className="space-y-4">
-            <div className="flex items-center gap-2 text-white font-semibold">
-              <Building2 size={18} className="text-[#EAB308]" />
+            <div className="flex items-center gap-2 font-semibold text-ink">
+              <Building2 size={18} className="text-brand" />
               Shop Details
             </div>
             {input('shop_name', 'Shop Name', 'REVV Auto Body')}
@@ -94,12 +94,12 @@ export default function Onboarding() {
               {input('state', 'State', 'CA')}
             </div>
 
-            {error && <p className="text-xs text-red-400">{error}</p>}
+            {error && <p className="text-xs text-crit" role="alert">{error}</p>}
 
             <button
               type="submit"
               disabled={loading}
-              className="inline-flex items-center gap-2 bg-[#EAB308] hover:bg-[#facc15] text-black font-semibold rounded-lg px-4 py-2.5 text-sm transition-colors disabled:opacity-60"
+              className="inline-flex items-center gap-2 rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-lit disabled:opacity-60"
             >
               {loading ? 'Saving...' : 'Continue'}
               <ArrowRight size={16} />
@@ -109,39 +109,39 @@ export default function Onboarding() {
 
         {step === 2 && (
           <div className="space-y-5">
-            <div className="flex items-center gap-2 text-white font-semibold">
-              <ClipboardPlus size={18} className="text-[#EAB308]" />
+            <div className="flex items-center gap-2 font-semibold text-ink">
+              <ClipboardPlus size={18} className="text-brand" />
               Create Your First RO
             </div>
-            <p className="text-sm text-slate-300">
+            <p className="text-sm text-muted">
               Repair orders are the heart of REVV. Add a customer vehicle to get started.
             </p>
             <button
               type="button"
               onClick={() => setShowImportWizard(true)}
-              className="w-full flex items-center justify-between gap-4 bg-[#0f1117] border border-[#2c3345] hover:border-[#EAB308]/70 rounded-lg p-4 text-left transition-colors"
+              className="flex w-full items-center justify-between gap-4 rounded-lg border border-line-2 bg-void p-4 text-left transition-colors hover:border-brand/70"
             >
               <span className="flex items-center gap-3">
-                <span className="h-10 w-10 rounded-lg bg-[#EAB308]/15 text-[#EAB308] flex items-center justify-center">
+                <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand/10 text-brand">
                   <FileText size={20} />
                 </span>
                 <span>
-                  <span className="block text-sm font-semibold text-white">Import your existing estimate</span>
-                  <span className="block text-xs text-slate-400 mt-0.5">Upload a CCC or Mitchell PDF/image and create a pre-filled RO.</span>
+                  <span className="block text-sm font-semibold text-ink">Import your existing estimate</span>
+                  <span className="mt-0.5 block text-xs text-muted">Upload a CCC or Mitchell PDF/image and create a pre-filled RO.</span>
                 </span>
               </span>
-              <ArrowRight size={18} className="text-slate-500" />
+              <ArrowRight size={18} className="text-faint" />
             </button>
             <div className="flex flex-wrap gap-3">
               <button
                 onClick={() => navigate('/dashboard')}
-                className="bg-[#EAB308] hover:bg-[#facc15] text-black font-semibold rounded-lg px-4 py-2.5 text-sm transition-colors"
+                className="rounded-lg bg-gold px-4 py-2.5 text-sm font-semibold text-[var(--on-gold)] transition-colors hover:bg-gold-lit"
               >
                 Create First RO
               </button>
               <button
                 onClick={() => setStep(3)}
-                className="bg-[#232a3b] hover:bg-[#2c3345] text-slate-200 rounded-lg px-4 py-2.5 text-sm transition-colors"
+                className="rounded-lg border border-line-2 bg-raised px-4 py-2.5 text-sm text-ink transition-colors hover:border-brand/40"
               >
                 Skip for now
               </button>
@@ -162,23 +162,23 @@ export default function Onboarding() {
 
         {step === 3 && (
           <div className="space-y-5">
-            <div className="flex items-center gap-2 text-white font-semibold">
-              <Users size={18} className="text-[#EAB308]" />
+            <div className="flex items-center gap-2 font-semibold text-ink">
+              <Users size={18} className="text-brand" />
               Invite Your Team
             </div>
-            <p className="text-sm text-slate-300">
+            <p className="text-sm text-muted">
               Add techs so they can clock in and manage repairs.
             </p>
             <div className="flex flex-wrap gap-3">
               <button
                 onClick={() => navigate('/users')}
-                className="bg-[#EAB308] hover:bg-[#facc15] text-black font-semibold rounded-lg px-4 py-2.5 text-sm transition-colors"
+                className="rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-lit"
               >
                 Go to Users
               </button>
               <button
                 onClick={() => navigate('/dashboard')}
-                className="bg-[#232a3b] hover:bg-[#2c3345] text-slate-200 rounded-lg px-4 py-2.5 text-sm transition-colors"
+                className="rounded-lg border border-line-2 bg-raised px-4 py-2.5 text-sm text-ink transition-colors hover:border-brand/40"
               >
                 Skip for now
               </button>
@@ -186,7 +186,7 @@ export default function Onboarding() {
             <div className="pt-2">
               <button
                 onClick={() => navigate('/dashboard')}
-                className="inline-flex items-center gap-2 text-sm font-semibold text-[#EAB308] hover:text-[#facc15] transition-colors"
+                className="inline-flex items-center gap-2 text-sm font-semibold text-brand transition-colors hover:text-brand-lit"
               >
                 <CheckCircle2 size={16} />
                 Enter REVV
