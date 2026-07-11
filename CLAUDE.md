@@ -56,6 +56,44 @@ const ro = await dbGet('SELECT * FROM ros WHERE id = $1 AND shop_id = $2', [id, 
 await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 ```
 
+## Dispatch Log — 2026-07-10 REVV Redesign Phase 5
+
+**Status:** READY FOR CLAUDE CODE QA — NOT DEPLOYED
+
+**Scope**
+- Replaced the legacy gradient-card landing hero with a full-bleed REVV operating scene using the approved wordmark, Bricolage display type, and the shared indigo/gold instrument system.
+- Added a self-contained 30-second five-beat demo: `$1,450 short` hook, production-floor blockers, missed-operation catch, profit recovery, and final REVV CTA.
+- Demo playback starts visually without sound, enables the local reference voice track only from a user gesture, synthesizes a five-cue Web Audio score, supports muted replay, and renders a static final frame under `prefers-reduced-motion`.
+- All demo screenshots and audio are local under `frontend/public/demo`; the component has no external asset hosts.
+- Preserved the existing registration, sign-in, pricing, waitlist, legal, contact, and lead-capture flows while restyling the remaining marketing sections to Phase 1 tokens.
+- No backend, database, customer, shop, RO, seed, reset, migration, or destructive behavior changed. Miles Automotive data was not touched.
+
+**Files changed**
+- `frontend/src/components/RevvDemo.jsx`
+- `frontend/src/components/__tests__/RevvDemo.test.jsx`
+- `frontend/src/pages/Landing.jsx`
+- `frontend/src/pages/__tests__/Landing.redesign.test.jsx`
+- `frontend/src/index.css`
+- `frontend/public/demo/job-costing.png`
+- `frontend/public/demo/repair-orders.png`
+- `frontend/public/demo/ro-detail.png`
+- `frontend/public/demo/revv-wow-tv-ad.mp3`
+- `CLAUDE.md`
+
+**Verification**
+```
+cd frontend && npm run test:run -- src/components/__tests__/RevvDemo.test.jsx src/pages/__tests__/Landing.redesign.test.jsx  # 2 files, 4/4 passed
+cd frontend && npm run test:run  # 33 files, 90/90 passed
+native backend node:test sweep  # 129/129 passed
+cd backend && npm run test:run  # 3 extractor files, 7/7 passed
+cd frontend && npm run build  # clean
+Playwright 1440x900 / 1024x768 touch landscape / 390x844 reduced motion  # zero overflow, zero console errors
+Playwright sound gesture  # Sound on, local audio advancing, timeline reached floor beat after 6.2s
+screenshots  # /tmp/revv-phase5-desktop.png, /tmp/revv-phase5-ipad-landscape.png, /tmp/revv-phase5-phone-reduced.png
+rg raw hex / external asset hosts in Phase 5 source  # zero matches
+rm -rf frontend/dist && git diff --check && git ls-files frontend/dist | wc -l  # 0
+```
+
 ## Dispatch Log — 2026-07-10 Full Redesign Phase 4: Shop Branding + Printed Documents
 
 **Time:** 2026-07-10 22:44 ET / 2026-07-11 02:44 UTC

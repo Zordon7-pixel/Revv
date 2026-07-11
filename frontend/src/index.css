@@ -546,3 +546,587 @@ textarea {
   caret-color: currentColor;
   scroll-margin-bottom: 30vh;
 }
+
+/* Phase 5 public front door and the embedded 30-second product demo. */
+.landing-page {
+  overflow: clip;
+}
+
+.landing-hero {
+  position: relative;
+  height: min(820px, 88svh);
+  min-height: 650px;
+  overflow: hidden;
+  border-bottom: 1px solid var(--line);
+  background: var(--void);
+}
+
+.landing-nav {
+  position: relative;
+  z-index: 40;
+  padding: 1.15rem 1.25rem;
+}
+
+.landing-wordmark {
+  display: inline-flex;
+  height: 2.65rem;
+  align-items: center;
+  border-radius: 6px;
+  background: var(--on-brand);
+  padding: 0.45rem 0.7rem;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22);
+}
+
+.landing-nav-link {
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  transition: color 160ms ease;
+}
+
+.landing-nav-link:hover {
+  color: var(--on-brand);
+}
+
+.landing-hero-shade {
+  position: absolute;
+  z-index: 20;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, rgba(15, 17, 23, 0.98) 0%, rgba(15, 17, 23, 0.92) 35%, rgba(15, 17, 23, 0.34) 68%, rgba(15, 17, 23, 0.48) 100%),
+    linear-gradient(0deg, rgba(15, 17, 23, 0.92) 0%, transparent 34%);
+}
+
+.landing-hero-content {
+  position: relative;
+  z-index: 30;
+  display: flex;
+  width: min(100%, 90rem);
+  height: calc(100% - 9rem);
+  margin: 0 auto;
+  align-items: center;
+  padding: 0 3rem 6rem;
+}
+
+.landing-kicker,
+.landing-section-kicker {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.landing-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: rgba(255, 255, 255, 0.76);
+}
+
+.landing-kicker-signal {
+  width: 1.75rem;
+  height: 2px;
+  background: var(--brand-lit);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--brand-lit) 70%, transparent);
+}
+
+.landing-title {
+  max-width: 12ch;
+  margin-top: 1.15rem;
+  color: var(--on-brand);
+  font-family: var(--font-display);
+  font-size: clamp(2.9rem, 5.6vw, 5.75rem);
+  font-weight: 650;
+  line-height: 0.94;
+  letter-spacing: 0;
+}
+
+.landing-hero-copy {
+  max-width: 42rem;
+  margin-top: 1.35rem;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: clamp(1rem, 1.55vw, 1.2rem);
+  line-height: 1.65;
+}
+
+.landing-demo-cta {
+  display: inline-flex;
+  min-height: 3rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 8px;
+  background: rgba(15, 17, 23, 0.52);
+  padding: 0 1.25rem;
+  color: var(--on-brand);
+  font-size: 0.875rem;
+  font-weight: 650;
+  transition: border-color 160ms ease, background-color 160ms ease;
+}
+
+.landing-demo-cta:hover {
+  border-color: var(--brand-lit);
+  background: rgba(15, 17, 23, 0.78);
+}
+
+.landing-value-rail {
+  position: absolute;
+  z-index: 35;
+  bottom: 1.25rem;
+  left: max(3rem, calc((100vw - 90rem) / 2 + 3rem));
+  display: grid;
+  width: min(42rem, 55vw);
+  grid-template-columns: repeat(4, 1fr);
+  border-top: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.landing-value-rail > div {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.75rem 0.75rem 0;
+  border-left: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.landing-value-rail span {
+  color: var(--brand-lit);
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+}
+
+.landing-value-rail strong {
+  color: rgba(255, 255, 255, 0.76);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.landing-proof-stat {
+  border-left: 2px solid var(--brand);
+  padding-left: 1rem;
+}
+
+.landing-proof-stat p:last-child {
+  margin-top: 0.25rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.landing-section {
+  padding: 6rem 2rem;
+}
+
+.landing-section-kicker {
+  color: var(--brand);
+}
+
+.landing-section-title {
+  margin-top: 0.8rem;
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 4vw, 3.75rem);
+  font-weight: 650;
+  line-height: 1.02;
+  letter-spacing: 0;
+}
+
+.landing-section-copy {
+  max-width: 43rem;
+  margin-top: 1rem;
+  color: var(--muted);
+  font-size: 0.95rem;
+  line-height: 1.7;
+}
+
+.landing-feature {
+  min-height: 15rem;
+  padding: 1.5rem;
+}
+
+.landing-feature h3 {
+  margin-top: 3rem;
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 650;
+}
+
+.landing-feature p {
+  margin-top: 0.65rem;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.65;
+}
+
+.landing-operations-band {
+  border-block: 1px solid var(--line);
+  background: color-mix(in srgb, var(--void) 94%, var(--brand));
+  padding: 5rem 2rem;
+}
+
+.landing-stage-line {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(4rem, 1fr));
+  gap: 0.3rem;
+  overflow-x: auto;
+  padding-bottom: 0.5rem;
+}
+
+.landing-stage-line li {
+  display: grid;
+  min-width: 4rem;
+  gap: 0.55rem;
+}
+
+.landing-stage-line span {
+  display: grid;
+  height: 3.25rem;
+  place-items: end center;
+  border-radius: 4px 4px 0 0;
+  background: var(--brand);
+  padding-bottom: 0.45rem;
+  color: var(--on-brand);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+}
+
+.landing-stage-line li:nth-child(2) span { height: 3.75rem; }
+.landing-stage-line li:nth-child(3) span { height: 4.2rem; }
+.landing-stage-line li:nth-child(4) span { height: 4.75rem; }
+.landing-stage-line li:nth-child(5) span { height: 5.25rem; }
+.landing-stage-line li:nth-child(6) span { height: 5.8rem; }
+.landing-stage-line li:nth-child(7) span { height: 6.2rem; }
+.landing-stage-line span.is-redline { height: 6.7rem; background: var(--gold); color: var(--on-gold); }
+
+.landing-stage-line strong {
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+.landing-price-card,
+.landing-waitlist,
+.landing-lead-form {
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 2rem;
+}
+
+.landing-lead-form {
+  background: var(--void);
+}
+
+.landing-footer-mark {
+  display: inline-grid;
+  height: 2.2rem;
+  width: 2.2rem;
+  place-items: center;
+  border-radius: 6px;
+  background: var(--on-brand);
+  padding: 0.2rem;
+}
+
+.revv-demo {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: var(--void);
+  color: var(--on-brand);
+}
+
+.revv-demo-media,
+.revv-demo-screen,
+.revv-demo-grid,
+.revv-demo-sweep {
+  position: absolute;
+  inset: 0;
+}
+
+.revv-demo-screen {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 58% center;
+  opacity: 0;
+  transform: scale(1.04);
+  transition: opacity 500ms ease, transform 5.4s linear;
+}
+
+.revv-demo-screen.is-active {
+  opacity: 0.74;
+  transform: scale(1.095);
+}
+
+.revv-demo-grid {
+  opacity: 0.17;
+  background-image:
+    linear-gradient(rgba(139, 143, 255, 0.18) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(139, 143, 255, 0.18) 1px, transparent 1px);
+  background-size: 72px 72px;
+  mask-image: linear-gradient(90deg, transparent 20%, black 72%);
+}
+
+.revv-demo-sweep {
+  width: 22%;
+  left: 48%;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--brand-lit) 18%, transparent), transparent);
+  transform: skewX(-15deg) translateX(-220%);
+  animation: revv-demo-sweep 5.5s ease-in-out infinite;
+}
+
+.revv-demo-readout {
+  position: absolute;
+  z-index: 25;
+  top: 31%;
+  right: clamp(1.5rem, 5vw, 5.5rem);
+  width: min(26rem, 31vw);
+  border-left: 2px solid var(--brand-lit);
+  background: rgba(15, 17, 23, 0.9);
+  padding: 1.2rem 1.25rem;
+  backdrop-filter: blur(7px);
+}
+
+.revv-demo-eyebrow {
+  color: var(--brand-lit);
+  font-size: 0.66rem;
+  font-weight: 750;
+  letter-spacing: 0.13em;
+}
+
+.revv-demo-title {
+  margin-top: 0.65rem;
+  font-family: var(--font-display);
+  font-size: clamp(1.35rem, 2.3vw, 2.35rem);
+  font-weight: 650;
+  line-height: 1;
+}
+
+.revv-demo-detail {
+  margin-top: 0.75rem;
+  color: rgba(255, 255, 255, 0.68);
+  font-size: 0.78rem;
+  line-height: 1.55;
+}
+
+.revv-demo-metric {
+  margin-top: 1rem;
+  color: var(--brand-lit);
+  font-family: var(--font-mono);
+  font-size: clamp(1.35rem, 2.7vw, 2.6rem);
+  font-weight: 750;
+  line-height: 1;
+}
+
+.revv-demo-metric.is-critical {
+  color: var(--crit);
+}
+
+.revv-demo-metric.is-money {
+  color: var(--gold-lit);
+}
+
+.revv-demo-controls {
+  position: absolute;
+  z-index: 25;
+  right: clamp(1.25rem, 3vw, 3rem);
+  bottom: 1.2rem;
+  width: min(25rem, 32vw);
+}
+
+.revv-demo-progress {
+  height: 2px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.revv-demo-progress span {
+  display: block;
+  height: 100%;
+  background: var(--brand-lit);
+  transition: width 80ms linear;
+}
+
+.revv-demo-control-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.55rem;
+  margin-top: 0.55rem;
+}
+
+.revv-demo-time {
+  margin-right: auto;
+  color: rgba(255, 255, 255, 0.6);
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+}
+
+.revv-demo-control,
+.revv-demo-icon-control {
+  display: inline-flex;
+  min-height: 2.25rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 6px;
+  background: rgba(15, 17, 23, 0.74);
+  color: var(--on-brand);
+}
+
+.revv-demo-control {
+  gap: 0.4rem;
+  padding: 0 0.75rem;
+  font-size: 0.68rem;
+  font-weight: 650;
+}
+
+.revv-demo-icon-control {
+  width: 2.25rem;
+}
+
+.revv-demo-control:hover,
+.revv-demo-icon-control:hover {
+  border-color: var(--brand-lit);
+}
+
+@keyframes revv-demo-sweep {
+  0%, 18% { transform: skewX(-15deg) translateX(-220%); opacity: 0; }
+  48% { opacity: 1; }
+  82%, 100% { transform: skewX(-15deg) translateX(420%); opacity: 0; }
+}
+
+@media (max-width: 1023px) {
+  .landing-hero-content {
+    padding-inline: 2rem;
+  }
+
+  .landing-title {
+    max-width: 11ch;
+    font-size: clamp(2.65rem, 7vw, 4.8rem);
+  }
+
+  .landing-hero-content > div {
+    width: 56%;
+  }
+
+  .revv-demo-readout {
+    top: auto;
+    right: 1.5rem;
+    bottom: 6.25rem;
+    width: min(23rem, 42vw);
+  }
+
+  .revv-demo-controls {
+    width: min(22rem, 42vw);
+  }
+
+  .landing-value-rail {
+    width: min(34rem, 54vw);
+  }
+}
+
+@media (max-width: 767px) {
+  .landing-hero {
+    height: min(760px, 90svh);
+    min-height: 680px;
+  }
+
+  .landing-nav {
+    padding: 0.85rem 0.8rem;
+  }
+
+  .landing-wordmark {
+    height: 2.25rem;
+    padding: 0.38rem 0.5rem;
+  }
+
+  .landing-wordmark img {
+    height: 1.25rem;
+  }
+
+  .landing-hero-content {
+    height: calc(100% - 6rem);
+    align-items: flex-start;
+    padding: 3.25rem 1.25rem 11rem;
+  }
+
+  .landing-hero-content > div {
+    width: 100%;
+  }
+
+  .landing-title {
+    max-width: 12ch;
+    font-size: clamp(2.45rem, 11vw, 3.7rem);
+  }
+
+  .landing-hero-copy {
+    max-width: 31rem;
+    font-size: 0.9rem;
+    line-height: 1.55;
+  }
+
+  .landing-value-rail {
+    display: none;
+  }
+
+  .landing-trust-line {
+    display: none;
+  }
+
+  .landing-section {
+    padding: 4.5rem 1.25rem;
+  }
+
+  .landing-operations-band {
+    padding: 4rem 1.25rem;
+  }
+
+  .landing-price-card,
+  .landing-waitlist,
+  .landing-lead-form {
+    padding: 1.25rem;
+  }
+
+  .revv-demo-screen {
+    object-position: 63% center;
+  }
+
+  .revv-demo-readout {
+    right: 1rem;
+    bottom: 5.25rem;
+    width: calc(100% - 2rem);
+    padding: 0.85rem 1rem;
+  }
+
+  .revv-demo-title {
+    font-size: 1.2rem;
+  }
+
+  .revv-demo-detail {
+    display: none;
+  }
+
+  .revv-demo-metric {
+    margin-top: 0.6rem;
+    font-size: 1.25rem;
+  }
+
+  .revv-demo-controls {
+    right: 1rem;
+    bottom: 0.85rem;
+    width: calc(100% - 2rem);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .revv-demo-screen,
+  .revv-demo-progress span {
+    transition: none;
+  }
+
+  .revv-demo-sweep {
+    display: none;
+  }
+}

@@ -1,64 +1,76 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   ArrowRight,
+  Check,
   CheckCircle,
-  ClipboardList,
-  Clock,
+  ClipboardCheck,
+  Clock3,
   Download,
-  MessageSquare,
-  Shield,
+  FileSearch,
+  MessageSquareText,
+  Play,
+  ShieldCheck,
   Smartphone,
   TrendingUp,
-  Users,
-  Wrench,
+  UsersRound,
 } from 'lucide-react'
 import LeadCaptureForm from '../components/LeadCaptureForm'
+import RevvDemo from '../components/RevvDemo'
+import { Logo } from '../components/ui'
 
 const features = [
   {
-    icon: ClipboardList,
-    title: 'Job Tracking',
-    description:
-      'Every RO from intake to delivery. Real-time status, tech assignments, photo uploads.',
+    icon: ClipboardCheck,
+    title: 'One live repair order',
+    description: 'Intake, production, parts, proof, approvals, and payment stay attached to the same job.',
   },
   {
     icon: TrendingUp,
-    title: 'Profitability Dashboard',
-    description:
-      'Revenue, costs, and margins per job. Stop guessing which work makes money.',
+    title: 'Profit signals before close',
+    description: 'See labor gaps, supplement opportunities, job cost, and margin while there is still time to act.',
   },
   {
-    icon: Users,
-    title: 'Customer Updates',
-    description:
-      'Private tracking and payment links for every customer. No account setup required.',
+    icon: MessageSquareText,
+    title: 'Customer communication that runs',
+    description: 'Automatic SMS and email updates keep customers informed without tying up the front desk.',
   },
   {
-    icon: Shield,
-    title: 'Insurance Workflows',
-    description:
-      'Claim status, SIU holds, total loss flags. Built for shops that live in insurance.',
+    icon: FileSearch,
+    title: 'Insurer-ready proof',
+    description: 'Photos, inspections, diagnostics, approvals, and estimate records become one defensible packet.',
   },
   {
-    icon: Clock,
-    title: 'Turnaround Estimator',
-    description: "Predicted delivery dates based on your shop's own history.",
+    icon: Clock3,
+    title: 'Production pressure in view',
+    description: 'Capacity, due dates, blockers, and technician work stay visible across the whole floor.',
   },
   {
-    icon: MessageSquare,
-    title: 'Auto SMS',
-    description: 'Status-change texts fire automatically. Powered by Twilio.',
+    icon: ShieldCheck,
+    title: 'Collision workflows built in',
+    description: 'Total loss, SIU, ADAS, supplements, storage, and payment gates work like collision shops do.',
   },
+]
+
+const planFeatures = [
+  'Unlimited repair orders',
+  'Estimate import and supplement review',
+  'Customer SMS and email notifications',
+  'Proof packets and approval portals',
+  'Job costing and profitability signals',
+  'Owner, admin, estimator, and technician roles',
+  'Parts, inventory, schedule, and time clock',
+  'Direct onboarding support',
 ]
 
 export default function Landing() {
   const [email, setEmail] = useState('')
   const [submitted, setSubmitted] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const demoRef = useRef(null)
 
-  async function handleWaitlist(e) {
-    e.preventDefault()
+  async function handleWaitlist(event) {
+    event.preventDefault()
     if (!email.trim()) return
     setSubmitting(true)
     try {
@@ -68,342 +80,258 @@ export default function Landing() {
         body: JSON.stringify({ email: email.trim(), source: 'landing-download' }),
       })
     } catch {
-      // silent — still show confirmation even if endpoint isn't live yet
+      // The local confirmation remains useful if the waitlist service is temporarily unavailable.
     }
     setSubmitted(true)
     setSubmitting(false)
   }
 
+  function playDemo() {
+    demoRef.current?.playWithSound()
+    document.getElementById('revv-demo')?.focus?.({ preventScroll: true })
+  }
 
   return (
-    <div className="min-h-screen bg-[#0f1117] text-slate-100">
-      {/* ── Nav ─────────────────────────────────────────────────────────── */}
-      <header className="px-6 py-5 md:px-16 lg:px-24">
-        <nav className="flex items-center justify-between">
-          <Link to="/" className="text-2xl font-extrabold tracking-wide text-indigo-400">
-            REVV
-          </Link>
-          <div className="hidden items-center gap-8 md:flex">
-            <a href="#features" className="text-sm text-slate-400 transition hover:text-white">
-              Features
-            </a>
-            <a href="#pricing" className="text-sm text-slate-400 transition hover:text-white">
-              Pricing
-            </a>
-            <a href="#download" className="text-sm text-slate-400 transition hover:text-white">
-              Download
-            </a>
-            <a href="#contact" className="text-sm text-slate-400 transition hover:text-white">
-              Contact
-            </a>
-            <Link to="/login" className="text-sm text-slate-400 transition hover:text-white">
-              Sign In
-            </Link>
-            <Link
-              to="/shop-register"
-              className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500"
-            >
-              Get Started <ArrowRight size={16} />
-            </Link>
-          </div>
-          <div className="flex items-center gap-4 md:hidden">
-            <a href="#download" className="text-sm text-slate-300 transition hover:text-white">
-              Download
-            </a>
-            <Link to="/login" className="text-sm text-slate-300 transition hover:text-white">
-              Sign In
-            </Link>
-            <Link
-              to="/shop-register"
-              className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-indigo-500"
-            >
-              Get Started <ArrowRight size={14} />
-            </Link>
-          </div>
-        </nav>
-      </header>
+    <div className="landing-page min-h-screen bg-void text-ink">
+      <section className="landing-hero" aria-labelledby="landing-title">
+        <RevvDemo ref={demoRef} className="absolute inset-0" />
+        <div className="landing-hero-shade" aria-hidden="true" />
 
-      {/* ── Hero ────────────────────────────────────────────────────────── */}
-      <section className="px-6 pb-16 pt-8 md:px-16 md:pb-24 lg:px-24">
-        <div className="mx-auto max-w-6xl rounded-3xl border border-[#2a2d3e] bg-gradient-to-b from-indigo-500/10 via-[#0f1117] to-[#0f1117] p-8 shadow-[0_0_140px_-50px_rgba(99,102,241,0.9)] md:p-14">
-          <div className="mx-auto max-w-3xl text-center">
-            <h1 className="text-4xl font-bold leading-tight text-white md:text-6xl">
-              Modern Shop Management. Built for Real Shops.
-            </h1>
-            <p className="mt-6 text-base text-slate-300 md:text-xl">
-              Track every job from intake to pickup. Automate customer updates. Know your numbers.
+        <header className="landing-nav">
+          <nav className="mx-auto flex w-full max-w-7xl items-center justify-between gap-6" aria-label="Main navigation">
+            <Link to="/" className="landing-wordmark" aria-label="REVV home">
+              <Logo variant="wordmark" alt="REVV wordmark" className="h-7 w-auto" />
+            </Link>
+            <div className="hidden items-center gap-7 lg:flex">
+              <a href="#features" className="landing-nav-link">Platform</a>
+              <a href="#pricing" className="landing-nav-link">Pricing</a>
+              <a href="#contact" className="landing-nav-link">Talk to REVV</a>
+            </div>
+            <div className="flex items-center gap-2 sm:gap-3">
+              <Link to="/login" className="revv-btn revv-btn-secondary border-white/20 bg-black/20 text-white hover:border-white/50 hover:text-white">
+                Sign in
+              </Link>
+              <Link to="/shop-register" className="revv-btn revv-btn-primary min-h-10 px-4">
+                Start free <ArrowRight size={15} />
+              </Link>
+            </div>
+          </nav>
+        </header>
+
+        <div className="landing-hero-content">
+          <div className="max-w-3xl">
+            <p className="landing-kicker">
+              <span className="landing-kicker-signal" aria-hidden="true" />
+              The operating system for collision shops
             </p>
-            <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
-              <Link
-                to="/shop-register"
-                className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-indigo-500"
-              >
-                Start Free <ArrowRight size={16} />
+            <h1 id="landing-title" className="landing-title">
+              Collision shop operations, in one live system.
+            </h1>
+            <p className="landing-hero-copy">
+              REVV connects every repair, handoff, customer update, proof file, and dollar so your team can move faster without losing control.
+            </p>
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+              <Link to="/shop-register" className="revv-btn revv-btn-primary min-h-12 px-5 text-sm">
+                Start free <ArrowRight size={17} />
               </Link>
-              <a
-                href="#download"
-                className="inline-flex items-center gap-2 rounded-lg border border-[#2a2d3e] bg-[#1a1d2e] px-6 py-3 text-sm font-semibold text-slate-200 transition hover:border-indigo-500 hover:text-white"
-              >
-                <Download size={15} /> Get the App
-              </a>
+              <button type="button" onClick={playDemo} className="landing-demo-cta">
+                <Play size={16} fill="currentColor" />
+                Watch REVV run <span aria-hidden="true">·</span> <span className="font-mono">0:30</span>
+              </button>
+            </div>
+            <p className="landing-trust-line mt-5 text-xs font-medium uppercase tracking-[0.12em] text-white/60">
+              First photo <span className="mx-2 text-brand-lit">→</span> final payment <span className="mx-2 text-brand-lit">→</span> one source of truth
+            </p>
+          </div>
+        </div>
+
+        <div className="landing-value-rail" aria-label="REVV operating coverage">
+          <div><span>01</span><strong>Intake</strong></div>
+          <div><span>02</span><strong>Production</strong></div>
+          <div><span>03</span><strong>Proof</strong></div>
+          <div><span>04</span><strong>Profit</strong></div>
+        </div>
+      </section>
+
+      <main>
+        <section className="border-b border-line bg-panel px-5 py-7 sm:px-8 lg:px-12">
+          <div className="mx-auto grid max-w-7xl gap-6 md:grid-cols-3">
+            <div className="landing-proof-stat">
+              <p className="font-mono text-2xl font-semibold text-ink">8 stages</p>
+              <p>One production line from intake through delivery.</p>
+            </div>
+            <div className="landing-proof-stat">
+              <p className="font-mono text-2xl font-semibold text-gold">Profit visible</p>
+              <p>Money signals appear while the repair is still active.</p>
+            </div>
+            <div className="landing-proof-stat">
+              <p className="font-mono text-2xl font-semibold text-ink">Every screen</p>
+              <p>Owner, estimator, technician, and customer stay in sync.</p>
             </div>
           </div>
+        </section>
 
-          <div className="mx-auto mt-12 max-w-2xl rounded-2xl border border-[#2a2d3e] bg-[#1a1d2e] p-5 text-left shadow-2xl">
-            <p className="text-xs uppercase tracking-widest text-slate-400">Live RO Snapshot</p>
-            <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="text-lg font-semibold text-white">2019 Toyota Camry</p>
-                <p className="text-sm text-slate-400">RO #4821 · Front bumper + paint blend</p>
-              </div>
-              <span className="inline-flex items-center gap-2 self-start rounded-full border border-indigo-500/30 bg-indigo-500/15 px-3 py-1 text-xs font-semibold text-indigo-300">
-                <Wrench size={14} />
-                In Progress
-              </span>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ── Stats bar ───────────────────────────────────────────────────── */}
-      <section className="border-y border-[#2a2d3e] bg-[#1a1d2e] px-6 py-8 md:px-16 lg:px-24">
-        <div className="mx-auto grid max-w-6xl gap-6 text-center md:grid-cols-3 md:text-left">
-          <div>
-            <p className="text-2xl font-semibold text-indigo-400">500+</p>
-            <p className="mt-1 text-sm text-slate-300">Repair Orders Tracked</p>
-          </div>
-          <div>
-            <p className="text-2xl font-semibold text-indigo-400">3</p>
-            <p className="mt-1 text-sm text-slate-300">Active Shops</p>
-          </div>
-          <div>
-            <p className="text-2xl font-semibold text-indigo-400">Collision · Mechanical · PDR</p>
-            <p className="mt-1 text-sm text-slate-300">Built for mixed-service operations</p>
-          </div>
-        </div>
-      </section>
-
-      {/* ── Features ────────────────────────────────────────────────────── */}
-      <section id="features" className="px-6 py-16 md:px-16 md:py-24 lg:px-24">
-        <div className="mx-auto max-w-6xl">
-          <h2 className="text-3xl font-bold text-white md:text-4xl">Built for day-to-day shop reality</h2>
-          <p className="mt-4 max-w-2xl text-slate-400">
-            Keep production moving, customers informed, and profit visible from one control center.
-          </p>
-          <div className="mt-10 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {features.map(({ icon: Icon, title, description }) => (
-              <article
-                key={title}
-                className="rounded-xl border border-[#2a2d3e] bg-[#1a1d2e] p-6 transition hover:border-indigo-500/60"
-              >
-                <div className="mb-4 inline-flex rounded-lg bg-indigo-500/15 p-2 text-indigo-400">
-                  <Icon size={20} />
-                </div>
-                <h3 className="text-lg font-semibold text-white">{title}</h3>
-                <p className="mt-2 text-sm text-slate-400">{description}</p>
-              </article>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── Pricing ─────────────────────────────────────────────────────── */}
-      <section id="pricing" className="px-6 pb-20 md:px-16 lg:px-24">
-        <div className="mx-auto max-w-6xl">
-          <h2 className="text-3xl font-bold text-white md:text-4xl">Simple, honest pricing</h2>
-          <p className="mt-4 text-slate-400">Try it free. No credit card required.</p>
-          <div className="mt-10 grid gap-6 md:grid-cols-2">
-            {/* Left: Trial card */}
-            <article className="rounded-xl border border-[#2a2d3e] bg-[#1a1d2e] p-8 flex flex-col justify-between">
-              <div>
-                <h3 className="text-xl font-semibold text-white">14-Day Free Trial</h3>
-                <p className="mt-2 text-3xl font-bold text-indigo-400">$0</p>
-                <ul className="mt-6 space-y-3">
-                  {[
-                    'No credit card required',
-                    'Full access during trial',
-                    'Cancel anytime',
-                  ].map((item) => (
-                    <li key={item} className="flex items-center gap-3 text-sm text-slate-300">
-                      <CheckCircle size={16} className="shrink-0 text-indigo-400" />
-                      {item}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <Link
-                to="/shop-register"
-                className="mt-8 inline-flex w-full justify-center rounded-lg border border-indigo-500 px-4 py-3 text-sm font-semibold text-indigo-300 transition hover:bg-indigo-500/10"
-              >
-                Start Free Trial
-              </Link>
-            </article>
-
-            {/* Right: Pro plan card */}
-            <article className="relative rounded-xl border border-indigo-500 bg-[#1a1d2e] p-8 shadow-[0_0_80px_-45px_rgba(99,102,241,0.95)] flex flex-col justify-between">
-              <span className="absolute -top-3 left-6 rounded-full bg-indigo-600 px-3 py-1 text-xs font-semibold text-white">
-                Pro Plan
-              </span>
-              <div>
-                <h3 className="text-xl font-semibold text-white">Everything You Need</h3>
-                <p className="mt-2 text-3xl font-bold text-indigo-400">$199<span className="text-lg font-normal text-slate-400">/mo</span></p>
-                <ul className="mt-6 space-y-3">
-                  {[
-                    'Unlimited repair orders',
-                    'SMS notifications to customers',
-                    'Insurance estimate tools + OCR import',
-                    'Job costing & profitability dashboard',
-                    'Multi-user (owner, admin, tech roles)',
-                    'Customer approval portal',
-                    'Parts & inventory tracking',
-                    'Scheduling & time clock',
-                    'Dedicated support',
-                  ].map((item) => (
-                    <li key={item} className="flex items-center gap-3 text-sm text-slate-300">
-                      <CheckCircle size={16} className="shrink-0 text-indigo-400" />
-                      {item}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <Link
-                to="/shop-register"
-                className="mt-8 inline-flex w-full justify-center rounded-lg bg-indigo-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-indigo-500"
-              >
-                Start Free Trial
-              </Link>
-            </article>
-          </div>
-          <p className="mt-8 text-sm text-slate-400">
-            Multi-location or enterprise?{' '}
-            <a href="mailto:revvshopapp@gmail.com" className="text-indigo-400 hover:underline">
-              Contact us at revvshopapp@gmail.com
-            </a>
-          </p>
-        </div>
-      </section>
-
-      {/* ── Download / Early Access ──────────────────────────────────────── */}
-      <section id="download" className="border-t border-[#2a2d3e] bg-[#1a1d2e] px-6 py-20 md:px-16 lg:px-24">
-        <div className="mx-auto max-w-6xl">
-          <div className="grid gap-12 md:grid-cols-2 md:items-center">
-            {/* Left: copy */}
-            <div>
-              <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-indigo-500/30 bg-indigo-500/10 px-3 py-1 text-xs font-semibold text-indigo-300">
-                <Smartphone size={13} /> Mobile App — Coming Soon
-              </div>
-              <h2 className="text-3xl font-bold text-white md:text-4xl">
-                REVV in your pocket.
-              </h2>
-              <p className="mt-4 text-slate-400">
-                A native mobile app for techs and managers is on the way — check RO status, upload photos, and approve work orders from the floor without touching a desktop.
+        <section id="features" className="landing-section">
+          <div className="mx-auto max-w-7xl">
+            <div className="max-w-3xl">
+              <p className="landing-section-kicker">Built around the repair</p>
+              <h2 className="landing-section-title">The floor moves. The system keeps up.</h2>
+              <p className="landing-section-copy">
+                REVV replaces disconnected notes, tabs, texts, and handoffs with one operational record your shop can trust.
               </p>
-              <ul className="mt-6 space-y-3">
-                {[
-                  'Photo uploads from the bay',
-                  'Tech job assignments & clock-in',
-                  'Real-time RO status updates',
-                  'Customer approval on the go',
-                ].map((item) => (
-                  <li key={item} className="flex items-center gap-3 text-sm text-slate-300">
-                    <CheckCircle size={16} className="shrink-0 text-indigo-400" />
-                    {item}
+            </div>
+            <div className="mt-12 grid gap-px overflow-hidden rounded-instrument border border-line bg-line md:grid-cols-2 lg:grid-cols-3">
+              {features.map(({ icon: Icon, title, description }, index) => (
+                <article key={title} className="landing-feature bg-panel">
+                  <div className="flex items-center justify-between">
+                    <Icon size={21} className={index === 1 ? 'text-gold' : 'text-brand-lit'} />
+                    <span className="font-mono text-[11px] text-faint">0{index + 1}</span>
+                  </div>
+                  <h3>{title}</h3>
+                  <p>{description}</p>
+                </article>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="landing-operations-band">
+          <div className="mx-auto grid max-w-7xl gap-10 lg:grid-cols-[0.8fr_1.2fr] lg:items-center">
+            <div>
+              <p className="landing-section-kicker text-brand-lit">One accountable workflow</p>
+              <h2 className="landing-section-title text-white">No more wondering what changed while you were away.</h2>
+              <p className="mt-5 max-w-xl text-sm leading-7 text-white/65">
+                Owner activity, customer communication, insurer decisions, production movement, and money events stay attached to the RO and visible to the people who need them.
+              </p>
+            </div>
+            <ol className="landing-stage-line" aria-label="REVV repair stages">
+              {['Intake', 'Estimate', 'Approval', 'Parts', 'Repair', 'Paint', 'QC', 'Delivery'].map((stage, index) => (
+                <li key={stage}>
+                  <span className={index === 7 ? 'is-redline' : ''}>{index + 1}</span>
+                  <strong>{stage}</strong>
+                </li>
+              ))}
+            </ol>
+          </div>
+        </section>
+
+        <section id="pricing" className="landing-section bg-panel-2">
+          <div className="mx-auto max-w-7xl">
+            <div className="max-w-3xl">
+              <p className="landing-section-kicker">Simple pricing</p>
+              <h2 className="landing-section-title">Start with the full operating system.</h2>
+              <p className="landing-section-copy">No stripped-down trial and no credit card required.</p>
+            </div>
+            <div className="mt-10 grid gap-5 lg:grid-cols-[0.78fr_1.22fr]">
+              <article className="landing-price-card">
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted">14-day trial</p>
+                <p className="mt-4 font-mono text-4xl font-semibold text-ink">$0</p>
+                <p className="mt-3 text-sm text-muted">Full product access. No credit card. No setup fee.</p>
+                <Link to="/shop-register" className="revv-btn revv-btn-secondary mt-8 min-h-11 w-full text-sm">
+                  Start the trial
+                </Link>
+              </article>
+              <article className="landing-price-card border-brand">
+                <div className="grid gap-8 md:grid-cols-[0.65fr_1.35fr]">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-brand-lit">REVV Pro</p>
+                    <p className="mt-4 font-mono text-4xl font-semibold text-gold">$199<span className="text-base font-medium text-muted">/mo</span></p>
+                    <p className="mt-3 text-sm text-muted">One shop. Your whole team. Every active RO.</p>
+                    <Link to="/shop-register" className="revv-btn revv-btn-primary mt-8 min-h-11 w-full text-sm">
+                      Start free <ArrowRight size={15} />
+                    </Link>
+                  </div>
+                  <ul className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
+                    {planFeatures.map((item) => (
+                      <li key={item} className="flex items-start gap-2 text-sm text-muted">
+                        <Check size={15} className="mt-0.5 shrink-0 text-good" />
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </article>
+            </div>
+            <p className="mt-6 text-sm text-muted">
+              Multi-location or enterprise? <a href="mailto:revvshopapp@gmail.com" className="font-semibold text-brand hover:text-brand-lit">Talk to REVV.</a>
+            </p>
+          </div>
+        </section>
+
+        <section id="download" className="landing-section">
+          <div className="mx-auto grid max-w-7xl gap-12 lg:grid-cols-2 lg:items-center">
+            <div>
+              <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-brand-lit">
+                <Smartphone size={15} /> Browser now · native app next
+              </div>
+              <h2 className="landing-section-title mt-5">Run REVV wherever the repair happens.</h2>
+              <p className="landing-section-copy">
+                REVV already adapts across desktop, tablet, and phone in the browser. The native floor app is next.
+              </p>
+              <ul className="mt-7 grid gap-3 sm:grid-cols-2">
+                {['Photo proof from the bay', 'Technician assignments', 'Live RO status', 'Customer approvals'].map((item) => (
+                  <li key={item} className="flex items-center gap-2 text-sm text-muted">
+                    <CheckCircle size={16} className="text-good" /> {item}
                   </li>
                 ))}
               </ul>
-              <p className="mt-6 text-sm text-slate-500">
-                In the meantime, REVV runs on any device in your browser at{' '}
-                <a href="https://revvshop.app" className="text-indigo-400 hover:underline">
-                  revvshop.app
-                </a>
-                .
-              </p>
             </div>
-
-            {/* Right: waitlist form */}
-            <div className="rounded-2xl border border-[#2a2d3e] bg-[#0f1117] p-8">
-              <div className="mb-1 inline-flex items-center gap-2 text-indigo-400">
-                <Download size={18} />
-                <span className="text-base font-semibold text-white">Get Early Access</span>
-              </div>
-              <p className="mt-2 text-sm text-slate-400">
-                Be first to know when the mobile app drops. We'll also send you a free extended trial.
-              </p>
-
+            <div className="landing-waitlist">
+              <Download size={20} className="text-brand-lit" />
+              <h3 className="mt-4 font-display text-xl font-semibold text-ink">Get native app early access</h3>
+              <p className="mt-2 text-sm text-muted">We will notify you when the REVV floor app is ready.</p>
               {submitted ? (
-                <div className="mt-6 flex items-center gap-3 rounded-xl border border-emerald-700/40 bg-emerald-950/40 p-4">
-                  <CheckCircle size={20} className="shrink-0 text-emerald-400" />
-                  <div>
-                    <p className="text-sm font-semibold text-emerald-300">You're on the list.</p>
-                    <p className="text-xs text-slate-400 mt-0.5">We'll reach out when the app is ready.</p>
-                  </div>
+                <div className="mt-6 flex items-start gap-3 border-l-2 border-good bg-panel-2 p-4" role="status">
+                  <CheckCircle size={19} className="mt-0.5 shrink-0 text-good" />
+                  <div><p className="font-semibold text-ink">You are on the list.</p><p className="mt-1 text-xs text-muted">We will reach out when it is ready.</p></div>
                 </div>
               ) : (
-                <form onSubmit={handleWaitlist} className="mt-6 space-y-4">
+                <form onSubmit={handleWaitlist} className="mt-6 flex flex-col gap-3 sm:flex-row">
+                  <label className="sr-only" htmlFor="landing-waitlist-email">Work email</label>
                   <input
+                    id="landing-waitlist-email"
                     type="email"
                     required
                     placeholder="shop@example.com"
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="w-full rounded-lg border border-[#2a2d3e] bg-[#1a1d2e] px-4 py-3 text-sm text-white placeholder-slate-500 outline-none focus:border-indigo-500 transition"
+                    onChange={(event) => setEmail(event.target.value)}
+                    className="min-h-11 min-w-0 flex-1 rounded-instrument border border-line-2 bg-void px-4 text-sm text-ink outline-none transition focus:border-brand"
                   />
-                  <button
-                    type="submit"
-                    disabled={submitting}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-60"
-                  >
-                    <Download size={15} />
-                    {submitting ? 'Saving...' : 'Notify Me When It\'s Ready'}
+                  <button type="submit" disabled={submitting} className="revv-btn revv-btn-primary min-h-11 px-5 text-sm">
+                    {submitting ? 'Saving…' : 'Notify me'}
                   </button>
-                  <p className="text-center text-xs text-slate-500">No spam. Unsubscribe any time.</p>
                 </form>
               )}
-
-              <div className="mt-6 border-t border-[#2a2d3e] pt-5">
-                <p className="text-xs text-slate-500 mb-3">Already using REVV on web?</p>
-                <Link
-                  to="/shop-register"
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-[#2a2d3e] px-4 py-2.5 text-sm font-medium text-slate-300 transition hover:border-indigo-500 hover:text-white"
-                >
-                  Start Free in Browser <ArrowRight size={14} />
-                </Link>
-              </div>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      {/* ── Contact / Lead Capture ────────────────────────────────────── */}
-      <section id="contact" className="px-6 py-20 md:px-16 lg:px-24">
-        <div className="mx-auto max-w-2xl">
-          <h2 className="text-3xl font-bold text-white md:text-4xl text-center">
-            Ready to modernize your shop?
-          </h2>
-          <p className="mt-4 text-center text-slate-400">
-            Tell us about your operation and we'll show you how REVV fits in.
-          </p>
-          <div className="mt-10 rounded-2xl border border-[#2a2d3e] bg-[#0f1117] p-8">
-            <LeadCaptureForm />
+        <section id="contact" className="landing-section border-t border-line bg-panel">
+          <div className="mx-auto grid max-w-6xl gap-10 lg:grid-cols-[0.8fr_1.2fr] lg:items-start">
+            <div>
+              <p className="landing-section-kicker">See your shop in REVV</p>
+              <h2 className="landing-section-title">Bring one real workflow. We will show you the difference.</h2>
+              <p className="landing-section-copy">Tell us where your operation loses time or money today.</p>
+              <div className="mt-7 flex items-center gap-3 text-sm text-muted"><UsersRound size={18} className="text-brand-lit" /> Built with working collision shops.</div>
+            </div>
+            <div className="landing-lead-form"><LeadCaptureForm /></div>
           </div>
-        </div>
-      </section>
+        </section>
+      </main>
 
-      {/* ── Footer ──────────────────────────────────────────────────────── */}
-      <footer className="border-t border-[#2a2d3e] px-6 py-8 md:px-16 lg:px-24">
-        <div className="mx-auto flex max-w-6xl flex-col gap-3 text-sm text-slate-400 md:flex-row md:items-center md:justify-between">
-          <p>REVV © 2026 Zordon Technologies LLC</p>
-          <div className="flex items-center gap-4 flex-wrap">
-            <a href="#features" className="transition hover:text-white">Features</a>
-            <a href="#pricing" className="transition hover:text-white">Pricing</a>
-            <a href="#download" className="transition hover:text-white">Download</a>
-            <Link to="/terms-and-conditions" className="transition hover:text-white">Terms</Link>
-            <Link to="/privacy" className="transition hover:text-white">Privacy</Link>
-            <Link to="/login" className="transition hover:text-white">Sign In</Link>
-            <Link to="/shop-register" className="transition hover:text-white">Get Started</Link>
-            <a href="mailto:revvshopapp@gmail.com" className="transition hover:text-white">
-              revvshopapp@gmail.com
-            </a>
+      <footer className="border-t border-line bg-void px-5 py-8 sm:px-8 lg:px-12">
+        <div className="mx-auto flex max-w-7xl flex-col gap-5 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-3">
+            <span className="landing-footer-mark"><Logo variant="mark" alt="REVV mark" className="h-7 w-7" /></span>
+            <p className="text-xs text-muted">REVV © 2026 Zordon Technologies LLC</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-muted">
+            <a href="#features" className="hover:text-ink">Platform</a>
+            <a href="#pricing" className="hover:text-ink">Pricing</a>
+            <Link to="/terms-and-conditions" className="hover:text-ink">Terms</Link>
+            <Link to="/privacy" className="hover:text-ink">Privacy</Link>
+            <Link to="/login" className="hover:text-ink">Sign in</Link>
+            <a href="mailto:revvshopapp@gmail.com" className="hover:text-ink">revvshopapp@gmail.com</a>
           </div>
         </div>
       </footer>
