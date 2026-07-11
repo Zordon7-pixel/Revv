@@ -56,6 +56,46 @@ const ro = await dbGet('SELECT * FROM ros WHERE id = $1 AND shop_id = $2', [id, 
 await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 ```
 
+## Dispatch Log — 2026-07-11 Product Tour Embedded Voice
+
+**Time:** 2026-07-11 13:12 ET / 2026-07-11 17:12 UTC
+**Status:** READY FOR CLAUDE CODE QA — FEATURE BRANCH ONLY — NOT DEPLOYED
+
+**Scope**
+- Removed the public hero's "Watch the product tour" button and its imperative audio-start path. The concise hero now flows directly into the dedicated, unobstructed product-tour section.
+- Muxed the existing REVV voiceover into both responsive MP4s as an AAC-LC mono audio track. The mobile H.264/AAC file remains 720x1280 and the desktop/tablet file remains 1280x720; both remain YUV420p, 30 fps, exactly 30 seconds, browser fast-start, and under 1.4 MB.
+- Removed the separate `<audio>` element, MP3 request, Web Audio oscillator score, voice ref, score ref, and imperative `playWithSound`/`replayMuted` API. The video element is now the single synchronized source for picture, voice, timing, captions, and progress.
+- Preserved muted autoplay because iOS/iPadOS and other browsers block automatic sound. The speaker control now lives only in the video's own control row: tapping it unmutes the embedded track without interrupting playback, tapping again mutes it, and the adjacent replay button restarts the video while preserving the selected sound state.
+- Browser verification at exact 390x844 phone and 1440x900 desktop confirms there is no hero tour button and no separate audio element; responsive MP4 selection is correct; muted autoplay advances at readyState 4; tapping sound changes the video from muted to unmuted while currentTime continues; and muting again also continues playback. Document width equals viewport width exactly.
+- Added a binary regression guard that requires both MP4s to contain an MP4 `soun` audio handler. Existing tests continue to pin local sources, unobstructed media/readout/control ordering, reduced-motion behavior, and the four-section advertising layout.
+- No authenticated app UI, API, auth, workflow, money logic, backend, database, migration, provider, customer/shop/RO/payment data, or Miles Automotive data changed.
+
+**Files changed (8)**
+- `frontend/public/demo/revv-product-tour-mobile.mp4`
+- `frontend/public/demo/revv-product-tour-desktop.mp4`
+- `frontend/src/components/RevvDemo.jsx`
+- `frontend/src/components/__tests__/RevvDemo.test.jsx`
+- `frontend/src/pages/Landing.jsx`
+- `frontend/src/pages/__tests__/Landing.redesign.test.jsx`
+- `frontend/src/index.css`
+- `CLAUDE.md`
+
+**Verification**
+```
+cd frontend && npm run test:run -- src/components/__tests__/RevvDemo.test.jsx src/pages/__tests__/Landing.redesign.test.jsx  # 2 files, 4/4 passed
+node --test backend/src/__tests__/*.test.js <Node-native backend/test files>  # 130/130 passed
+cd backend && npm run test:run  # 3 files, 7/7 passed
+cd frontend && npm run test:run  # 38 files, 121/121 passed
+cd frontend && npm run build  # clean; pre-existing Sentry/chunk-size warnings only
+ffprobe mobile  # H.264 High 720x1280 yuv420p 30fps + AAC-LC 48kHz mono; 30.000s; 1,318,425 bytes
+ffprobe desktop  # H.264 High 1280x720 yuv420p 30fps + AAC-LC 48kHz mono; 30.000s; 1,171,481 bytes
+MP4 atom check  # moov at byte 36 before mdat; fast-start confirmed for both files
+audio decode + volumedetect  # clean 30-second decode; mean -20.9 dB, max -3.8 dB
+Selenium exact viewport QA  # phone 390x844 + desktop 1440x900; no hero CTA; no separate audio; correct source; readyState 4; sound tap unmutes in-place and playback advances; second tap mutes; exact viewport widths
+screenshots  # /tmp/revv-embedded-audio-phone-playing.png, /tmp/revv-embedded-audio-desktop-playing.png
+rm -rf frontend/dist && git diff --check && git ls-files frontend/dist | wc -l  # 0
+```
+
 ## Dispatch Log — 2026-07-11 Unobstructed Landing Product Tour
 
 **Time:** 2026-07-11 10:55 ET / 2026-07-11 14:55 UTC

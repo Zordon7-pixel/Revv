@@ -18,7 +18,7 @@ describe('Landing redesign', () => {
     render(<MemoryRouter><Landing /></MemoryRouter>)
 
     expect(screen.getByRole('heading', { name: 'Run every repair. Protect every dollar.' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Watch the product tour/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Watch the product tour/ })).not.toBeInTheDocument()
     expect(screen.getAllByRole('link', { name: /Start free/i })[0]).toHaveAttribute('href', '/shop-register')
     expect(screen.getByText('One live repair order')).toBeInTheDocument()
     expect(screen.getByText('$199')).toBeInTheDocument()

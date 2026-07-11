@@ -635,27 +635,6 @@ textarea {
   line-height: 1.65;
 }
 
-.landing-demo-cta {
-  display: inline-flex;
-  min-height: 3rem;
-  align-items: center;
-  justify-content: center;
-  gap: 0.55rem;
-  border: 1px solid rgba(255, 255, 255, 0.28);
-  border-radius: 8px;
-  background: rgba(15, 17, 23, 0.52);
-  padding: 0 1.25rem;
-  color: var(--on-brand);
-  font-size: 0.875rem;
-  font-weight: 650;
-  transition: border-color 160ms ease, background-color 160ms ease;
-}
-
-.landing-demo-cta:hover {
-  border-color: var(--brand-lit);
-  background: rgba(15, 17, 23, 0.78);
-}
-
 .landing-demo-stage {
   scroll-margin-top: 0.75rem;
   border-bottom: 1px solid var(--line);
@@ -912,10 +891,6 @@ textarea {
     max-width: 25rem;
     font-size: 0.9rem;
     line-height: 1.5;
-  }
-
-  .landing-demo-cta {
-    width: min(100%, 21rem);
   }
 
   .landing-demo-stage {

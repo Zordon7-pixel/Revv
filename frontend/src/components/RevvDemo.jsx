@@ -1,12 +1,4 @@
-import {
-  forwardRef,
-  useCallback,
-  useEffect,
-  useImperativeHandle,
-  useMemo,
-  useRef,
-  useState,
-} from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { RotateCcw, Volume2, VolumeX } from 'lucide-react'
 
 const DURATION_MS = 30_000
@@ -64,95 +56,59 @@ function prefersReducedMotion() {
     && Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches)
 }
 
-function scheduleScore() {
-  const AudioContext = window.AudioContext || window.webkitAudioContext
-  if (!AudioContext) return null
-
-  const context = new AudioContext()
-  const master = context.createGain()
-  master.gain.setValueAtTime(0.0001, context.currentTime)
-  master.gain.exponentialRampToValueAtTime(0.12, context.currentTime + 0.25)
-  master.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 29.5)
-  master.connect(context.destination)
-
-  const cueTimes = [0, 5.5, 11, 17, 23.5]
-  cueTimes.forEach((offset, index) => {
-    const oscillator = context.createOscillator()
-    const gain = context.createGain()
-    const start = context.currentTime + offset
-    oscillator.type = index === 4 ? 'sine' : 'triangle'
-    oscillator.frequency.setValueAtTime([55, 65.41, 73.42, 82.41, 110][index], start)
-    oscillator.frequency.exponentialRampToValueAtTime([73.42, 82.41, 98, 110, 146.83][index], start + 4.4)
-    gain.gain.setValueAtTime(0.0001, start)
-    gain.gain.exponentialRampToValueAtTime(index === 3 ? 0.35 : 0.22, start + 0.08)
-    gain.gain.exponentialRampToValueAtTime(0.0001, start + 4.8)
-    oscillator.connect(gain)
-    gain.connect(master)
-    oscillator.start(start)
-    oscillator.stop(start + 4.9)
-  })
-
-  return context
-}
-
-const RevvDemo = forwardRef(function RevvDemo({ className = '' }, ref) {
+function RevvDemo({ className = '' }) {
   const [reducedMotion, setReducedMotion] = useState(prefersReducedMotion)
   const [elapsed, setElapsed] = useState(() => (prefersReducedMotion() ? DURATION_MS : 0))
   const [playing, setPlaying] = useState(() => !prefersReducedMotion())
   const [soundEnabled, setSoundEnabled] = useState(false)
   const videoRef = useRef(null)
-  const voiceRef = useRef(null)
-  const scoreRef = useRef(null)
-
-  const stopAudio = useCallback(() => {
-    if (voiceRef.current) {
-      voiceRef.current.pause()
-      voiceRef.current.currentTime = 0
-    }
-    if (scoreRef.current) {
-      scoreRef.current.close().catch(() => {})
-      scoreRef.current = null
-    }
-  }, [])
 
   const start = useCallback(({ sound = false } = {}) => {
-    stopAudio()
-    setSoundEnabled(sound)
+    const playWithSound = sound && !reducedMotion
+    setSoundEnabled(playWithSound)
     setElapsed(0)
     const video = videoRef.current
     let videoPlayback = null
     if (video) {
       video.pause()
       video.currentTime = 0
-      video.muted = true
+      video.muted = !playWithSound
       if (!reducedMotion) videoPlayback = video.play()
     }
     setPlaying(!reducedMotion)
 
-    let voicePlayback = null
-    if (sound) {
-      scoreRef.current = scheduleScore()
-      if (scoreRef.current?.state === 'suspended') {
-        scoreRef.current.resume().catch(() => {})
-      }
-      if (voiceRef.current) {
-        voiceRef.current.currentTime = 0
-        voicePlayback = voiceRef.current.play()
-      }
-    }
-
-    videoPlayback?.catch?.(() => setPlaying(false))
-    voicePlayback?.catch?.(() => setSoundEnabled(false))
+    videoPlayback?.catch?.(() => {
+      setPlaying(false)
+      setSoundEnabled(false)
+      if (video) video.muted = true
+    })
     if (reducedMotion) {
       setElapsed(DURATION_MS)
       setPlaying(false)
     }
-  }, [reducedMotion, stopAudio])
+  }, [reducedMotion])
 
-  useImperativeHandle(ref, () => ({
-    playWithSound: () => start({ sound: true }),
-    replayMuted: () => start({ sound: false }),
-  }), [start])
+  const toggleSound = useCallback(() => {
+    const video = videoRef.current
+    if (soundEnabled) {
+      setSoundEnabled(false)
+      if (video) video.muted = true
+      return
+    }
+    if (reducedMotion) return
+    setSoundEnabled(true)
+    if (video) {
+      video.muted = false
+      if (video.ended) video.currentTime = 0
+      if (video.paused) {
+        video.play().catch(() => {
+          video.muted = true
+          setSoundEnabled(false)
+          setPlaying(false)
+        })
+      }
+    }
+  }, [reducedMotion, soundEnabled])
 
   useEffect(() => {
     const query = window.matchMedia?.('(prefers-reduced-motion: reduce)')
@@ -165,19 +121,20 @@ const RevvDemo = forwardRef(function RevvDemo({ className = '' }, ref) {
       if (event.matches) {
         if (video) {
           video.pause()
+          video.muted = true
           if (Number.isFinite(video.duration)) video.currentTime = Math.max(0, video.duration - 0.05)
         }
-        stopAudio()
+        setSoundEnabled(false)
       } else if (video) {
         video.currentTime = 0
+        video.muted = true
+        setSoundEnabled(false)
         video.play().catch(() => setPlaying(false))
       }
     }
     query.addEventListener?.('change', handleChange)
     return () => query.removeEventListener?.('change', handleChange)
-  }, [stopAudio])
-
-  useEffect(() => () => stopAudio(), [stopAudio])
+  }, [])
 
   const beat = useMemo(
     () => BEATS.find((item) => elapsed >= item.start && elapsed < item.end) || BEATS.at(-1),
@@ -199,7 +156,7 @@ const RevvDemo = forwardRef(function RevvDemo({ className = '' }, ref) {
           ref={videoRef}
           className="revv-demo-video"
           autoPlay={!reducedMotion}
-          muted
+          muted={!soundEnabled}
           playsInline
           preload="auto"
           poster="/demo/revv-product-tour-poster.png"
@@ -237,28 +194,27 @@ const RevvDemo = forwardRef(function RevvDemo({ className = '' }, ref) {
           <button
             type="button"
             className="revv-demo-icon-control"
-            onClick={() => start({ sound: true })}
-            aria-label="Restart product tour with sound"
-            title="Restart with sound"
+            onClick={toggleSound}
+            aria-label={soundEnabled ? 'Mute product tour' : 'Turn product tour sound on'}
+            title={soundEnabled ? 'Mute' : 'Sound on'}
           >
             {soundEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
           </button>
           <button
             type="button"
             className="revv-demo-icon-control"
-            onClick={() => start({ sound: false })}
-            aria-label="Replay product tour muted"
-            title="Replay muted"
+            onClick={() => start({ sound: soundEnabled })}
+            aria-label="Replay product tour"
+            title="Replay"
           >
             <RotateCcw size={16} />
           </button>
         </div>
       </div>
 
-      <audio ref={voiceRef} src="/demo/revv-wow-tv-ad.mp3" preload="metadata" />
     </div>
   )
-})
+}
 
 export { BEATS, DURATION_MS }
 export default RevvDemo

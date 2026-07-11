@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render, screen } from '@testing-library/react'
-import { statSync } from 'node:fs'
+import { Buffer } from 'node:buffer'
+import { readFileSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
 import RevvDemo from '../RevvDemo'
 
@@ -26,8 +27,8 @@ describe('RevvDemo', () => {
 
     expect(screen.getByText('This RO is $1,450 short.')).toBeInTheDocument()
     expect(screen.getByText('-$1,450')).toHaveClass('is-critical')
-    expect(screen.getByRole('button', { name: 'Restart product tour with sound' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Replay product tour muted' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Turn product tour sound on' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Replay product tour' })).toBeInTheDocument()
 
     const video = container.querySelector('video.revv-demo-video')
     const media = video.closest('.revv-demo-media')
@@ -40,18 +41,20 @@ describe('RevvDemo', () => {
     expect(container.querySelector('.revv-demo-grid')).not.toBeInTheDocument()
     expect(container.querySelector('.revv-demo-sweep')).not.toBeInTheDocument()
 
-    const sources = [...container.querySelectorAll('video source, audio')]
+    const sources = [...container.querySelectorAll('video source')]
       .map((node) => node.getAttribute('src'))
       .filter(Boolean)
     expect(sources).toEqual([
       '/demo/revv-product-tour-mobile.mp4',
       '/demo/revv-product-tour-desktop.mp4',
-      '/demo/revv-wow-tv-ad.mp3',
     ])
     expect(sources.every((source) => source.startsWith('/demo/'))).toBe(true)
+    expect(container.querySelector('audio')).not.toBeInTheDocument()
 
     for (const source of sources) {
-      expect(statSync(resolve(process.cwd(), 'public', source.slice(1))).size, source).toBeGreaterThan(50_000)
+      const file = resolve(process.cwd(), 'public', source.slice(1))
+      expect(statSync(file).size, source).toBeGreaterThan(50_000)
+      expect(readFileSync(file).includes(Buffer.from('soun')), `${source} has an embedded audio track`).toBe(true)
     }
   })
 

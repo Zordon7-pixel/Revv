@@ -1,11 +1,9 @@
-import { useRef } from 'react'
 import { Link } from 'react-router-dom'
 import {
   ArrowRight,
   Check,
   ClipboardCheck,
   FileSearch,
-  Play,
   TrendingUp,
   UsersRound,
 } from 'lucide-react'
@@ -41,13 +39,6 @@ const planFeatures = [
 ]
 
 export default function Landing() {
-  const demoRef = useRef(null)
-
-  function playDemo() {
-    demoRef.current?.playWithSound()
-    document.getElementById('product-tour')?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
-  }
-
   return (
     <div className="landing-page min-h-screen bg-void text-ink">
       <section className="landing-hero" aria-labelledby="landing-title">
@@ -84,16 +75,12 @@ export default function Landing() {
             <p className="landing-hero-copy">
               One live system for the repair, the customer, the proof, and the profit.
             </p>
-            <button type="button" onClick={playDemo} className="landing-demo-cta mt-7">
-              <Play size={16} fill="currentColor" />
-              Watch the product tour <span aria-hidden="true">·</span> <span className="font-mono">0:30</span>
-            </button>
           </div>
         </div>
       </section>
 
       <section id="product-tour" className="landing-demo-stage" aria-label="REVV product tour">
-        <RevvDemo ref={demoRef} />
+        <RevvDemo />
       </section>
 
       <main>
