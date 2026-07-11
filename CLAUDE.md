@@ -58,7 +58,7 @@ await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 
 ## Dispatch Log — 2026-07-10 Multi-Photo Intake
 
-**Status:** CLAUDE CODE QA PASS — CLEAR FOR HERMES — NOT DEPLOYED
+**Status:** DEPLOYED + HEALTH VERIFIED — PHYSICAL IPAD PICKER SPOT CHECK PENDING
 
 **Requested behavior**
 - Pre-Dropoff Condition and every other existing photo/evidence upload surface must allow staff to select more than one file at a time.
@@ -113,6 +113,13 @@ git ls-files frontend/dist
 - Re-ran frontend 27 files / 73 tests, production build, photo tenant-scope 3/3, diff guard, and untracked-dist guard.
 - Confirmed no backend/schema/data file changed and the pre-existing untracked `SPEC-revv-redesign.md` remains untouched.
 - Physical iPad/Safari was unavailable. Native picker behavior and progress visibility remain an honest post-deploy physical-device spot check, not a claimed visual pass.
+
+**Deployment verification — 2026-07-10**
+- Hermes fast-forwarded exactly `f9ce285` + `f7bdb3c` from live base `acc1452` to `origin/main`; no force push, rebase, or unrelated commit.
+- `https://revvshop.app/api/health` and the Railway production health endpoint both returned HTTP 200 on exact commit `f7bdb3c91bddbe3cea0e9f8233f982e34951b11b`.
+- `./scripts/smoke-test.sh` returned 6/6 PASS plus the documented local `RESEND_API_KEY` warning; SPF passed.
+- `frontend/dist` remains untracked, and the only worktree entry is the pre-existing untracked `SPEC-revv-redesign.md`, which remains untouched.
+- Required physical validation: on iPad/Safari, select at least two files in Pre-Dropoff Condition, RO Photos, and Claim Documentation; verify all selected files appear after upload and progress remains visible.
 
 ## Dispatch Log — 2026-07-10 Landscape Overlay + Complete Estimate Import
 
