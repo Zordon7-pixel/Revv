@@ -10,6 +10,7 @@ export default function Invoice() {
   const [emailing, setEmailing] = useState(false)
   const [downloading, setDownloading] = useState(false)
   const [notice, setNotice] = useState('')
+  const [noticeType, setNoticeType] = useState('status')
 
   useEffect(() => {
     api.get(`/ros/${id}/invoice`)
@@ -18,14 +19,14 @@ export default function Invoice() {
   }, [id])
 
   if (error) return (
-    <div style={{ padding: '2rem', fontFamily: 'sans-serif', color: '#333' }}>
-      <p>{error}</p>
+    <div className="min-h-screen bg-void p-8 text-ink">
+      <p role="alert" className="rounded-instrument border border-crit/40 bg-crit/10 px-4 py-3 text-sm text-crit">{error}</p>
     </div>
   )
 
   if (!data) return (
-    <div style={{ padding: '2rem', fontFamily: 'sans-serif', color: '#333' }}>
-      <p>Loading invoice...</p>
+    <div className="min-h-screen bg-void p-8 text-muted">
+      <p role="status">Loading invoice...</p>
     </div>
   )
 
@@ -41,15 +42,18 @@ export default function Invoice() {
   async function emailInvoice() {
     setEmailing(true)
     setNotice('')
+    setNoticeType('status')
     try {
       const { data: res } = await api.post(`/ros/${id}/email-invoice`)
       if (res?.skipped) {
         setNotice('Email skipped: email service is not configured.')
+        setNoticeType('error')
       } else {
         setNotice('Invoice emailed to customer.')
       }
     } catch (e) {
       setNotice(e?.response?.data?.error || 'Could not send invoice email.')
+      setNoticeType('error')
     } finally {
       setEmailing(false)
     }
@@ -58,6 +62,7 @@ export default function Invoice() {
   async function downloadPdf() {
     setDownloading(true)
     setNotice('')
+    setNoticeType('status')
     try {
       const response = await api.get(`/invoice/${id}`, { responseType: 'blob' })
       const blobUrl = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }))
@@ -70,215 +75,147 @@ export default function Invoice() {
       window.URL.revokeObjectURL(blobUrl)
     } catch (e) {
       setNotice(e?.response?.data?.error || 'Could not download invoice PDF.')
+      setNoticeType('error')
     } finally {
       setDownloading(false)
     }
   }
 
-  return (
-    <>
-      <style>{`
-        @media print {
-          .no-print { display: none !important; }
-          body { background: white !important; }
-          .print-sheet {
-            margin: 0 !important;
-            max-width: 100% !important;
-            box-shadow: none !important;
-            border-radius: 0 !important;
-            padding: 0 !important;
-          }
-        }
-        body { margin: 0; background: #f3f4f6; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #111; }
-        * { box-sizing: border-box; }
-      `}</style>
+  const moneyClass = 'font-mono tabular-nums'
+  const sectionLabelClass = 'mb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-black/50'
+  const tableHeadingClass = 'px-2 py-2 text-xs font-bold uppercase text-black/60'
 
-      {/* Print button — hidden on print */}
-      <div className="no-print" style={{ background: '#1a1d2e', padding: '0.75rem 1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-        <button
-          onClick={downloadPdf}
-          disabled={downloading}
-          style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: '#EAB308', color: '#0f1117', border: 'none', borderRadius: '8px', padding: '0.5rem 1.25rem', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer', opacity: downloading ? 0.6 : 1 }}
-        >
-          <Download size={15} />
-          {downloading ? 'Downloading...' : 'Download PDF'}
+  return (
+    <main className="min-h-screen bg-void text-ink print:bg-white print:text-black">
+      <style>{`@media print { body { background: white !important; } }`}</style>
+
+      <div className="flex flex-wrap items-center gap-2 border-b border-line-2 bg-panel px-4 py-3 print:hidden sm:px-6">
+        <button type="button" onClick={downloadPdf} disabled={downloading} className="inline-flex items-center gap-2 rounded-instrument bg-brand px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-lit disabled:opacity-60">
+          <Download size={15} /> {downloading ? 'Downloading...' : 'Download PDF'}
         </button>
-        <button
-          onClick={() => window.print()}
-          style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: '#334155', color: '#fff', border: 'none', borderRadius: '8px', padding: '0.5rem 1.25rem', fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer' }}
-        >
-          <Printer size={15} />
-          Print
+        <button type="button" onClick={() => window.print()} className="inline-flex items-center gap-2 rounded-instrument border border-line-2 bg-raised px-4 py-2 text-sm font-semibold text-ink transition-colors hover:border-brand">
+          <Printer size={15} /> Print
         </button>
-        <button
-          onClick={emailInvoice}
-          disabled={emailing}
-          style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: '#475569', color: '#fff', border: 'none', borderRadius: '8px', padding: '0.5rem 1.25rem', fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer', opacity: emailing ? 0.6 : 1 }}
-        >
-          <Mail size={15} />
-          {emailing ? 'Sending...' : 'Email to Customer'}
+        <button type="button" onClick={emailInvoice} disabled={emailing} className="inline-flex items-center gap-2 rounded-instrument border border-brand/40 bg-brand/10 px-4 py-2 text-sm font-semibold text-brand transition-colors hover:bg-brand/15 disabled:opacity-60">
+          <Mail size={15} /> {emailing ? 'Sending...' : 'Email to Customer'}
         </button>
-        <span style={{ color: '#64748b', fontSize: '0.8rem' }}>{ro_number}</span>
-        {notice && <span style={{ color: '#cbd5e1', fontSize: '0.8rem' }}>{notice}</span>}
+        <span className="font-mono text-xs text-muted">{ro_number}</span>
+        {notice && (
+          <span role={noticeType === 'error' ? 'alert' : 'status'} className={`text-xs ${noticeType === 'error' ? 'text-crit' : 'text-good'}`}>
+            {notice}
+          </span>
+        )}
       </div>
 
-      {/* Invoice sheet */}
-      <div className="print-sheet" style={{ maxWidth: '780px', margin: '1.5rem auto', background: '#fff', borderRadius: '8px', boxShadow: '0 1px 8px rgba(0,0,0,0.1)', padding: 'clamp(1rem, 5vw, 2.5rem)' }}>
-
-        {/* Header — shop info */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', marginBottom: '2rem', borderBottom: '2px solid #111', paddingBottom: '1.25rem' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
+      <article className="mx-auto my-6 max-w-[780px] rounded-instrument bg-white p-[clamp(1rem,5vw,2.5rem)] text-black shadow-lg print:m-0 print:max-w-none print:rounded-none print:p-0 print:shadow-none">
+        <header className="mb-8 flex flex-wrap items-start justify-between gap-4 border-b-2 border-black pb-5">
+          <div className="flex items-start gap-3">
             {shop?.logo_url && (
-              <div style={{ width: '84px', height: '84px', border: '1px solid #e5e7eb', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', background: '#fff' }}>
-                <img src={shop.logo_url} alt={`${shop?.name || 'Shop'} logo`} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+              <div className="flex h-[84px] w-[84px] items-center justify-center overflow-hidden rounded-instrument border border-black/10 bg-white">
+                <img src={shop.logo_url} alt={`${shop?.name || 'Shop'} logo`} className="max-h-full max-w-full object-contain" />
               </div>
             )}
             <div>
-              <h1 style={{ margin: 0, fontSize: '1.75rem', fontWeight: 800, letterSpacing: '-0.5px', textTransform: 'uppercase' }}>{shop?.name || 'Auto Body Shop'}</h1>
-              {shop?.address && <p style={{ margin: '0.25rem 0 0', fontSize: '0.85rem', color: '#444' }}>{shop.address}{shop.city ? `, ${shop.city}` : ''}{shop.state ? `, ${shop.state}` : ''} {shop.zip || ''}</p>}
-              {shop?.phone && <p style={{ margin: '0.1rem 0 0', fontSize: '0.85rem', color: '#444' }}>{shop.phone}</p>}
+              <h1 className="font-display text-2xl font-extrabold uppercase">{shop?.name || 'Auto Body Shop'}</h1>
+              {shop?.address && <p className="mt-1 text-sm text-black/70">{shop.address}{shop.city ? `, ${shop.city}` : ''}{shop.state ? `, ${shop.state}` : ''} {shop.zip || ''}</p>}
+              {shop?.phone && <p className="text-sm text-black/70">{shop.phone}</p>}
             </div>
           </div>
-          <div style={{ textAlign: 'right' }}>
-            <h2 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px', color: '#111' }}>Invoice</h2>
-            <p style={{ margin: '0.25rem 0 0', fontSize: '0.85rem', color: '#444' }}>RO: <strong>{ro_number}</strong></p>
-            <p style={{ margin: '0.1rem 0 0', fontSize: '0.85rem', color: '#444' }}>Date: {today}</p>
-            {intake_date && <p style={{ margin: '0.1rem 0 0', fontSize: '0.85rem', color: '#444' }}>Intake: {intake_date}</p>}
-            {actual_delivery && <p style={{ margin: '0.1rem 0 0', fontSize: '0.85rem', color: '#444' }}>Delivered: {actual_delivery}</p>}
+          <div className="text-right text-sm text-black/70">
+            <h2 className="font-display text-xl font-bold uppercase tracking-wide text-black">Invoice</h2>
+            <p className="mt-1">RO: <strong className="font-mono text-black">{ro_number}</strong></p>
+            <p>Date: {today}</p>
+            {intake_date && <p>Intake: {intake_date}</p>}
+            {actual_delivery && <p>Delivered: {actual_delivery}</p>}
           </div>
+        </header>
+
+        <div className="mb-8 grid gap-6 sm:grid-cols-2">
+          <section>
+            <h3 className={sectionLabelClass}>Bill To</h3>
+            <p className="font-bold">{customer?.name || '—'}</p>
+            {customer?.address && <p className="mt-1 text-sm text-black/70">{customer.address}</p>}
+            {customer?.phone && <p className="text-sm text-black/70">{customer.phone}</p>}
+            {customer?.email && <p className="break-all text-sm text-black/70">{customer.email}</p>}
+          </section>
+          <section>
+            <h3 className={sectionLabelClass}>Vehicle</h3>
+            <p className="font-bold">{vehicle?.year} {vehicle?.make} {vehicle?.model}</p>
+            {vehicle?.color && <p className="mt-1 text-sm text-black/70">Color: {vehicle.color}</p>}
+            {vehicle?.vin && <p className="font-mono text-sm text-black/70">VIN: {vehicle.vin}</p>}
+            {vehicle?.plate && <p className="font-mono text-sm text-black/70">Plate: {vehicle.plate}</p>}
+            {vehicle?.mileage && <p className="font-mono text-sm text-black/70">Mileage: {vehicle.mileage.toLocaleString()}</p>}
+          </section>
         </div>
 
-        {/* Customer + Vehicle */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1.5rem', marginBottom: '2rem' }}>
-          <div>
-            <h3 style={{ margin: '0 0 0.5rem', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px', color: '#888' }}>Bill To</h3>
-            <p style={{ margin: 0, fontWeight: 700, fontSize: '1rem' }}>{customer?.name || '—'}</p>
-            {customer?.address && <p style={{ margin: '0.15rem 0 0', fontSize: '0.85rem', color: '#444' }}>{customer.address}</p>}
-            {customer?.phone && <p style={{ margin: '0.15rem 0 0', fontSize: '0.85rem', color: '#444' }}>{customer.phone}</p>}
-            {customer?.email && <p style={{ margin: '0.15rem 0 0', fontSize: '0.85rem', color: '#444' }}>{customer.email}</p>}
-          </div>
-          <div>
-            <h3 style={{ margin: '0 0 0.5rem', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px', color: '#888' }}>Vehicle</h3>
-            <p style={{ margin: 0, fontWeight: 700, fontSize: '1rem' }}>{vehicle?.year} {vehicle?.make} {vehicle?.model}</p>
-            {vehicle?.color && <p style={{ margin: '0.15rem 0 0', fontSize: '0.85rem', color: '#444' }}>Color: {vehicle.color}</p>}
-            {vehicle?.vin && <p style={{ margin: '0.15rem 0 0', fontSize: '0.85rem', color: '#444' }}>VIN: {vehicle.vin}</p>}
-            {vehicle?.plate && <p style={{ margin: '0.15rem 0 0', fontSize: '0.85rem', color: '#444' }}>Plate: {vehicle.plate}</p>}
-            {vehicle?.mileage && <p style={{ margin: '0.15rem 0 0', fontSize: '0.85rem', color: '#444' }}>Mileage: {vehicle.mileage.toLocaleString()}</p>}
-          </div>
-        </div>
-
-        {/* Insurance / Payment info */}
         {payment_type === 'insurance' && (insurer || claim_number) && (
-          <div style={{ background: '#f9fafb', borderRadius: '6px', padding: '0.75rem 1rem', marginBottom: '1.5rem', fontSize: '0.85rem', color: '#444' }}>
-            <span style={{ fontWeight: 700, marginRight: '1rem' }}>Insurance Claim</span>
-            {insurer && <span style={{ marginRight: '1rem' }}>Carrier: <strong>{insurer}</strong></span>}
-            {claim_number && <span>Claim #: <strong>{claim_number}</strong></span>}
+          <div className="mb-6 flex flex-wrap gap-x-4 gap-y-1 rounded-instrument bg-black/[0.04] px-4 py-3 text-sm text-black/70">
+            <strong className="text-black">Insurance Claim</strong>
+            {insurer && <span>Carrier: <strong>{insurer}</strong></span>}
+            {claim_number && <span>Claim #: <strong className="font-mono">{claim_number}</strong></span>}
           </div>
         )}
 
-        {/* Parts table */}
         {parts && parts.length > 0 && (
-          <div style={{ marginBottom: '1.5rem' }}>
-            <h3 style={{ margin: '0 0 0.6rem', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px', color: '#888' }}>Parts</h3>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
-              <thead>
-                <tr style={{ borderBottom: '2px solid #e5e7eb' }}>
-                  <th style={{ textAlign: 'left', padding: '0.4rem 0.5rem', fontWeight: 700, color: '#555', fontSize: '0.75rem', textTransform: 'uppercase' }}>Description</th>
-                  <th style={{ textAlign: 'left', padding: '0.4rem 0.5rem', fontWeight: 700, color: '#555', fontSize: '0.75rem', textTransform: 'uppercase' }}>Part #</th>
-                  <th style={{ textAlign: 'center', padding: '0.4rem 0.5rem', fontWeight: 700, color: '#555', fontSize: '0.75rem', textTransform: 'uppercase' }}>Qty</th>
-                  <th style={{ textAlign: 'right', padding: '0.4rem 0.5rem', fontWeight: 700, color: '#555', fontSize: '0.75rem', textTransform: 'uppercase' }}>Unit Price</th>
-                  <th style={{ textAlign: 'right', padding: '0.4rem 0.5rem', fontWeight: 700, color: '#555', fontSize: '0.75rem', textTransform: 'uppercase' }}>Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {parts.map((p, i) => (
-                  <tr key={p.id || i} style={{ borderBottom: '1px solid #f0f0f0' }}>
-                    <td style={{ padding: '0.5rem 0.5rem' }}>{p.part_name}</td>
-                    <td style={{ padding: '0.5rem 0.5rem', color: '#777', fontSize: '0.8rem' }}>{p.part_number || '—'}</td>
-                    <td style={{ padding: '0.5rem 0.5rem', textAlign: 'center' }}>{p.quantity || 1}</td>
-                    <td style={{ padding: '0.5rem 0.5rem', textAlign: 'right' }}>{fmt(p.unit_cost)}</td>
-                    <td style={{ padding: '0.5rem 0.5rem', textAlign: 'right', fontWeight: 600 }}>{fmt((p.unit_cost || 0) * (p.quantity || 1))}</td>
+          <section className="mb-6">
+            <h3 className={sectionLabelClass}>Parts</h3>
+            <div className="overflow-x-auto">
+              <table className="min-w-[620px] w-full border-collapse text-sm">
+                <thead><tr className="border-b-2 border-black/10">
+                  <th className={`${tableHeadingClass} text-left`}>Description</th>
+                  <th className={`${tableHeadingClass} text-left`}>Part #</th>
+                  <th className={`${tableHeadingClass} text-center`}>Qty</th>
+                  <th className={`${tableHeadingClass} text-right`}>Unit Price</th>
+                  <th className={`${tableHeadingClass} text-right`}>Total</th>
+                </tr></thead>
+                <tbody>{parts.map((p, i) => (
+                  <tr key={p.id || i} className="border-b border-black/[0.06]">
+                    <td className="px-2 py-2">{p.part_name}</td>
+                    <td className="px-2 py-2 font-mono text-xs text-black/60">{p.part_number || '—'}</td>
+                    <td className="px-2 py-2 text-center font-mono">{p.quantity || 1}</td>
+                    <td className={`px-2 py-2 text-right ${moneyClass}`}>{fmt(p.unit_cost)}</td>
+                    <td className={`px-2 py-2 text-right font-semibold ${moneyClass}`}>{fmt((p.unit_cost || 0) * (p.quantity || 1))}</td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                ))}</tbody>
+              </table>
+            </div>
+          </section>
         )}
 
-        {/* Labor + Sublet */}
-        <div style={{ marginBottom: '1.5rem' }}>
-          <h3 style={{ margin: '0 0 0.6rem', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px', color: '#888' }}>Services</h3>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
-            <thead>
-              <tr style={{ borderBottom: '2px solid #e5e7eb' }}>
-                <th style={{ textAlign: 'left', padding: '0.4rem 0.5rem', fontWeight: 700, color: '#555', fontSize: '0.75rem', textTransform: 'uppercase' }}>Description</th>
-                <th style={{ textAlign: 'right', padding: '0.4rem 0.5rem', fontWeight: 700, color: '#555', fontSize: '0.75rem', textTransform: 'uppercase' }}>Amount</th>
-              </tr>
-            </thead>
+        <section className="mb-6">
+          <h3 className={sectionLabelClass}>Services</h3>
+          <table className="w-full border-collapse text-sm">
+            <thead><tr className="border-b-2 border-black/10">
+              <th className={`${tableHeadingClass} text-left`}>Description</th>
+              <th className={`${tableHeadingClass} text-right`}>Amount</th>
+            </tr></thead>
             <tbody>
-              {parseFloat(labor_cost || 0) > 0 && (
-                <tr style={{ borderBottom: '1px solid #f0f0f0' }}>
-                  <td style={{ padding: '0.5rem 0.5rem' }}>Labor</td>
-                  <td style={{ padding: '0.5rem 0.5rem', textAlign: 'right', fontWeight: 600 }}>{fmt(labor_cost)}</td>
-                </tr>
-              )}
-              {parseFloat(parts_cost || 0) > 0 && (parts && parts.length === 0) && (
-                <tr style={{ borderBottom: '1px solid #f0f0f0' }}>
-                  <td style={{ padding: '0.5rem 0.5rem' }}>Parts</td>
-                  <td style={{ padding: '0.5rem 0.5rem', textAlign: 'right', fontWeight: 600 }}>{fmt(parts_cost)}</td>
-                </tr>
-              )}
-              {parseFloat(sublet_cost || 0) > 0 && (
-                <tr style={{ borderBottom: '1px solid #f0f0f0' }}>
-                  <td style={{ padding: '0.5rem 0.5rem' }}>Sublet Work</td>
-                  <td style={{ padding: '0.5rem 0.5rem', textAlign: 'right', fontWeight: 600 }}>{fmt(sublet_cost)}</td>
-                </tr>
-              )}
+              {parseFloat(labor_cost || 0) > 0 && <tr className="border-b border-black/[0.06]"><td className="px-2 py-2">Labor</td><td className={`px-2 py-2 text-right font-semibold ${moneyClass}`}>{fmt(labor_cost)}</td></tr>}
+              {parseFloat(parts_cost || 0) > 0 && parts?.length === 0 && <tr className="border-b border-black/[0.06]"><td className="px-2 py-2">Parts</td><td className={`px-2 py-2 text-right font-semibold ${moneyClass}`}>{fmt(parts_cost)}</td></tr>}
+              {parseFloat(sublet_cost || 0) > 0 && <tr className="border-b border-black/[0.06]"><td className="px-2 py-2">Sublet Work</td><td className={`px-2 py-2 text-right font-semibold ${moneyClass}`}>{fmt(sublet_cost)}</td></tr>}
             </tbody>
           </table>
-        </div>
+        </section>
 
-        {/* Totals */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '2rem' }}>
-          <div style={{ width: '260px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.35rem 0', fontSize: '0.875rem', borderTop: '1px solid #e5e7eb' }}>
-              <span style={{ color: '#555' }}>Subtotal</span>
-              <span style={{ fontWeight: 600 }}>{fmt(subtotal)}</span>
-            </div>
-            {taxAmt > 0 && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.35rem 0', fontSize: '0.875rem' }}>
-                <span style={{ color: '#555' }}>Tax</span>
-                <span style={{ fontWeight: 600 }}>{fmt(taxAmt)}</span>
-              </div>
-            )}
-            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.6rem 0', fontSize: '1.05rem', borderTop: '2px solid #111', marginTop: '0.25rem' }}>
-              <span style={{ fontWeight: 800 }}>Total</span>
-              <span style={{ fontWeight: 800 }}>{fmt(totalAmt > 0 ? totalAmt : subtotal + taxAmt)}</span>
-            </div>
+        <div className="mb-8 flex justify-end">
+          <div className="w-full max-w-[260px] text-sm">
+            <div className="flex justify-between border-t border-black/10 py-1.5"><span className="text-black/60">Subtotal</span><span className={`font-semibold ${moneyClass}`}>{fmt(subtotal)}</span></div>
+            {taxAmt > 0 && <div className="flex justify-between py-1.5"><span className="text-black/60">Tax</span><span className={`font-semibold ${moneyClass}`}>{fmt(taxAmt)}</span></div>}
+            <div className="mt-1 flex justify-between border-t-2 border-black py-2.5 text-base font-extrabold"><span>Total</span><span className={moneyClass}>{fmt(totalAmt > 0 ? totalAmt : subtotal + taxAmt)}</span></div>
           </div>
         </div>
 
-        {/* Notes */}
-        {notes && (
-          <div style={{ background: '#f9fafb', borderRadius: '6px', padding: '0.75rem 1rem', marginBottom: '1.5rem', fontSize: '0.875rem', color: '#444' }}>
-            <strong style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '1px', color: '#888' }}>Notes</strong>
-            {notes}
-          </div>
-        )}
+        {notes && <section className="mb-6 rounded-instrument bg-black/[0.04] px-4 py-3 text-sm text-black/70"><h3 className={sectionLabelClass}>Notes</h3>{notes}</section>}
 
-        {/* Footer */}
-        <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: '1.25rem', textAlign: 'center' }}>
-          <p style={{ margin: 0, fontSize: '0.9rem', fontWeight: 600, color: '#333' }}>Thank you for your business.</p>
-          <p style={{ margin: '0.35rem 0 0', fontSize: '0.8rem', color: '#888' }}>
-            {shop?.name}{shop?.phone ? ` · ${shop.phone}` : ''}
-          </p>
-          <div style={{ marginTop: '0.5rem', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.3rem 0.55rem', border: '1px solid #e5e7eb', borderRadius: '999px', background: '#fafafa' }}>
-            <img src="/icon-192.svg" alt="REVV logo" style={{ width: '14px', height: '14px' }} />
-            <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 600 }}>Powered by REVV</span>
+        <footer className="border-t border-black/10 pt-5 text-center">
+          <p className="text-sm font-semibold">Thank you for your business.</p>
+          <p className="mt-1 text-xs text-black/50">{shop?.name}{shop?.phone ? ` · ${shop.phone}` : ''}</p>
+          <div className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-black/10 bg-black/[0.02] px-2 py-1">
+            <img src="/icon-192.svg" alt="REVV logo" className="h-3.5 w-3.5" />
+            <span className="text-[11px] font-semibold text-black/50">Estimated & tracked with REVV · revvshop.app</span>
           </div>
-        </div>
-
-      </div>
-    </>
+        </footer>
+      </article>
+    </main>
   )
 }

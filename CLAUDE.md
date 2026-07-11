@@ -56,6 +56,49 @@ const ro = await dbGet('SELECT * FROM ros WHERE id = $1 AND shop_id = $2', [id, 
 await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 ```
 
+## Dispatch Log — 2026-07-11 REVV Redesign Phase 6L: RO Intake, Storage, Diagnostics, Invoice, and Team
+
+**Time:** 2026-07-11 05:12 ET / 2026-07-11 09:12 UTC
+**Status:** READY FOR CLAUDE CODE QA — FEATURE BRANCH ONLY — NOT DEPLOYED
+
+**Scope**
+- Completed semantic-token propagation for Repair Orders, full-page Add RO, Storage Hold, Vehicle Diagnostics, Team & Access, Inspection Editor, and the standalone invoice. The seven production JSX files contain no raw hex colors, legacy named palette utilities, gradients, or browser alerts.
+- Preserved every existing endpoint, payload, role gate, destructive confirmation, bulk update, customer/vehicle appraisal intake, compact landscape keyboard editor, storage charge/update, diagnostic scan/delete, team CRUD/password reset, inspection item/send, invoice email/PDF, and browser print contract.
+- Rebuilt the invoice screen with tokenized app controls plus an intentionally white, black-ink print document. It remains shop-branded, responsive on phone, uses monospaced financial values, and signs the footer with `Estimated & tracked with REVV · revvshop.app` without letting the selected app theme alter printed output.
+- Replaced remaining non-consequential Storage Hold, Team, and Inspection browser alerts with inline `role="alert"` / `role="status"` feedback. Destructive RO, user, diagnostic-scan, and workflow confirmation gates remain in place.
+- Repair Orders now uses complete cards through tablet widths and the dense table only at desktop width, eliminating the clipped tablet action column. Phone and tablet cards retain selection, status, promise, money, payment, delete, and view actions.
+- Kept New RO and Create Charge as gold revenue actions. Generic controls/stages use brand, paid/success uses good, danger/total-loss/errors use crit, and money values use monospaced tabular numerals.
+- Verified the Add RO full-page compact editor with a simulated 1024x768 iPad-landscape visual viewport reduced to 330px by the on-screen keyboard. The active field, Done action, progress, and Next action remain visible; the legacy global gold focus ring is now semantic brand.
+- Expanded `tokenConformance.test.js` to lock all seven migrated production surfaces, their API/confirmation contracts, invoice print behavior, Add RO page/keyboard contracts, and the brand focus rule.
+- No backend, API contract, auth rule, workflow, money math, database, seed, reset, migration, destructive script, hosted DB, provider, customer/shop/RO data, or Miles Automotive data changed. Browser data was fully mocked.
+
+**Files changed (10; batch cap respected)**
+- `frontend/src/pages/StorageHold.jsx`
+- `frontend/src/pages/VehicleDiagnostics.jsx`
+- `frontend/src/pages/Invoice.jsx`
+- `frontend/src/pages/Users.jsx`
+- `frontend/src/pages/RepairOrders.jsx`
+- `frontend/src/pages/InspectionEditor.jsx`
+- `frontend/src/components/AddROModal.jsx`
+- `frontend/src/index.css`
+- `frontend/src/lib/__tests__/tokenConformance.test.js`
+- `CLAUDE.md`
+
+**Verification**
+```
+cd frontend && npm run test:run -- tokenConformance RepairOrders.redesign AddROModal.appraisal AddROModal.feedback keyboardFocus  # 5 files, 17/17 passed
+node --test native backend sweep  # 130/130 passed
+cd backend && npm run test:run  # extractor suite 7/7 passed
+cd frontend && npm run test:run  # 38 files, 118/118 passed
+cd frontend && npm run build  # clean; pre-existing Sentry/chunk-size warnings only
+Playwright fully mocked browser checks  # Repair Orders tablet/phone, Storage overlay, Diagnostics overlay, Team phone, Inspection tablet, Invoice phone, Add RO compact landscape keyboard mode
+viewport results  # 1024x768 and 390x844 exact client/scroll widths; centered body-level overlays cover the full viewport above the sidebar; zero console/page errors
+keyboard simulation  # 1024x768 touch landscape with visualViewport.height=330; active Full Name field and controls visible in the compact page editor
+screenshots  # /tmp/revv-phase6l-repair-orders-tablet-dark.png, /tmp/revv-phase6l-repair-orders-phone-light.png, /tmp/revv-phase6l-storage-overlay-tablet-dark.png, /tmp/revv-phase6l-diagnostics-overlay-tablet-light.png, /tmp/revv-phase6l-users-phone-light.png, /tmp/revv-phase6l-inspection-tablet-dark.png, /tmp/revv-phase6l-invoice-phone-dark.png, /tmp/revv-phase6l-add-ro-landscape-keyboard-dark.png
+rg raw hex / legacy named palettes / gradients / browser alerts across 7 production JSX files  # zero matches
+rm -rf frontend/dist && git diff --check && git ls-files frontend/dist | wc -l  # 0
+```
+
 ## Dispatch Log — 2026-07-11 REVV Redesign Phase 6K: Goals, Reviews, Leads, and Shop Operations
 
 **Time:** 2026-07-11 04:42 ET / 2026-07-11 08:42 UTC

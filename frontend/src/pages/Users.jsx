@@ -6,11 +6,11 @@ import AppOverlay from '../components/AppOverlay'
 
 const ROLES = ['admin', 'employee', 'staff']
 const ROLE_META = {
-  owner:    { label: 'Owner',    icon: Shield, cls: 'text-purple-400 bg-purple-900/30 border-purple-700' },
-  admin:    { label: 'Admin',    icon: Shield, cls: 'text-indigo-400 bg-indigo-900/30 border-indigo-700' },
-  employee: { label: 'Tech',     icon: Wrench, cls: 'text-orange-400 bg-orange-900/30 border-orange-700'  },
-  staff:    { label: 'Staff',    icon: Wrench, cls: 'text-blue-400   bg-blue-900/30   border-blue-700'   },
-  assistant:{ label: 'Assistant',icon: Wrench, cls: 'text-yellow-300 bg-yellow-900/30 border-yellow-700' },
+  owner:     { label: 'Owner', icon: Shield, cls: 'text-brand border-brand/50 bg-brand/15' },
+  admin:     { label: 'Admin', icon: Shield, cls: 'text-brand border-brand/40 bg-brand/10' },
+  employee:  { label: 'Tech', icon: Wrench, cls: 'text-ink border-line-2 bg-raised' },
+  staff:     { label: 'Staff', icon: Wrench, cls: 'text-muted border-line-2 bg-raised' },
+  assistant: { label: 'Assistant', icon: Wrench, cls: 'text-brand border-brand/30 bg-brand/10' },
 }
 
 export default function Users() {
@@ -36,7 +36,9 @@ export default function Users() {
 
   useEffect(() => { load() }, [])
   function load() {
-    api.get('/users').then(r => setUsers(r.data.users || []))
+    api.get('/users')
+      .then(r => setUsers(r.data.users || []))
+      .catch((error) => setErrorToast(error?.response?.data?.error || 'Could not load users'))
   }
 
   useEffect(() => {
@@ -57,9 +59,10 @@ export default function Users() {
     e.preventDefault(); setSaving(true)
     try {
       await api.post('/users', { ...form, customer_id: form.customer_id || undefined })
+      setSuccessToast('User created successfully')
       load(); close()
     } catch (err) {
-      alert(err?.response?.data?.error || 'Error creating user')
+      setErrorToast(err?.response?.data?.error || 'Error creating user')
     } finally { setSaving(false) }
   }
 
@@ -67,9 +70,10 @@ export default function Users() {
     if (!confirm(`Remove ${name}? This cannot be undone.`)) return
     try {
       await api.delete(`/users/${id}`)
+      setSuccessToast('User removed')
       load()
     } catch (err) {
-      alert(err?.response?.data?.error || 'Failed to remove user')
+      setErrorToast(err?.response?.data?.error || 'Failed to remove user')
     }
   }
 
@@ -100,10 +104,11 @@ export default function Users() {
     setSavingAssistant(true)
     try {
       await api.post('/users/assistant', assistantForm)
+      setSuccessToast('Assistant created successfully')
       load()
       closeAssistant()
     } catch (err) {
-      alert(err?.response?.data?.error || 'Error creating assistant')
+      setErrorToast(err?.response?.data?.error || 'Error creating assistant')
     } finally {
       setSavingAssistant(false)
     }
@@ -126,10 +131,11 @@ export default function Users() {
         payload.password = editForm.password
       }
       await api.put(`/users/${editUser.id}`, payload)
+      setSuccessToast('User updated successfully')
       load()
       closeEdit()
     } catch (err) {
-      alert(err?.response?.data?.error || 'Error updating user')
+      setErrorToast(err?.response?.data?.error || 'Error updating user')
     } finally {
       setSavingEdit(false)
     }
@@ -154,8 +160,8 @@ export default function Users() {
     }
   }
 
-  const inp = 'w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition-colors'
-  const lbl = 'block text-xs font-medium text-slate-400 mb-1.5'
+  const inp = 'w-full rounded-instrument border border-line-2 bg-void px-3 py-2.5 text-sm text-ink placeholder:text-faint transition-colors focus:border-brand focus:outline-none'
+  const lbl = 'block text-xs font-medium text-muted mb-1.5'
 
   const admins    = users.filter(u => ['owner','admin'].includes(u.role))
   const employees = users.filter(u => ['employee','staff'].includes(u.role))
@@ -172,49 +178,46 @@ export default function Users() {
     if (!list.length) return null
     return (
       <div>
-        <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-3">{title}</h3>
+        <h3 className="text-xs font-semibold text-faint uppercase tracking-widest mb-3">{title}</h3>
         <div className="space-y-2">
           {list.map(u => {
             const meta = ROLE_META[u.role] || ROLE_META.staff
             const Icon = meta.icon
             return (
-              <div key={u.id} className="bg-[#1a1d2e] rounded-xl p-4 border border-[#2a2d3e] flex items-center gap-4">
-                <div className={`w-9 h-9 rounded-lg flex items-center justify-center border ${meta.cls}`}>
-                  <Icon size={15} />
+              <div key={u.id} className="flex flex-col gap-3 rounded-instrument border border-line-2 bg-panel p-4 sm:flex-row sm:items-center">
+                <div className="flex min-w-0 flex-1 items-center gap-3">
+                  <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border ${meta.cls}`}>
+                    <Icon size={15} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-semibold text-ink">{u.name}</div>
+                    <div className="truncate text-xs text-faint">{u.email}</div>
+                    {u.customer_name && <div className="mt-0.5 truncate text-xs text-good">Linked: {u.customer_name}</div>}
+                  </div>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <div className="font-semibold text-white text-sm">{u.name}</div>
-                  <div className="text-xs text-slate-500">{u.email}</div>
-                  {u.customer_name && <div className="text-xs text-emerald-400 mt-0.5">Linked: {u.customer_name}</div>}
-                </div>
-                <div className={`text-[10px] font-semibold px-2.5 py-1 rounded-full border ${meta.cls}`}>
-                  {meta.label}
-                </div>
-                {canResetUser(u) && (
-                  <button
-                    onClick={() => setResetUser(u)}
-                    className="text-xs font-semibold px-2.5 py-1 rounded-lg border border-amber-500/40 text-amber-300 hover:bg-amber-500/10 transition-colors"
-                    title={`Reset password for ${u.name}`}
-                  >
-                    <span className="inline-flex items-center gap-1.5">
-                      <KeyRound size={12} />
-                      Reset Password
-                    </span>
+                <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                  <div className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold ${meta.cls}`}>
+                    {meta.label}
+                  </div>
+                  {canResetUser(u) && (
+                    <button
+                      type="button"
+                      onClick={() => setResetUser(u)}
+                      className="rounded-instrument border border-brand/40 bg-brand/10 px-2.5 py-1 text-xs font-semibold text-brand transition-colors hover:bg-brand/15"
+                      aria-label={`Reset password for ${u.name}`}
+                    >
+                      <span className="inline-flex items-center gap-1.5"><KeyRound size={12} /> Reset Password</span>
+                    </button>
+                  )}
+                  <button type="button" onClick={() => openEdit(u)} className="rounded-instrument p-1.5 text-faint transition-colors hover:bg-brand/10 hover:text-brand" aria-label={`Edit ${u.name}`}>
+                    <Pencil size={15} />
                   </button>
-                )}
-                <button
-                  onClick={() => openEdit(u)}
-                  className="text-slate-500 hover:text-indigo-300 transition-colors ml-1"
-                  title="Edit user"
-                >
-                  <Pencil size={15} />
-                </button>
-                {u.role !== 'owner' && (
-                  <button onClick={() => deleteUser(u.id, u.name)}
-                    className="text-slate-600 hover:text-red-400 transition-colors ml-1">
-                    <Trash2 size={15} />
-                  </button>
-                )}
+                  {u.role !== 'owner' && (
+                    <button type="button" onClick={() => deleteUser(u.id, u.name)} className="rounded-instrument p-1.5 text-faint transition-colors hover:bg-crit/10 hover:text-crit" aria-label={`Remove ${u.name}`}>
+                      <Trash2 size={15} />
+                    </button>
+                  )}
+                </div>
               </div>
             )
           })}
@@ -227,23 +230,23 @@ export default function Users() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-white">Team & Access</h1>
+          <h1 className="font-display text-xl font-bold text-ink">Team & Access</h1>
         </div>
-        <button onClick={() => setShowAdd(true)}
-          className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-4 py-2.5 rounded-lg text-sm transition-colors">
+        <button type="button" onClick={() => setShowAdd(true)}
+          className="flex items-center gap-2 bg-brand hover:bg-brand-lit text-white font-bold px-4 py-2.5 rounded-lg text-sm transition-colors">
           <Plus size={15} /> Add User
         </button>
       </div>
 
-      <div className="bg-yellow-900/10 border border-yellow-700/30 rounded-xl p-4 space-y-3">
+      <div className="space-y-3 rounded-instrument border border-brand/30 bg-brand/10 p-4">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h3 className="text-sm font-semibold text-yellow-300">Assistant Access</h3>
-            <p className="text-xs text-slate-400 mt-1">Assistants can only view Dashboard, Repair Orders, and Customers. They cannot edit records, billing, reports, users, settings, or payments.</p>
+            <h3 className="font-display text-sm font-semibold text-brand">Assistant Access</h3>
+            <p className="text-xs text-muted mt-1">Assistants can only view Dashboard, Repair Orders, and Customers. They cannot edit records, billing, reports, users, settings, or payments.</p>
           </div>
           <button
             onClick={() => setShowAddAssistant(true)}
-            className="flex-shrink-0 flex items-center gap-2 bg-yellow-400 hover:bg-yellow-300 text-[#0f1117] font-semibold px-3 py-2 rounded-lg text-xs transition-colors"
+            className="flex-shrink-0 flex items-center gap-2 rounded-instrument bg-brand px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-brand-lit"
           >
             <Plus size={13} /> Add Assistant
           </button>
@@ -260,11 +263,11 @@ export default function Users() {
           const meta = ROLE_META[role]
           const Icon = meta.icon
           return (
-            <div key={role} className={`rounded-xl p-3 border ${meta.cls}`}>
+            <div key={role} className={`rounded-instrument p-3 border ${meta.cls}`}>
               <div className={`flex items-center gap-2 font-semibold text-xs mb-1 ${meta.cls.split(' ')[0]}`}>
                 <Icon size={12}/> {meta.label}
               </div>
-              <p className="text-[11px] text-slate-500">{desc}</p>
+              <p className="text-[11px] text-faint">{desc}</p>
             </div>
           )
         })}
@@ -275,19 +278,19 @@ export default function Users() {
       <Section title="Assistants" list={assistants} />
 
       {users.length === 0 && (
-        <div className="bg-[#1a1d2e] rounded-xl p-8 text-center border border-[#2a2d3e]">
-          <UsersIcon size={32} className="text-slate-600 mx-auto mb-3"/>
-          <p className="text-slate-500 text-sm">No users yet.</p>
+        <div className="bg-panel rounded-instrument p-8 text-center border border-line-2">
+          <UsersIcon size={32} className="text-faint mx-auto mb-3"/>
+          <p className="text-faint text-sm">No users yet.</p>
         </div>
       )}
 
       {/* Add User Modal */}
       {showAdd && (
-        <AppOverlay label="Add user" onClose={close} className="bg-black/70 p-4">
-          <div className="bg-[#1a1d2e] rounded-2xl border border-[#2a2d3e] w-full max-w-md">
-            <div className="flex items-center justify-between p-5 border-b border-[#2a2d3e]">
-              <h3 className="font-bold text-white">Add User</h3>
-              <button onClick={close} className="text-slate-400 hover:text-white"><X size={18}/></button>
+        <AppOverlay label="Add user" onClose={close} className="bg-void/75 p-4">
+          <div className="bg-panel rounded-instrument border border-line-2 w-full max-w-md">
+            <div className="flex items-center justify-between p-5 border-b border-line-2">
+              <h3 className="font-display font-bold text-ink">Add User</h3>
+              <button type="button" onClick={close} className="text-muted hover:text-ink" aria-label="Close add user"><X size={18}/></button>
             </div>
             <form onSubmit={save} className="p-5 space-y-4">
               <div><label className={lbl}>Full Name *</label><input className={inp} required value={form.name} onChange={e=>set('name',e.target.value)} placeholder="John Smith"/></div>
@@ -299,12 +302,12 @@ export default function Users() {
                   {ROLES.map(r=><option key={r} value={r}>{ROLE_META[r]?.label || r}</option>)}
                 </select>
               </div>
-              <p className="text-[10px] text-slate-500 bg-[#0f1117] rounded-lg px-3 py-2 border border-[#2a2d3e] flex items-center gap-2">
-                <Info size={12} className="flex-shrink-0 text-slate-400" /> Customers do not get team accounts. Add customer email in the RO and send tracking/payment links.
+              <p className="text-[10px] text-faint bg-void rounded-lg px-3 py-2 border border-line-2 flex items-center gap-2">
+                <Info size={12} className="flex-shrink-0 text-muted" /> Customers do not get team accounts. Add customer email in the RO and send tracking/payment links.
               </p>
               <div className="flex gap-3 pt-2">
-                <button type="button" onClick={close} className="flex-1 bg-[#0f1117] text-slate-400 rounded-lg py-2.5 text-sm border border-[#2a2d3e]">Cancel</button>
-                <button type="submit" disabled={saving} className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg py-2.5 text-sm disabled:opacity-50">
+                <button type="button" onClick={close} className="flex-1 bg-void text-muted rounded-lg py-2.5 text-sm border border-line-2">Cancel</button>
+                <button type="submit" disabled={saving} className="flex-1 bg-brand hover:bg-brand-lit text-white font-bold rounded-lg py-2.5 text-sm disabled:opacity-50">
                   {saving ? 'Creating...' : 'Create User'}
                 </button>
               </div>
@@ -314,19 +317,19 @@ export default function Users() {
       )}
 
       {showAddAssistant && (
-        <AppOverlay label="Add assistant" onClose={closeAssistant} className="bg-black/70 p-4">
-          <div className="bg-[#1a1d2e] rounded-2xl border border-[#2a2d3e] w-full max-w-md">
-            <div className="flex items-center justify-between p-5 border-b border-[#2a2d3e]">
-              <h3 className="font-bold text-white">Add Assistant</h3>
-              <button onClick={closeAssistant} className="text-slate-400 hover:text-white"><X size={18}/></button>
+        <AppOverlay label="Add assistant" onClose={closeAssistant} className="bg-void/75 p-4">
+          <div className="bg-panel rounded-instrument border border-line-2 w-full max-w-md">
+            <div className="flex items-center justify-between p-5 border-b border-line-2">
+              <h3 className="font-display font-bold text-ink">Add Assistant</h3>
+              <button type="button" onClick={closeAssistant} className="text-muted hover:text-ink" aria-label="Close add assistant"><X size={18}/></button>
             </div>
             <form onSubmit={saveAssistant} className="p-5 space-y-4">
               <div><label className={lbl}>Full Name *</label><input className={inp} required value={assistantForm.name} onChange={e => setAssistantForm(f => ({ ...f, name: e.target.value }))} placeholder="Alex Rivera"/></div>
               <div><label className={lbl}>Email *</label><input className={inp} required type="email" value={assistantForm.email} onChange={e => setAssistantForm(f => ({ ...f, email: e.target.value }))} placeholder="alex@example.com"/></div>
               <div><label className={lbl}>Temp Password *</label><input className={inp} required type="password" value={assistantForm.password} onChange={e => setAssistantForm(f => ({ ...f, password: e.target.value }))} placeholder="Temporary password"/></div>
               <div className="flex gap-3 pt-2">
-                <button type="button" onClick={closeAssistant} className="flex-1 bg-[#0f1117] text-slate-400 rounded-lg py-2.5 text-sm border border-[#2a2d3e]">Cancel</button>
-                <button type="submit" disabled={savingAssistant} className="flex-1 bg-yellow-400 hover:bg-yellow-300 text-[#0f1117] font-bold rounded-lg py-2.5 text-sm disabled:opacity-50">
+                <button type="button" onClick={closeAssistant} className="flex-1 bg-void text-muted rounded-lg py-2.5 text-sm border border-line-2">Cancel</button>
+                <button type="submit" disabled={savingAssistant} className="flex-1 rounded-instrument bg-brand py-2.5 text-sm font-bold text-white transition-colors hover:bg-brand-lit disabled:opacity-50">
                   {savingAssistant ? 'Creating...' : 'Create Assistant'}
                 </button>
               </div>
@@ -336,11 +339,11 @@ export default function Users() {
       )}
 
       {editUser && (
-        <AppOverlay label="Edit user" onClose={closeEdit} className="bg-black/70 p-4">
-          <div className="bg-[#1a1d2e] rounded-2xl border border-[#2a2d3e] w-full max-w-md">
-            <div className="flex items-center justify-between p-5 border-b border-[#2a2d3e]">
-              <h3 className="font-bold text-white">Edit User</h3>
-              <button onClick={closeEdit} className="text-slate-400 hover:text-white"><X size={18}/></button>
+        <AppOverlay label="Edit user" onClose={closeEdit} className="bg-void/75 p-4">
+          <div className="bg-panel rounded-instrument border border-line-2 w-full max-w-md">
+            <div className="flex items-center justify-between p-5 border-b border-line-2">
+              <h3 className="font-display font-bold text-ink">Edit User</h3>
+              <button type="button" onClick={closeEdit} className="text-muted hover:text-ink" aria-label="Close edit user"><X size={18}/></button>
             </div>
             <form onSubmit={saveEdit} className="p-5 space-y-4">
               <div><label className={lbl}>Full Name *</label><input className={inp} required value={editForm.name} onChange={e=>setEditForm(f => ({ ...f, name: e.target.value }))} /></div>
@@ -359,8 +362,8 @@ export default function Users() {
                 <input className={inp} type="password" value={editForm.password} onChange={e=>setEditForm(f => ({ ...f, password: e.target.value }))} placeholder="Leave blank to keep current password" />
               </div>
               <div className="flex gap-3 pt-2">
-                <button type="button" onClick={closeEdit} className="flex-1 bg-[#0f1117] text-slate-400 rounded-lg py-2.5 text-sm border border-[#2a2d3e]">Cancel</button>
-                <button type="submit" disabled={savingEdit} className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg py-2.5 text-sm disabled:opacity-50">
+                <button type="button" onClick={closeEdit} className="flex-1 bg-void text-muted rounded-lg py-2.5 text-sm border border-line-2">Cancel</button>
+                <button type="submit" disabled={savingEdit} className="flex-1 bg-brand hover:bg-brand-lit text-white font-bold rounded-lg py-2.5 text-sm disabled:opacity-50">
                   {savingEdit ? 'Saving...' : 'Save Changes'}
                 </button>
               </div>
@@ -370,11 +373,11 @@ export default function Users() {
       )}
 
       {resetUser && (
-        <AppOverlay label="Reset password" onClose={closeResetPassword} className="bg-black/70 p-4">
-          <div className="bg-[#1a1d2e] rounded-2xl border border-[#2a2d3e] w-full max-w-sm">
-            <div className="flex items-center justify-between p-5 border-b border-[#2a2d3e]">
-              <h3 className="font-bold text-white">Reset Password</h3>
-              <button onClick={closeResetPassword} className="text-slate-400 hover:text-white" disabled={resettingPassword}><X size={18}/></button>
+        <AppOverlay label="Reset password" onClose={closeResetPassword} className="bg-void/75 p-4">
+          <div className="bg-panel rounded-instrument border border-line-2 w-full max-w-sm">
+            <div className="flex items-center justify-between p-5 border-b border-line-2">
+              <h3 className="font-display font-bold text-ink">Reset Password</h3>
+              <button type="button" onClick={closeResetPassword} className="text-muted hover:text-ink" disabled={resettingPassword} aria-label="Close reset password"><X size={18}/></button>
             </div>
             <form onSubmit={submitResetPassword} className="p-5 space-y-4">
               <div>
@@ -394,14 +397,14 @@ export default function Users() {
                   type="button"
                   onClick={closeResetPassword}
                   disabled={resettingPassword}
-                  className="flex-1 bg-[#0f1117] text-slate-400 rounded-lg py-2.5 text-sm border border-[#2a2d3e] disabled:opacity-50"
+                  className="flex-1 bg-void text-muted rounded-lg py-2.5 text-sm border border-line-2 disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={resettingPassword}
-                  className="flex-1 bg-amber-500 hover:bg-amber-400 text-[#0f1117] font-bold rounded-lg py-2.5 text-sm disabled:opacity-50"
+                  className="flex-1 rounded-instrument bg-brand py-2.5 text-sm font-bold text-white transition-colors hover:bg-brand-lit disabled:opacity-50"
                 >
                   {resettingPassword ? 'Resetting...' : 'Reset Password'}
                 </button>
@@ -412,12 +415,12 @@ export default function Users() {
       )}
 
       {successToast && (
-        <div className="fixed bottom-4 right-4 z-50 bg-emerald-900/90 border border-emerald-600/60 text-emerald-100 text-sm px-4 py-2 rounded-lg shadow-lg">
+        <div role="status" aria-live="polite" className="fixed bottom-4 right-4 z-50 rounded-instrument border border-good/40 bg-panel px-4 py-2 text-sm text-good shadow-lg">
           {successToast}
         </div>
       )}
       {errorToast && (
-        <div className="fixed bottom-4 right-4 z-50 bg-red-900/90 border border-red-600/60 text-red-100 text-sm px-4 py-2 rounded-lg shadow-lg">
+        <div role="alert" className="fixed bottom-4 right-4 z-50 rounded-instrument border border-crit/40 bg-panel px-4 py-2 text-sm text-crit shadow-lg">
           {errorToast}
         </div>
       )}

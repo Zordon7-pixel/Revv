@@ -485,9 +485,9 @@ html[data-touch="true"][data-text-entry-focus="true"] .sheet-modal-body {
   .sheet-modal-card textarea:focus,
   html[data-touch="true"] .sheet-modal-card select:focus,
   .sheet-modal-card select:focus {
-    border-color: var(--gold);
+    border-color: var(--brand);
     font-size: 16px;
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--gold) 22%, transparent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 22%, transparent);
   }
 }
 

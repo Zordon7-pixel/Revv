@@ -289,8 +289,8 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
     setForm(f => ({ ...f, [k]: v }))
     if (formError) setFormError('')
   }
-  const inp = 'w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500'
-  const lbl = 'block text-xs font-medium text-slate-400 mb-1'
+  const inp = 'w-full rounded-instrument border border-line-2 bg-void px-3 py-2 text-sm text-ink placeholder:text-faint focus:border-brand focus:outline-none'
+  const lbl = 'block text-xs font-medium text-muted mb-1'
 
   async function applyAppraisalIntake({ fields, files, estimateDraft }) {
     const customerMatch = findAppraisalCustomerMatch(customers, fields)
@@ -541,7 +541,7 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
       onSaved(ro)
     } catch(e) {
       const msg = e?.response?.data?.error || e?.message || 'Unknown error'
-      console.error('[AddROModal] create failed:', e)
+      console.error('[AddROModal] create failed')
       setFormError(`Error creating RO: ${msg}`)
     } finally { setLoading(false) }
   }
@@ -563,10 +563,10 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
   }
 
   const content = (
-      <div className={`sheet-modal-card bg-[#1a1d2e] border border-[#2a2d3e] ${compactEditor ? 'add-ro-compact-active' : ''} ${isPage ? 'rounded-xl shadow-2xl' : 'sm:max-w-2xl sm:rounded-xl rounded-t-2xl'}`}>
-        <div className="sheet-modal-header flex items-center justify-between p-5 border-b border-[#2a2d3e]">
-          <h2 className="font-bold text-white">{t('ro.addRO')}</h2>
-          <button type="button" onClick={onClose} className="text-slate-400 hover:text-white" aria-label="Close new RO form"><X size={18} /></button>
+      <div className={`sheet-modal-card bg-panel border border-line-2 ${compactEditor ? 'add-ro-compact-active' : ''} ${isPage ? 'rounded-instrument shadow-2xl' : 'sm:max-w-2xl sm:rounded-instrument rounded-t-2xl'}`}>
+        <div className="sheet-modal-header flex items-center justify-between p-5 border-b border-line-2">
+          <h2 className="font-display font-bold text-ink">{t('ro.addRO')}</h2>
+          <button type="button" onClick={onClose} className="text-muted hover:text-ink" aria-label="Close new RO form"><X size={18} /></button>
         </div>
         <div className="sheet-modal-body p-5 space-y-4">
           <div className="grid grid-cols-2 gap-2" role="tablist" aria-label="New repair order entry method">
@@ -575,7 +575,7 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
               role="tab"
               aria-selected={entryMode === 'manual'}
               onClick={() => setEntryMode('manual')}
-              className={`rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${entryMode === 'manual' ? 'bg-brand text-white' : 'border border-[#2a2d3e] bg-[#0f1117] text-slate-400 hover:border-brand/50'}`}
+              className={`rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${entryMode === 'manual' ? 'bg-brand text-white' : 'border border-line-2 bg-void text-muted hover:border-brand/50'}`}
             >
               Manual Entry
             </button>
@@ -584,25 +584,25 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
               role="tab"
               aria-selected={entryMode === 'appraisal'}
               onClick={() => setEntryMode('appraisal')}
-              className={`rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${entryMode === 'appraisal' ? 'bg-brand text-white' : 'border border-[#2a2d3e] bg-[#0f1117] text-slate-400 hover:border-brand/50'}`}
+              className={`rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${entryMode === 'appraisal' ? 'bg-brand text-white' : 'border border-line-2 bg-void text-muted hover:border-brand/50'}`}
             >
               Appraisal Quick Intake
             </button>
           </div>
           {entryMode === 'appraisal' && <AppraisalQuickIntake onApply={applyAppraisalIntake} />}
           {entryMode === 'manual' && intakeNotice && (
-            <div role="status" className="rounded-lg border border-emerald-700/40 bg-emerald-950/20 px-3 py-2 text-sm text-emerald-200">
+            <div role="status" className="rounded-instrument border border-good/40 bg-good/10 px-3 py-2 text-sm text-good">
               {intakeNotice} {appraisalFiles.length > 0 ? `${appraisalFiles.length} source document${appraisalFiles.length === 1 ? '' : 's'} will be attached to the RO.` : ''}
             </div>
           )}
           {entryMode === 'manual' && intakeClaimMatches.length > 0 && (
-            <div role="alert" className="rounded-lg border border-amber-600/50 bg-amber-950/20 px-3 py-2 text-sm text-amber-100">
+            <div role="alert" className="rounded-instrument border border-crit/40 bg-crit/10 px-3 py-2 text-sm text-crit">
               Possible duplicate claim: {intakeClaimMatches.map((ro) => ro.ro_number || ro.id).join(', ')} already uses claim {form.claim_number}. Review that RO before creating another one.
             </div>
           )}
           {duplicateWarning && (
-            <div className="bg-amber-500/10 border border-amber-400/40 rounded-lg p-3 space-y-2">
-              <p className="text-amber-300 text-sm">
+            <div className="space-y-2 rounded-instrument border border-crit/40 bg-crit/10 p-3">
+              <p className="text-sm text-crit">
                 {`⚠️ Possible duplicate detected — ${duplicateWarning.count} open RO(s) exist for this customer/vehicle. Continue anyway or view existing ROs.`}
               </p>
               <div className="flex flex-col sm:flex-row gap-2">
@@ -612,14 +612,14 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
                     onSaved()
                     navigate(`/ros?customer_id=${encodeURIComponent(newRoCustomerId)}`)
                   }}
-                  className="w-full sm:w-auto bg-[#0f1117] border border-amber-300/40 hover:border-amber-300 text-amber-200 text-xs font-semibold px-3 py-2 rounded-lg"
+                  className="w-full rounded-instrument border border-line-2 bg-void px-3 py-2 text-xs font-semibold text-ink transition-colors hover:border-brand sm:w-auto"
                 >
                   View Existing
                 </button>
                 <button
                   type="button"
                   onClick={onSaved}
-                  className="w-full sm:w-auto bg-amber-500 hover:bg-amber-400 text-[#0f1117] text-xs font-semibold px-3 py-2 rounded-lg"
+                  className="w-full rounded-instrument bg-gold px-3 py-2 text-xs font-semibold text-on-gold transition-colors hover:bg-gold-lit sm:w-auto"
                 >
                   Keep New RO
                 </button>
@@ -627,21 +627,23 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
             </div>
           )}
           {formError && (
-            <div role="alert" className="rounded-lg border border-red-700/50 bg-red-950/30 px-3 py-2 text-sm text-red-100">
+            <div role="alert" className="rounded-instrument border border-crit/40 bg-crit/10 px-3 py-2 text-sm text-crit">
               {formError}
             </div>
           )}
           {entryMode === 'manual' && step === 1 && (
             <>
-              <h3 className="text-xs font-bold text-indigo-400 uppercase tracking-wide">Step 1 — Customer</h3>
+              <h3 className="text-xs font-bold text-brand uppercase tracking-wide">Step 1 — Customer</h3>
               <div className="flex gap-2">
                 <button
+                  type="button"
                   onClick={() => setForm((prev) => ({ ...prev, new_customer: false }))}
-                  className={`flex-1 py-2 rounded-lg text-xs font-medium transition-colors ${!form.new_customer ? 'bg-indigo-600 text-white' : 'bg-[#0f1117] text-slate-400 border border-[#2a2d3e]'}`}
+                  className={`flex-1 py-2 rounded-lg text-xs font-medium transition-colors ${!form.new_customer ? 'bg-brand text-white' : 'bg-void text-muted border border-line-2'}`}
                 >
                   Existing
                 </button>
                 <button
+                  type="button"
                   onClick={() => {
                     setCustomerVehicles([])
                     setForm((prev) => ({
@@ -660,7 +662,7 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
                       sms_consent: true,
                     }))
                   }}
-                  className={`flex-1 py-2 rounded-lg text-xs font-medium transition-colors ${form.new_customer ? 'bg-indigo-600 text-white' : 'bg-[#0f1117] text-slate-400 border border-[#2a2d3e]'}`}
+                  className={`flex-1 py-2 rounded-lg text-xs font-medium transition-colors ${form.new_customer ? 'bg-brand text-white' : 'bg-void text-muted border border-line-2'}`}
                 >
                   New
                 </button>
@@ -701,21 +703,21 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
                   <div><label className={lbl}>Address</label><input className={inp} value={form.customer_address} onChange={e => set('customer_address', e.target.value)} placeholder="Customer address" /></div>
                 </>
               )}
-              <label className="flex items-start gap-2 text-xs text-slate-300">
+              <label className="flex items-start gap-2 text-xs text-ink">
                 <input
                   type="checkbox"
                   checked={form.sms_consent}
                   onChange={e => set('sms_consent', e.target.checked)}
-                  className="mt-0.5 h-4 w-4 rounded border-[#2a2d3e] bg-[#0f1117] accent-indigo-600"
+                  className="mt-0.5 h-4 w-4 rounded border-line-2 bg-void accent-brand"
                 />
                 Customer consents to receive SMS status updates
               </label>
-              <label className="flex items-start gap-2 text-xs text-slate-300">
+              <label className="flex items-start gap-2 text-xs text-ink">
                 <input
                   type="checkbox"
                   checked={form.email_consent}
                   onChange={e => set('email_consent', e.target.checked)}
-                  className="mt-0.5 h-4 w-4 rounded border-[#2a2d3e] bg-[#0f1117] accent-brand"
+                  className="mt-0.5 h-4 w-4 rounded border-line-2 bg-void accent-brand"
                 />
                 Customer consents to receive email status updates
               </label>
@@ -723,21 +725,21 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
           )}
           {entryMode === 'manual' && step === 2 && (
             <>
-              <h3 className="text-xs font-bold text-indigo-400 uppercase tracking-wide">Step 2 - {t('common.vehicle')}</h3>
+              <h3 className="text-xs font-bold text-brand uppercase tracking-wide">Step 2 - {t('common.vehicle')}</h3>
               {!form.new_customer && customerVehicles.length > 0 && (
                 <div className="space-y-2">
                   <div className="flex gap-2">
                     <button
                       type="button"
                       onClick={useSavedVehicle}
-                      className={`flex-1 py-2 rounded-lg text-xs font-medium transition-colors ${!form.new_vehicle ? 'bg-indigo-600 text-white' : 'bg-[#0f1117] text-slate-400 border border-[#2a2d3e]'}`}
+                      className={`flex-1 py-2 rounded-lg text-xs font-medium transition-colors ${!form.new_vehicle ? 'bg-brand text-white' : 'bg-void text-muted border border-line-2'}`}
                     >
                       Saved Vehicle
                     </button>
                     <button
                       type="button"
                       onClick={() => setForm((prev) => ({ ...prev, new_vehicle: true, vehicle_id: '' }))}
-                      className={`flex-1 py-2 rounded-lg text-xs font-medium transition-colors ${form.new_vehicle ? 'bg-indigo-600 text-white' : 'bg-[#0f1117] text-slate-400 border border-[#2a2d3e]'}`}
+                      className={`flex-1 py-2 rounded-lg text-xs font-medium transition-colors ${form.new_vehicle ? 'bg-brand text-white' : 'bg-void text-muted border border-line-2'}`}
                     >
                       New Vehicle
                     </button>
@@ -755,7 +757,7 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
                       </select>
                     </div>
                   )}
-                  {autoFillLoading && <p className="text-[11px] text-slate-500">Loading customer vehicle defaults…</p>}
+                  {autoFillLoading && <p className="text-[11px] text-faint">Loading customer vehicle defaults…</p>}
                 </div>
               )}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
@@ -773,7 +775,7 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
           )}
           {entryMode === 'manual' && step === 3 && (
             <>
-              <h3 className="text-xs font-bold text-indigo-400 uppercase tracking-wide">Step 3 — Job Details</h3>
+              <h3 className="text-xs font-bold text-brand uppercase tracking-wide">Step 3 — Job Details</h3>
               <div><label className={lbl}>Job Type</label>
                 <select className={inp} value={form.job_type} onChange={e => set('job_type', e.target.value)}>
                   {JOB_TYPES.map(j => <option key={j} value={j}>{j.replace('_',' ')}</option>)}
@@ -784,8 +786,8 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
                   {DAMAGE_TYPES.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
                 </select>
               </div>
-              <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-xl p-4">
-                <p className="text-xs font-semibold text-indigo-400 mb-3">Mark Damaged Panels</p>
+              <div className="bg-void border border-line-2 rounded-instrument p-4">
+                <p className="text-xs font-semibold text-brand mb-3">Mark Damaged Panels</p>
                 <VehicleDiagram
                   value={form.damaged_panels}
                   onChange={panels => set('damaged_panels', panels)}
@@ -793,7 +795,7 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
               </div>
               <div className="flex gap-2">
                 {['insurance','cash'].map(t => (
-                  <button key={t} onClick={() => set('payment_type', t)} className={`flex-1 py-2 rounded-lg text-xs font-medium transition-colors capitalize ${form.payment_type===t ? 'bg-indigo-600 text-white' : 'bg-[#0f1117] text-slate-400 border border-[#2a2d3e]'}`}>{t}</button>
+                  <button type="button" key={t} onClick={() => set('payment_type', t)} className={`flex-1 py-2 rounded-lg text-xs font-medium transition-colors capitalize ${form.payment_type===t ? 'bg-brand text-white' : 'bg-void text-muted border border-line-2'}`}>{t}</button>
                 ))}
               </div>
               {form.payment_type === 'insurance' && (
@@ -811,8 +813,8 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
                       placeholder="State Farm, GEICO, Progressive..."
                       renderItem={ins => (
                         <div>
-                          <div className="text-xs text-white font-medium">{ins.name}</div>
-                          {ins.claims_phone && <div className="text-[10px] text-indigo-400">{ins.claims_phone}</div>}
+                          <div className="text-xs font-medium text-ink">{ins.name}</div>
+                          {ins.claims_phone && <div className="text-[10px] text-brand">{ins.claims_phone}</div>}
                         </div>
                       )}
                     />
@@ -839,7 +841,7 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
         {compactEditor && (
           <div className="add-ro-compact-editor" role="group" aria-label={`Editing ${compactEditor.label}`}>
             <div className="flex items-center justify-between gap-3">
-              <label htmlFor="add-ro-compact-input" className="text-sm font-semibold text-slate-100">
+              <label htmlFor="add-ro-compact-input" className="text-sm font-semibold text-ink">
                 {compactEditor.label}
               </label>
               <button
@@ -860,7 +862,7 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
                 placeholder={compactEditor.placeholder}
                 maxLength={compactEditor.maxLength}
                 rows={2}
-                className="w-full rounded-lg border border-brand bg-[#0f1117] px-3 py-2 text-base text-white outline-none shadow-[0_0_0_3px_color-mix(in_srgb,var(--brand)_20%,transparent)]"
+                className="w-full rounded-lg border border-brand bg-void px-3 py-2 text-base text-ink outline-none shadow-[0_0_0_3px_color-mix(in_srgb,var(--brand)_20%,transparent)]"
               />
             ) : (
               <input
@@ -877,41 +879,41 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
                 min={compactEditor.min}
                 max={compactEditor.max}
                 step={compactEditor.step}
-                className="w-full rounded-lg border border-brand bg-[#0f1117] px-3 py-2 text-base text-white outline-none shadow-[0_0_0_3px_color-mix(in_srgb,var(--brand)_20%,transparent)]"
+                className="w-full rounded-lg border border-brand bg-void px-3 py-2 text-base text-ink outline-none shadow-[0_0_0_3px_color-mix(in_srgb,var(--brand)_20%,transparent)]"
               />
             )}
           </div>
         )}
-        <div className="sheet-modal-footer flex items-center justify-between p-5 border-t border-[#2a2d3e]">
+        <div className="sheet-modal-footer flex items-center justify-between p-5 border-t border-line-2">
           {entryMode === 'appraisal' ? (
             <>
-              <button type="button" onClick={onClose} className="text-sm text-slate-400 transition-colors hover:text-white">{t('common.cancel')}</button>
-              <span className="text-xs text-slate-500">Upload · Review · Apply</span>
-              <button type="button" onClick={() => setEntryMode('manual')} className="rounded-lg border border-[#2a2d3e] px-3 py-2 text-xs font-semibold text-slate-300 hover:border-brand/50">Manual Entry</button>
+              <button type="button" onClick={onClose} className="text-sm text-muted transition-colors hover:text-ink">{t('common.cancel')}</button>
+              <span className="text-xs text-faint">Upload · Review · Apply</span>
+              <button type="button" onClick={() => setEntryMode('manual')} className="rounded-lg border border-line-2 px-3 py-2 text-xs font-semibold text-ink hover:border-brand/50">Manual Entry</button>
             </>
           ) : createdRoWithPendingDocuments ? (
             <>
-              <button type="button" onClick={() => onSaved(createdRoWithPendingDocuments)} className="text-sm text-slate-400 transition-colors hover:text-white">Open RO now</button>
-              <span className="text-xs text-amber-300">RO already created</span>
+              <button type="button" onClick={() => onSaved(createdRoWithPendingDocuments)} className="text-sm text-muted transition-colors hover:text-ink">Open RO now</button>
+              <span className="text-xs text-good">RO already created</span>
               <button type="button" onClick={retryPendingDocuments} disabled={loading} className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-lit disabled:opacity-50">{loading ? 'Retrying...' : 'Retry Appraisal Setup'}</button>
             </>
           ) : (
             <>
-              <button onClick={() => step > 1 ? setStep(s=>s-1) : onClose()} className="text-slate-400 hover:text-white text-sm transition-colors">
+              <button type="button" onClick={() => step > 1 ? setStep(s=>s-1) : onClose()} className="text-sm text-muted transition-colors hover:text-ink">
                 {step > 1 ? `← ${t('common.back')}` : t('common.cancel')}
               </button>
               <div className="flex items-center gap-2">
-                {[1,2,3].map(i => <div key={i} className={`w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full ${step>=i ? 'bg-brand' : 'bg-[#2a2d3e]'}`} />)}
+                {[1,2,3].map(i => <div key={i} className={`w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full ${step>=i ? 'bg-brand' : 'bg-raised'}`} />)}
               </div>
               {step < 3 ? (
-                <button onClick={() => {
+                <button type="button" onClick={() => {
                   const message = validateCurrentStep()
                   if (message) { setFormError(message); return }
                   setFormError('')
                   setStep(s=>s+1)
                 }} className="bg-brand hover:bg-brand-lit text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors">Next →</button>
               ) : (
-                <button onClick={submit} disabled={loading} className="bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] text-sm font-semibold px-4 py-2 rounded-lg transition-colors disabled:opacity-50">{loading ? 'Creating...' : <span className="inline-flex items-center gap-1">{t('ro.addRO')} <CheckCircle size={13} /></span>}</button>
+                <button type="button" onClick={submit} disabled={loading} className="rounded-instrument bg-gold px-4 py-2 text-sm font-semibold text-on-gold transition-colors hover:bg-gold-lit disabled:opacity-50">{loading ? 'Creating...' : <span className="inline-flex items-center gap-1">{t('ro.addRO')} <CheckCircle size={13} /></span>}</button>
               )}
             </>
           )}
@@ -928,7 +930,7 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
   }
 
   return (
-    <div className="sheet-modal-overlay fixed inset-0 bg-black/70 flex items-end sm:items-center justify-center z-[90] p-0 sm:p-4">
+    <div className="sheet-modal-overlay fixed inset-0 bg-void/75 flex items-end sm:items-center justify-center z-[90] p-0 sm:p-4">
       {content}
     </div>
   )

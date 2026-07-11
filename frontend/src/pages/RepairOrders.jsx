@@ -7,10 +7,10 @@ import AddROModal from '../components/AddROModal'
 import { Money, StatusBadge } from '../components/ui'
 
 export const STATUS_COLORS = {
-  intake: '#64748b', estimate: '#3b82f6', approval: '#eab308',
-  parts: '#f97316', repair: '#22c55e', paint: '#a855f7',
-  qc: '#06b6d4', delivery: '#10b981', closed: '#374151',
-  total_loss: '#dc2626', siu_hold: '#7c3aed'
+  intake: 'var(--muted)', estimate: 'var(--brand)', approval: 'var(--brand)',
+  parts: 'var(--brand)', repair: 'var(--brand)', paint: 'var(--brand)',
+  qc: 'var(--brand)', delivery: 'var(--brand)', closed: 'var(--good)',
+  total_loss: 'var(--crit)', siu_hold: 'var(--crit)',
 }
 
 export const STATUS_LABELS = {
@@ -118,8 +118,9 @@ export default function RepairOrders() {
     try {
       const r = await api.get('/repair-orders', { params: apiParams })
       setRos(r.data.ros || [])
-    } catch (_) {
+    } catch (error) {
       setRos([])
+      setErrorToast(error?.response?.data?.error || 'Could not load repair orders')
     }
   }, [apiParams])
 
@@ -271,17 +272,17 @@ export default function RepairOrders() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-white">Repair Orders</h1>
-          <p className="text-slate-500 text-sm">{ros.length} total · {ros.filter((r) => r.status !== 'closed').length} active</p>
+          <h1 className="font-display text-xl font-bold text-ink">Repair Orders</h1>
+          <p className="text-faint text-sm">{ros.length} total · {ros.filter((r) => r.status !== 'closed').length} active</p>
         </div>
         {!assistant && (
-          <button onClick={openNewRepairOrder} className="flex items-center gap-2 bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] text-sm font-semibold px-4 py-2 rounded-lg transition-colors">
+          <button type="button" onClick={openNewRepairOrder} className="flex items-center gap-2 rounded-instrument bg-gold px-4 py-2 text-sm font-semibold text-on-gold transition-colors hover:bg-gold-lit">
             <Plus size={16} /> New RO
           </button>
         )}
       </div>
 
-      <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-3">
+      <div className="bg-panel border border-line-2 rounded-instrument p-3">
         <div className="mb-3 flex flex-wrap gap-2" aria-label="Repair order status filters">
           {STATUS_FILTERS.map((filter) => {
             const active = filters.status === filter.value
@@ -303,18 +304,18 @@ export default function RepairOrders() {
         </div>
         <div className="grid grid-cols-1 md:grid-cols-8 gap-2">
           <div className="md:col-span-2 relative w-full">
-            <Search size={14} className="absolute left-3 top-2.5 text-slate-500" />
+            <Search size={14} className="absolute left-3 top-2.5 text-faint" />
             <input
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               placeholder="Search RO#, customer, make, or model"
-              className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg pl-9 pr-3 py-2 text-sm text-white focus:outline-none focus:border-[#EAB308]"
+              className="w-full rounded-instrument border border-line-2 bg-void py-2 pl-9 pr-3 text-sm text-ink focus:border-brand focus:outline-none"
             />
           </div>
           <select
             value={filters.status}
             onChange={(e) => updateFilter('status', e.target.value)}
-            className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#EAB308]"
+            className="w-full rounded-instrument border border-line-2 bg-void px-3 py-2 text-sm text-ink focus:border-brand focus:outline-none"
           >
             <option value="all">All Statuses</option>
             <option value="open">Open</option>
@@ -325,7 +326,7 @@ export default function RepairOrders() {
           <select
             value={filters.techId}
             onChange={(e) => updateFilter('tech_id', e.target.value)}
-            className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#EAB308]"
+            className="w-full rounded-instrument border border-line-2 bg-void px-3 py-2 text-sm text-ink focus:border-brand focus:outline-none"
           >
             <option value="all">All Techs</option>
             {techs.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
@@ -334,7 +335,7 @@ export default function RepairOrders() {
             <select
               value={filters.jobType}
               onChange={(e) => updateFilter('job_type', e.target.value)}
-              className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#EAB308]"
+              className="w-full rounded-instrument border border-line-2 bg-void px-3 py-2 text-sm text-ink focus:border-brand focus:outline-none"
             >
               <option value="all">All Job Types</option>
               {visibleJobTypes.map((jobType) => (
@@ -347,7 +348,7 @@ export default function RepairOrders() {
           <select
             value={filters.paymentStatus}
             onChange={(e) => updateFilter('payment_status', e.target.value)}
-            className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#EAB308]"
+            className="w-full rounded-instrument border border-line-2 bg-void px-3 py-2 text-sm text-ink focus:border-brand focus:outline-none"
           >
             <option value="all">All Payments</option>
             {visiblePaymentStatuses.map((paymentStatus) => (
@@ -360,17 +361,17 @@ export default function RepairOrders() {
             type="date"
             value={filters.dateFrom}
             onChange={(e) => updateFilter('date_from', e.target.value)}
-            className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#EAB308]"
+            className="w-full rounded-instrument border border-line-2 bg-void px-3 py-2 font-mono text-sm text-ink focus:border-brand focus:outline-none"
           />
           <input
             type="date"
             value={filters.dateTo}
             onChange={(e) => updateFilter('date_to', e.target.value)}
-            className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#EAB308]"
+            className="w-full rounded-instrument border border-line-2 bg-void px-3 py-2 font-mono text-sm text-ink focus:border-brand focus:outline-none"
           />
           <button
             onClick={clearFilters}
-            className="w-full md:col-span-6 bg-[#0f1117] border border-[#2a2d3e] hover:border-[#EAB308]/60 text-slate-300 text-sm px-3 py-2 rounded-lg"
+            className="w-full rounded-instrument border border-line-2 bg-void px-3 py-2 text-sm text-ink transition-colors hover:border-brand/60 md:col-span-6"
           >
             Clear Filters
           </button>
@@ -378,23 +379,24 @@ export default function RepairOrders() {
       </div>
 
       {ros.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 gap-4 bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl">
+        <div className="flex flex-col items-center justify-center py-16 gap-4 bg-panel border border-line-2 rounded-instrument">
           <img src="/empty-ros.png" alt="No repair orders" className="w-40 h-40 opacity-80 object-contain" />
-          <p className="text-slate-400 text-sm font-medium">No repair orders match your filters.</p>
-          <p className="text-slate-600 text-xs">Try clearing filters or creating a new RO.</p>
+          <p className="text-muted text-sm font-medium">No repair orders match your filters.</p>
+          <p className="text-faint text-xs">Try clearing filters or creating a new RO.</p>
         </div>
       ) : (
         <div className="space-y-3">
-          <table className="hidden md:table w-full bg-panel border border-line rounded-instrument overflow-hidden">
-            <thead className="bg-[#0f1117] border-b border-[#2a2d3e]">
-              <tr className="text-left text-xs text-slate-400">
+          <table className="hidden w-full overflow-hidden rounded-instrument border border-line bg-panel xl:table">
+            <thead className="bg-void border-b border-line-2">
+              <tr className="text-left text-xs text-muted">
                 {canBulk && !assistant && (
                   <th className="px-3 py-2 w-10">
                     <input
                       type="checkbox"
+                      aria-label="Select all visible repair orders"
                       checked={allVisibleSelected}
                       onChange={toggleAll}
-                      className="accent-indigo-500 cursor-pointer"
+                      className="accent-brand cursor-pointer"
                     />
                   </th>
                 )}
@@ -418,18 +420,19 @@ export default function RepairOrders() {
                     <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
                       <input
                         type="checkbox"
+                        aria-label={`Select ${ro.ro_number || 'repair order'}`}
                         checked={selected.has(ro.id)}
                         onChange={() => toggleSelect(ro.id)}
-                        className="accent-indigo-500 cursor-pointer"
+                        className="accent-brand cursor-pointer"
                       />
                     </td>
                   )}
                   <td className="px-3 py-2 font-mono text-xs font-semibold text-brand-lit">
                     <div className="inline-flex items-center gap-1.5">
                       <span>{ro.ro_number || '—'}</span>
-                      {hasInsuranceClaim(ro) && <Shield size={12} className="text-sky-400" />}
+                      {hasInsuranceClaim(ro) && <Shield size={12} className="text-brand" />}
                       {hasOpenSupplement(ro) && (
-                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-yellow-900/40 border border-yellow-700/40 text-yellow-300 text-[10px] font-semibold">
+                        <span className="inline-flex items-center gap-1 rounded-full border border-gold/40 bg-gold/10 px-1.5 py-0.5 text-[10px] font-semibold text-gold">
                           <AlertTriangle size={10} /> Supp
                         </span>
                       )}
@@ -450,7 +453,8 @@ export default function RepairOrders() {
                       {!assistant && (
                         <button
                           onClick={() => deleteRO(ro)}
-                          className="inline-flex items-center justify-center bg-red-900/30 border border-red-600/40 hover:border-red-500 text-red-300 p-1.5 rounded-lg transition-colors"
+                          aria-label={`Delete ${ro.ro_number || 'repair order'}`}
+                          className="inline-flex items-center justify-center rounded-instrument border border-crit/40 bg-crit/10 p-1.5 text-crit transition-colors hover:border-crit"
                           title="Delete RO"
                         >
                           <Trash2 size={14} />
@@ -469,7 +473,7 @@ export default function RepairOrders() {
             </tbody>
           </table>
 
-          <div className="md:hidden space-y-2">
+          <div className="space-y-2 xl:hidden">
             {ros.map((ro) => {
               const promise = promiseMeta(ro)
               const payment = paymentMeta(ro)
@@ -478,24 +482,25 @@ export default function RepairOrders() {
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     {canBulk && !assistant && (
-                      <label className="inline-flex items-center gap-2 text-xs text-slate-400 mb-2">
+                      <label className="inline-flex items-center gap-2 text-xs text-muted mb-2">
                         <input
                           type="checkbox"
+                          aria-label={`Select ${ro.ro_number || 'repair order'}`}
                           checked={selected.has(ro.id)}
                           onChange={() => toggleSelect(ro.id)}
-                          className="accent-indigo-500 cursor-pointer"
+                          className="accent-brand cursor-pointer"
                         />
                         Select
                       </label>
                     )}
                     <p className="font-mono text-brand-lit text-xs font-semibold flex items-center gap-1.5">
                       <span>{ro.ro_number || '—'}</span>
-                      {hasInsuranceClaim(ro) && <Shield size={11} className="text-sky-400" />}
+                      {hasInsuranceClaim(ro) && <Shield size={11} className="text-brand" />}
                     </p>
                     <p className="text-ink font-semibold text-sm">{ro.customer_name || '—'}</p>
                     <p className="text-muted text-xs">{[ro.year, ro.make, ro.model].filter(Boolean).join(' ') || '—'}</p>
                     {hasOpenSupplement(ro) && (
-                      <p className="text-yellow-300 text-[10px] mt-1 inline-flex items-center gap-1">
+                      <p className="mt-1 inline-flex items-center gap-1 text-[10px] text-gold">
                         <AlertTriangle size={10} /> Supplement {String(ro.supplement_status).toLowerCase()}
                       </p>
                     )}
@@ -512,7 +517,8 @@ export default function RepairOrders() {
                     {!assistant && (
                       <button
                         onClick={() => deleteRO(ro)}
-                        className="w-11 inline-flex items-center justify-center bg-red-900/30 border border-red-600/40 hover:border-red-500 text-red-300 text-xs font-semibold rounded-lg transition-colors"
+                        aria-label={`Delete ${ro.ro_number || 'repair order'}`}
+                        className="inline-flex w-11 items-center justify-center rounded-instrument border border-crit/40 bg-crit/10 text-xs font-semibold text-crit transition-colors hover:border-crit"
                         title="Delete RO"
                       >
                         <Trash2 size={14} />
@@ -520,7 +526,7 @@ export default function RepairOrders() {
                     )}
                     <button
                       onClick={() => navigate(`/ros/${ro.id}`)}
-                      className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold px-3 py-2 rounded-lg transition-colors"
+                      className="flex-1 bg-brand hover:bg-brand-lit text-white text-xs font-semibold px-3 py-2 rounded-lg transition-colors"
                     >
                       View
                     </button>
@@ -542,13 +548,13 @@ export default function RepairOrders() {
         />
       )}
       {selected.size > 0 && canBulk && !assistant && (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 w-[calc(100%-1.5rem)] md:w-auto md:min-w-[520px] bg-[#121427] border border-indigo-500/40 rounded-xl shadow-xl px-3 py-2">
+        <div className="fixed bottom-4 left-1/2 z-40 w-[calc(100%-1.5rem)] -translate-x-1/2 rounded-instrument border border-brand/40 bg-panel px-3 py-2 shadow-xl md:w-auto md:min-w-[520px]">
           <div className="flex items-center gap-2 md:gap-3">
-            <div className="text-xs md:text-sm text-white font-semibold">{selected.size} selected</div>
+            <div className="text-xs font-semibold text-ink md:text-sm">{selected.size} selected</div>
             <select
               value={bulkStatus}
               onChange={(e) => setBulkStatus(e.target.value)}
-              className="flex-1 md:w-56 bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-2.5 py-1.5 text-xs md:text-sm text-white focus:outline-none focus:border-indigo-400"
+              className="flex-1 rounded-instrument border border-line-2 bg-void px-2.5 py-1.5 text-xs text-ink focus:border-brand focus:outline-none md:w-56 md:text-sm"
             >
               <option value="">Update Status</option>
               {Object.entries(STATUS_LABELS).map(([value, label]) => (
@@ -558,13 +564,13 @@ export default function RepairOrders() {
             <button
               disabled={!bulkStatus || bulkLoading}
               onClick={applyBulkStatus}
-              className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs md:text-sm font-semibold px-3 py-1.5 rounded-lg transition-colors"
+              className="bg-brand hover:bg-brand-lit disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs md:text-sm font-semibold px-3 py-1.5 rounded-lg transition-colors"
             >
               {bulkLoading ? 'Updating...' : 'Apply'}
             </button>
             <button
               onClick={() => setSelected(new Set())}
-              className="text-xs md:text-sm text-slate-400 hover:text-white"
+              className="text-xs md:text-sm text-muted hover:text-ink"
             >
               Clear
             </button>
@@ -572,12 +578,12 @@ export default function RepairOrders() {
         </div>
       )}
       {successToast && (
-        <div className="fixed bottom-4 right-4 z-50 bg-emerald-900/90 border border-emerald-600/60 text-emerald-100 text-sm px-4 py-2 rounded-lg shadow-lg">
+        <div role="status" aria-live="polite" className="fixed bottom-4 right-4 z-50 rounded-instrument border border-good/40 bg-panel px-4 py-2 text-sm text-good shadow-lg">
           {successToast}
         </div>
       )}
       {errorToast && (
-        <div className="fixed bottom-4 right-4 z-50 bg-red-900/90 border border-red-600/60 text-red-100 text-sm px-4 py-2 rounded-lg shadow-lg">
+        <div role="alert" className="fixed bottom-4 right-4 z-50 rounded-instrument border border-crit/40 bg-panel px-4 py-2 text-sm text-crit shadow-lg">
           {errorToast}
         </div>
       )}

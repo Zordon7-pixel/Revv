@@ -43,6 +43,13 @@ const tokenizedFiles = [
   'src/pages/TechWorkload.jsx',
   'src/pages/Schedule.jsx',
   'src/pages/Settings.jsx',
+  'src/pages/StorageHold.jsx',
+  'src/pages/VehicleDiagnostics.jsx',
+  'src/pages/Invoice.jsx',
+  'src/pages/Users.jsx',
+  'src/pages/RepairOrders.jsx',
+  'src/pages/InspectionEditor.jsx',
+  'src/components/AddROModal.jsx',
 ]
 
 const phase6JFiles = [
@@ -65,6 +72,16 @@ const phase6KFiles = [
   'src/pages/TechWorkload.jsx',
   'src/pages/Schedule.jsx',
   'src/pages/Settings.jsx',
+]
+
+const phase6LFiles = [
+  'src/pages/StorageHold.jsx',
+  'src/pages/VehicleDiagnostics.jsx',
+  'src/pages/Invoice.jsx',
+  'src/pages/Users.jsx',
+  'src/pages/RepairOrders.jsx',
+  'src/pages/InspectionEditor.jsx',
+  'src/components/AddROModal.jsx',
 ]
 
 function read(relativePath) {
@@ -168,5 +185,44 @@ describe('redesign token conformance', () => {
     expect(settings).toMatch(/window\.confirm/)
     expect(settings).toMatch(/api\.delete\('\/market\/demo-data'\)/)
     expect(settings).toMatch(/api\.post\('\/subscriptions\/checkout'/)
+  })
+
+  it('keeps RO intake, storage, diagnostics, invoice, team, and inspection surfaces tokenized', () => {
+    for (const relativePath of phase6LFiles) {
+      const source = read(relativePath)
+      expect(source, relativePath).not.toMatch(/#[0-9a-f]{3,8}/i)
+      expect(source, relativePath).not.toMatch(/(?:bg|text|border|ring|from|to|via|placeholder|accent)-(?:indigo|blue|slate|yellow|red|green|emerald|amber|violet|purple|cyan|teal|orange|lime|pink|rose)-/)
+      expect(source, relativePath).not.toMatch(/(?:bg-gradient-|<linearGradient|\balert\s*\()/)
+    }
+
+    const storage = read('src/pages/StorageHold.jsx')
+    const diagnostics = read('src/pages/VehicleDiagnostics.jsx')
+    const invoice = read('src/pages/Invoice.jsx')
+    const users = read('src/pages/Users.jsx')
+    const repairOrders = read('src/pages/RepairOrders.jsx')
+    const inspection = read('src/pages/InspectionEditor.jsx')
+    const addRo = read('src/components/AddROModal.jsx')
+
+    expect(storage).toMatch(/api\.post\(`\/storage\/\$\{billing\.roId\}\/charges`/)
+    expect(storage).toMatch(/api\.patch\(`\/storage\/\$\{editingHold\.roId\}`/)
+    expect(storage.match(/<AppOverlay/g)?.length).toBe(2)
+    expect(diagnostics).toMatch(/api\.post\('\/vehicle-diagnostics'/)
+    expect(diagnostics).toMatch(/window\.confirm\('Delete this diagnostic scan\? This cannot be undone\.'/)
+    expect(invoice).toMatch(/api\.get\(`\/invoice\/\$\{id\}`/)
+    expect(invoice).toMatch(/api\.post\(`\/ros\/\$\{id\}\/email-invoice`/)
+    expect(invoice).toMatch(/window\.print\(\)/)
+    expect(invoice).toMatch(/print:bg-white/)
+    expect(users).toMatch(/api\.post\('\/users\/assistant'/)
+    expect(users).toMatch(/confirm\(`Remove \$\{name\}\? This cannot be undone\.`\)/)
+    expect(repairOrders).toMatch(/api\.post\('\/repair-orders\/bulk-status'/)
+    expect(repairOrders).toMatch(/navigate\('\/ros\/new'\)/)
+    expect(inspection).toMatch(/api\.patch\(`\/inspections\/\$\{inspectionId\}\/items\/\$\{itemId\}`/)
+    expect(inspection).toMatch(/api\.post\(`\/inspections\/\$\{inspectionId\}\/send`/)
+    expect(addRo).toMatch(/api\.post\('\/ros'/)
+    expect(addRo).toMatch(/presentation === 'page'/)
+    expect(addRo).toMatch(/shouldUseCompactKeyboardEditor/)
+    const globalStyles = read('src/index.css')
+    expect(globalStyles).toMatch(/\.sheet-modal-card input:focus[\s\S]*border-color: var\(--brand\)/)
+    expect(globalStyles).not.toMatch(/\.sheet-modal-card input:focus[\s\S]{0,900}border-color: var\(--gold\)/)
   })
 })
