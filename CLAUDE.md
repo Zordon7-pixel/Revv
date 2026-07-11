@@ -56,6 +56,48 @@ const ro = await dbGet('SELECT * FROM ros WHERE id = $1 AND shop_id = $2', [id, 
 await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 ```
 
+## Dispatch Log — 2026-07-10 REVV Redesign Phase 6A: Core Operations
+
+**Status:** READY FOR CLAUDE CODE QA — NOT DEPLOYED — PHASE 6 CONTINUES AFTER THIS BATCH
+
+**Scope**
+- Added reusable `PageHeader`, `Panel`, and `EmptyState` primitives to carry the instrument system across remaining operational screens.
+- Enriched Customer cards with vehicle, all-RO, and active-RO counts. The list query computes every count inside the authenticated shop scope, compares mixed IDs as text, and the customer full/detail child reads now also scope vehicles and ROs to the caller's shop.
+- Replaced the Inventory placeholder with a working responsive parts-inventory surface backed by the existing shop-scoped API: search, low-stock signals, create, edit, delete, integer-cent unit cost, assistant read-only behavior, mobile cards, and desktop table.
+- Restyled Schedule without changing week/month navigation, shift CRUD, early authorization, create-RO, or staffing calculations.
+- Rebuilt Parts on Order as mobile cards plus a contained desktop table while preserving tracking behavior and surfacing tracking failures inline.
+- Guarded incomplete turnaround responses so `undefined–undefined days` can never render; single-bound and unavailable ranges now have explicit copy.
+- Verified the Inventory editor in touch landscape while an input remained focused: Save stayed visible, the card centered beyond the 224 px sidebar, and the request sent `cost_cents: 4299` for `$42.99`.
+- No hosted DB, seed, reset, migration, destructive script, or customer/shop/RO mutation ran. Miles Automotive data was not touched.
+- Honest remaining Phase 6 work: the legacy decorative app canvas still keeps a dark background in light mode and phone topbar actions clip at the far right. Both are assigned to the upcoming shell propagation batch; this batch does not claim Phase 6 complete.
+
+**Files changed (10; batch cap respected)**
+- `backend/src/routes/customers.js`
+- `backend/src/__tests__/customerOptInConfirmation.test.js`
+- `frontend/src/components/ui/index.jsx`
+- `frontend/src/components/TurnaroundEstimator.jsx`
+- `frontend/src/pages/Customers.jsx`
+- `frontend/src/pages/__tests__/Customers.mobile.test.jsx`
+- `frontend/src/pages/Schedule.jsx`
+- `frontend/src/pages/Inventory.jsx`
+- `frontend/src/pages/PartsOnOrder.jsx`
+- `CLAUDE.md`
+
+**Verification**
+```
+node --check backend/src/routes/customers.js
+node --test native backend sweep  # 130/130 passed
+cd backend && npm run test:run  # extractor suite 7/7 passed
+cd frontend && npm run test:run  # 33 files, 92/92 passed
+cd frontend && npm run build  # clean
+Playwright mocked app shell  # Customers light 1440x900, Schedule dark 1024x768 touch, Inventory light 390x844, Parts dark 390x844
+viewport results  # zero horizontal overflow and zero console/page errors on all four routes
+Inventory touch-landscape interaction  # modal x=368 beyond sidebar, Save visible while focused, POST cents payload exact, modal closed
+screenshots  # /tmp/revv-phase6a-customers-light-desktop.png, /tmp/revv-phase6a-schedule-dark-tablet.png, /tmp/revv-phase6a-inventory-light-phone.png, /tmp/revv-phase6a-parts-dark-phone.png
+rg raw hex / indigo in changed surfaces  # zero matches; amber remains only for the early-clock-in warning action
+rm -rf frontend/dist && git diff --check && git ls-files frontend/dist | wc -l  # 0
+```
+
 ## Dispatch Log — 2026-07-10 REVV Redesign Phase 5
 
 **Status:** READY FOR CLAUDE CODE QA — NOT DEPLOYED

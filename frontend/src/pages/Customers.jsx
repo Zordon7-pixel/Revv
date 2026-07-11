@@ -3,18 +3,13 @@ import { Search, Phone, Shield, X, Mail, MapPin, Car, FileText, ChevronRight, Us
 import api from '../lib/api'
 import { isAdmin, isAssistant } from '../lib/auth'
 import AppOverlay from '../components/AppOverlay'
+import { EmptyState, PageHeader, Panel, StatusBadge } from '../components/ui'
 
 const LETTERS = ['All', ...Array.from({ length: 26 }, (_, i) => String.fromCharCode(65 + i))]
 
 function getLastName(name) {
   const parts = (name || '').trim().split(/\s+/)
   return parts[parts.length - 1] || ''
-}
-
-const STATUS_COLORS = {
-  intake: 'text-slate-400', estimate: 'text-blue-400', approval: 'text-yellow-400',
-  parts: 'text-orange-400', repair: 'text-green-400', paint: 'text-purple-400',
-  qc: 'text-cyan-400', delivery: 'text-emerald-400', closed: 'text-slate-500'
 }
 
 const EMPTY_CUSTOMER_FORM = {
@@ -52,7 +47,7 @@ function CustomerFormFields({ form, onChange }) {
   return (
     <>
       <div>
-        <label className="block text-xs font-medium text-slate-400 mb-1">Full Name</label>
+        <label className="block text-xs font-medium text-muted mb-1">Full Name</label>
         <input
           type="text"
           value={form.name}
@@ -60,11 +55,11 @@ function CustomerFormFields({ form, onChange }) {
           placeholder="John Doe"
           autoComplete="name"
           enterKeyHint="next"
-          className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+          className="w-full bg-void border border-line-2 rounded-lg px-3 py-2 text-sm text-ink placeholder-slate-600 focus:outline-none focus:border-brand"
         />
       </div>
       <div>
-        <label className="block text-xs font-medium text-slate-400 mb-1">Phone</label>
+        <label className="block text-xs font-medium text-muted mb-1">Phone</label>
         <input
           type="tel"
           value={form.phone}
@@ -73,11 +68,11 @@ function CustomerFormFields({ form, onChange }) {
           autoComplete="tel"
           inputMode="tel"
           enterKeyHint="next"
-          className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+          className="w-full bg-void border border-line-2 rounded-lg px-3 py-2 text-sm text-ink placeholder-slate-600 focus:outline-none focus:border-brand"
         />
       </div>
       <div>
-        <label className="block text-xs font-medium text-slate-400 mb-1">Email</label>
+        <label className="block text-xs font-medium text-muted mb-1">Email</label>
         <input
           type="email"
           value={form.email}
@@ -86,11 +81,11 @@ function CustomerFormFields({ form, onChange }) {
           autoComplete="email"
           inputMode="email"
           enterKeyHint="next"
-          className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+          className="w-full bg-void border border-line-2 rounded-lg px-3 py-2 text-sm text-ink placeholder-slate-600 focus:outline-none focus:border-brand"
         />
       </div>
       <div>
-        <label className="block text-xs font-medium text-slate-400 mb-1">Address</label>
+        <label className="block text-xs font-medium text-muted mb-1">Address</label>
         <input
           type="text"
           value={form.address}
@@ -98,29 +93,29 @@ function CustomerFormFields({ form, onChange }) {
           placeholder="123 Main St"
           autoComplete="street-address"
           enterKeyHint="next"
-          className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+          className="w-full bg-void border border-line-2 rounded-lg px-3 py-2 text-sm text-ink placeholder-slate-600 focus:outline-none focus:border-brand"
         />
       </div>
       <div>
-        <label className="block text-xs font-medium text-slate-400 mb-1">Insurance Company</label>
+        <label className="block text-xs font-medium text-muted mb-1">Insurance Company</label>
         <input
           type="text"
           value={form.insurance_company}
           onChange={(e) => onChange('insurance_company', e.target.value)}
           placeholder="State Farm, GEICO..."
           enterKeyHint="next"
-          className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+          className="w-full bg-void border border-line-2 rounded-lg px-3 py-2 text-sm text-ink placeholder-slate-600 focus:outline-none focus:border-brand"
         />
       </div>
       <div>
-        <label className="block text-xs font-medium text-slate-400 mb-1">Policy Number</label>
+        <label className="block text-xs font-medium text-muted mb-1">Policy Number</label>
         <input
           type="text"
           value={form.policy_number}
           onChange={(e) => onChange('policy_number', e.target.value)}
           placeholder="POL123456"
           enterKeyHint="done"
-          className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+          className="w-full bg-void border border-line-2 rounded-lg px-3 py-2 text-sm text-ink placeholder-slate-600 focus:outline-none focus:border-brand"
         />
       </div>
     </>
@@ -139,15 +134,16 @@ function CustomerFormModal({ title, form, error, loading, onChange, onClose, onS
       className="sheet-modal-overlay items-end bg-black/70 p-0 sm:items-center sm:p-4"
     >
       <form
-        className="sheet-modal-card bg-[#1a1d2e] rounded-2xl border border-[#2a2d3e]"
+        className="sheet-modal-card bg-panel rounded-instrument border border-line-2"
         onSubmit={onSubmit}
       >
-        <div className="sheet-modal-header border-b border-[#2a2d3e] px-5 sm:px-6 py-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-white">{title}</h2>
+        <div className="sheet-modal-header border-b border-line-2 px-5 sm:px-6 py-4 flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-ink">{title}</h2>
           <button
             type="button"
             onClick={handleClose}
-            className="text-slate-400 hover:text-white transition-colors"
+            aria-label={`Close ${title.toLowerCase()}`}
+            className="text-muted hover:text-ink transition-colors"
             disabled={loading}
           >
             <X size={20} />
@@ -155,21 +151,21 @@ function CustomerFormModal({ title, form, error, loading, onChange, onClose, onS
         </div>
         <div className="sheet-modal-body px-5 sm:px-6 py-4 space-y-3">
           <CustomerFormFields form={form} onChange={onChange} />
-          {error && <p className="text-sm text-red-300">{error}</p>}
+          {error && <p role="alert" className="text-sm text-red-300">{error}</p>}
         </div>
-        <div className="sheet-modal-footer border-t border-[#2a2d3e] px-5 sm:px-6 py-4 flex flex-col-reverse sm:flex-row items-stretch sm:items-center gap-3 sm:justify-end">
+        <div className="sheet-modal-footer border-t border-line-2 px-5 sm:px-6 py-4 flex flex-col-reverse sm:flex-row items-stretch sm:items-center gap-3 sm:justify-end">
           <button
             type="button"
             onClick={handleClose}
             disabled={loading}
-            className="px-4 py-2 text-sm text-slate-400 hover:text-white transition-colors disabled:opacity-50"
+            className="px-4 py-2 text-sm text-muted hover:text-ink transition-colors disabled:opacity-50"
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={loading}
-            className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+            className="bg-brand hover:bg-brand-lit disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
           >
             {loading ? 'Saving...' : submitLabel}
           </button>
@@ -195,91 +191,91 @@ function CustomerDrawer({ customerId, onClose, adminUser, onEdit, onDelete }) {
 
   return (
     <AppOverlay label="Customer 360" onClose={onClose} className="bg-black/60 p-0">
-      <div className="absolute inset-y-0 right-0 flex h-full w-full max-w-md flex-col overflow-hidden border-l border-[#2a2d3e] bg-[#1a1d2e] shadow-2xl">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[#2a2d3e] flex-shrink-0">
-          <h2 className="font-bold text-white text-sm">Customer 360</h2>
+      <div className="absolute inset-y-0 right-0 flex h-full w-full max-w-md flex-col overflow-hidden border-l border-line-2 bg-panel shadow-2xl">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-line-2 flex-shrink-0">
+          <h2 className="font-bold text-ink text-sm">Customer 360</h2>
           <div className="flex items-center gap-1">
             {adminUser && data?.customer && (
               <>
                 <button
                   onClick={() => onEdit(data.customer)}
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-300 hover:bg-[#0f1117] transition-colors"
+                  className="p-1.5 rounded-lg text-muted hover:text-brand-lit hover:bg-void transition-colors"
                   title="Edit customer"
                 >
                   <Pencil size={16} />
                 </button>
                 <button
                   onClick={() => onDelete(data.customer)}
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-red-300 hover:bg-[#0f1117] transition-colors"
+                  className="p-1.5 rounded-lg text-muted hover:text-red-300 hover:bg-void transition-colors"
                   title="Delete customer"
                 >
                   <Trash2 size={16} />
                 </button>
               </>
             )}
-            <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors"><X size={18}/></button>
+            <button onClick={onClose} className="text-muted hover:text-ink transition-colors"><X size={18}/></button>
           </div>
         </div>
 
         {loading ? (
-          <div className="flex-1 flex items-center justify-center text-slate-500 text-sm">Loading...</div>
+          <div className="flex-1 flex items-center justify-center text-faint text-sm">Loading...</div>
         ) : !data ? (
-          <div className="flex-1 flex items-center justify-center text-slate-500 text-sm">Failed to load</div>
+          <div className="flex-1 flex items-center justify-center text-faint text-sm">Failed to load</div>
         ) : (
           <div className="flex-1 overflow-y-auto p-5 space-y-5">
-            <div className="flex items-center gap-1 rounded-lg bg-[#0f1117] p-1 border border-[#2a2d3e]">
+            <div className="flex items-center gap-1 rounded-lg bg-void p-1 border border-line-2">
               <button
                 onClick={() => setActiveTab('info')}
-                className={`flex-1 rounded-md px-2.5 py-1.5 text-xs font-semibold transition-colors ${activeTab === 'info' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                className={`flex-1 rounded-md px-2.5 py-1.5 text-xs font-semibold transition-colors ${activeTab === 'info' ? 'bg-brand text-white' : 'text-muted hover:text-ink'}`}
               >
                 Info
               </button>
               <button
                 onClick={() => setActiveTab('vehicles')}
-                className={`flex-1 rounded-md px-2.5 py-1.5 text-xs font-semibold transition-colors ${activeTab === 'vehicles' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                className={`flex-1 rounded-md px-2.5 py-1.5 text-xs font-semibold transition-colors ${activeTab === 'vehicles' ? 'bg-brand text-white' : 'text-muted hover:text-ink'}`}
               >
                 Vehicles ({data.vehicles.length})
               </button>
               <button
                 onClick={() => setActiveTab('ros')}
-                className={`flex-1 rounded-md px-2.5 py-1.5 text-xs font-semibold transition-colors ${activeTab === 'ros' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                className={`flex-1 rounded-md px-2.5 py-1.5 text-xs font-semibold transition-colors ${activeTab === 'ros' ? 'bg-brand text-white' : 'text-muted hover:text-ink'}`}
               >
                 Repair Orders ({data.ros.length})
               </button>
             </div>
 
             {activeTab === 'info' && (
-              <div className="bg-[#0f1117] rounded-xl p-4 space-y-2.5">
+              <div className="bg-void rounded-instrument p-4 space-y-2.5">
                 <div className="flex items-center gap-3 mb-3">
-                  <div className="w-10 h-10 rounded-full bg-indigo-600/30 flex items-center justify-center flex-shrink-0">
-                    <User size={18} className="text-indigo-400" />
+                  <div className="w-10 h-10 rounded-full border border-brand bg-panel-2 flex items-center justify-center flex-shrink-0">
+                    <User size={18} className="text-brand" />
                   </div>
                   <div>
-                    <div className="font-bold text-white">{data.customer.name}</div>
-                    <div className="text-xs text-slate-500">Customer ID #{data.customer.id?.slice(-6)}</div>
+                    <div className="font-bold text-ink">{data.customer.name}</div>
+                    <div className="text-xs text-faint">Customer ID #{data.customer.id?.slice(-6)}</div>
                   </div>
                 </div>
                 {data.customer.phone && (
-                  <div className="flex items-center gap-2 text-xs text-slate-300">
-                    <Phone size={12} className="text-slate-500 flex-shrink-0"/>
-                    <a href={`tel:${data.customer.phone}`} className="hover:text-indigo-400">{data.customer.phone}</a>
+                  <div className="flex items-center gap-2 text-xs text-muted">
+                    <Phone size={12} className="text-faint flex-shrink-0"/>
+                    <a href={`tel:${data.customer.phone}`} className="hover:text-brand">{data.customer.phone}</a>
                   </div>
                 )}
                 {data.customer.email && (
-                  <div className="flex items-center gap-2 text-xs text-slate-300">
-                    <Mail size={12} className="text-slate-500 flex-shrink-0"/>
-                    <a href={`mailto:${data.customer.email}`} className="hover:text-indigo-400 truncate">{data.customer.email}</a>
+                  <div className="flex items-center gap-2 text-xs text-muted">
+                    <Mail size={12} className="text-faint flex-shrink-0"/>
+                    <a href={`mailto:${data.customer.email}`} className="hover:text-brand truncate">{data.customer.email}</a>
                   </div>
                 )}
                 {data.customer.address && (
-                  <div className="flex items-center gap-2 text-xs text-slate-300">
-                    <MapPin size={12} className="text-slate-500 flex-shrink-0"/>
+                  <div className="flex items-center gap-2 text-xs text-muted">
+                    <MapPin size={12} className="text-faint flex-shrink-0"/>
                     {data.customer.address}
                   </div>
                 )}
                 {data.customer.insurance_company && (
-                  <div className="flex items-center gap-2 text-xs text-slate-300">
-                    <Shield size={12} className="text-slate-500 flex-shrink-0"/>
+                  <div className="flex items-center gap-2 text-xs text-muted">
+                    <Shield size={12} className="text-faint flex-shrink-0"/>
                     {data.customer.insurance_company} {data.customer.policy_number ? `· ${data.customer.policy_number}` : ''}
                   </div>
                 )}
@@ -289,20 +285,20 @@ function CustomerDrawer({ customerId, onClose, adminUser, onEdit, onDelete }) {
             {activeTab === 'vehicles' && (
               <div>
                 <div className="flex items-center gap-2 mb-2">
-                  <Car size={14} className="text-indigo-400"/>
-                  <span className="text-xs font-bold text-white uppercase tracking-wide">Vehicles ({data.vehicles.length})</span>
+                  <Car size={14} className="text-brand"/>
+                  <span className="text-xs font-bold text-ink uppercase tracking-wide">Vehicles ({data.vehicles.length})</span>
                 </div>
                 {data.vehicles.length === 0 ? (
-                  <div className="text-xs text-slate-500 bg-[#0f1117] rounded-xl p-3">No vehicles on file</div>
+                  <div className="text-xs text-faint bg-void rounded-instrument p-3">No vehicles on file</div>
                 ) : (
                   <div className="space-y-2">
                     {data.vehicles.map(v => (
-                      <div key={v.id} className="bg-[#0f1117] rounded-xl p-3">
-                        <div className="text-sm font-semibold text-white">{v.year} {v.make} {v.model}</div>
+                      <div key={v.id} className="bg-void rounded-instrument p-3">
+                        <div className="text-sm font-semibold text-ink">{v.year} {v.make} {v.model}</div>
                         <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
-                          {v.color && <span className="text-[10px] text-slate-500">{v.color}</span>}
-                          {v.plate && <span className="text-[10px] text-slate-400 font-mono">{v.plate}</span>}
-                          {v.vin && <span className="text-[10px] text-slate-600 font-mono truncate">{v.vin}</span>}
+                          {v.color && <span className="text-[10px] text-faint">{v.color}</span>}
+                          {v.plate && <span className="text-[10px] text-muted font-mono">{v.plate}</span>}
+                          {v.vin && <span className="text-[10px] text-faint font-mono truncate">{v.vin}</span>}
                         </div>
                       </div>
                     ))}
@@ -314,24 +310,24 @@ function CustomerDrawer({ customerId, onClose, adminUser, onEdit, onDelete }) {
             {activeTab === 'ros' && (
               <div>
                 <div className="flex items-center gap-2 mb-2">
-                  <FileText size={14} className="text-indigo-400"/>
-                  <span className="text-xs font-bold text-white uppercase tracking-wide">Repair Orders ({data.ros.length})</span>
+                  <FileText size={14} className="text-brand"/>
+                  <span className="text-xs font-bold text-ink uppercase tracking-wide">Repair Orders ({data.ros.length})</span>
                 </div>
                 {data.ros.length === 0 ? (
-                  <div className="text-xs text-slate-500 bg-[#0f1117] rounded-xl p-3">No repair orders</div>
+                  <div className="text-xs text-faint bg-void rounded-instrument p-3">No repair orders</div>
                 ) : (
                   <div className="space-y-2">
                     {data.ros.map(ro => (
-                      <div key={ro.id} className="bg-[#0f1117] rounded-xl p-3">
+                      <div key={ro.id} className="bg-void rounded-instrument p-3">
                         <div className="flex items-center justify-between mb-1">
-                          <span className="text-xs font-semibold text-white">{ro.ro_number}</span>
-                          <span className={`text-[10px] font-semibold capitalize ${STATUS_COLORS[ro.status] || 'text-slate-400'}`}>{ro.status}</span>
+                          <span className="text-xs font-semibold text-ink">{ro.ro_number}</span>
+                          <StatusBadge status={ro.status} className="min-h-5 px-2 py-0.5 text-[10px]" />
                         </div>
                         <div className="flex items-center justify-between">
-                          <span className="text-[10px] text-slate-500 capitalize">{ro.job_type} · {new Date(ro.created_at).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' })}</span>
+                          <span className="text-[10px] text-faint capitalize">{ro.job_type} · {new Date(ro.created_at).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' })}</span>
                           {ro.total > 0 && <span className="text-[10px] font-semibold text-emerald-400">${Number(ro.total).toLocaleString()}</span>}
                         </div>
-                        {ro.notes && <div className="text-[10px] text-slate-600 mt-1 truncate">{ro.notes}</div>}
+                        {ro.notes && <div className="text-[10px] text-faint mt-1 truncate">{ro.notes}</div>}
                       </div>
                     ))}
                   </div>
@@ -510,17 +506,16 @@ export default function Customers() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-white">Customers</h1>
-          <p className="text-slate-500 text-sm">{customers.length} on file</p>
-        </div>
-        {!assistantUser && (
-          <button onClick={openAddCustomerModal} className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium px-3 py-2 rounded-lg transition-colors">
+      <PageHeader
+        eyebrow="Customer book"
+        title="Customers"
+        description={`${customers.length} customer${customers.length === 1 ? '' : 's'} on file · ${customers.reduce((sum, customer) => sum + Number(customer.active_ro_count || 0), 0)} active repair orders`}
+        actions={!assistantUser && (
+          <button onClick={openAddCustomerModal} className="bg-brand hover:bg-brand-lit text-white text-xs font-medium px-3 py-2 rounded-lg transition-colors">
             + Add Customer
           </button>
         )}
-      </div>
+      />
 
       {deleteError && (
         <div role="alert" className="bg-red-900/40 border border-red-700/50 text-red-100 text-sm px-3 py-2 rounded-lg">
@@ -528,17 +523,16 @@ export default function Customers() {
         </div>
       )}
 
-      {/* Search */}
-      <div className="relative">
-        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-        <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search by name, phone, insurer..."
-          className="w-full bg-[#1a1d2e] border border-[#2a2d3e] rounded-lg pl-9 pr-4 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500" />
-      </div>
-
-      {/* A-Z Tabs */}
-      {customers.length > 0 && (
-        <div className="overflow-x-auto pb-1 -mx-1 px-1">
-          <div className="flex gap-1 min-w-max">
+      <Panel className="p-3">
+        <div className="relative">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-faint" />
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search by name, phone, insurer..."
+            aria-label="Search customers"
+            className="w-full rounded-lg border border-line-2 bg-void py-2.5 pl-9 pr-4 text-sm text-ink placeholder:text-faint focus:outline-none focus:border-brand" />
+        </div>
+        {customers.length > 0 && (
+          <div className="mt-3 overflow-x-auto pb-1">
+            <div className="flex min-w-max gap-1">
             {LETTERS.map(letter => {
               const count = letterCounts[letter] || 0
               const active = activeLetter === letter
@@ -550,41 +544,52 @@ export default function Customers() {
                   disabled={!hasCustomers && letter !== 'All'}
                   className={`relative flex-shrink-0 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                     active
-                      ? 'bg-indigo-600 text-white'
+                      ? 'bg-brand text-white'
                       : hasCustomers
-                        ? 'bg-[#1a1d2e] border border-[#2a2d3e] text-slate-300 hover:border-indigo-500/50 hover:text-white'
-                        : 'bg-[#1a1d2e] border border-[#2a2d3e] text-slate-700 cursor-default'
+                        ? 'bg-panel border border-line-2 text-muted hover:border-brand hover:text-ink'
+                        : 'bg-panel border border-line-2 text-faint cursor-default'
                   }`}
                 >
                   {letter}
                   {hasCustomers && (
-                    <span className={`ml-1 text-[9px] font-bold ${active ? 'text-indigo-200' : 'text-slate-500'}`}>
+                    <span className={`ml-1 text-[9px] font-bold ${active ? 'text-brand-lit' : 'text-faint'}`}>
                       {count}
                     </span>
                   )}
                 </button>
               )
             })}
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </Panel>
 
       {customers.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 gap-4 bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl">
-          <img src="/empty-customers.png" alt="No customers" className="w-40 h-40 opacity-80 object-contain" />
-          <p className="text-slate-400 text-sm font-medium">Your customer book is waiting.</p>
-          <p className="text-slate-600 text-xs">No customers on file yet.</p>
-        </div>
+        <Panel>
+          <EmptyState
+            media={<img src="/empty-customers.png" alt="" className="mx-auto h-32 w-32 object-contain" />}
+            title="Your customer book is waiting."
+            description="Add the first customer to connect their vehicles, repair orders, and communication history."
+            action={!assistantUser && <button type="button" onClick={openAddCustomerModal} className="revv-btn revv-btn-primary">Add customer</button>}
+          />
+        </Panel>
       ) : filtered.length === 0 ? (
-        <div className="text-center text-slate-500 text-sm py-10 border border-dashed border-[#2a2d3e] rounded-xl">
-          No customers match your search.
-        </div>
+        <Panel><EmptyState icon={Search} title="No customers found" description="Change the search or letter filter and try again." /></Panel>
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {filtered.map(c => (
-            <div key={c.id}
+            <article key={c.id}
               onClick={() => setSelectedId(c.id)}
-              className="relative bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 hover:border-indigo-500/40 transition-colors cursor-pointer group">
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault()
+                  setSelectedId(c.id)
+                }
+              }}
+              role="button"
+              tabIndex={0}
+              aria-label={`Open ${c.name}`}
+              className="group relative cursor-pointer rounded-instrument border border-line bg-panel p-4 transition-colors hover:border-brand focus:outline-none focus:ring-2 focus:ring-brand">
               {adminUser && (
                 <div className="absolute top-2.5 right-2.5 flex items-center gap-1 z-10">
                   <button
@@ -592,7 +597,7 @@ export default function Customers() {
                       e.stopPropagation()
                       setEditingCustomer(c)
                     }}
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-300 hover:bg-[#0f1117] transition-colors"
+                    className="p-1.5 rounded-lg text-muted hover:text-brand-lit hover:bg-void transition-colors"
                     title="Edit customer"
                   >
                     <Pencil size={14} />
@@ -602,7 +607,7 @@ export default function Customers() {
                       e.stopPropagation()
                       deleteCustomer(c)
                     }}
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-red-300 hover:bg-[#0f1117] transition-colors"
+                    className="p-1.5 rounded-lg text-muted hover:text-red-300 hover:bg-void transition-colors"
                     title="Delete customer"
                   >
                     <Trash2 size={14} />
@@ -610,13 +615,18 @@ export default function Customers() {
                 </div>
               )}
               <div className="flex items-start justify-between">
-                <div className="font-semibold text-white text-sm mb-2 group-hover:text-indigo-300 transition-colors">{c.name}</div>
-                {!adminUser && <ChevronRight size={14} className="text-slate-600 group-hover:text-indigo-400 mt-0.5 flex-shrink-0 transition-colors" />}
+                <div className="font-semibold text-ink text-sm mb-2 group-hover:text-brand-lit transition-colors">{c.name}</div>
+                {!adminUser && <ChevronRight size={14} className="text-faint group-hover:text-brand mt-0.5 flex-shrink-0 transition-colors" />}
               </div>
-              {c.phone && <div className="flex items-center gap-2 text-xs text-slate-400 mb-1"><Phone size={11} /> {c.phone}</div>}
-              {c.insurance_company && <div className="flex items-center gap-2 text-xs text-slate-400"><Shield size={11} /> {c.insurance_company} {c.policy_number ? `· ${c.policy_number}` : ''}</div>}
-              {c.address && <div className="text-xs text-slate-500 mt-1.5">{c.address}</div>}
-            </div>
+              {c.phone && <div className="flex items-center gap-2 text-xs text-muted mb-1"><Phone size={11} /> {c.phone}</div>}
+              {c.insurance_company && <div className="flex items-center gap-2 text-xs text-muted"><Shield size={11} /> {c.insurance_company} {c.policy_number ? `· ${c.policy_number}` : ''}</div>}
+              {c.address && <div className="mt-1.5 truncate text-xs text-faint">{c.address}</div>}
+              <div className="mt-4 grid grid-cols-3 gap-2 border-t border-line pt-3 text-center">
+                <div><strong className="block font-mono text-sm text-ink">{Number(c.vehicle_count || 0)}</strong><span className="text-[10px] text-faint">Vehicles</span></div>
+                <div><strong className="block font-mono text-sm text-ink">{Number(c.ro_count || 0)}</strong><span className="text-[10px] text-faint">ROs</span></div>
+                <div><strong className="block font-mono text-sm text-brand">{Number(c.active_ro_count || 0)}</strong><span className="text-[10px] text-faint">Active</span></div>
+              </div>
+            </article>
           ))}
         </div>
       )}

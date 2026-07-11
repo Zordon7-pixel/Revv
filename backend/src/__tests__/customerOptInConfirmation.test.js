@@ -166,3 +166,62 @@ test('POST /customers attempts opt-in confirmation only for consented creates wi
   assert.equal(res.statusCode, 201);
   assert.equal(smsCalls.length, 0);
 });
+
+test('GET /customers returns shop-scoped vehicle and RO counts for customer cards', async () => {
+  const queries = [];
+  const mockModule = (relativePath, exports) => {
+    const resolved = require.resolve(relativePath);
+    require.cache[resolved] = { id: resolved, filename: resolved, loaded: true, exports };
+  };
+
+  delete require.cache[require.resolve('../routes/customers')];
+  mockModule('../db', {
+    pool: {},
+    dbAll: async (sql, params) => {
+      queries.push({ sql, params });
+      return [{ id: 'customer-1', name: 'Jane Customer', vehicle_count: 2, ro_count: 4, active_ro_count: 1 }];
+    },
+    dbGet: async () => null,
+    dbRun: async () => ({ rowCount: 0 }),
+  });
+  mockModule('../middleware/auth', (req, res, next) => next());
+  mockModule('../middleware/roles', { requireTechnician: (req, res, next) => next() });
+
+  const customersRouter = require('../routes/customers');
+  const stack = customersRouter.stack.find((layer) => (
+    layer.route?.path === '/' && layer.route?.methods?.get
+  )).route.stack;
+  const req = { user: { shop_id: 'shop-1', role: 'owner' } };
+  const res = {
+    statusCode: 200,
+    body: null,
+    status(code) { this.statusCode = code; return this; },
+    json(payload) { this.body = payload; return this; },
+  };
+
+  await new Promise((resolve, reject) => {
+    let index = 0;
+    const next = (err) => {
+      if (err) return reject(err);
+      const layer = stack[index++];
+      if (!layer) return resolve();
+      try {
+        const result = layer.handle(req, res, next);
+        if (result?.then) result.then(() => { if (index >= stack.length) resolve(); }, reject);
+      } catch (error) {
+        reject(error);
+      }
+    };
+    next();
+  });
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.customers[0].vehicle_count, 2);
+  assert.equal(res.body.customers[0].ro_count, 4);
+  assert.equal(res.body.customers[0].active_ro_count, 1);
+  assert.equal(queries.length, 1);
+  assert.deepEqual(queries[0].params, ['shop-1']);
+  assert.match(queries[0].sql, /WHERE c\.shop_id::text = \$1::text/);
+  assert.match(queries[0].sql, /v\.shop_id::text = c\.shop_id::text/);
+  assert.equal((queries[0].sql.match(/ro\.shop_id::text = c\.shop_id::text/g) || []).length, 2);
+});

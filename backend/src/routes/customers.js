@@ -18,7 +18,39 @@ function normalizePreferredContactMethod(value, smsConsent, emailConsent) {
 
 router.get('/', auth, async (req, res) => {
   try {
-    const customers = await dbAll('SELECT * FROM customers WHERE shop_id = $1 ORDER BY name', [req.user.shop_id]);
+    const customers = await dbAll(
+      `SELECT
+         c.id,
+         c.shop_id,
+         c.name,
+         c.phone,
+         c.sms_consent,
+         c.email,
+         c.email_consent,
+         c.preferred_contact_method,
+         c.address,
+         c.insurance_company,
+         c.policy_number,
+         c.created_at,
+         c.updated_at,
+         (SELECT COUNT(*)::int
+            FROM vehicles v
+           WHERE v.customer_id::text = c.id::text
+             AND v.shop_id::text = c.shop_id::text) AS vehicle_count,
+         (SELECT COUNT(*)::int
+            FROM repair_orders ro
+           WHERE ro.customer_id::text = c.id::text
+             AND ro.shop_id::text = c.shop_id::text) AS ro_count,
+         (SELECT COUNT(*)::int
+            FROM repair_orders ro
+           WHERE ro.customer_id::text = c.id::text
+             AND ro.shop_id::text = c.shop_id::text
+             AND LOWER(COALESCE(ro.status, '')) NOT IN ('closed', 'total_loss')) AS active_ro_count
+       FROM customers c
+       WHERE c.shop_id::text = $1::text
+       ORDER BY LOWER(c.name) ASC`,
+      [req.user.shop_id]
+    );
     res.json({ customers });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -29,10 +61,13 @@ router.get('/:id/full', auth, async (req, res) => {
   try {
     const customer = await dbGet('SELECT * FROM customers WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
     if (!customer) return res.status(404).json({ error: 'Not found' });
-    const vehicles = await dbAll('SELECT * FROM vehicles WHERE customer_id = $1 ORDER BY created_at DESC', [customer.id]);
+    const vehicles = await dbAll(
+      'SELECT * FROM vehicles WHERE customer_id::text = $1::text AND shop_id::text = $2::text ORDER BY created_at DESC',
+      [customer.id, req.user.shop_id]
+    );
     const ros = await dbAll(
-      'SELECT ro_number, id, status, job_type, created_at, updated_at, total, notes FROM repair_orders WHERE customer_id = $1 ORDER BY created_at DESC',
-      [customer.id]
+      'SELECT ro_number, id, status, job_type, created_at, updated_at, total, notes FROM repair_orders WHERE customer_id::text = $1::text AND shop_id::text = $2::text ORDER BY created_at DESC',
+      [customer.id, req.user.shop_id]
     );
     res.json({ customer, vehicles, ros });
   } catch (err) {
@@ -142,8 +177,14 @@ router.get('/:id', auth, async (req, res) => {
   try {
     const customer = await dbGet('SELECT * FROM customers WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
     if (!customer) return res.status(404).json({ error: 'Not found' });
-    const vehicles = await dbAll('SELECT * FROM vehicles WHERE customer_id = $1', [customer.id]);
-    const ros = await dbAll('SELECT ro_number, status, job_type, created_at FROM repair_orders WHERE customer_id = $1 ORDER BY created_at DESC', [customer.id]);
+    const vehicles = await dbAll(
+      'SELECT * FROM vehicles WHERE customer_id::text = $1::text AND shop_id::text = $2::text',
+      [customer.id, req.user.shop_id]
+    );
+    const ros = await dbAll(
+      'SELECT ro_number, status, job_type, created_at FROM repair_orders WHERE customer_id::text = $1::text AND shop_id::text = $2::text ORDER BY created_at DESC',
+      [customer.id, req.user.shop_id]
+    );
     res.json({ ...customer, vehicles, ros });
   } catch (err) {
     res.status(500).json({ error: err.message });

@@ -179,3 +179,46 @@ export function StatInstrument({ label, value, detail, gauge, tone = 'brand', cl
     </Component>
   )
 }
+
+export function PageHeader({ eyebrow, title, description, actions, className = '' }) {
+  return (
+    <header className={classNames('flex flex-col gap-3 border-b border-line pb-4 sm:flex-row sm:items-end sm:justify-between', className)}>
+      <div className="min-w-0">
+        {eyebrow && <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-brand">{eyebrow}</p>}
+        <h1 className="mt-1 font-display text-2xl font-semibold leading-tight text-ink">{title}</h1>
+        {description && <p className="mt-1 max-w-3xl text-sm text-muted">{description}</p>}
+      </div>
+      {actions && <div className="flex flex-wrap items-center gap-2 sm:justify-end">{actions}</div>}
+    </header>
+  )
+}
+
+export function Panel({ as: Component = 'section', title, description, actions, className = '', children, ...props }) {
+  return (
+    <Component className={classNames('rounded-instrument border border-line bg-panel', className)} {...props}>
+      {(title || description || actions) && (
+        <div className="flex flex-col gap-2 border-b border-line px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            {title && <h2 className="font-display text-sm font-semibold text-ink">{title}</h2>}
+            {description && <p className="mt-0.5 text-xs text-muted">{description}</p>}
+          </div>
+          {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+        </div>
+      )}
+      {children}
+    </Component>
+  )
+}
+
+export function EmptyState({ icon: Icon, media, title, description, action, className = '' }) {
+  return (
+    <div className={classNames('grid min-h-52 place-items-center px-6 py-10 text-center', className)} role="status">
+      <div className="max-w-sm">
+        {media || (Icon && <Icon size={24} className="mx-auto text-brand" aria-hidden="true" />)}
+        <h3 className="mt-4 font-display text-lg font-semibold text-ink">{title}</h3>
+        {description && <p className="mt-2 text-sm text-muted">{description}</p>}
+        {action && <div className="mt-5 flex justify-center">{action}</div>}
+      </div>
+    </div>
+  )
+}

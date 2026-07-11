@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 vi.mock('../../lib/api', () => ({
@@ -18,6 +18,7 @@ vi.mock('../../lib/auth', () => ({
 
 import api from '../../lib/api'
 import Customers from '../Customers'
+import { formatTurnaroundRange } from '../../components/TurnaroundEstimator'
 
 describe('Customers mobile form flow', () => {
   let customers
@@ -101,5 +102,33 @@ describe('Customers mobile form flow', () => {
     expect(window.confirm).toHaveBeenCalledWith('Delete customer "Miles Automotive"? This action cannot be undone.')
     expect(await screen.findByRole('alert')).toHaveTextContent('Failed to delete customer. Please try again.')
     expect(window.alert).not.toHaveBeenCalled()
+  })
+
+  it('shows shop-scoped vehicle and repair-order counts on each customer card', async () => {
+    customers = [{
+      id: 'cust-1',
+      name: 'Miles Automotive',
+      vehicle_count: 2,
+      ro_count: 5,
+      active_ro_count: 1,
+    }]
+
+    render(<Customers />)
+
+    const card = await screen.findByRole('button', { name: 'Open Miles Automotive' })
+    expect(within(card).getByText('2')).toBeInTheDocument()
+    expect(within(card).getByText('5')).toBeInTheDocument()
+    expect(within(card).getByText('1')).toBeInTheDocument()
+    expect(within(card).getByText('Vehicles')).toBeInTheDocument()
+    expect(within(card).getByText('ROs')).toBeInTheDocument()
+    expect(within(card).getByText('Active')).toBeInTheDocument()
+  })
+})
+
+describe('Phase 6 turnaround guard', () => {
+  it('never renders undefined day ranges from incomplete estimates', () => {
+    expect(formatTurnaroundRange({})).toBe('Timing range unavailable')
+    expect(formatTurnaroundRange({ minDays: 4 })).toBe('~4 business days')
+    expect(formatTurnaroundRange({ minDays: 3, maxDays: 5 })).toBe('3–5 business days')
   })
 })

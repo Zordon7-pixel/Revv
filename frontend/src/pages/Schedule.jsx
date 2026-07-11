@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import api from '../lib/api'
 import { isAdmin, isAssistant } from '../lib/auth'
 import AppOverlay from '../components/AppOverlay'
+import { PageHeader } from '../components/ui'
 
 const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']
 const MONTH_DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
@@ -93,8 +94,8 @@ function ShiftModal({ employees, prefill, shift, onClose, onSaved, onDeleted }) 
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
   const [deleting, setDeleting] = useState(false)
-  const inp = 'w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500'
-  const lbl = 'block text-xs font-medium text-slate-400 mb-1'
+  const inp = 'w-full bg-void border border-line-2 rounded-lg px-3 py-2 text-sm text-ink focus:outline-none focus:border-brand'
+  const lbl = 'block text-xs font-medium text-muted mb-1'
 
   async function save() {
     if (!form.user_id || !form.shift_date) { setErr('Select tech and date.'); return }
@@ -134,10 +135,10 @@ function ShiftModal({ employees, prefill, shift, onClose, onSaved, onDeleted }) 
 
   return (
     <AppOverlay label={isEdit ? 'Edit shift' : 'Add shift'} onClose={onClose} className="bg-black/70 p-4">
-      <div className="bg-[#1a1d2e] rounded-2xl border border-[#2a2d3e] w-full max-w-sm p-5 space-y-4">
+      <div className="bg-panel rounded-instrument border border-line-2 w-full max-w-sm p-5 space-y-4">
         <div className="flex items-center justify-between">
-          <h3 className="font-bold text-white text-sm">{isEdit ? 'Edit Shift' : 'Add Shift'}</h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={16}/></button>
+          <h3 className="font-bold text-ink text-sm">{isEdit ? 'Edit Shift' : 'Add Shift'}</h3>
+          <button onClick={onClose} className="text-muted hover:text-ink"><X size={16}/></button>
         </div>
         <div className="space-y-3">
           <div><label className={lbl}>Tech</label>
@@ -153,7 +154,7 @@ function ShiftModal({ employees, prefill, shift, onClose, onSaved, onDeleted }) 
             <div><label className={lbl}>End Time</label>
               <input className={inp} type="time" value={form.end_time} onChange={e => setForm(f=>({...f,end_time:e.target.value}))} /></div>
           </div>
-          <p className="text-[10px] text-slate-500 -mt-1">
+          <p className="text-[10px] text-faint -mt-1">
             If end time is earlier than start time, REVV treats the shift as ending the next day.
           </p>
           <div><label className={lbl}>Lunch (min)</label>
@@ -168,9 +169,9 @@ function ShiftModal({ employees, prefill, shift, onClose, onSaved, onDeleted }) 
               {deleting ? 'Removing…' : 'Delete Shift'}
             </button>
           ) : (
-            <button onClick={onClose} className="text-slate-400 text-sm hover:text-white">Cancel</button>
+            <button onClick={onClose} className="text-muted text-sm hover:text-ink">Cancel</button>
           )}
-          <button onClick={save} disabled={saving} className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold px-4 py-2 rounded-lg transition-colors disabled:opacity-50">
+          <button onClick={save} disabled={saving} className="flex items-center gap-2 bg-brand hover:bg-brand-lit text-white text-sm font-bold px-4 py-2 rounded-lg transition-colors disabled:opacity-50">
             <Save size={14}/> {saving ? 'Saving…' : (isEdit ? 'Save Changes' : 'Add Shift')}
           </button>
         </div>
@@ -203,23 +204,23 @@ function EarlyAuthModal({ employee, onClose, onSuccess }) {
 
   return (
     <AppOverlay label="Authorize early clock-in" onClose={onClose} className="bg-black/70 p-4">
-      <div className="bg-[#1a1d2e] rounded-2xl border border-[#2a2d3e] w-full max-w-sm p-5 space-y-4">
+      <div className="bg-panel rounded-instrument border border-line-2 w-full max-w-sm p-5 space-y-4">
         <div className="flex items-center justify-between">
-          <h3 className="font-bold text-white text-sm">Admin Password Required</h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={16}/></button>
+          <h3 className="font-bold text-ink text-sm">Admin Password Required</h3>
+          <button onClick={onClose} className="text-muted hover:text-ink"><X size={16}/></button>
         </div>
-        <div className="text-xs text-slate-400">Authorize early clock-in for <span className="text-white font-semibold">{employee.name}</span> today.</div>
+        <div className="text-xs text-muted">Authorize early clock-in for <span className="text-ink font-semibold">{employee.name}</span> today.</div>
         <input
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           placeholder="Admin Password"
-          className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+          className="w-full bg-void border border-line-2 rounded-lg px-3 py-2 text-sm text-ink focus:outline-none focus:border-brand"
         />
         {error && <p className="text-xs text-red-400">{error}</p>}
         <div className="flex justify-end gap-2">
-          <button onClick={onClose} className="text-slate-400 text-sm hover:text-white">Cancel</button>
-          <button onClick={submit} disabled={saving || !password} className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold px-4 py-2 rounded-lg disabled:opacity-50">
+          <button onClick={onClose} className="text-muted text-sm hover:text-ink">Cancel</button>
+          <button onClick={submit} disabled={saving || !password} className="bg-brand hover:bg-brand-lit text-white text-sm font-bold px-4 py-2 rounded-lg disabled:opacity-50">
             {saving ? 'Authorizing…' : 'Authorize'}
           </button>
         </div>
@@ -435,50 +436,51 @@ export default function Schedule() {
 
   return (
     <div className="space-y-5">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <h1 className="text-xl font-bold text-white">Schedule</h1>
-        <div className="flex items-center gap-2">
-          {/* View Mode Toggle */}
-          <div className="flex bg-[#1a1d2e] border border-[#2a2d3e] rounded-lg p-0.5">
+      <PageHeader
+        eyebrow="Floor coverage"
+        title="Schedule"
+        description={viewMode === 'week'
+          ? `Week of ${fmtHeader(monday)} — ${fmtHeader(weekDates[6])}`
+          : currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+        actions={(
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex bg-panel border border-line-2 rounded-lg p-0.5">
             <button
+              type="button"
               onClick={() => setViewMode('week')}
+              aria-pressed={viewMode === 'week'}
               className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
                 viewMode === 'week'
-                  ? 'bg-indigo-600 text-white'
-                  : 'text-slate-400 hover:text-white'
+                  ? 'bg-brand text-white'
+                  : 'text-muted hover:text-ink'
               }`}
             >
               Week
             </button>
             <button
+              type="button"
               onClick={() => setViewMode('month')}
+              aria-pressed={viewMode === 'month'}
               className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
                 viewMode === 'month'
-                  ? 'bg-indigo-600 text-white'
-                  : 'text-slate-400 hover:text-white'
+                  ? 'bg-brand text-white'
+                  : 'text-muted hover:text-ink'
               }`}
             >
               Month
             </button>
           </div>
-          <button onClick={() => viewMode === 'month' ? prevMonth() : prevWeek()} className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-[#2a2d3e] transition-colors"><ChevronLeft size={16}/></button>
-          <button onClick={thisWeek} className="px-3 py-1.5 rounded-lg text-xs text-slate-300 hover:bg-[#2a2d3e] border border-[#2a2d3e] transition-colors">This Week</button>
-          <button onClick={() => viewMode === 'month' ? nextMonth() : nextWeek()} className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-[#2a2d3e] transition-colors"><ChevronRight size={16}/></button>
+          <button type="button" aria-label="Previous schedule period" onClick={() => viewMode === 'month' ? prevMonth() : prevWeek()} className="p-2 rounded-lg text-muted hover:text-ink hover:bg-raised transition-colors"><ChevronLeft size={16}/></button>
+          <button type="button" onClick={thisWeek} className="px-3 py-1.5 rounded-lg text-xs text-muted hover:bg-raised border border-line-2 transition-colors">This Week</button>
+          <button type="button" aria-label="Next schedule period" onClick={() => viewMode === 'month' ? nextMonth() : nextWeek()} className="p-2 rounded-lg text-muted hover:text-ink hover:bg-raised transition-colors"><ChevronRight size={16}/></button>
           {canManage && (
-            <button onClick={() => openAdd()} className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-colors">
+            <button type="button" onClick={() => openAdd()} className="flex items-center gap-1.5 bg-brand hover:bg-brand-lit text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-colors">
               <Plus size={14}/> Add Shift
             </button>
           )}
         </div>
-      </div>
-
-      <div className="text-xs text-slate-500">
-        {viewMode === 'week' 
-          ? `Week of ${fmtHeader(monday)} — ${fmtHeader(weekDates[6])}`
-          : currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
-        }
-      </div>
+        )}
+      />
 
       {createRoError && (
         <div className="fixed right-4 top-4 z-[90] max-w-xs rounded-lg border border-red-500/40 bg-red-900/85 px-3 py-2 text-xs text-red-100 shadow-lg">
@@ -494,22 +496,22 @@ export default function Schedule() {
 
       {canManage && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-          <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-3">
-            <p className="text-[10px] text-slate-500 uppercase tracking-wide">Scheduled Shifts</p>
-            <p className="text-lg font-bold text-white mt-1">{shifts.length}</p>
+          <div className="bg-panel border border-line-2 rounded-instrument p-3">
+            <p className="text-[10px] text-faint uppercase tracking-wide">Scheduled Shifts</p>
+            <p className="text-lg font-bold text-ink mt-1">{shifts.length}</p>
           </div>
-          <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-3">
-            <p className="text-[10px] text-slate-500 uppercase tracking-wide">Staff Scheduled</p>
-            <p className="text-lg font-bold text-white mt-1">{uniqueScheduledEmployees}</p>
+          <div className="bg-panel border border-line-2 rounded-instrument p-3">
+            <p className="text-[10px] text-faint uppercase tracking-wide">Staff Scheduled</p>
+            <p className="text-lg font-bold text-ink mt-1">{uniqueScheduledEmployees}</p>
           </div>
-          <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-3">
-            <p className="text-[10px] text-slate-500 uppercase tracking-wide">Scheduled Hours</p>
-            <p className="text-lg font-bold text-indigo-300 mt-1">{totalScheduledHours.toFixed(1)}h</p>
+          <div className="bg-panel border border-line-2 rounded-instrument p-3">
+            <p className="text-[10px] text-faint uppercase tracking-wide">Scheduled Hours</p>
+            <p className="text-lg font-bold text-brand-lit mt-1">{totalScheduledHours.toFixed(1)}h</p>
           </div>
-          <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-3">
-            <p className="text-[10px] text-slate-500 uppercase tracking-wide">Coverage</p>
-            <p className="text-sm font-semibold text-white mt-1">{staffedDays}/{periodDates.length} days staffed</p>
-            <p className="text-[10px] text-slate-500 mt-1">
+          <div className="bg-panel border border-line-2 rounded-instrument p-3">
+            <p className="text-[10px] text-faint uppercase tracking-wide">Coverage</p>
+            <p className="text-sm font-semibold text-ink mt-1">{staffedDays}/{periodDates.length} days staffed</p>
+            <p className="text-[10px] text-faint mt-1">
               Peak: {maxStaffedDay.date ? `${fmtHeader(maxStaffedDay.date)} (${maxStaffedDay.count})` : '—'}
             </p>
           </div>
@@ -519,13 +521,13 @@ export default function Schedule() {
       {/* Month navigation - only show in month view */}
       {viewMode === 'month' && (
         <div className="flex items-center justify-center gap-4 mb-2">
-          <button onClick={prevMonth} className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-[#2a2d3e] transition-colors">
+          <button type="button" aria-label="Previous month" onClick={prevMonth} className="p-2 rounded-lg text-muted hover:text-ink hover:bg-raised transition-colors">
             <ChevronLeft size={16}/>
           </button>
-          <button onClick={() => setCurrentMonth(new Date())} className="px-3 py-1.5 rounded-lg text-xs text-slate-300 hover:bg-[#2a2d3e] border border-[#2a2d3e] transition-colors">
+          <button type="button" onClick={() => setCurrentMonth(new Date())} className="px-3 py-1.5 rounded-lg text-xs text-muted hover:bg-raised border border-line-2 transition-colors">
             Today
           </button>
-          <button onClick={nextMonth} className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-[#2a2d3e] transition-colors">
+          <button type="button" aria-label="Next month" onClick={nextMonth} className="p-2 rounded-lg text-muted hover:text-ink hover:bg-raised transition-colors">
             <ChevronRight size={16}/>
           </button>
         </div>
@@ -540,24 +542,24 @@ export default function Schedule() {
           const dayShifts = shiftsFor(date)
           const isToday = dayIso === today
           return (
-            <div key={i} className={`bg-[#1a1d2e] rounded-xl border ${isToday ? 'border-indigo-600/60' : 'border-[#2a2d3e]'} p-2 min-h-[120px] flex flex-col`}>
-              <div className={`text-[10px] font-bold uppercase tracking-wide mb-2 ${isToday ? 'text-indigo-400' : 'text-slate-500'}`}>
+            <div key={i} className={`bg-panel rounded-instrument border ${isToday ? 'border-brand' : 'border-line-2'} p-2 min-h-[120px] flex flex-col`}>
+              <div className={`text-[10px] font-bold uppercase tracking-wide mb-2 ${isToday ? 'text-brand' : 'text-faint'}`}>
                 {DAYS[i]}<br/>
-                <span className={`text-xs ${isToday ? 'text-indigo-300' : 'text-slate-400'}`}>{fmtHeader(date)}</span>
+                <span className={`text-xs ${isToday ? 'text-brand-lit' : 'text-muted'}`}>{fmtHeader(date)}</span>
               </div>
               <div className="flex-1 space-y-1">
                 {dayShifts.map(s => (
                   <div
                     key={`${s.id}-${dayIso}`}
                     onClick={() => openEdit(s)}
-                    className={`w-full text-left bg-indigo-900/30 border border-indigo-700/40 rounded-lg px-2 py-1.5 group relative ${canManage ? 'cursor-pointer hover:border-indigo-400/70 hover:bg-indigo-900/40 transition-colors' : ''}`}
+                    className={`w-full text-left bg-panel-2 border border-brand rounded-lg px-2 py-1.5 group relative ${canManage ? 'cursor-pointer hover:border-brand hover:bg-raised transition-colors' : ''}`}
                   >
-                    <div className="text-[10px] font-semibold text-indigo-300 truncate">{s.user?.name?.split(' ')[0]}</div>
-                    <div className="text-[9px] text-slate-400">{shiftTimeLabel(s)}</div>
+                    <div className="text-[10px] font-semibold text-brand-lit truncate">{s.user?.name?.split(' ')[0]}</div>
+                    <div className="text-[9px] text-muted">{shiftTimeLabel(s)}</div>
                     {s.shift_date !== dayIso && (
                       <div className="text-[9px] text-cyan-300">Carryover from previous day</div>
                     )}
-                    {s.notes && <div className="text-[9px] text-slate-500 truncate mt-0.5">{s.notes}</div>}
+                    {s.notes && <div className="text-[9px] text-faint truncate mt-0.5">{s.notes}</div>}
                     {canCreateRo && (
                       <button
                         type="button"
@@ -573,7 +575,7 @@ export default function Schedule() {
                     )}
                     {canManage && (
                       <button onClick={(e) => { e.stopPropagation(); deleteShift(s.id) }}
-                        className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 p-0.5 rounded text-slate-500 hover:text-red-400 transition-all">
+                        className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 p-0.5 rounded text-faint hover:text-red-400 transition-all">
                         <Trash2 size={10}/>
                       </button>
                     )}
@@ -582,7 +584,7 @@ export default function Schedule() {
               </div>
               {canManage && (
                 <button onClick={() => openAdd(date)}
-                  className="mt-1 w-full text-[9px] text-slate-600 hover:text-indigo-400 hover:bg-indigo-900/20 rounded py-1 transition-colors flex items-center justify-center gap-1">
+                  className="mt-1 w-full text-[9px] text-faint hover:text-brand hover:bg-panel-2 rounded py-1 transition-colors flex items-center justify-center gap-1">
                   <Plus size={9}/> Add
                 </button>
               )}
@@ -597,7 +599,7 @@ export default function Schedule() {
         <div className="grid grid-cols-7 gap-1 min-w-[420px]">
           {/* Day headers */}
           {MONTH_DAYS.map(day => (
-            <div key={day} className="text-[10px] font-bold text-slate-500 uppercase text-center py-2">
+            <div key={day} className="text-[10px] font-bold text-faint uppercase text-center py-2">
               {day}
             </div>
           ))}
@@ -610,16 +612,16 @@ export default function Schedule() {
               <div 
                 key={i}
                 onClick={() => goToWeek(date)}
-                className={`bg-[#1a1d2e] rounded-lg border min-h-[80px] p-1.5 cursor-pointer hover:border-indigo-500/50 transition-colors ${
-                  isCurrentMonth 
-                    ? (isToday ? 'border-indigo-600/60' : 'border-[#2a2d3e]') 
-                    : 'border-transparent bg-[#0f1117]'
+                className={`bg-panel rounded-lg border min-h-[80px] p-1.5 cursor-pointer hover:border-brand transition-colors ${
+                  isCurrentMonth
+                    ? (isToday ? 'border-brand' : 'border-line-2')
+                    : 'border-transparent bg-void'
                 }`}
               >
                 <div className={`text-[10px] font-medium mb-1 ${
                   isCurrentMonth 
-                    ? (isToday ? 'text-indigo-400' : 'text-slate-400')
-                    : 'text-slate-700'
+                    ? (isToday ? 'text-brand' : 'text-muted')
+                    : 'text-faint'
                 }`}>
                   {date.getDate()}
                 </div>
@@ -627,7 +629,7 @@ export default function Schedule() {
                   {dayShifts.slice(0, 2).map(s => (
                     <div
                       key={`${s.id}-${isoDate(date)}`}
-                      className="w-full rounded border border-indigo-700/40 bg-indigo-900/30 px-1.5 py-0.5"
+                      className="w-full rounded border border-brand bg-panel-2 px-1.5 py-0.5"
                     >
                       <button
                         type="button"
@@ -636,9 +638,9 @@ export default function Schedule() {
                           openEdit(s)
                         }}
                         title={shiftTimeLabel(s)}
-                        className={`w-full text-left ${canManage ? 'hover:text-indigo-100 transition-colors' : ''}`}
+                        className={`w-full text-left ${canManage ? 'hover:text-ink transition-colors' : ''}`}
                       >
-                        <div className="text-[8px] font-semibold text-indigo-300 truncate">{s.user?.name?.split(' ')[0]}</div>
+                        <div className="text-[8px] font-semibold text-brand-lit truncate">{s.user?.name?.split(' ')[0]}</div>
                       </button>
                       {canCreateRo && (
                         <button
@@ -656,7 +658,7 @@ export default function Schedule() {
                     </div>
                   ))}
                   {dayShifts.length > 2 && (
-                    <div className="text-[8px] text-slate-500 text-center">+{dayShifts.length - 2} more</div>
+                    <div className="text-[8px] text-faint text-center">+{dayShifts.length - 2} more</div>
                   )}
                 </div>
               </div>
@@ -668,12 +670,12 @@ export default function Schedule() {
 
       {/* Tech summary */}
       {canManage && (
-        <div className="bg-[#1a1d2e] rounded-2xl border border-[#2a2d3e] p-4">
-          <h2 className="text-xs font-bold text-white uppercase tracking-wide mb-3">
+        <div className="bg-panel rounded-instrument border border-line-2 p-4">
+          <h2 className="text-xs font-bold text-ink uppercase tracking-wide mb-3">
             {viewMode === 'week' ? 'This Week — Team Schedule' : 'This Month — Team Schedule'}
           </h2>
           {shifts.length === 0 ? (
-            <p className="text-xs text-slate-500">No shifts scheduled in this view yet.</p>
+            <p className="text-xs text-faint">No shifts scheduled in this view yet.</p>
           ) : (
           <div className="space-y-2">
             {employees.map(emp => {
@@ -684,10 +686,10 @@ export default function Schedule() {
 
               return (
                 <div key={emp.id} className="flex items-center justify-between text-xs gap-3">
-                  <span className="text-white font-medium">{emp.name}</span>
+                  <span className="text-ink font-medium">{emp.name}</span>
                   <div className="flex items-center gap-3 flex-wrap justify-end">
-                    <span className="text-slate-500">{empShifts.length} shift{empShifts.length!==1?'s':''}</span>
-                    <span className="text-indigo-400 font-semibold">{totalHours.toFixed(1)}h scheduled</span>
+                    <span className="text-faint">{empShifts.length} shift{empShifts.length!==1?'s':''}</span>
+                    <span className="text-brand font-semibold">{totalHours.toFixed(1)}h scheduled</span>
                     {hasShiftToday && canAuthorizeEarly && (
                       authorizedToday[emp.id] ? (
                         <span className="text-[10px] bg-emerald-900/40 text-emerald-400 px-2 py-1 rounded-full font-semibold inline-flex items-center gap-1"><CheckCircle size={10} /> Authorized for today</span>
