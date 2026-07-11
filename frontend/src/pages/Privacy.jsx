@@ -37,22 +37,22 @@ const sections = [
 
 export default function Privacy() {
   return (
-    <div className="min-h-screen bg-[#0f1117] px-6 py-10 text-slate-100 md:px-16 lg:px-24">
+    <div className="min-h-screen bg-void px-6 py-10 text-ink md:px-16 lg:px-24">
       <div className="mx-auto max-w-4xl">
-        <div className="mb-8 border-b border-[#2a2d3e] pb-6">
-          <Link to="/" className="text-sm text-indigo-300 transition hover:text-indigo-200">
+        <div className="mb-8 border-b border-line-2 pb-6">
+          <Link to="/" className="text-sm text-brand transition hover:text-brand-lit">
             Back to REVV
           </Link>
-          <h1 className="mt-3 text-3xl font-bold text-white md:text-4xl">Privacy Policy</h1>
-          <p className="mt-2 text-sm text-slate-400">Effective date: March 1, 2026</p>
-          <p className="mt-1 text-sm text-slate-400">Company: Zordon Technologies LLC</p>
+          <h1 className="mt-3 font-display text-3xl font-bold text-ink md:text-4xl">Privacy Policy</h1>
+          <p className="mt-2 text-sm text-muted">Effective date: March 1, 2026</p>
+          <p className="mt-1 text-sm text-muted">Company: Zordon Technologies LLC</p>
         </div>
 
-        <div className="space-y-6">
+        <div className="divide-y divide-line">
           {sections.map((section) => (
-            <section key={section.title} className="rounded-xl border border-[#2a2d3e] bg-[#1a1d2e] p-5">
-              <h2 className="text-lg font-semibold text-white">{section.title}</h2>
-              <p className="mt-2 text-sm leading-7 text-slate-300">{section.body}</p>
+            <section key={section.title} className="py-6 first:pt-0">
+              <h2 className="font-display text-lg font-semibold text-ink">{section.title}</h2>
+              <p className="mt-2 text-sm leading-7 text-muted">{section.body}</p>
             </section>
           ))}
         </div>

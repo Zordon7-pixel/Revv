@@ -44,20 +44,21 @@ export default class ErrorBoundary extends React.Component {
   render() {
     if (this.state.hasError) {
       return (
-        <div style={{ minHeight: '100vh', background: '#0f1117', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 16, padding: 32, fontFamily: 'sans-serif' }}>
-          <AlertTriangle size={48} style={{ color: '#fbbf24' }} />
-          <h1 style={{ color: '#fff', fontSize: 22, fontWeight: 700, margin: 0 }}>Something went wrong</h1>
-          <p style={{ color: '#94a3b8', fontSize: 14, margin: 0, textAlign: 'center', maxWidth: 400 }}>
+        <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-void p-8 font-body text-ink">
+          <AlertTriangle size={48} className="text-crit" />
+          <h1 className="m-0 font-display text-[22px] font-bold">Something went wrong</h1>
+          <p className="m-0 max-w-md text-center text-sm text-muted">
             REVV ran into an unexpected error. Click below to attempt an automatic repair and reload.
           </p>
-          <p style={{ color: '#475569', fontSize: 12, fontFamily: 'monospace', background: '#1a1d2e', padding: '8px 16px', borderRadius: 8, maxWidth: 500, wordBreak: 'break-all' }}>
+          <p className="max-w-lg break-all rounded-lg border border-line-2 bg-panel px-4 py-2 font-mono text-xs text-faint">
             {this.state.error?.message || 'Unknown error'}
           </p>
           <button
+            type="button"
             onClick={() => window.location.reload()}
-            style={{ background: '#6366f1', color: '#fff', border: 'none', borderRadius: 8, padding: '10px 24px', fontSize: 14, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}
+            className="flex items-center gap-2 rounded-lg bg-brand px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-lit"
           >
-            <Wrench size={14} style={{ display: 'inline' }} /> Repair &amp; Reload
+            <Wrench size={14} /> Repair &amp; Reload
           </button>
         </div>
       );

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
-import { Wrench } from 'lucide-react'
 import api from '../lib/api'
+import { Logo } from '../components/ui'
 
 export default function ResetPassword() {
   const [searchParams] = useSearchParams()
@@ -31,49 +31,49 @@ export default function ResetPassword() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0f1117] flex items-center justify-center p-4">
+    <div className="flex min-h-screen items-center justify-center bg-void p-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-indigo-900/50">
-            <Wrench size={28} className="text-white" />
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-instrument border border-line-2 bg-white shadow-lg">
+            <Logo variant="mark" className="h-12 w-12 object-contain" />
           </div>
-          <h1 className="text-3xl font-bold text-white tracking-wide">REVV</h1>
-          <p className="text-xs font-semibold text-indigo-400 uppercase tracking-widest mt-2">Set New Password</p>
+          <h1 className="font-display text-3xl font-bold tracking-wide text-ink">REVV</h1>
+          <p className="mt-2 text-xs font-semibold uppercase tracking-widest text-brand">Set New Password</p>
         </div>
 
         {success ? (
-          <div className="bg-[#1a1d2e] rounded-2xl p-6 border border-[#2a2d3e] text-center space-y-4">
-            <p className="text-emerald-400 text-sm font-semibold">Password updated.</p>
-            <p className="text-slate-500 text-xs">You can now sign in with your new password.</p>
+          <div className="space-y-4 rounded-instrument border border-line-2 bg-panel p-6 text-center">
+            <p className="text-sm font-semibold text-good">Password updated.</p>
+            <p className="text-xs text-faint">You can now sign in with your new password.</p>
             <button onClick={() => navigate('/login')}
-              className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-lg py-2.5 text-sm transition-colors">
+              className="w-full rounded-lg bg-brand py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-lit">
               Go to Sign In
             </button>
           </div>
         ) : (
-          <form onSubmit={submit} className="bg-[#1a1d2e] rounded-2xl p-6 border border-[#2a2d3e] space-y-4">
+          <form onSubmit={submit} className="space-y-4 rounded-instrument border border-line-2 bg-panel p-6">
             {!token && (
-              <p className="text-red-400 text-xs">Missing reset token. Please use the link from the email.</p>
+              <p className="text-xs text-crit" role="alert">Missing reset token. Please use the link from the email.</p>
             )}
             <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1.5">New Password</label>
+              <label className="mb-1.5 block text-xs font-medium text-muted">New Password</label>
               <input type="password" value={password} onChange={e => setPassword(e.target.value)} required
-                className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition-colors"
+                className="w-full rounded-lg border border-line-2 bg-void px-3 py-2.5 text-sm text-ink placeholder:text-faint transition-colors focus:border-brand focus:outline-none"
                 placeholder="••••••••" />
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1.5">Confirm Password</label>
+              <label className="mb-1.5 block text-xs font-medium text-muted">Confirm Password</label>
               <input type="password" value={confirm} onChange={e => setConfirm(e.target.value)} required
-                className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition-colors"
+                className="w-full rounded-lg border border-line-2 bg-void px-3 py-2.5 text-sm text-ink placeholder:text-faint transition-colors focus:border-brand focus:outline-none"
                 placeholder="••••••••" />
             </div>
-            {error && <p className="text-red-400 text-xs">{error}</p>}
+            {error && <p className="text-xs text-crit" role="alert">{error}</p>}
             <button type="submit" disabled={loading || !token}
-              className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-lg py-2.5 text-sm transition-colors disabled:opacity-50">
+              className="w-full rounded-lg bg-brand py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-lit disabled:opacity-50">
               {loading ? 'Updating...' : 'Set New Password'}
             </button>
             <button type="button" onClick={() => navigate('/login')}
-              className="w-full text-xs text-slate-500 hover:text-slate-300 transition-colors py-1">
+              className="w-full py-1 text-xs text-faint transition-colors hover:text-ink">
               Back to sign in
             </button>
           </form>

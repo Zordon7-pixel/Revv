@@ -56,6 +56,46 @@ const ro = await dbGet('SELECT * FROM ros WHERE id = $1 AND shop_id = $2', [id, 
 await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 ```
 
+## Dispatch Log — 2026-07-11 REVV Redesign Phase 6G: Auth, Legal, and Fallback Surfaces
+
+**Time:** 2026-07-11 02:53 ET / 2026-07-11 06:53 UTC
+**Status:** READY FOR CLAUDE CODE QA — FEATURE BRANCH ONLY — NOT DEPLOYED — FINAL SOURCE-CONFORMANCE AUDIT
+
+**Scope**
+- Migrated Login, customer registration notice, password reset, Terms, Privacy, SMS Terms, and the React error fallback to the semantic token system. All now render correctly in real dark/light themes without raw hex or legacy indigo/slate/yellow palette classes.
+- Replaced invented wrench/logo tiles on authentication screens with the shared real REVV gauge-R mark. The mark uses a neutral white tile so its graphite letter remains legible in dark mode.
+- Changed legal document bodies from repeated floating cards to unframed, divided document sections for denser reading on phone and desktop while preserving every word, route, mail link, and privacy link.
+- Preserved Login, forgot-password, superadmin routing, password reset, and local-storage behavior. Added accessible alert/status roles only; no request URL or payload changed.
+- Deleted `Portal.jsx`, an unmounted legacy customer portal with no route or imports. Current Claim, Approval, and Track portals remain unchanged.
+- Added `tokenConformance.test.js` to reject raw hex, legacy indigo/blue/slate/yellow classes, gradients, invented auth marks, or reintroduction of the removed portal across this audited set.
+- No backend, API, auth rule, database, seed, reset, migration, hosted DB, customer/shop/RO data, or Miles Automotive data changed.
+
+**Files changed (10; batch cap respected)**
+- `frontend/src/pages/Login.jsx`
+- `frontend/src/pages/Register.jsx`
+- `frontend/src/pages/ResetPassword.jsx`
+- `frontend/src/pages/Terms.jsx`
+- `frontend/src/pages/Privacy.jsx`
+- `frontend/src/pages/SmsTerms.jsx`
+- `frontend/src/pages/Portal.jsx` (deleted; unmounted)
+- `frontend/src/components/ErrorBoundary.jsx`
+- `frontend/src/lib/__tests__/tokenConformance.test.js`
+- `CLAUDE.md`
+
+**Verification**
+```
+cd frontend && npm run test:run -- tokenConformance  # 1 file, 3/3 passed
+node --test native backend sweep  # 130/130 passed
+cd backend && npm run test:run  # extractor suite 7/7 passed
+cd frontend && npm run test:run  # 38 files, 113/113 passed
+cd frontend && npm run build  # clean; pre-existing chunk-size warning only
+Playwright route checks  # Login light desktop, Reset Password dark phone, Terms light phone, SMS Terms dark desktop
+viewport results  # exact client/scroll widths at 1440 and 390; zero console/page errors
+screenshots  # /tmp/revv-phase6g-login-light-desktop.png, /tmp/revv-phase6g-reset-dark-phone-final.png, /tmp/revv-phase6g-terms-light-phone.png, /tmp/revv-phase6g-sms-dark-desktop.png
+rg raw hex / legacy palette / gradients across 7 migrated production files  # zero matches
+rm -rf frontend/dist && git diff --check && git ls-files frontend/dist | wc -l  # expected 0
+```
+
 ## Dispatch Log — 2026-07-11 REVV Redesign Phase 6F: Remaining Workflow Color Semantics
 
 **Time:** 2026-07-11 02:25 ET / 2026-07-11 06:25 UTC
