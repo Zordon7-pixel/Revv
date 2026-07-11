@@ -56,6 +56,46 @@ const ro = await dbGet('SELECT * FROM ros WHERE id = $1 AND shop_id = $2', [id, 
 await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 ```
 
+## Dispatch Log — 2026-07-11 REVV Redesign Phase 6D: Public + Customer Portals
+
+**Time:** 2026-07-11 01:19 ET / 2026-07-11 05:19 UTC
+**Status:** READY FOR CLAUDE CODE QA — FEATURE BRANCH ONLY — NOT DEPLOYED — PHASE 6 PROPAGATION BATCH
+
+**Scope**
+- Propagated the instrument design system across Claim, Approval, Tracking, Booking, Public Estimate Request, Review, Public Inspection, and Shop Profile portals. All eight now use the real REVV mark, Bricolage display hierarchy, semantic dark/light tokens, responsive panels, and brand-indigo generic actions.
+- Preserved every existing public endpoint and payload: claim multipart submission, approval decisions, tracking messages/ratings, appointment requests, public estimate requests with up to five photos, customer reviews, inspection reads, and public shop reads/navigation.
+- Routed claim and approval estimate display through shared `Money` plus the shared dollars-to-cents display adapter; the Shop Profile labor rate uses the same renderer. Gold is now limited to estimate/labor money, while ratings and generic actions use brand indigo.
+- Removed remaining browser alerts from these portals. Claim validation, tracking action failures, and Shop Profile clipboard failures now render inline with accessible alert/status semantics.
+- Tracking and inspection photo URLs now use `resolveUploadedMediaUrl`. Tracking includes an accessible unavailable-photo fallback and a bounded, centered lightbox that closes by button, backdrop, or Escape.
+- Replaced the public estimate gradient/legacy blue surface and all raw hex/legacy palette classes across the eight files. Approval/shop titles wrap rather than truncate at phone width.
+- No backend, route, role, database, seed, reset, migration, destructive script, hosted DB, or customer/shop/RO data changed. Miles Automotive data was not touched; all browser data was route-mocked.
+
+**Files changed (10; batch cap respected)**
+- `frontend/src/pages/ClaimPortal.jsx`
+- `frontend/src/pages/ApprovalPortal.jsx`
+- `frontend/src/pages/TrackPortal.jsx`
+- `frontend/src/pages/BookAppointment.jsx`
+- `frontend/src/pages/PublicEstimateRequest.jsx`
+- `frontend/src/pages/ReviewSubmit.jsx`
+- `frontend/src/pages/InspectionPublic.jsx`
+- `frontend/src/pages/ShopProfile.jsx`
+- `frontend/src/pages/__tests__/PublicPortals.redesign.test.jsx`
+- `CLAUDE.md`
+
+**Verification**
+```
+node --test native backend sweep  # 130/130 passed
+cd backend && npm run test:run  # extractor suite 7/7 passed
+cd frontend && npm run test:run -- PublicPortals.redesign  # 1 file, 8/8 passed
+cd frontend && npm run test:run  # 36 files, 108/108 passed
+cd frontend && npm run build  # clean; pre-existing chunk-size warning only
+Playwright mocked public routes  # all 8 portals rendered across dark/light at 1440x1000 and 390x844
+Playwright viewport results  # exact client/scroll widths for every route; zero console/page errors
+approval phone re-check  # title wraps to two lines; client/scroll width both 390; zero errors
+screenshots  # /tmp/revv-phase6d-track-dark-desktop.png, /tmp/revv-phase6d-claim-light-phone.png, /tmp/revv-phase6d-approval-dark-phone-final.png, /tmp/revv-phase6d-book-light-phone.png, /tmp/revv-phase6d-estimate-dark-desktop.png, /tmp/revv-phase6d-review-light-phone.png, /tmp/revv-phase6d-inspection-dark-desktop.png, /tmp/revv-phase6d-shop-light-desktop.png
+rg raw hex / indigo / legacy palette / gradient / alert calls in all 8 production files  # zero matches
+```
+
 ## Dispatch Log — 2026-07-11 REVV Redesign Phase 6C: Authenticated Work Surfaces
 
 **Time:** 2026-07-11 00:48 ET / 2026-07-11 04:48 UTC

@@ -1,23 +1,26 @@
-import { useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
-import { Phone, MapPin, Star, Award, Loader2, Calendar, Share2, CheckCircle } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
+import { Award, Calendar, CheckCircle2, Loader2, MapPin, Phone, Share2, Star, Store } from 'lucide-react'
 import api from '../lib/api'
+import { Logo, Money, Panel, dollarsToCents } from '../components/ui'
+import { resolveUploadedMediaUrl } from '../lib/mediaUrls'
 
 export default function ShopProfile() {
   const { shopId } = useParams()
   const navigate = useNavigate()
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+  const [error, setError] = useState('')
+  const [shareError, setShareError] = useState('')
   const [data, setData] = useState(null)
   const [copied, setCopied] = useState(false)
 
   useEffect(() => {
     async function load() {
       try {
-        const res = await api.get(`/public/shop/${shopId}`)
-        setData(res.data)
-      } catch (err) {
-        setError(err.response?.data?.error || 'Unable to load shop')
+        const response = await api.get(`/public/shop/${shopId}`)
+        setData(response.data)
+      } catch (requestError) {
+        setError(requestError?.response?.data?.error || 'Unable to load shop.')
       } finally {
         setLoading(false)
       }
@@ -25,174 +28,139 @@ export default function ShopProfile() {
     load()
   }, [shopId])
 
-  const callShop = () => {
-    if (data?.shop?.phone) {
-      window.location.href = `tel:${data.shop.phone}`
-    }
+  function callShop() {
+    if (data?.shop?.phone) window.location.href = `tel:${data.shop.phone}`
   }
 
-  const bookAppointment = () => {
+  function bookAppointment() {
     navigate('/book')
   }
 
-  const shareProfile = async () => {
+  async function shareProfile() {
     const shareUrl = `${window.location.origin}/shop/${shopId}`
+    setShareError('')
     try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable')
       await navigator.clipboard.writeText(shareUrl)
       setCopied(true)
-      setTimeout(() => setCopied(false), 2500)
+      window.setTimeout(() => setCopied(false), 2500)
     } catch {
-      alert('Could not copy link. Please copy the URL from your browser.')
+      setShareError('Could not copy the shop link. Copy the URL from your browser instead.')
     }
   }
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#0f1117] flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-[#EAB308] animate-spin" />
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <div className="min-h-screen bg-[#0f1117] flex items-center justify-center p-6">
-        <div className="bg-[#1a1d2e] border border-red-800 rounded-xl p-6 max-w-md text-center">
-          <h2 className="text-lg font-bold text-white mb-2">Shop Not Found</h2>
-          <p className="text-slate-400">{error}</p>
+      <main className="grid min-h-screen place-items-center bg-void">
+        <div role="status" className="flex items-center gap-3 text-sm text-muted">
+          <Loader2 className="h-6 w-6 animate-spin text-brand" aria-hidden="true" />
+          Loading shop profile...
         </div>
-      </div>
+      </main>
     )
   }
 
-  const { shop, rating = {}, badges, reviews } = data
-  const hasRating = rating?.avg && rating.avg > 0
+  if (error || !data) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-void px-4 text-ink">
+        <Panel className="w-full max-w-md p-6 text-center">
+          <Store className="mx-auto h-9 w-9 text-crit" aria-hidden="true" />
+          <h1 className="mt-4 font-display text-xl font-semibold text-ink">Shop not found</h1>
+          <p role="alert" className="mt-2 text-sm text-crit">{error || 'Unable to load shop.'}</p>
+        </Panel>
+      </main>
+    )
+  }
+
+  const { shop, rating = {}, badges = [], reviews = [] } = data
+  const hasRating = Number(rating?.avg) > 0
+  const address = [shop.address, shop.city, shop.state, shop.zip].filter(Boolean).join(', ')
 
   return (
-    <div className="min-h-screen bg-[#0f1117] text-white">
-      <div className="max-w-2xl mx-auto p-4 space-y-4">
-        {/* Shop Header */}
-        <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-6">
-          <h1 className="text-2xl font-bold text-white mb-2">{shop.name}</h1>
-          
-          <div className="flex items-center gap-2 text-slate-400 mb-4">
-            <MapPin size={16} />
-            <span>{shop.address}, {shop.city}, {shop.state} {shop.zip}</span>
+    <main className="min-h-screen bg-void px-4 py-6 text-ink sm:px-6 sm:py-10">
+      <div className="mx-auto max-w-3xl space-y-5">
+        <header className="flex items-center gap-3 border-b border-line pb-5">
+          {shop.logo_url ? (
+            <span className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-instrument border border-line bg-panel p-1.5">
+              <img src={resolveUploadedMediaUrl(shop.logo_url)} alt={`${shop.name} logo`} className="h-full w-full object-contain" />
+            </span>
+          ) : <Logo variant="mark" className="h-12 w-12 shrink-0" />}
+          <div className="min-w-0">
+            <h1 className="break-words font-display text-2xl font-semibold leading-tight text-ink">{shop.name}</h1>
+            {address && <p className="mt-1 flex items-start gap-1.5 text-sm text-muted"><MapPin size={15} className="mt-0.5 shrink-0" aria-hidden="true" /><span>{address}</span></p>}
           </div>
+        </header>
 
-          <div className="flex items-center gap-4">
-            <button
-              onClick={callShop}
-              className="flex items-center gap-2 bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] font-semibold px-4 py-2 rounded-lg transition-colors"
-            >
-              <Phone size={16} />
-              Call
-            </button>
-            <button
-              onClick={bookAppointment}
-              className="flex items-center gap-2 bg-[#2a2d3e] hover:bg-[#3a3d4e] text-white font-semibold px-4 py-2 rounded-lg transition-colors"
-            >
-              <Calendar size={16} />
-              Book Appointment
-            </button>
-            <button
-              onClick={shareProfile}
-              className="flex items-center gap-2 bg-indigo-900/30 border border-indigo-700/40 hover:bg-indigo-900/50 text-indigo-300 font-semibold px-4 py-2 rounded-lg transition-colors"
-            >
-              {copied ? <CheckCircle size={16} /> : <Share2 size={16} />}
-              {copied ? 'Copied' : 'Share'}
-            </button>
-          </div>
+        {shareError && <p role="alert" className="rounded-instrument border border-crit/30 bg-crit/10 px-4 py-3 text-sm text-crit">{shareError}</p>}
+        {copied && <p role="status" className="rounded-instrument border border-good/30 bg-good/10 px-4 py-3 text-sm text-good">Shop profile link copied.</p>}
+
+        <div className="grid gap-2 sm:grid-cols-3">
+          <button type="button" onClick={callShop} disabled={!shop.phone} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-instrument bg-brand px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-lit disabled:opacity-45">
+            <Phone size={16} aria-hidden="true" /> Call
+          </button>
+          <button type="button" onClick={bookAppointment} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-instrument border border-brand/40 bg-brand/10 px-4 py-2.5 text-sm font-semibold text-brand transition-colors hover:bg-brand/15">
+            <Calendar size={16} aria-hidden="true" /> Book appointment
+          </button>
+          <button type="button" onClick={shareProfile} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-instrument border border-line-2 bg-panel px-4 py-2.5 text-sm font-semibold text-ink transition-colors hover:border-brand hover:text-brand">
+            {copied ? <CheckCircle2 size={16} aria-hidden="true" /> : <Share2 size={16} aria-hidden="true" />}
+            {copied ? 'Copied' : 'Share'}
+          </button>
         </div>
 
-        {/* Rating Section */}
-        <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-6 text-center">
-          {hasRating ? (
-            <>
-              <div className="flex items-center justify-center gap-2 mb-2">
-                <Star className="w-8 h-8 text-yellow-400 fill-yellow-400" />
-                <span className="text-5xl font-bold text-white">{rating.avg}</span>
-                <span className="text-2xl text-slate-500">/5</span>
+        <Panel title="Customer rating">
+          <div className="p-5 text-center">
+            {hasRating ? (
+              <div className="flex items-center justify-center gap-2">
+                <Star className="h-8 w-8 fill-brand text-brand" aria-hidden="true" />
+                <span className="font-mono text-4xl font-bold tabular-nums text-ink">{rating.avg}</span>
+                <span className="font-mono text-lg tabular-nums text-faint">/5</span>
               </div>
-              <p className="text-slate-400 text-sm mb-4">
-                {rating?.count} review{rating?.count !== 1 ? 's' : ''}
-              </p>
-            </>
-          ) : (
-            <div className="text-slate-500 mb-4">No ratings yet</div>
-          )}
+            ) : <p className="text-sm text-muted">No ratings yet</p>}
+            {hasRating && <p className="mt-2 font-mono text-xs tabular-nums text-muted">{rating.count} review{rating.count !== 1 ? 's' : ''}</p>}
 
-          {/* Badges */}
-          {badges && badges.length > 0 && (
-            <div className="flex flex-wrap gap-2 justify-center">
-              {badges.map((badge) => (
-                <div
-                  key={badge.type}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold ${
-                    badge.type === 'top_rated'
-                      ? 'bg-yellow-900/30 text-yellow-400 border border-yellow-700/40'
-                      : 'bg-emerald-900/30 text-emerald-400 border border-emerald-700/40'
-                  }`}
-                >
-                  <Award size={14} />
-                  {badge.label}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Labor Rate */}
-        {shop.labor_rate && (
-          <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
-            <div className="flex items-center justify-between">
-              <span className="text-slate-400">Labor Rate</span>
-              <span className="text-white font-semibold">${shop.labor_rate}/hr</span>
-            </div>
+            {badges.length > 0 && (
+              <div className="mt-4 flex flex-wrap justify-center gap-2">
+                {badges.map((badge) => (
+                  <span key={badge.type} className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold ${badge.type === 'top_rated' ? 'border-brand/30 bg-brand/10 text-brand' : 'border-good/30 bg-good/10 text-good'}`}>
+                    <Award size={14} aria-hidden="true" /> {badge.label}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
+        </Panel>
+
+        {shop.labor_rate && (
+          <Panel title="Posted labor rate">
+            <div className="flex items-center justify-between gap-3 px-4 py-4 sm:px-5">
+              <span className="text-sm text-muted">Body labor</span>
+              <span className="flex items-baseline gap-1"><Money cents={dollarsToCents(shop.labor_rate)} className="font-semibold text-gold" /><span className="text-xs text-muted">/hr</span></span>
+            </div>
+          </Panel>
         )}
 
-        {/* Reviews */}
-        <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
-          <h2 className="text-lg font-semibold text-white mb-4">Recent Reviews</h2>
-          
-          {reviews && reviews.length > 0 ? (
-            <div className="space-y-4">
+        <Panel title="Recent reviews">
+          {reviews.length > 0 ? (
+            <div className="divide-y divide-line px-4 sm:px-5">
               {reviews.map((review) => (
-                <div key={review.id} className="border-b border-[#2a2d3e] pb-4 last:border-0">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex gap-1">
-                      {[1, 2, 3, 4, 5].map((star) => (
-                        <Star
-                          key={star}
-                          size={16}
-                          className={star <= review.rating ? 'text-yellow-400 fill-yellow-400' : 'text-slate-600'}
-                        />
-                      ))}
+                <article key={review.id} className="py-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex gap-1" aria-label={`${review.rating} out of 5 stars`}>
+                      {[1, 2, 3, 4, 5].map((star) => <Star key={star} size={16} className={star <= review.rating ? 'fill-brand text-brand' : 'text-faint'} aria-hidden="true" />)}
                     </div>
-                    <span className="text-xs text-slate-500">
-                      {new Date(review.date).toLocaleDateString()}
-                    </span>
+                    <time className="font-mono text-xs tabular-nums text-faint">{new Date(review.date).toLocaleDateString()}</time>
                   </div>
-                  {review.vehicle && (
-                    <p className="text-xs text-slate-500">{review.vehicle}</p>
-                  )}
-                </div>
+                  {review.vehicle && <p className="mt-2 text-xs text-muted">{review.vehicle}</p>}
+                </article>
               ))}
             </div>
-          ) : (
-            <p className="text-slate-500 text-sm">No reviews yet</p>
-          )}
-        </div>
+          ) : <p role="status" className="px-4 py-8 text-center text-sm text-muted">No reviews yet</p>}
+        </Panel>
 
-        {/* CTA */}
-        <button
-          onClick={bookAppointment}
-          className="w-full bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] font-bold py-3 rounded-xl transition-colors"
-        >
-          Book Appointment
+        <button type="button" onClick={bookAppointment} className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-instrument bg-brand px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-lit">
+          <Calendar size={17} aria-hidden="true" /> Book appointment
         </button>
       </div>
-    </div>
+    </main>
   )
 }

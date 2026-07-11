@@ -1,7 +1,22 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { CheckCircle2 } from 'lucide-react'
+import { CheckCircle2, FileCheck2, Loader2, ShieldCheck } from 'lucide-react'
 import api from '../lib/api'
+import { Logo, Money, Panel, dollarsToCents } from '../components/ui'
+
+const inputClass = 'w-full rounded-instrument border border-line-2 bg-void px-3 py-2.5 text-sm text-ink placeholder:text-faint focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20'
+
+function PortalHeader() {
+  return (
+    <header className="flex items-center gap-3 border-b border-line pb-5">
+      <Logo variant="mark" className="h-10 w-10 shrink-0" />
+      <div className="min-w-0">
+        <p className="font-display text-lg font-semibold text-ink">Insurance assessment</p>
+        <p className="text-sm text-muted">Secure claim review powered by REVV</p>
+      </div>
+    </header>
+  )
+}
 
 export default function ClaimPortal() {
   const { token } = useParams()
@@ -26,8 +41,8 @@ export default function ClaimPortal() {
       setLoading(true)
       setError('')
       try {
-        const { data } = await api.get(`/claim-link/${token}`)
-        setData(data)
+        const { data: response } = await api.get(`/claim-link/${token}`)
+        setData(response)
       } catch {
         setError('This claim link is invalid or unavailable.')
       } finally {
@@ -37,57 +52,74 @@ export default function ClaimPortal() {
     load()
   }, [token])
 
-  const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }))
+  const set = (key, value) => setForm((previous) => ({ ...previous, [key]: value }))
 
-  async function onSubmit(e) {
-    e.preventDefault()
+  async function onSubmit(event) {
+    event.preventDefault()
     if (!form.adjustor_name.trim() || !form.adjustor_company.trim()) {
-      alert('Adjustor name and company are required.')
+      setError('Adjustor name and company are required.')
       return
     }
 
     setSubmitting(true)
     setError('')
     try {
-      const fd = new FormData()
-      Object.entries(form).forEach(([k, v]) => fd.append(k, v))
-      if (assessmentFile) fd.append('assessment', assessmentFile)
-      await api.post(`/claim-link/${token}/submit`, fd, {
+      const formData = new FormData()
+      Object.entries(form).forEach(([key, value]) => formData.append(key, value))
+      if (assessmentFile) formData.append('assessment', assessmentFile)
+      await api.post(`/claim-link/${token}/submit`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       })
       setSuccess(true)
-      setData(prev => ({ ...prev, link: { ...(prev?.link || {}), submitted_at: new Date().toISOString() } }))
-    } catch (e2) {
-      setError(e2?.response?.data?.error || 'Could not submit assessment.')
+      setData((previous) => ({
+        ...previous,
+        link: { ...(previous?.link || {}), submitted_at: new Date().toISOString() },
+      }))
+    } catch (requestError) {
+      setError(requestError?.response?.data?.error || 'Could not submit assessment.')
     } finally {
       setSubmitting(false)
     }
   }
 
   if (loading) {
-    return <div className="min-h-screen bg-[#0f1117] text-slate-300 flex items-center justify-center">Loading portal…</div>
+    return (
+      <main className="grid min-h-screen place-items-center bg-void px-4 text-muted">
+        <div className="flex items-center gap-3" role="status">
+          <Loader2 className="h-5 w-5 animate-spin text-brand" aria-hidden="true" />
+          Loading insurance assessment...
+        </div>
+      </main>
+    )
   }
 
   if (error && !data) {
     return (
-      <div className="min-h-screen bg-[#0f1117] text-slate-200 p-6">
-        <div className="max-w-3xl mx-auto mt-10 bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-6">
-          <h1 className="text-xl font-bold text-white">REVV · Insurance Assessment Portal</h1>
-          <p className="text-red-400 mt-4">{error}</p>
+      <main className="min-h-screen bg-void px-4 py-8 text-ink sm:py-12">
+        <div className="mx-auto max-w-2xl space-y-5">
+          <PortalHeader />
+          <Panel className="p-6 text-center">
+            <ShieldCheck className="mx-auto h-8 w-8 text-crit" aria-hidden="true" />
+            <h1 className="mt-4 font-display text-xl font-semibold text-ink">Assessment unavailable</h1>
+            <p role="alert" className="mt-2 text-sm text-crit">{error}</p>
+          </Panel>
         </div>
-      </div>
+      </main>
     )
   }
 
   if (data?.link?.submitted_at || success) {
     return (
-      <div className="min-h-screen bg-[#0f1117] text-slate-200 p-6">
-        <div className="max-w-3xl mx-auto mt-10 bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-6 text-center">
-          <h1 className="text-xl font-bold text-white">REVV · Insurance Assessment Portal</h1>
-          <p className="text-emerald-400 mt-6 text-lg font-semibold flex items-center justify-center gap-2"><CheckCircle2 size={20} /> Assessment received. Thank you.</p>
-          <p className="text-slate-400 mt-2">Assessment submitted successfully. The shop has been notified.</p>
+      <main className="min-h-screen bg-void px-4 py-8 text-ink sm:py-12">
+        <div className="mx-auto max-w-2xl space-y-5">
+          <PortalHeader />
+          <Panel className="p-6 text-center">
+            <CheckCircle2 className="mx-auto h-9 w-9 text-good" aria-hidden="true" />
+            <h1 className="mt-4 font-display text-xl font-semibold text-ink">Assessment received</h1>
+            <p role="status" className="mt-2 text-sm text-muted">The shop has been notified. Thank you for completing the claim review.</p>
+          </Panel>
         </div>
-      </div>
+      </main>
     )
   }
 
@@ -95,83 +127,94 @@ export default function ClaimPortal() {
   const vehicle = data?.vehicle || {}
   const customer = data?.customer || {}
   const shop = data?.shop || {}
-
-  const inputCls = 'w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500'
+  const vehicleLabel = [vehicle.year, vehicle.make, vehicle.model].filter(Boolean).join(' ') || 'Not provided'
 
   return (
-    <div className="min-h-screen bg-[#0f1117] text-slate-200 p-4 md:p-6">
-      <div className="max-w-4xl mx-auto space-y-4">
-        <header className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-5">
-          <h1 className="text-xl font-bold text-white">REVV</h1>
-          <p className="text-slate-400 text-sm mt-1">Insurance Assessment Portal</p>
-        </header>
+    <main className="min-h-screen bg-void px-4 py-6 text-ink sm:px-6 sm:py-10">
+      <div className="mx-auto max-w-4xl space-y-5">
+        <PortalHeader />
 
-        <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-5 space-y-2 text-sm">
-          <h2 className="text-white font-semibold">Repair Order Details</h2>
-          <div className="grid md:grid-cols-2 gap-2 text-xs">
-            <div><span className="text-slate-500">Shop</span><p className="text-white">{shop.name || '—'}</p></div>
-            <div><span className="text-slate-500">RO Number</span><p className="text-white">{ro.ro_number || '—'}</p></div>
-            <div><span className="text-slate-500">Vehicle</span><p className="text-white">{[vehicle.year, vehicle.make, vehicle.model].filter(Boolean).join(' ') || '—'}</p></div>
-            <div><span className="text-slate-500">VIN</span><p className="text-white">{vehicle.vin || '—'}</p></div>
-            <div><span className="text-slate-500">Customer</span><p className="text-white">{customer.name || '—'}</p></div>
-            <div><span className="text-slate-500">Contact</span><p className="text-white">{shop.phone || '—'}</p></div>
+        <Panel title="Repair order" description="Confirm the vehicle and shop before submitting your assessment.">
+          <dl className="grid gap-x-8 gap-y-4 p-4 text-sm sm:grid-cols-2 sm:p-5">
+            {[
+              ['Shop', shop.name || 'Not provided'],
+              ['RO number', ro.ro_number || 'Not provided'],
+              ['Vehicle', vehicleLabel],
+              ['VIN', vehicle.vin || 'Not provided'],
+              ['Customer', customer.name || 'Not provided'],
+              ['Shop contact', shop.phone || 'Not provided'],
+            ].map(([label, value]) => (
+              <div key={label} className="min-w-0 border-b border-line pb-3 last:border-b-0 sm:[&:nth-last-child(-n+2)]:border-b-0">
+                <dt className="text-xs font-medium uppercase tracking-[0.08em] text-faint">{label}</dt>
+                <dd className="mt-1 break-words text-ink">{value}</dd>
+              </div>
+            ))}
+          </dl>
+        </Panel>
+
+        <Panel title="Shop estimate" description="Current repair figures supplied by the shop.">
+          <dl className="grid divide-y divide-line p-4 sm:grid-cols-3 sm:divide-x sm:divide-y-0 sm:p-5">
+            <div className="py-3 sm:px-4 sm:py-0 sm:first:pl-0">
+              <dt className="text-xs uppercase tracking-[0.08em] text-faint">Parts</dt>
+              <dd className="mt-2"><Money cents={dollarsToCents(ro.parts_cost)} className="text-lg font-semibold text-ink" /></dd>
+            </div>
+            <div className="py-3 sm:px-4 sm:py-0">
+              <dt className="text-xs uppercase tracking-[0.08em] text-faint">Labor</dt>
+              <dd className="mt-2"><Money cents={dollarsToCents(ro.labor_cost)} className="text-lg font-semibold text-ink" /></dd>
+            </div>
+            <div className="py-3 sm:px-4 sm:py-0 sm:last:pr-0">
+              <dt className="text-xs uppercase tracking-[0.08em] text-faint">Estimate total</dt>
+              <dd className="mt-2"><Money cents={dollarsToCents(ro.total)} className="text-lg font-semibold text-gold" /></dd>
+            </div>
+          </dl>
+        </Panel>
+
+        <Panel as="form" onSubmit={onSubmit} title="Your assessment" description="Required fields are marked with an asterisk.">
+          <div className="space-y-5 p-4 sm:p-5">
+            {error && <p role="alert" className="rounded-instrument border border-crit/30 bg-crit/10 px-3 py-2 text-sm text-crit">{error}</p>}
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="text-xs font-medium text-muted">
+                Adjustor name *
+                <input aria-label="Adjustor name" className={`${inputClass} mt-1`} value={form.adjustor_name} onChange={(event) => set('adjustor_name', event.target.value)} required />
+              </label>
+              <label className="text-xs font-medium text-muted">
+                Company *
+                <input aria-label="Adjustor company" className={`${inputClass} mt-1`} value={form.adjustor_company} onChange={(event) => set('adjustor_company', event.target.value)} required />
+              </label>
+              <label className="text-xs font-medium text-muted sm:col-span-2">
+                Email
+                <input aria-label="Adjustor email" type="email" className={`${inputClass} mt-1`} value={form.adjustor_email} onChange={(event) => set('adjustor_email', event.target.value)} />
+              </label>
+              <label className="text-xs font-medium text-muted">
+                Approved labor amount
+                <input aria-label="Approved labor amount" type="number" min="0" step="0.01" className={`${inputClass} mt-1`} value={form.approved_labor} onChange={(event) => set('approved_labor', event.target.value)} />
+              </label>
+              <label className="text-xs font-medium text-muted">
+                Approved parts amount
+                <input aria-label="Approved parts amount" type="number" min="0" step="0.01" className={`${inputClass} mt-1`} value={form.approved_parts} onChange={(event) => set('approved_parts', event.target.value)} />
+              </label>
+              <label className="text-xs font-medium text-muted sm:col-span-2">
+                Supplement amount
+                <input aria-label="Supplement amount" type="number" min="0" step="0.01" placeholder="0.00" className={`${inputClass} mt-1`} value={form.supplement_amount} onChange={(event) => set('supplement_amount', event.target.value)} />
+              </label>
+              <label className="text-xs font-medium text-muted sm:col-span-2">
+                Notes or comments
+                <textarea aria-label="Assessment notes" rows={4} className={`${inputClass} mt-1 resize-y`} value={form.adjustor_notes} onChange={(event) => set('adjustor_notes', event.target.value)} />
+              </label>
+              <label className="text-xs font-medium text-muted sm:col-span-2">
+                Assessment PDF
+                <input aria-label="Assessment PDF" type="file" accept="application/pdf,.pdf" className={`${inputClass} mt-1 file:mr-3 file:rounded-md file:border-0 file:bg-raised file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-ink`} onChange={(event) => setAssessmentFile(event.target.files?.[0] || null)} />
+              </label>
+            </div>
+
+            <button type="submit" disabled={submitting} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-instrument bg-brand px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-lit disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto">
+              <FileCheck2 size={17} aria-hidden="true" />
+              {submitting ? 'Submitting...' : 'Submit assessment'}
+            </button>
           </div>
-        </div>
-
-        <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-5 text-sm">
-          <h2 className="text-white font-semibold mb-3">Shop Estimate</h2>
-          <div className="grid md:grid-cols-3 gap-3 text-xs">
-            <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3"><span className="text-slate-500">Parts</span><p className="text-white text-base mt-1">${Number(ro.parts_cost || 0).toLocaleString()}</p></div>
-            <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3"><span className="text-slate-500">Labor</span><p className="text-white text-base mt-1">${Number(ro.labor_cost || 0).toLocaleString()}</p></div>
-            <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3"><span className="text-slate-500">Total</span><p className="text-emerald-400 text-base mt-1 font-semibold">${Number(ro.total || 0).toLocaleString()}</p></div>
-          </div>
-        </div>
-
-        <form onSubmit={onSubmit} className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-5 space-y-4">
-          <h2 className="text-white font-semibold">Your Assessment</h2>
-
-          {error && <p className="text-red-400 text-sm">{error}</p>}
-
-          <div className="grid md:grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs text-slate-400 block mb-1">Adjustor Name *</label>
-              <input className={inputCls} value={form.adjustor_name} onChange={e => set('adjustor_name', e.target.value)} required />
-            </div>
-            <div>
-              <label className="text-xs text-slate-400 block mb-1">Company *</label>
-              <input className={inputCls} value={form.adjustor_company} onChange={e => set('adjustor_company', e.target.value)} required />
-            </div>
-            <div className="md:col-span-2">
-              <label className="text-xs text-slate-400 block mb-1">Email</label>
-              <input type="email" className={inputCls} value={form.adjustor_email} onChange={e => set('adjustor_email', e.target.value)} />
-            </div>
-            <div>
-              <label className="text-xs text-slate-400 block mb-1">Approved Labor Amount</label>
-              <div className="relative"><span className="absolute left-3 top-2 text-slate-500">$</span><input type="number" step="0.01" className={inputCls + ' pl-7'} value={form.approved_labor} onChange={e => set('approved_labor', e.target.value)} /></div>
-            </div>
-            <div>
-              <label className="text-xs text-slate-400 block mb-1">Approved Parts Amount</label>
-              <div className="relative"><span className="absolute left-3 top-2 text-slate-500">$</span><input type="number" step="0.01" className={inputCls + ' pl-7'} value={form.approved_parts} onChange={e => set('approved_parts', e.target.value)} /></div>
-            </div>
-            <div className="md:col-span-2">
-              <label className="text-xs text-slate-400 block mb-1">Supplement Amount</label>
-              <div className="relative"><span className="absolute left-3 top-2 text-slate-500">$</span><input type="number" step="0.01" placeholder="0.00" className={inputCls + ' pl-7'} value={form.supplement_amount} onChange={e => set('supplement_amount', e.target.value)} /></div>
-            </div>
-            <div className="md:col-span-2">
-              <label className="text-xs text-slate-400 block mb-1">Notes / Comments</label>
-              <textarea rows={4} className={inputCls} value={form.adjustor_notes} onChange={e => set('adjustor_notes', e.target.value)} />
-            </div>
-            <div className="md:col-span-2">
-              <label className="text-xs text-slate-400 block mb-1">Upload Assessment PDF</label>
-              <input type="file" accept="application/pdf,.pdf" className={inputCls} onChange={e => setAssessmentFile(e.target.files?.[0] || null)} />
-            </div>
-          </div>
-
-          <button type="submit" disabled={submitting} className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors disabled:opacity-50">
-            {submitting ? 'Submitting...' : 'Submit Assessment'}
-          </button>
-        </form>
+        </Panel>
       </div>
-    </div>
+    </main>
   )
 }
