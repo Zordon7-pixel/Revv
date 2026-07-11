@@ -56,6 +56,42 @@ const ro = await dbGet('SELECT * FROM ros WHERE id = $1 AND shop_id = $2', [id, 
 await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 ```
 
+## Dispatch Log — 2026-07-11 REVV Redesign Phase 6M: Dashboard, Estimate Builder, and Customer Work Surfaces
+
+**Time:** 2026-07-11 05:37 ET / 2026-07-11 09:37 UTC
+**Status:** READY FOR CLAUDE CODE QA — FEATURE BRANCH ONLY — NOT DEPLOYED
+
+**Scope**
+- Completed semantic-token propagation for the owner/technician Dashboard, Estimate Builder, insurance-estimate review overlay, and the remaining Customer-page placeholders. The three production pages contain no raw hex colors, legacy named palette utilities, gradients, or browser alerts.
+- Preserved Dashboard summary/instrument/calendar endpoints, list-derived active/completed counts, estimated-delivery PATCH, delivered-sooner status PUT, role behavior, production-stage navigation, and lazy Chart.js behavior. Chart colors now resolve from the active theme's semantic CSS variables instead of hardcoded values.
+- Preserved every Estimate Builder line-item, OCR parse/analyze, metadata, parts-request, financial-sync, gap-review, opportunity-review, mismatch confirmation, multi-file upload, and selection-toolbar contract. Browser alerts were replaced with visible assertive/polite feedback; consequential mismatch confirmation remains.
+- Kept generic estimate import and add-row controls on brand, financial import and supplement opportunity on gold, success on good, failures/undercut attention on crit, and money values in monospaced tabular numerals.
+- Rebuilt the Estimate Builder phone header as a stable title row plus full-width action toolbar so the title and controls no longer compete or overlap at 390px. The insurance import remains a body-level `AppOverlay` that covers the full viewport above the sidebar.
+- Found and fixed a rendered Dashboard missing-key warning by giving weekly technician rows a deterministic fallback key. The final mocked browser rerun has zero console/page errors.
+- Expanded `tokenConformance.test.js` to lock all three migrated pages against legacy styling/alerts and pin Dashboard status/calendar/chart contracts plus Estimate Builder OCR, financial-sync, overlay, selection, and accessible-feedback contracts.
+- No backend, API contract, auth rule, workflow, money math, database, seed, reset, migration, destructive script, hosted DB, provider, customer/shop/RO data, or Miles Automotive data changed. Browser data was fully mocked.
+
+**Files changed (5; batch cap respected)**
+- `frontend/src/pages/Dashboard.jsx`
+- `frontend/src/pages/EstimateBuilder.jsx`
+- `frontend/src/pages/Customers.jsx`
+- `frontend/src/lib/__tests__/tokenConformance.test.js`
+- `CLAUDE.md`
+
+**Verification**
+```
+cd frontend && npm run test:run -- src/lib/__tests__/tokenConformance.test.js src/pages/__tests__/Dashboard.regression.test.jsx src/pages/__tests__/EstimateBuilder.phase31.test.jsx src/pages/__tests__/EstimateBuilder.gapReview.test.jsx src/pages/__tests__/Customers.mobile.test.jsx  # 5 files, 22/22 passed
+node --test native backend sweep  # 130/130 passed
+cd backend && npm run test:run  # extractor suite 7/7 passed
+cd frontend && npm run test:run  # 38 files, 119/119 passed
+cd frontend && npm run build  # clean; pre-existing Sentry/chunk-size warnings only
+Playwright fully mocked browser checks  # Dashboard tablet/phone, Estimate Builder tablet/phone, insurance-estimate overlay and selection shortcuts
+viewport results  # 1024x768 dark tablet and 390x844 light phone exact client/scroll widths; body-level estimate overlay covers 1024x768 above the sidebar; zero console/page errors
+screenshots  # /tmp/revv-phase6m-dashboard-tablet-dark.png, /tmp/revv-phase6m-dashboard-phone-light.png, /tmp/revv-phase6m-estimate-builder-tablet-dark.png, /tmp/revv-phase6m-estimate-overlay-tablet-dark.png, /tmp/revv-phase6m-estimate-builder-phone-light.png
+rg raw hex / legacy named palettes / gradients / browser alerts across 3 production pages  # zero matches
+rm -rf frontend/dist && git diff --check && git ls-files frontend/dist | wc -l  # 0
+```
+
 ## Dispatch Log — 2026-07-11 REVV Redesign Phase 6L: RO Intake, Storage, Diagnostics, Invoice, and Team
 
 **Time:** 2026-07-11 05:12 ET / 2026-07-11 09:12 UTC

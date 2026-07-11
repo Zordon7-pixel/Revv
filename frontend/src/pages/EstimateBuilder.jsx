@@ -22,9 +22,9 @@ function money(value) {
 
 // ── Severity badge helper ─────────────────────────────────────────────────────
 function SeverityBadge({ severity }) {
-  if (severity === 'high')   return <span className="text-xs bg-red-600/30 text-red-300 px-2 py-0.5 rounded font-medium">High</span>
-  if (severity === 'medium') return <span className="text-xs bg-amber-600/30 text-amber-300 px-2 py-0.5 rounded font-medium">Medium</span>
-  if (severity === 'low')    return <span className="text-xs bg-yellow-600/30 text-yellow-300 px-2 py-0.5 rounded font-medium">Review</span>
+  if (severity === 'high')   return <span className="text-xs bg-crit/30 text-crit px-2 py-0.5 rounded font-medium">High</span>
+  if (severity === 'medium') return <span className="text-xs bg-gold/20 text-gold px-2 py-0.5 rounded font-medium">Medium</span>
+  if (severity === 'low')    return <span className="text-xs bg-raised text-muted px-2 py-0.5 rounded font-medium">Review</span>
   return null
 }
 
@@ -41,6 +41,7 @@ function OcrModal({
   onImport,
   onCancel,
   importing,
+  error,
 }) {
   const checkedCount = Object.values(checked).filter(Boolean).length
   const hasAnalysis = flags && flags.length > 0
@@ -53,23 +54,23 @@ function OcrModal({
       onClose={() => !importing && onCancel()}
       className="bg-black/75 p-3 sm:p-5"
     >
-      <div className="flex max-h-[calc(var(--app-viewport-height)-1.5rem)] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-[#2a2d3e] bg-[#1a1d2e] shadow-2xl">
+      <div className="flex max-h-[calc(var(--app-viewport-height)-1.5rem)] w-full max-w-5xl flex-col overflow-hidden rounded-instrument border border-line-2 bg-panel shadow-2xl">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[#2a2d3e]">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-line-2">
           <div>
-            <h2 className="text-white font-semibold text-base">Insurance Estimate Import</h2>
+            <h2 className="text-ink font-semibold text-base">Insurance Estimate Import</h2>
             {(parsed.insurance_company || parsed.claim_number || parsed.vehicle) && (
-              <p className="text-slate-400 text-xs mt-0.5">
+              <p className="text-muted text-xs mt-0.5">
                 {[parsed.insurance_company, parsed.claim_number, parsed.vehicle].filter(Boolean).join(' · ')}
               </p>
             )}
           </div>
-          <button type="button" onClick={onCancel} disabled={importing} className="text-slate-400 hover:text-white disabled:opacity-50" aria-label="Close estimate import"><X size={18} /></button>
+          <button type="button" onClick={onCancel} disabled={importing} className="text-muted hover:text-ink disabled:opacity-50" aria-label="Close estimate import"><X size={18} /></button>
         </div>
 
         {/* Phase 2: Analysis summary bar */}
         {metaNote && (
-          <div className="px-5 py-3 bg-indigo-950/30 border-b border-indigo-800/30 text-indigo-200 text-xs">
+          <div className="px-5 py-3 bg-brand/30 border-b border-brand/30 text-brand text-xs">
             {metaNote}
           </div>
         )}
@@ -79,35 +80,40 @@ function OcrModal({
           className="mx-5 mt-3"
         />
         {crossCheck?.hasMismatch && (
-          <div className="px-5 py-3 bg-red-950/30 border-b border-red-800/30 space-y-1">
+          <div className="px-5 py-3 bg-crit/30 border-b border-crit/30 space-y-1">
             {crossCheck.messages.map((msg, idx) => (
-              <p key={idx} className="text-red-300 text-xs">{msg}</p>
+              <p key={idx} className="text-crit text-xs">{msg}</p>
             ))}
-            <p className="text-red-200 text-[11px]">Review before importing.</p>
+            <p className="text-crit text-[11px]">Review before importing.</p>
+          </div>
+        )}
+        {error && (
+          <div role="alert" className="border-b border-crit/40 bg-crit/20 px-5 py-3 text-xs text-crit">
+            {error}
           </div>
         )}
         {hasAnalysis && supplementTotal > 0 && (
-          <div className="px-5 py-3 bg-amber-950/40 border-b border-amber-800/40 flex items-center gap-3 flex-wrap">
-            <AlertTriangle size={15} className="text-amber-400 shrink-0" />
-            <span className="text-amber-300 text-sm font-medium">
+          <div className="flex flex-wrap items-center gap-3 border-b border-gold/40 bg-gold/10 px-5 py-3">
+            <AlertTriangle size={15} className="text-gold shrink-0" />
+            <span className="text-gold text-sm font-medium">
               {undervalueCount} line{undervalueCount !== 1 ? 's' : ''} below your shop rate
             </span>
-            <span className="text-amber-400 text-sm">
-              · Supplement opportunity: <strong>{money(supplementTotal)}</strong>
+            <span className="text-gold text-sm">
+              · Supplement opportunity: <strong className="font-mono tabular-nums">{money(supplementTotal)}</strong>
             </span>
           </div>
         )}
         {hasAnalysis && supplementTotal === 0 && (
-          <div className="px-5 py-3 bg-emerald-950/30 border-b border-emerald-800/30 flex items-center gap-3">
-            <CheckCircle size={15} className="text-emerald-400 shrink-0" />
-            <span className="text-emerald-300 text-sm">All line items are at or above your shop rates.</span>
+          <div className="px-5 py-3 bg-good/30 border-b border-good/30 flex items-center gap-3">
+            <CheckCircle size={15} className="text-good shrink-0" />
+            <span className="text-good text-sm">All line items are at or above your shop rates.</span>
           </div>
         )}
 
         {/* Financial review + line items */}
         <div className="flex-1 space-y-3 overflow-y-auto overscroll-contain px-4 py-3 sm:px-5">
           <EstimateFinancialReview totals={parsed.estimate_totals} />
-          <div className="sticky top-0 z-10 rounded-xl border border-[#2a2d3e] bg-[#1a1d2e]/95 p-3 backdrop-blur">
+          <div className="sticky top-0 z-10 rounded-instrument border border-line-2 bg-panel/95 p-3 backdrop-blur">
             <EstimateSelectionToolbar
               items={parsed.line_items}
               selected={checked}
@@ -115,40 +121,40 @@ function OcrModal({
             />
           </div>
           {parsed.line_items.length === 0 ? (
-            <p className="text-slate-500 text-sm text-center py-6">No line items extracted. Try a clearer photo.</p>
+            <p className="text-faint text-sm text-center py-6">No line items extracted. Try a clearer photo.</p>
           ) : parsed.line_items.map((item, idx) => {
             const flag = flags?.[idx]
             const isUndervalue = flag?.type === 'undervalue'
             const isReview = flag?.type === 'review'
             const borderClass = isUndervalue
-              ? 'border-amber-700/60 bg-amber-950/20'
+              ? 'border-gold/50 bg-gold/10'
               : isReview
-              ? 'border-yellow-700/40 bg-yellow-950/10'
-              : 'border-[#2a2d3e]'
+              ? 'border-line-2 bg-raised'
+              : 'border-line-2'
 
             return (
               <div
                 key={idx}
-                className={`flex items-start gap-3 p-3 rounded-lg bg-[#0f1117] border hover:border-indigo-500 transition-colors ${borderClass}`}
+                className={`flex items-start gap-3 p-3 rounded-lg bg-void border hover:border-brand transition-colors ${borderClass}`}
               >
                 <input
                   type="checkbox"
-                  className="mt-0.5 h-5 w-5 shrink-0 accent-[#EAB308]"
+                  className="mt-0.5 h-5 w-5 shrink-0 accent-brand"
                   checked={!!checked[idx]}
                   onChange={() => onToggle(idx)}
                   aria-label={`Select ${item.description || `estimate line ${idx + 1}`}`}
                 />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs bg-indigo-600/30 text-indigo-300 px-2 py-0.5 rounded font-medium">{item.type}</span>
+                    <span className="text-xs bg-brand/30 text-brand px-2 py-0.5 rounded font-medium">{item.type}</span>
                     {flag && flag.severity !== 'none' && <SeverityBadge severity={flag.severity} />}
-                    <span className="text-white text-sm truncate">{item.description || '(no description)'}</span>
+                    <span className="text-ink text-sm truncate">{item.description || '(no description)'}</span>
                   </div>
-                  <div className="text-slate-400 text-xs mt-1">
+                  <div className="text-muted text-xs mt-1">
                     Qty: {item.quantity} × {money(item.unit_price)} = {money(item.quantity * item.unit_price)}
                   </div>
                   {flag?.message && (
-                    <div className="text-amber-400 text-xs mt-1">{flag.message}</div>
+                    <div className="text-crit text-xs mt-1">{flag.message}</div>
                   )}
                 </div>
               </div>
@@ -157,27 +163,27 @@ function OcrModal({
         </div>
 
         {/* Footer totals */}
-        <div className="px-5 py-2 text-slate-400 text-xs border-t border-[#2a2d3e] flex items-center gap-4 flex-wrap">
+        <div className="px-5 py-2 text-muted text-xs border-t border-line-2 flex items-center gap-4 flex-wrap">
           {parsed.total_allowed != null && (
-            <span>Insurance total: <strong className="text-slate-200">{money(parsed.total_allowed)}</strong></span>
+            <span>Insurance total: <strong className="text-ink">{money(parsed.total_allowed)}</strong></span>
           )}
           {analysisSummary && (
             <>
-              <span>Shop value: <strong className="text-slate-200">{money(analysisSummary.total_shop_value)}</strong></span>
+              <span>Shop value: <strong className="text-ink">{money(analysisSummary.total_shop_value)}</strong></span>
               {analysisSummary.total_gap > 0 && (
-                <span className="text-amber-400">Gap: <strong>{money(analysisSummary.total_gap)}</strong></span>
+                <span className="text-gold">Gap: <strong className="font-mono tabular-nums">{money(analysisSummary.total_gap)}</strong></span>
               )}
             </>
           )}
         </div>
 
-        <div className="flex items-center justify-between gap-3 px-5 py-4 border-t border-[#2a2d3e]">
-          <button type="button" onClick={onCancel} disabled={importing} className="min-h-11 px-3 text-sm text-slate-400 hover:text-white disabled:opacity-50">Cancel</button>
+        <div className="flex items-center justify-between gap-3 px-5 py-4 border-t border-line-2">
+          <button type="button" onClick={onCancel} disabled={importing} className="min-h-11 px-3 text-sm text-muted hover:text-ink disabled:opacity-50">Cancel</button>
           <button
             type="button"
             onClick={onImport}
             disabled={importing || checkedCount === 0}
-            className="min-h-11 rounded-lg bg-[#EAB308] px-4 text-sm font-semibold text-[#0f1117] transition-colors hover:bg-yellow-400 disabled:opacity-50"
+            className="min-h-11 rounded-lg bg-gold px-4 text-sm font-semibold text-on-gold transition-colors hover:bg-gold-lit disabled:opacity-50"
           >
             {importing ? 'Importing...' : `Import ${checkedCount} item${checkedCount !== 1 ? 's' : ''}`}
           </button>
@@ -222,6 +228,11 @@ export default function EstimateBuilder() {
   const [gapReviewError, setGapReviewError] = useState('')
   const [addingGapCode, setAddingGapCode] = useState('')
   const [bulkTaxableSaving, setBulkTaxableSaving] = useState(false)
+  const [actionFeedback, setActionFeedback] = useState(null)
+
+  function showActionFeedback(type, text) {
+    setActionFeedback({ type, text })
+  }
 
   async function loadGapReview({ silent = false } = {}) {
     if (!silent) setGapReviewLoading(true)
@@ -297,7 +308,7 @@ export default function EstimateBuilder() {
         }
         await loadOpportunities({ silent: true })
       } catch (err) {
-        alert(err?.response?.data?.error || 'Could not load estimate builder')
+        showActionFeedback('error', err?.response?.data?.error || 'Could not load estimate builder')
       } finally {
         if (mounted) setLoading(false)
       }
@@ -335,7 +346,7 @@ export default function EstimateBuilder() {
       setSummary(data.summary || null)
       await loadOpportunities({ silent: true })
     } catch (err) {
-      alert(err?.response?.data?.error || 'Could not save line item')
+      showActionFeedback('error', err?.response?.data?.error || 'Could not save line item')
     } finally {
       setSavingId(null)
     }
@@ -357,7 +368,7 @@ export default function EstimateBuilder() {
       setSummary(data.summary || null)
       await loadOpportunities({ silent: true })
     } catch (err) {
-      alert(err?.response?.data?.error || 'Could not add line item')
+      showActionFeedback('error', err?.response?.data?.error || 'Could not add line item')
     } finally {
       setAdding(false)
     }
@@ -371,7 +382,7 @@ export default function EstimateBuilder() {
       setSummary(data.summary || null)
       await loadOpportunities({ silent: true })
     } catch (err) {
-      alert(err?.response?.data?.error || 'Could not delete line item')
+      showActionFeedback('error', err?.response?.data?.error || 'Could not delete line item')
     } finally {
       setDeletingId(null)
     }
@@ -405,7 +416,7 @@ export default function EstimateBuilder() {
       setSummary(lastSummary || null)
       await loadOpportunities({ silent: true })
     } catch (err) {
-      alert(err?.response?.data?.error || 'Could not update taxable values')
+      showActionFeedback('error', err?.response?.data?.error || 'Could not update taxable values')
       try {
         const { data } = await api.get(`/estimate-items/${roId}`)
         setItems(data?.items || [])
@@ -428,7 +439,7 @@ export default function EstimateBuilder() {
       setFinancialNotice(`Imported financials into RO · Total ${money(data?.summary?.grand_total || 0)}`)
       await loadOpportunities({ silent: true })
     } catch (err) {
-      alert(err?.response?.data?.error || 'Could not import financial data into RO')
+      showActionFeedback('error', err?.response?.data?.error || 'Could not import financial data into RO')
     } finally {
       setImportingFinancials(false)
     }
@@ -538,6 +549,7 @@ export default function EstimateBuilder() {
 
   async function importOcrItems() {
     if (!ocrParsed) return
+    setOcrError('')
     if (ocrCrossCheck?.hasMismatch) {
       const proceed = window.confirm(
         `Potential mismatch detected:\n- ${ocrCrossCheck.messages.join('\n- ')}\n\nImport selected line items anyway?`
@@ -554,7 +566,7 @@ export default function EstimateBuilder() {
     const toImport = ocrParsed.line_items.filter((_, idx) => selectedIndexSet.has(idx))
     if (!toImport.length) {
       setOcrImporting(false)
-      alert('No line items selected to import.')
+      setOcrError('Select at least one line item to import.')
       return
     }
     let lastSummary = summary
@@ -628,10 +640,10 @@ export default function EstimateBuilder() {
       setOcrCrossCheck(null)
       setOcrMetaNote('')
       noticeLines.push(financialsImported ? 'Estimate financials synced to the RO.' : 'Line items imported; review the financial notice before syncing totals.')
-      alert(noticeLines.join('\n'))
+      showActionFeedback(partsRequestsFailed > 0 || !financialsImported ? 'warning' : 'success', noticeLines.join(' '))
       await loadOpportunities({ silent: true })
     } catch (err) {
-      alert(err?.response?.data?.error || 'Import failed — some items may not have been added')
+      setOcrError(err?.response?.data?.error || 'Import failed — some items may not have been added')
     } finally {
       setOcrImporting(false)
     }
@@ -639,7 +651,7 @@ export default function EstimateBuilder() {
 
   // ── Render ──────────────────────────────────────────────────────────────────
   if (loading) {
-    return <div className="text-slate-400">Loading estimate builder...</div>
+    return <div className="text-muted">Loading estimate builder...</div>
   }
 
   const totals = summary || {
@@ -664,6 +676,7 @@ export default function EstimateBuilder() {
           analysisSummary={ocrAnalysisSummary}
           crossCheck={ocrCrossCheck}
           metaNote={ocrMetaNote}
+          error={ocrError}
           checked={ocrChecked}
           onToggle={toggleOcrItem}
           onSelectionChange={setOcrChecked}
@@ -675,6 +688,7 @@ export default function EstimateBuilder() {
             setOcrAnalysisSummary(null)
             setOcrCrossCheck(null)
             setOcrMetaNote('')
+            setOcrError('')
           }}
           importing={ocrImporting}
         />
@@ -690,51 +704,71 @@ export default function EstimateBuilder() {
         onChange={handleOcrFile}
       />
 
-      <div className="flex items-center gap-3 flex-wrap">
-        <button onClick={() => navigate(`/ros/${roId}`)} className="text-slate-400 hover:text-white transition-colors">
+      <div className="flex items-start gap-3">
+        <button type="button" onClick={() => navigate(`/ros/${roId}`)} className="mt-1 shrink-0 text-muted transition-colors hover:text-ink" aria-label="Back to repair order">
           <ArrowLeft size={20} />
         </button>
         <div className="flex-1 min-w-0">
-          <h1 className="text-xl font-bold text-white">Estimate Builder</h1>
-          <p className="text-slate-500 text-sm truncate">{ro?.ro_number || roId} {ro?.customer?.name ? `· ${ro.customer.name}` : ''}</p>
+          <h1 className="text-xl font-bold text-ink">Estimate Builder</h1>
+          <p className="text-faint text-sm truncate">{ro?.ro_number || roId} {ro?.customer?.name ? `· ${ro.customer.name}` : ''}</p>
         </div>
+      </div>
+      <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:items-center">
         <button
+          type="button"
           onClick={() => fileInputRef.current?.click()}
           disabled={ocrLoading}
-          className="flex items-center gap-1 bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+          className="flex min-h-10 items-center justify-center gap-1 rounded-lg bg-brand px-3 py-2 text-xs font-medium text-on-brand transition-colors hover:bg-brand-lit disabled:opacity-50"
         >
           <Camera size={12} /> {ocrLoading ? 'Scanning...' : 'Import Insurance Estimate'}
         </button>
         <button
+          type="button"
           onClick={addRow}
           disabled={adding}
-          className="flex items-center gap-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+          className="flex min-h-10 items-center justify-center gap-1 rounded-lg border border-brand/40 bg-brand/10 px-3 py-2 text-xs font-medium text-brand transition-colors hover:bg-brand/15 disabled:opacity-50"
         >
           <Plus size={12} /> {adding ? 'Adding...' : 'Add Row'}
         </button>
         <button
+          type="button"
           onClick={importFinancialsToRo}
           disabled={importingFinancials}
-          className="flex items-center gap-1 bg-amber-600 hover:bg-amber-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+          className="flex min-h-10 items-center justify-center gap-1 rounded-lg bg-gold px-3 py-2 text-xs font-semibold text-on-gold transition-colors hover:bg-gold-lit disabled:opacity-50"
         >
           <CheckCircle size={12} /> {importingFinancials ? 'Importing Financials...' : 'Import Financials To RO'}
         </button>
       </div>
       {financialNotice && (
-        <div className="text-xs text-emerald-300 bg-emerald-900/20 border border-emerald-800/40 rounded-lg px-3 py-2">
+        <div className="text-xs text-good bg-good/20 border border-good/40 rounded-lg px-3 py-2">
           {financialNotice}
         </div>
       )}
       {ocrError && (
-        <div role="alert" className="text-xs text-red-300 bg-red-950/30 border border-red-800/40 rounded-lg px-3 py-2">
+        <div role="alert" className="text-xs text-crit bg-crit/30 border border-crit/40 rounded-lg px-3 py-2">
           {ocrError}
+        </div>
+      )}
+      {actionFeedback?.text && (
+        <div
+          role={actionFeedback.type === 'error' ? 'alert' : 'status'}
+          aria-live={actionFeedback.type === 'error' ? 'assertive' : 'polite'}
+          className={`rounded-lg border px-3 py-2 text-xs ${
+            actionFeedback.type === 'error'
+              ? 'border-crit/40 bg-crit/20 text-crit'
+              : actionFeedback.type === 'warning'
+                ? 'border-gold/40 bg-gold/10 text-gold'
+                : 'border-good/40 bg-good/20 text-good'
+          }`}
+        >
+          {actionFeedback.text}
         </div>
       )}
 
       {hasAdjusterTotals && (
         <div className="space-y-2">
           {revvVsAdjusterVariance !== null && (
-            <div className={`text-right text-xs font-semibold ${Math.abs(revvVsAdjusterVariance) < 0.01 ? 'text-emerald-300' : 'text-amber-300'}`}>
+            <div className={`text-right text-xs font-semibold font-mono tabular-nums ${Math.abs(revvVsAdjusterVariance) < 0.01 ? 'text-good' : 'text-gold'}`}>
               REVV vs adjuster gross variance: {money(revvVsAdjusterVariance)}
             </div>
           )}
@@ -742,58 +776,58 @@ export default function EstimateBuilder() {
         </div>
       )}
 
-      <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 space-y-3">
+      <div className="bg-panel border border-line-2 rounded-instrument p-4 space-y-3">
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
-            <h2 className="text-sm font-semibold text-white">Estimate Gap Review</h2>
-            <p className="mt-1 text-xs text-slate-500">Compares estimate lines with documented damage. Suggestions are review-only and never change pricing automatically.</p>
+            <h2 className="text-sm font-semibold text-ink">Estimate Gap Review</h2>
+            <p className="mt-1 text-xs text-faint">Compares estimate lines with documented damage. Suggestions are review-only and never change pricing automatically.</p>
           </div>
           <button
             type="button"
             onClick={() => loadGapReview()}
             disabled={gapReviewLoading}
-            className="text-xs px-2.5 py-1.5 rounded-lg border border-[#EAB308]/40 text-[#EAB308] hover:bg-[#EAB308]/10 disabled:opacity-50"
+            className="text-xs px-2.5 py-1.5 rounded-lg border border-brand/40 text-brand hover:bg-brand/10 disabled:opacity-50"
           >
             {gapReviewLoading ? 'Reviewing...' : 'Refresh'}
           </button>
         </div>
-        {gapReviewError && <p role="alert" className="rounded-lg border border-red-800/40 bg-red-950/30 px-3 py-2 text-xs text-red-200">{gapReviewError}</p>}
+        {gapReviewError && <p role="alert" className="rounded-lg border border-crit/40 bg-crit/30 px-3 py-2 text-xs text-crit">{gapReviewError}</p>}
         {!gapReview ? (
-          <p className="text-xs text-slate-500">Loading available evidence...</p>
+          <p className="text-xs text-faint">Loading available evidence...</p>
         ) : !gapReview.ready ? (
-          <div className="rounded-lg border border-[#2a2d3e] bg-[#0f1117] px-3 py-3">
-            <p className="text-xs font-medium text-slate-300">Not ready yet</p>
-            <p className="mt-1 text-xs text-slate-500">{gapReview.reason}</p>
+          <div className="rounded-lg border border-line-2 bg-void px-3 py-3">
+            <p className="text-xs font-medium text-ink">Not ready yet</p>
+            <p className="mt-1 text-xs text-faint">{gapReview.reason}</p>
           </div>
         ) : (gapReview.gaps || []).length === 0 ? (
-          <div className="rounded-lg border border-emerald-800/40 bg-emerald-950/20 px-3 py-3 text-xs text-emerald-200">
+          <div className="rounded-lg border border-good/40 bg-good/20 px-3 py-3 text-xs text-good">
             No likely gaps found across {gapReview.reviewed_line_count || 0} estimate lines and the current damage evidence.
           </div>
         ) : (
           <div className="space-y-2">
             <div className="flex flex-wrap gap-1.5">
               {(gapReview.evidence_sources || []).map((source) => (
-                <span key={source} className="rounded-full border border-[#2a2d3e] bg-[#0f1117] px-2 py-1 text-[10px] text-slate-400">{source}</span>
+                <span key={source} className="rounded-full border border-line-2 bg-void px-2 py-1 text-[10px] text-muted">{source}</span>
               ))}
             </div>
             {(gapReview.gaps || []).map((gap) => (
-              <div key={gap.code} className="rounded-lg border border-[#2a2d3e] bg-[#0f1117] px-3 py-3">
+              <div key={gap.code} className="rounded-lg border border-line-2 bg-void px-3 py-3">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <p className="text-sm font-medium text-white">{gap.description}</p>
-                      <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${gap.confidence === 'high' ? 'border-emerald-700/50 bg-emerald-900/20 text-emerald-300' : 'border-amber-700/50 bg-amber-900/20 text-amber-300'}`}>
+                      <p className="text-sm font-medium text-ink">{gap.description}</p>
+                      <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${gap.confidence === 'high' ? 'border-good/50 bg-good/20 text-good' : 'border-gold/50 bg-gold/10 text-gold'}`}>
                         {gap.confidence} confidence
                       </span>
                     </div>
-                    <p className="mt-1 text-xs text-slate-400">{gap.reason}</p>
-                    <p className="mt-1 text-[10px] text-slate-600">Draft quantity: {gap.draft?.quantity || 1}. Unit price remains $0.00 until reviewed.</p>
+                    <p className="mt-1 text-xs text-muted">{gap.reason}</p>
+                    <p className="mt-1 text-[10px] text-faint">Draft quantity: {gap.draft?.quantity || 1}. Unit price remains $0.00 until reviewed.</p>
                   </div>
                   <button
                     type="button"
                     onClick={() => addGapDraft(gap)}
                     disabled={addingGapCode === gap.code}
-                    className="shrink-0 inline-flex items-center gap-1 rounded-lg bg-[#EAB308] px-3 py-2 text-xs font-semibold text-[#0f1117] hover:bg-yellow-400 disabled:opacity-50"
+                    className="shrink-0 inline-flex items-center gap-1 rounded-lg bg-gold px-3 py-2 text-xs font-semibold text-on-gold hover:bg-gold-lit disabled:opacity-50"
                   >
                     <Plus size={13} /> {addingGapCode === gap.code ? 'Adding...' : 'Add Draft'}
                   </button>
@@ -804,14 +838,14 @@ export default function EstimateBuilder() {
         )}
       </div>
 
-      <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 space-y-2">
+      <div className="bg-panel border border-line-2 rounded-instrument p-4 space-y-2">
         <div className="flex items-center justify-between gap-3 flex-wrap">
-          <h2 className="text-sm font-semibold text-white">Profit Opportunity Review</h2>
+          <h2 className="text-sm font-semibold text-ink">Profit Opportunity Review</h2>
           <button
             type="button"
             onClick={() => loadOpportunities()}
             disabled={opportunityLoading}
-            className="text-xs px-2.5 py-1.5 rounded-lg border border-[#2a2d3e] text-slate-300 hover:text-white disabled:opacity-50"
+            className="text-xs px-2.5 py-1.5 rounded-lg border border-line-2 text-ink hover:text-ink disabled:opacity-50"
           >
             {opportunityLoading ? 'Refreshing...' : 'Refresh'}
           </button>
@@ -819,44 +853,44 @@ export default function EstimateBuilder() {
         {opportunity?.summary ? (
           <>
             <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 text-xs">
-              <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2">
-                <p className="text-slate-400">Undercut Labor Lines</p>
-                <p className="text-amber-300 font-semibold">{opportunity.summary.labor_undercut_count || 0}</p>
+              <div className="bg-void border border-line-2 rounded-lg px-3 py-2">
+                <p className="text-muted">Undercut Labor Lines</p>
+                <p className="font-mono font-semibold tabular-nums text-crit">{opportunity.summary.labor_undercut_count || 0}</p>
               </div>
-              <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2">
-                <p className="text-slate-400">Supplement Opportunity</p>
-                <p className="text-emerald-300 font-semibold">{money(opportunity.summary.total_supplement_opportunity || 0)}</p>
+              <div className="bg-void border border-line-2 rounded-lg px-3 py-2">
+                <p className="text-muted">Supplement Opportunity</p>
+                <p className="font-mono font-semibold tabular-nums text-gold">{money(opportunity.summary.total_supplement_opportunity || 0)}</p>
               </div>
-              <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2">
-                <p className="text-slate-400">Projected RO Total</p>
-                <p className="text-white font-semibold">{money(opportunity.summary.projected_grand_total || 0)}</p>
+              <div className="bg-void border border-line-2 rounded-lg px-3 py-2">
+                <p className="text-muted">Projected RO Total</p>
+                <p className="font-mono font-semibold tabular-nums text-gold">{money(opportunity.summary.projected_grand_total || 0)}</p>
               </div>
-              <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2">
-                <p className="text-slate-400">Projected Profit Uplift</p>
-                <p className="text-emerald-300 font-semibold">+{money(opportunity.summary.profit_uplift || 0)}</p>
+              <div className="bg-void border border-line-2 rounded-lg px-3 py-2">
+                <p className="text-muted">Projected Profit Uplift</p>
+                <p className="font-mono font-semibold tabular-nums text-gold">+{money(opportunity.summary.profit_uplift || 0)}</p>
               </div>
             </div>
             {(opportunity.flags || []).length > 0 ? (
               <div className="space-y-1">
                 {opportunity.flags.slice(0, 6).map((flag, idx) => (
-                  <div key={`${flag.item_id || idx}-${idx}`} className="text-xs bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 flex items-center justify-between gap-2">
-                    <p className="text-slate-300 truncate">{flag.description || 'Line item'}</p>
-                    <p className="text-amber-300 font-medium whitespace-nowrap">+{money(flag.supplement_opportunity || 0)}</p>
+                  <div key={`${flag.item_id || idx}-${idx}`} className="text-xs bg-void border border-line-2 rounded-lg px-3 py-2 flex items-center justify-between gap-2">
+                    <p className="text-ink truncate">{flag.description || 'Line item'}</p>
+                    <p className="font-mono font-medium tabular-nums text-gold whitespace-nowrap">+{money(flag.supplement_opportunity || 0)}</p>
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="text-xs text-emerald-300">No labor undercut detected on current estimate items.</p>
+              <p className="text-xs text-good">No labor undercut detected on current estimate items.</p>
             )}
           </>
         ) : (
-          <p className="text-xs text-slate-500">No opportunity data yet.</p>
+          <p className="text-xs text-faint">No opportunity data yet.</p>
         )}
       </div>
 
-      <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl overflow-x-auto">
+      <div className="bg-panel border border-line-2 rounded-instrument overflow-x-auto">
         <table className="w-full min-w-[900px] text-sm">
-          <thead className="bg-[#0f1117] text-slate-400">
+          <thead className="bg-void text-muted">
             <tr>
               <th className="text-left px-3 py-2">Type</th>
               <th className="text-left px-3 py-2">Description</th>
@@ -871,8 +905,8 @@ export default function EstimateBuilder() {
                     onClick={() => setAllTaxable(true)}
                     className={`px-1.5 py-0.5 rounded border text-[10px] transition-colors ${
                       allTaxableSelected
-                        ? 'border-emerald-600/60 text-emerald-300 bg-emerald-900/30'
-                        : 'border-[#2a2d3e] text-slate-300 hover:text-white'
+                        ? 'border-good/60 text-good bg-good/30'
+                        : 'border-line-2 text-ink hover:text-ink'
                     } disabled:opacity-50`}
                   >
                     All
@@ -883,8 +917,8 @@ export default function EstimateBuilder() {
                     onClick={() => setAllTaxable(false)}
                     className={`px-1.5 py-0.5 rounded border text-[10px] transition-colors ${
                       noneTaxableSelected
-                        ? 'border-slate-500/60 text-slate-200 bg-slate-800/40'
-                        : 'border-[#2a2d3e] text-slate-300 hover:text-white'
+                        ? 'border-line-2 text-ink bg-raised'
+                        : 'border-line-2 text-ink hover:text-ink'
                     } disabled:opacity-50`}
                   >
                     None
@@ -899,13 +933,13 @@ export default function EstimateBuilder() {
           <tbody>
             {orderedItems.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-3 py-8 text-center text-slate-500">No line items yet.</td>
+                <td colSpan={8} className="px-3 py-8 text-center text-faint">No line items yet.</td>
               </tr>
             ) : orderedItems.map((item) => (
-              <tr key={item.id} className="border-t border-[#2a2d3e]">
+              <tr key={item.id} className="border-t border-line-2">
                 <td className="px-3 py-2">
                   <select
-                    className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded px-2 py-1 text-white"
+                    className="w-full bg-void border border-line-2 rounded px-2 py-1 text-ink"
                     value={item.type}
                     onChange={(e) => {
                       const patch = { type: e.target.value }
@@ -920,7 +954,7 @@ export default function EstimateBuilder() {
                 </td>
                 <td className="px-3 py-2">
                   <input
-                    className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded px-2 py-1 text-white"
+                    className="w-full bg-void border border-line-2 rounded px-2 py-1 text-ink"
                     value={item.description || ''}
                     onChange={(e) => updateItemLocal(item.id, { description: e.target.value })}
                     onBlur={() => saveItem(item.id)}
@@ -930,7 +964,7 @@ export default function EstimateBuilder() {
                 <td className="px-3 py-2">
                   <input
                     type="number" min="0" step="0.01"
-                    className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded px-2 py-1 text-white text-right"
+                    className="w-full bg-void border border-line-2 rounded px-2 py-1 text-right font-mono tabular-nums text-ink"
                     value={item.quantity}
                     onChange={(e) => updateItemLocal(item.id, { quantity: e.target.value })}
                     onBlur={() => saveItem(item.id)}
@@ -939,7 +973,7 @@ export default function EstimateBuilder() {
                 <td className="px-3 py-2">
                   <input
                     type="number" min="0" step="0.01"
-                    className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded px-2 py-1 text-white text-right"
+                    className="w-full bg-void border border-line-2 rounded px-2 py-1 text-right font-mono tabular-nums text-ink"
                     value={item.unit_price}
                     onChange={(e) => updateItemLocal(item.id, { unit_price: e.target.value })}
                     onBlur={() => saveItem(item.id)}
@@ -949,7 +983,7 @@ export default function EstimateBuilder() {
                   <input
                     type="checkbox"
                     checked={!!item.taxable}
-                    className="accent-indigo-500"
+                    className="accent-brand"
                     onChange={(e) => {
                       const patch = { taxable: e.target.checked }
                       updateItemLocal(item.id, patch)
@@ -960,34 +994,34 @@ export default function EstimateBuilder() {
                 <td className="px-3 py-2">
                   <input
                     type="number" min="0" step="1"
-                    className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded px-2 py-1 text-white text-right"
+                    className="w-full bg-void border border-line-2 rounded px-2 py-1 text-right font-mono tabular-nums text-ink"
                     value={item.sort_order}
                     onChange={(e) => updateItemLocal(item.id, { sort_order: e.target.value })}
                     onBlur={() => saveItem(item.id)}
                   />
                 </td>
-                <td className="px-3 py-2 text-right text-white font-medium">{money(item.total)}</td>
+                <td className="px-3 py-2 text-right font-mono font-medium tabular-nums text-gold">{money(item.total)}</td>
                 <td className="px-3 py-2 text-right">
                   <button
                     onClick={() => deleteRow(item.id)}
                     disabled={deletingId === item.id}
-                    className="inline-flex items-center gap-1 text-red-300 hover:text-red-200 text-xs"
+                    className="inline-flex items-center gap-1 text-crit hover:text-crit text-xs"
                   >
                     <Trash2 size={13} /> {deletingId === item.id ? 'Deleting...' : 'Delete'}
                   </button>
-                  {savingId === item.id && <span className="ml-2 text-[11px] text-slate-500">Saving...</span>}
+                  {savingId === item.id && <span className="ml-2 text-[11px] text-faint">Saving...</span>}
                 </td>
               </tr>
             ))}
           </tbody>
           <tfoot>
-            <tr className="border-t border-[#2a2d3e] bg-[#0f1117] text-slate-300 text-xs">
+            <tr className="border-t border-line-2 bg-void text-ink text-xs">
               <td className="px-3 py-2" colSpan={3}>Labor: {money(totals.labor_total)}</td>
               <td className="px-3 py-2">Parts: {money(totals.parts_total)}</td>
               <td className="px-3 py-2" colSpan={2}>Sublet: {money(totals.sublet_total)}</td>
               <td className="px-3 py-2" colSpan={2}>Other: {money(totals.other_total)}</td>
             </tr>
-            <tr className="border-t border-[#2a2d3e] bg-[#0f1117] text-slate-200 text-sm font-medium">
+            <tr className="border-t border-line-2 bg-void text-ink text-sm font-medium">
               <td className="px-3 py-2" colSpan={3}>Taxable Subtotal: {money(totals.taxable_subtotal)}</td>
               <td className="px-3 py-2" colSpan={2}>Tax ({(asNumber(totals.tax_rate, 0) * 100).toFixed(2)}%): {money(totals.tax_amount)}</td>
               <td className="px-3 py-2 text-right" colSpan={2}>Subtotal: {money(totals.subtotal)}</td>

@@ -55,7 +55,7 @@ function CustomerFormFields({ form, onChange }) {
           placeholder="John Doe"
           autoComplete="name"
           enterKeyHint="next"
-          className="w-full bg-void border border-line-2 rounded-lg px-3 py-2 text-sm text-ink placeholder-slate-600 focus:outline-none focus:border-brand"
+          className="w-full bg-void border border-line-2 rounded-lg px-3 py-2 text-sm text-ink placeholder:text-faint focus:outline-none focus:border-brand"
         />
       </div>
       <div>
@@ -68,7 +68,7 @@ function CustomerFormFields({ form, onChange }) {
           autoComplete="tel"
           inputMode="tel"
           enterKeyHint="next"
-          className="w-full bg-void border border-line-2 rounded-lg px-3 py-2 text-sm text-ink placeholder-slate-600 focus:outline-none focus:border-brand"
+          className="w-full bg-void border border-line-2 rounded-lg px-3 py-2 text-sm text-ink placeholder:text-faint focus:outline-none focus:border-brand"
         />
       </div>
       <div>
@@ -81,7 +81,7 @@ function CustomerFormFields({ form, onChange }) {
           autoComplete="email"
           inputMode="email"
           enterKeyHint="next"
-          className="w-full bg-void border border-line-2 rounded-lg px-3 py-2 text-sm text-ink placeholder-slate-600 focus:outline-none focus:border-brand"
+          className="w-full bg-void border border-line-2 rounded-lg px-3 py-2 text-sm text-ink placeholder:text-faint focus:outline-none focus:border-brand"
         />
       </div>
       <div>
@@ -93,7 +93,7 @@ function CustomerFormFields({ form, onChange }) {
           placeholder="123 Main St"
           autoComplete="street-address"
           enterKeyHint="next"
-          className="w-full bg-void border border-line-2 rounded-lg px-3 py-2 text-sm text-ink placeholder-slate-600 focus:outline-none focus:border-brand"
+          className="w-full bg-void border border-line-2 rounded-lg px-3 py-2 text-sm text-ink placeholder:text-faint focus:outline-none focus:border-brand"
         />
       </div>
       <div>
@@ -104,7 +104,7 @@ function CustomerFormFields({ form, onChange }) {
           onChange={(e) => onChange('insurance_company', e.target.value)}
           placeholder="State Farm, GEICO..."
           enterKeyHint="next"
-          className="w-full bg-void border border-line-2 rounded-lg px-3 py-2 text-sm text-ink placeholder-slate-600 focus:outline-none focus:border-brand"
+          className="w-full bg-void border border-line-2 rounded-lg px-3 py-2 text-sm text-ink placeholder:text-faint focus:outline-none focus:border-brand"
         />
       </div>
       <div>
@@ -115,7 +115,7 @@ function CustomerFormFields({ form, onChange }) {
           onChange={(e) => onChange('policy_number', e.target.value)}
           placeholder="POL123456"
           enterKeyHint="done"
-          className="w-full bg-void border border-line-2 rounded-lg px-3 py-2 text-sm text-ink placeholder-slate-600 focus:outline-none focus:border-brand"
+          className="w-full bg-void border border-line-2 rounded-lg px-3 py-2 text-sm text-ink placeholder:text-faint focus:outline-none focus:border-brand"
         />
       </div>
     </>

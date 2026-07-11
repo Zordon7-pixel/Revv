@@ -50,6 +50,8 @@ const tokenizedFiles = [
   'src/pages/RepairOrders.jsx',
   'src/pages/InspectionEditor.jsx',
   'src/components/AddROModal.jsx',
+  'src/pages/Dashboard.jsx',
+  'src/pages/EstimateBuilder.jsx',
 ]
 
 const phase6JFiles = [
@@ -82,6 +84,12 @@ const phase6LFiles = [
   'src/pages/RepairOrders.jsx',
   'src/pages/InspectionEditor.jsx',
   'src/components/AddROModal.jsx',
+]
+
+const phase6MFiles = [
+  'src/pages/Dashboard.jsx',
+  'src/pages/EstimateBuilder.jsx',
+  'src/pages/Customers.jsx',
 ]
 
 function read(relativePath) {
@@ -224,5 +232,27 @@ describe('redesign token conformance', () => {
     const globalStyles = read('src/index.css')
     expect(globalStyles).toMatch(/\.sheet-modal-card input:focus[\s\S]*border-color: var\(--brand\)/)
     expect(globalStyles).not.toMatch(/\.sheet-modal-card input:focus[\s\S]{0,900}border-color: var\(--gold\)/)
+  })
+
+  it('keeps dashboard, estimate, and customer work surfaces on semantic roles without changing contracts', () => {
+    for (const relativePath of phase6MFiles) {
+      const source = read(relativePath)
+      expect(source, relativePath).not.toMatch(/#[0-9a-f]{3,8}/i)
+      expect(source, relativePath).not.toMatch(/(?:bg|text|border|ring|from|to|via|placeholder|accent)-(?:indigo|blue|slate|yellow|red|green|emerald|amber|violet|purple|cyan|teal|orange|lime|pink|rose)-/)
+      expect(source, relativePath).not.toMatch(/(?:bg-gradient-|<linearGradient|\balert\s*\()/)
+    }
+
+    const dashboard = read('src/pages/Dashboard.jsx')
+    const builder = read('src/pages/EstimateBuilder.jsx')
+    expect(dashboard).toMatch(/api\.patch\(`\/ros\/\$\{roId\}`/)
+    expect(dashboard).toMatch(/api\.put\(`\/ros\/\$\{roId\}\/status`/)
+    expect(dashboard).toMatch(/getComputedStyle\(document\.documentElement\)/)
+    expect(dashboard).toMatch(/getPropertyValue\('--brand'\)/)
+    expect(builder).toMatch(/api\.post\('\/insurance-ocr\/parse'/)
+    expect(builder).toMatch(/api\.post\(`\/estimate-items\/\$\{roId\}\/import-financials`/)
+    expect(builder).toMatch(/api\.post\(`\/estimate-metadata\/metadata\/\$\{roId\}`/)
+    expect(builder).toMatch(/<AppOverlay/)
+    expect(builder).toMatch(/<EstimateSelectionToolbar/)
+    expect(builder).toMatch(/role=\{actionFeedback\.type === 'error' \? 'alert' : 'status'\}/)
   })
 })

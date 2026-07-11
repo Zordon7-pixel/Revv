@@ -398,11 +398,11 @@ export default function Dashboard() {
 
   function renderRoCalendar() {
     return (
-      <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 space-y-3">
+      <div className="bg-panel border border-line-2 rounded-instrument p-4 space-y-3">
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
-            <h2 className="font-semibold text-sm text-white">RO Calendar</h2>
-            <p className="text-xs text-slate-500">Estimated dates are editable here. Deliveries can be marked sooner anytime.</p>
+            <h2 className="font-display text-sm font-semibold text-ink">RO Calendar</h2>
+            <p className="text-xs text-faint">Estimated dates are editable here. Deliveries can be marked sooner anytime.</p>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -410,12 +410,12 @@ export default function Dashboard() {
               onClick={() => shiftCalendarMonth(-1)}
               aria-label="Previous calendar month"
               data-testid="ro-calendar-prev-month"
-              className="h-8 w-8 rounded-lg border border-[#2a2d3e] bg-[#0f1117] text-slate-300 hover:text-white"
+              className="h-8 w-8 rounded-lg border border-line-2 bg-void text-ink hover:text-ink"
             >
               <ChevronLeft size={14} />
             </button>
             <div
-              className="text-xs font-semibold text-slate-200 min-w-[120px] text-center"
+              className="text-xs font-semibold text-ink min-w-[120px] text-center"
               data-no-auto-i18n="true"
               data-testid="ro-calendar-month-label"
             >
@@ -426,7 +426,7 @@ export default function Dashboard() {
               onClick={() => shiftCalendarMonth(1)}
               aria-label="Next calendar month"
               data-testid="ro-calendar-next-month"
-              className="h-8 w-8 rounded-lg border border-[#2a2d3e] bg-[#0f1117] text-slate-300 hover:text-white"
+              className="h-8 w-8 rounded-lg border border-line-2 bg-void text-ink hover:text-ink"
             >
               <ChevronRight size={14} />
             </button>
@@ -434,16 +434,16 @@ export default function Dashboard() {
         </div>
 
         {calendarError && (
-          <div className="text-xs text-rose-300 bg-rose-900/20 border border-rose-700/40 rounded-lg px-3 py-2">
+          <div className="text-xs text-crit bg-crit/20 border border-crit/40 rounded-lg px-3 py-2">
             {calendarError}
           </div>
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-3">
-          <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-xl p-2">
+          <div className="bg-void border border-line-2 rounded-instrument p-2">
             <div className="grid grid-cols-7 gap-1 mb-1">
               {WEEKDAY_LABELS.map((label) => (
-                <div key={label} className="text-[10px] text-slate-500 text-center py-1">{label}</div>
+                <div key={label} className="text-[10px] text-faint text-center py-1">{label}</div>
               ))}
             </div>
             <div className="grid grid-cols-7 gap-1" data-no-auto-i18n="true">
@@ -464,23 +464,23 @@ export default function Dashboard() {
                     }}
                     className={`min-h-[86px] rounded-lg border px-1.5 py-1 text-left transition-colors ${
                       selected
-                        ? 'border-indigo-500 bg-indigo-500/10'
-                        : 'border-[#2a2d3e] bg-[#121625] hover:border-indigo-500/50'
+                        ? 'border-brand bg-brand/10'
+                        : 'border-line-2 bg-panel-2 hover:border-brand/50'
                     } ${!inMonth ? 'opacity-45' : ''}`}
                   >
-                    <div className={`text-[10px] font-semibold ${selected ? 'text-indigo-300' : 'text-slate-300'}`}>{date.getDate()}</div>
+                    <div className={`text-[10px] font-semibold ${selected ? 'text-brand' : 'text-ink'}`}>{date.getDate()}</div>
                     <div className="mt-1 space-y-1">
                       {dayEvents.slice(0, 2).map((ro) => (
                         <div
                           key={ro.id}
                           className="text-[9px] px-1 py-0.5 rounded truncate border"
-                          style={{ borderColor: STATUS_COLORS[ro.status] || '#334155', color: '#e2e8f0' }}
+                          style={{ borderColor: STATUS_COLORS[ro.status] || 'var(--muted)', color: 'var(--ink)' }}
                         >
                           {ro.ro_number}
                         </div>
                       ))}
                       {dayEvents.length > 2 && (
-                        <div className="text-[9px] text-slate-400">+{dayEvents.length - 2} more</div>
+                        <div className="text-[9px] text-muted">+{dayEvents.length - 2} more</div>
                       )}
                     </div>
                   </button>
@@ -489,13 +489,13 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-xl p-3">
+          <div className="bg-void border border-line-2 rounded-instrument p-3">
             <div className="flex items-center justify-between mb-2">
-              <div className="text-xs font-semibold text-white" data-no-auto-i18n="true">{toDateLabel(selectedCalendarDate)}</div>
-              <div className="text-[10px] text-slate-500" data-no-auto-i18n="true">{selectedDayEvents.length} RO(s)</div>
+              <div className="text-xs font-semibold text-ink" data-no-auto-i18n="true">{toDateLabel(selectedCalendarDate)}</div>
+              <div className="text-[10px] text-faint" data-no-auto-i18n="true">{selectedDayEvents.length} RO(s)</div>
             </div>
             {selectedDayEvents.length === 0 ? (
-              <p className="text-xs text-slate-500">No repair orders scheduled for this day.</p>
+              <p className="text-xs text-faint">No repair orders scheduled for this day.</p>
             ) : (
               <div className="space-y-2 max-h-[430px] overflow-y-auto pr-1">
                 {selectedDayEvents.map((ro) => {
@@ -504,35 +504,35 @@ export default function Dashboard() {
                   const status = String(ro.status || '').toLowerCase()
                   const canDeliverSooner = canEditCalendar && !['delivery', 'closed'].includes(status)
                   return (
-                    <div key={ro.id} className="rounded-lg border border-[#2a2d3e] bg-[#161b2c] p-2.5 space-y-2">
+                    <div key={ro.id} className="rounded-lg border border-line-2 bg-panel-2 p-2.5 space-y-2">
                       <div className="flex items-center justify-between gap-2">
                         <button
                           type="button"
                           onClick={() => navigate(`/ros/${ro.id}`)}
-                          className="text-xs font-semibold text-indigo-300 hover:text-indigo-200 truncate"
+                          className="text-xs font-semibold text-brand hover:text-brand truncate"
                         >
                           {ro.ro_number}
                         </button>
                         <StatusBadge status={ro.status} />
                       </div>
-                      <div className="text-[11px] text-slate-400 truncate">
+                      <div className="text-[11px] text-muted truncate">
                         {ro.customer_name || 'No customer'} · {[ro.year, ro.make, ro.model].filter(Boolean).join(' ')}
                       </div>
                       <div className="space-y-1">
-                        <label className="text-[10px] text-slate-500 block">Estimated Delivery</label>
+                        <label className="text-[10px] text-faint block">Estimated Delivery</label>
                         <input
                           type="date"
                           value={toDateKey(ro.estimated_delivery)}
                           onChange={(e) => updateCalendarEstimate(ro.id, e.target.value)}
                           disabled={!canEditCalendar || calendarSavingKey === estimateSaveKey || calendarSavingKey === deliverSaveKey}
-                          className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 disabled:opacity-60"
+                          className="w-full rounded-instrument border border-line-2 bg-void px-2 py-1.5 font-mono text-xs text-ink focus:border-brand focus:outline-none disabled:opacity-60"
                         />
                       </div>
                       {ro.eventSource === 'actual_delivery' && (
-                        <div className="text-[10px] text-emerald-300">Delivered on {toDateLabel(toDateKey(ro.actual_delivery))}</div>
+                        <div className="text-[10px] text-good">Delivered on {toDateLabel(toDateKey(ro.actual_delivery))}</div>
                       )}
                       {ro.eventSource === 'unscheduled' && (
-                        <div className="text-[10px] text-amber-400">No estimated delivery set — set a date above</div>
+                        <div className="text-[10px] text-crit">No estimated delivery set — set a date above</div>
                       )}
                       <div className="flex items-center gap-2">
                         {canDeliverSooner && (
@@ -540,7 +540,7 @@ export default function Dashboard() {
                             type="button"
                             onClick={() => markDeliveredSooner(ro.id)}
                             disabled={calendarSavingKey === deliverSaveKey || calendarSavingKey === estimateSaveKey}
-                            className="text-[10px] bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white font-semibold px-2 py-1 rounded-md inline-flex items-center gap-1"
+                            className="text-[10px] bg-good hover:bg-good disabled:opacity-60 text-white font-semibold px-2 py-1 rounded-md inline-flex items-center gap-1"
                           >
                             <Truck size={11} /> {calendarSavingKey === deliverSaveKey ? 'Saving...' : 'Deliver Sooner'}
                           </button>
@@ -548,7 +548,7 @@ export default function Dashboard() {
                         <button
                           type="button"
                           onClick={() => navigate(`/ros/${ro.id}`)}
-                          className="text-[10px] bg-[#2a2d3e] hover:bg-[#3a3d4e] text-slate-200 px-2 py-1 rounded-md"
+                          className="text-[10px] bg-raised hover:bg-raised text-ink px-2 py-1 rounded-md"
                         >
                           Open RO
                         </button>
@@ -566,7 +566,7 @@ export default function Dashboard() {
           ).length
           if (unscheduled === 0) return null
           return (
-            <p className="text-xs text-slate-500 text-center pt-1" data-no-auto-i18n="true">
+            <p className="text-xs text-faint text-center pt-1" data-no-auto-i18n="true">
               {unscheduled} active RO{unscheduled !== 1 ? 's' : ''} {unscheduled !== 1 ? 'have' : 'has'} no estimated delivery date — showing on today
             </p>
           )
@@ -589,6 +589,12 @@ export default function Dashboard() {
         weeklyChartInstanceRef.current = null
       }
 
+      const theme = getComputedStyle(document.documentElement)
+      const brand = theme.getPropertyValue('--brand').trim()
+      const brandLit = theme.getPropertyValue('--brand-lit').trim()
+      const muted = theme.getPropertyValue('--muted').trim()
+      const line = theme.getPropertyValue('--line-2').trim()
+
       weeklyChartInstanceRef.current = new Chart(weeklyChartRef.current, {
         type: 'bar',
         data: {
@@ -596,7 +602,7 @@ export default function Dashboard() {
           datasets: [{
             label: 'ROs Opened',
             data: weekly.chart.data || [],
-            backgroundColor: ['rgba(99, 102, 241, 0.85)', 'rgba(14, 165, 233, 0.85)'],
+            backgroundColor: [brand, brandLit],
             borderRadius: 8,
           }],
         },
@@ -605,17 +611,17 @@ export default function Dashboard() {
           maintainAspectRatio: false,
           plugins: {
             legend: {
-              labels: { color: '#cbd5e1' },
+              labels: { color: muted },
             },
           },
           scales: {
             y: {
               beginAtZero: true,
-              ticks: { color: '#94a3b8', precision: 0 },
-              grid: { color: 'rgba(148, 163, 184, 0.15)' },
+              ticks: { color: muted, precision: 0 },
+              grid: { color: line },
             },
             x: {
-              ticks: { color: '#94a3b8' },
+              ticks: { color: muted },
               grid: { display: false },
             },
           },
@@ -636,56 +642,56 @@ export default function Dashboard() {
   }, [isTechAccount, weekly])
 
   if (isTechAccount) {
-    if (techLoadError) return <div className="flex items-center justify-center h-64 text-red-400 text-sm">Failed to load tech dashboard. Please refresh the page.</div>
-    if (!techData) return <div className="flex items-center justify-center h-64 text-slate-500">Loading your assigned repair orders...</div>
+    if (techLoadError) return <div className="flex items-center justify-center h-64 text-crit text-sm">Failed to load tech dashboard. Please refresh the page.</div>
+    if (!techData) return <div className="flex items-center justify-center h-64 text-faint">Loading your assigned repair orders...</div>
 
     return (
       <div className="space-y-6">
         <div>
-          <p className="text-slate-400 text-sm font-medium mb-1 flex items-center gap-1.5">{greetingText} <Hand size={14} /></p>
-          <h1 className="text-xl font-bold text-white">Tech Dashboard</h1>
-          <p className="text-xs text-slate-500 mt-1">Your assigned repair orders and work queue.</p>
+          <p className="text-muted text-sm font-medium mb-1 flex items-center gap-1.5">{greetingText} <Hand size={14} /></p>
+          <h1 className="text-xl font-bold text-ink">Tech Dashboard</h1>
+          <p className="text-xs text-faint mt-1">Your assigned repair orders and work queue.</p>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-          <button type="button" onClick={() => navigate('/ros')} className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-3 text-left hover:border-indigo-500/50">
-            <div className="text-[11px] text-slate-500">Assigned</div>
-            <div className="text-2xl font-bold text-white">{techData.totalAssigned}</div>
+          <button type="button" onClick={() => navigate('/ros')} className="bg-panel border border-line-2 rounded-instrument p-3 text-left hover:border-brand/50">
+            <div className="text-[11px] text-faint">Assigned</div>
+            <div className="font-mono text-2xl font-bold tabular-nums text-ink">{techData.totalAssigned}</div>
           </button>
-          <button type="button" onClick={() => navigate('/ros?status=open')} className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-3 text-left hover:border-indigo-500/50">
-            <div className="text-[11px] text-slate-500">Active</div>
-            <div className="text-2xl font-bold text-indigo-300">{techData.activeAssigned}</div>
+          <button type="button" onClick={() => navigate('/ros?status=open')} className="bg-panel border border-line-2 rounded-instrument p-3 text-left hover:border-brand/50">
+            <div className="text-[11px] text-faint">Active</div>
+            <div className="text-2xl font-bold text-brand">{techData.activeAssigned}</div>
           </button>
-          <button type="button" onClick={() => navigate('/ros?status=completed')} className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-3 text-left hover:border-indigo-500/50">
-            <div className="text-[11px] text-slate-500">Completed</div>
-            <div className="text-2xl font-bold text-emerald-300">{techData.completedAssigned}</div>
+          <button type="button" onClick={() => navigate('/ros?status=completed')} className="bg-panel border border-line-2 rounded-instrument p-3 text-left hover:border-brand/50">
+            <div className="text-[11px] text-faint">Completed</div>
+            <div className="text-2xl font-bold text-good">{techData.completedAssigned}</div>
           </button>
-          <button type="button" onClick={() => navigate('/ros')} className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-3 text-left hover:border-indigo-500/50">
-            <div className="text-[11px] text-slate-500">Due Today</div>
-            <div className="text-2xl font-bold text-amber-300">{techData.dueToday}</div>
+          <button type="button" onClick={() => navigate('/ros')} className="bg-panel border border-line-2 rounded-instrument p-3 text-left hover:border-brand/50">
+            <div className="text-[11px] text-faint">Due Today</div>
+            <div className="font-mono text-2xl font-bold tabular-nums text-brand">{techData.dueToday}</div>
           </button>
-          <button type="button" onClick={() => navigate('/timeclock')} className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-3 text-left hover:border-indigo-500/50">
-            <div className="text-[11px] text-slate-500">Clock Status</div>
-            <div className={`text-sm font-semibold mt-1 ${techData.timeClock?.clocked_in ? 'text-emerald-300' : 'text-slate-300'}`}>
+          <button type="button" onClick={() => navigate('/timeclock')} className="bg-panel border border-line-2 rounded-instrument p-3 text-left hover:border-brand/50">
+            <div className="text-[11px] text-faint">Clock Status</div>
+            <div className={`text-sm font-semibold mt-1 ${techData.timeClock?.clocked_in ? 'text-good' : 'text-ink'}`}>
               {techData.timeClock?.clocked_in ? 'Clocked In' : 'Clocked Out'}
             </div>
           </button>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
-            <h2 className="font-semibold text-sm text-white mb-3">My Jobs by Stage</h2>
+          <div className="bg-panel rounded-instrument border border-line-2 p-4">
+            <h2 className="font-semibold text-sm text-ink mb-3">My Jobs by Stage</h2>
             <div className="space-y-2">
               {techData.byStage.map((row) => (
                 <button
                   key={row.status}
                   type="button"
                   onClick={() => navigate(`/ros?status=${row.status}`)}
-                  className="w-full flex items-center gap-3 hover:bg-[#2a2d3e] rounded px-1 transition-colors"
+                  className="w-full flex items-center gap-3 hover:bg-raised rounded px-1 transition-colors"
                 >
                   <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: STATUS_COLORS[row.status] }} />
-                  <span className="text-xs text-slate-400 w-20 text-left capitalize">{STATUS_LABELS[row.status]}</span>
-                  <div className="flex-1 bg-[#0f1117] rounded-full h-1.5">
+                  <span className="text-xs text-muted w-20 text-left capitalize">{STATUS_LABELS[row.status]}</span>
+                  <div className="flex-1 bg-void rounded-full h-1.5">
                     <div
                       className="h-1.5 rounded-full transition-all"
                       style={{
@@ -694,19 +700,19 @@ export default function Dashboard() {
                       }}
                     />
                   </div>
-                  <span className="text-xs text-slate-300 w-4 text-right">{row.count}</span>
+                  <span className="text-xs text-ink w-4 text-right">{row.count}</span>
                 </button>
               ))}
             </div>
           </div>
 
-          <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
+          <div className="bg-panel rounded-instrument border border-line-2 p-4">
             <div className="flex items-center justify-between mb-3">
-              <h2 className="font-semibold text-sm text-white">Recent Assigned Jobs</h2>
-              <button type="button" onClick={() => navigate('/ros')} className="text-xs text-indigo-300 hover:text-indigo-200">View All</button>
+              <h2 className="font-semibold text-sm text-ink">Recent Assigned Jobs</h2>
+              <button type="button" onClick={() => navigate('/ros')} className="text-xs text-brand hover:text-brand">View All</button>
             </div>
             {techData.recentAssigned.length === 0 ? (
-              <p className="text-sm text-slate-500">No jobs assigned yet.</p>
+              <p className="text-sm text-faint">No jobs assigned yet.</p>
             ) : (
               <div className="space-y-2">
                 {techData.recentAssigned.map((ro) => (
@@ -714,12 +720,12 @@ export default function Dashboard() {
                     key={ro.id}
                     type="button"
                     onClick={() => navigate(`/ros/${ro.id}`)}
-                    className="w-full text-left flex items-center gap-3 p-2 rounded-lg hover:bg-[#2a2d3e] transition-colors"
+                    className="w-full text-left flex items-center gap-3 p-2 rounded-lg hover:bg-raised transition-colors"
                   >
                     <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: STATUS_COLORS[ro.status] }} />
                     <div className="flex-1 min-w-0">
-                      <div className="text-xs font-medium text-white truncate">{ro.ro_number} — {ro.year} {ro.make} {ro.model}</div>
-                      <div className="text-[10px] text-slate-500">{ro.customer_name || 'No customer'}{ro.estimated_delivery ? ` · Due ${ro.estimated_delivery}` : ''}</div>
+                      <div className="text-xs font-medium text-ink truncate">{ro.ro_number} — {ro.year} {ro.make} {ro.model}</div>
+                      <div className="text-[10px] text-faint">{ro.customer_name || 'No customer'}{ro.estimated_delivery ? ` · Due ${ro.estimated_delivery}` : ''}</div>
                     </div>
                     <StatusBadge status={ro.status} />
                   </button>
@@ -744,15 +750,15 @@ export default function Dashboard() {
   const maxStageCount = Math.max(1, ...productionStages.map((stage) => stage.count))
   const revenueGaugeMax = revenueGoalCents > 0 ? revenueGoalCents : Math.max(revenueMtdCents, 1)
 
-  if (loadError) return <div className="flex items-center justify-center h-64 text-red-400 text-sm">Failed to load dashboard. Please refresh the page.</div>
-  if (!data) return <div className="flex items-center justify-center h-64 text-slate-500">Loading your shop data...</div>
+  if (loadError) return <div className="flex items-center justify-center h-64 text-crit text-sm">Failed to load dashboard. Please refresh the page.</div>
+  if (!data) return <div className="flex items-center justify-center h-64 text-faint">Loading your shop data...</div>
 
   return (
     <div className="space-y-6">
       {/* 1. Header */}
       <div>
-        <p className="text-slate-400 text-sm font-medium mb-1 flex items-center gap-1.5">{greetingText} <Hand size={14} /></p>
-        <h1 className="text-xl font-bold text-white">Dashboard</h1>
+        <p className="text-muted text-sm font-medium mb-1 flex items-center gap-1.5">{greetingText} <Hand size={14} /></p>
+        <h1 className="text-xl font-bold text-ink">Dashboard</h1>
       </div>
 
       {/* 2. Instrument KPI row */}
@@ -878,7 +884,7 @@ export default function Dashboard() {
           {pendingCarryover.length > 0 && (
             <button
               onClick={() => setShowCarryoverModal(true)}
-              className="inline-flex items-center gap-2 text-xs bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-200 font-medium px-3 py-2 rounded-lg transition-colors"
+              className="inline-flex items-center gap-2 rounded-instrument border border-gold/30 bg-gold/10 px-3 py-2 text-xs font-medium text-gold transition-colors hover:bg-gold/15"
             >
               <AlertCircle size={13} />
               {pendingCarryover.length} carryover{pendingCarryover.length !== 1 ? 's' : ''} need revenue assignment
@@ -887,7 +893,7 @@ export default function Dashboard() {
           {admin && adasQueue.length > 0 && (
             <button
               onClick={() => navigate('/adas')}
-              className="inline-flex items-center gap-2 text-xs bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-200 font-medium px-3 py-2 rounded-lg transition-colors"
+              className="inline-flex items-center gap-2 text-xs bg-brand/10 hover:bg-brand/20 border border-brand/30 text-brand font-medium px-3 py-2 rounded-lg transition-colors"
             >
               <Radar size={13} />
               {adasQueue.length} ADAS calibration{adasQueue.length !== 1 ? 's' : ''} pending
@@ -896,7 +902,7 @@ export default function Dashboard() {
           {admin && pendingAppointments > 0 && (
             <button
               onClick={() => navigate('/book')}
-              className="inline-flex items-center gap-2 text-xs bg-yellow-500/10 hover:bg-yellow-500/20 border border-yellow-500/30 text-yellow-200 font-medium px-3 py-2 rounded-lg transition-colors"
+              className="inline-flex items-center gap-2 rounded-instrument border border-brand/30 bg-brand/10 px-3 py-2 text-xs font-medium text-brand transition-colors hover:bg-brand/15"
             >
               <CalendarDays size={13} />
               {pendingAppointments} appointment request{pendingAppointments !== 1 ? 's' : ''}
@@ -911,61 +917,61 @@ export default function Dashboard() {
       {/* 7. Weekly operations */}
       <div className="grid grid-cols-1 gap-4">
         {weekly && (
-          <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 space-y-4">
+          <div className="bg-panel border border-line-2 rounded-instrument p-4 space-y-4">
             <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-white">Weekly</h2>
-              <span className="text-xs text-slate-400">This week vs last week</span>
+              <h2 className="font-display text-sm font-semibold text-ink">Weekly</h2>
+              <span className="text-xs text-muted">This week vs last week</span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div
                 onClick={() => navigate('/ros')}
-                className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3 cursor-pointer hover:ring-1 hover:ring-indigo-500/40 transition"
+                className="bg-void border border-line-2 rounded-lg p-3 cursor-pointer hover:ring-1 hover:ring-brand/40 transition"
               >
-                <div className="text-xs text-slate-400 mb-1">ROs Opened</div>
-                <div className="text-2xl font-bold text-white">{weekly.ro_opened?.this_week || 0}</div>
+                <div className="text-xs text-muted mb-1">ROs Opened</div>
+                <div className="font-mono text-2xl font-bold tabular-nums text-ink">{weekly.ro_opened?.this_week || 0}</div>
                 <div className="mt-1 inline-flex items-center gap-1 text-xs">
-                  {weeklyTrendDirection === 'up' && <ArrowUpRight size={14} className="text-emerald-300" />}
-                  {weeklyTrendDirection === 'down' && <ArrowDownRight size={14} className="text-rose-300" />}
-                  {weeklyTrendDirection === 'flat' && <Minus size={14} className="text-slate-300" />}
-                  <span className={weeklyTrendDirection === 'down' ? 'text-rose-300' : weeklyTrendDirection === 'up' ? 'text-emerald-300' : 'text-slate-300'}>
+                  {weeklyTrendDirection === 'up' && <ArrowUpRight size={14} className="text-good" />}
+                  {weeklyTrendDirection === 'down' && <ArrowDownRight size={14} className="text-crit" />}
+                  {weeklyTrendDirection === 'flat' && <Minus size={14} className="text-ink" />}
+                  <span className={weeklyTrendDirection === 'down' ? 'text-crit' : weeklyTrendDirection === 'up' ? 'text-good' : 'text-ink'}>
                     {weeklyTrendPercent > 0 ? '+' : ''}{weeklyTrendPercent}% vs last week ({weekly.ro_opened?.last_week || 0})
                   </span>
                 </div>
               </div>
               <div
                 onClick={() => navigate('/monthly-report')}
-                className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3 cursor-pointer hover:ring-1 hover:ring-indigo-500/40 transition"
+                className="bg-void border border-line-2 rounded-lg p-3 cursor-pointer hover:ring-1 hover:ring-brand/40 transition"
               >
-                <div className="text-xs text-slate-400 mb-1">Revenue Collected</div>
-                <Money cents={weekly.revenue_collected_this_week_cents || 0} className="text-2xl font-bold text-emerald-300" />
-                <div className="text-xs text-slate-500 mt-1">Paid invoices this week</div>
+                <div className="text-xs text-muted mb-1">Revenue Collected</div>
+                <Money cents={weekly.revenue_collected_this_week_cents || 0} className="text-2xl font-bold text-gold" />
+                <div className="text-xs text-faint mt-1">Paid invoices this week</div>
               </div>
               <div
                 onClick={() => navigate('/performance')}
-                className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3 sm:col-span-2 cursor-pointer hover:ring-1 hover:ring-indigo-500/40 transition"
+                className="bg-void border border-line-2 rounded-lg p-3 sm:col-span-2 cursor-pointer hover:ring-1 hover:ring-brand/40 transition"
               >
-                <div className="text-xs text-slate-400 mb-2">Top Techs by Jobs Completed</div>
+                <div className="text-xs text-muted mb-2">Top Techs by Jobs Completed</div>
                 {weekly.top_techs?.length ? (
                   <div className="space-y-2">
                     {weekly.top_techs.map((tech, idx) => (
-                      <div key={tech.tech_id} className="flex items-center justify-between text-sm">
-                        <span className="text-white">{idx + 1}. {tech.tech_name}</span>
-                        <span className="text-indigo-300 font-semibold">{tech.jobs_completed}</span>
+                      <div key={tech.tech_id || `${tech.tech_name || 'tech'}-${idx}`} className="flex items-center justify-between text-sm">
+                        <span className="text-ink">{idx + 1}. {tech.tech_name}</span>
+                        <span className="font-mono font-semibold tabular-nums text-brand">{tech.jobs_completed}</span>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <div className="text-xs text-slate-500">No completed jobs yet this week.</div>
+                  <div className="text-xs text-faint">No completed jobs yet this week.</div>
                 )}
               </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3">
+              <div className="bg-void border border-line-2 rounded-lg p-3">
                 <div className="flex items-center justify-between mb-2">
-                  <div className="text-xs text-slate-400">RO Opened Trend</div>
-                  <div className="text-xs text-slate-500">This week vs last 7 days</div>
+                  <div className="text-xs text-muted">RO Opened Trend</div>
+                  <div className="text-xs text-faint">This week vs last 7 days</div>
                 </div>
                 <div className="h-48">
                   <canvas ref={weeklyChartRef} />
@@ -973,11 +979,11 @@ export default function Dashboard() {
               </div>
               <div
                 onClick={() => navigate('/parts-on-order')}
-                className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3 cursor-pointer hover:ring-1 hover:ring-indigo-500/40 transition"
+                className="bg-void border border-line-2 rounded-lg p-3 cursor-pointer hover:ring-1 hover:ring-brand/40 transition"
               >
-                <div className="text-xs text-slate-400 mb-1">Pending Parts</div>
-                <div className="text-3xl font-bold text-amber-300">{weekly.pending_parts_count || 0}</div>
-                <div className="text-xs text-slate-500 mt-1">ROs with parts ordered or awaiting</div>
+                <div className="text-xs text-muted mb-1">Pending Parts</div>
+                <div className="font-mono text-3xl font-bold tabular-nums text-brand">{weekly.pending_parts_count || 0}</div>
+                <div className="text-xs text-faint mt-1">ROs with parts ordered or awaiting</div>
               </div>
             </div>
           </div>
