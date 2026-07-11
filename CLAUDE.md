@@ -56,6 +56,40 @@ const ro = await dbGet('SELECT * FROM ros WHERE id = $1 AND shop_id = $2', [id, 
 await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 ```
 
+## Dispatch Log — 2026-07-11 Unobstructed Landing Product Tour
+
+**Time:** 2026-07-11 10:55 ET / 2026-07-11 14:55 UTC
+**Status:** READY FOR CLAUDE CODE QA — FEATURE BRANCH ONLY — NOT DEPLOYED
+
+**Scope**
+- Corrected the live mobile repro where the 30-second product video played behind the public hero headline, CTA, shade, and timeline. The previous implementation made `RevvDemo` an absolute full-hero background and deliberately stacked the hero shade/content above it, so the app footage was technically playing but not usable as a product showcase.
+- Separated the public intro and product tour into consecutive, non-overlapping sections. The intro now contains only navigation, one concise sales message, and one tour CTA. The tour sits immediately below in its own full-width stage.
+- Changed the tour layout from an absolute overlay to three normal-flow rows: unobstructed video, beat/readout, and progress/playback controls. Desktop/tablet media uses 16:9; phone media uses 9:16; `object-fit: contain` preserves the complete app screen instead of cropping it.
+- Updated the hero CTA to restart video plus voiceover from zero and scroll the dedicated product-tour stage to the top. Independent sound restart and muted replay remain unchanged.
+- Added regression assertions that the video is not a descendant of the hero and that the media, readout, and controls remain ordered siblings. The existing real local video, source selection, reduced-motion, advertising-section, and conversion tests remain intact.
+- Exact browser geometry confirms no overlap: at 390x844 the hero bottom and product-tour top are both 478.531px; video bottom and readout top are both 1138.641px; readout bottom and controls top are both 1176.422px. Phone, tablet, and desktop document widths equal viewport widths exactly.
+- CTA browser interaction confirms the product-tour stage scrolls to about 11.5px from the viewport top, mobile video and voiceover are both playing, video readyState is 4, and the tour advances from Dashboard to Repair Orders at 7.24 seconds.
+- Only the public marketing page and shared product-tour presentation changed. No authenticated app UI, API, auth, workflow, money logic, backend, database, provider, customer/shop/RO/payment data, or Miles Automotive data changed.
+
+**Files changed (5; batch cap respected)**
+- `frontend/src/pages/Landing.jsx`
+- `frontend/src/pages/__tests__/Landing.redesign.test.jsx`
+- `frontend/src/components/__tests__/RevvDemo.test.jsx`
+- `frontend/src/index.css`
+- `CLAUDE.md`
+
+**Verification**
+```
+cd frontend && npm run test:run -- src/components/__tests__/RevvDemo.test.jsx src/pages/__tests__/Landing.redesign.test.jsx  # 2 files, 4/4 passed
+node --test backend/src/__tests__/*.test.js <Node-native backend/test files>  # 130/130 passed
+cd backend && npm run test:run  # 3 files, 7/7 passed
+cd frontend && npm run test:run  # 38 files, 121/121 passed
+cd frontend && npm run build  # clean; pre-existing Sentry/chunk-size warnings only
+Selenium + exact CDP viewport QA  # 390x844, 1024x768, 1440x900; no hero/video/readout/control overlap; exact scroll widths; responsive source selection; readyState 4; CTA restarts audio+video and scrolls tour into view
+screenshots  # /tmp/revv-unobstructed-phone-before.png, /tmp/revv-unobstructed-phone-playing.png, /tmp/revv-unobstructed-phone-scene2.png, /tmp/revv-unobstructed-tablet-before.png, /tmp/revv-unobstructed-tablet-playing.png, /tmp/revv-unobstructed-desktop-before.png, /tmp/revv-unobstructed-desktop-playing.png
+rm -rf frontend/dist && git diff --check && git ls-files frontend/dist | wc -l  # 0
+```
+
 ## Dispatch Log — 2026-07-11 Landing Product Video + Advertising Focus
 
 **Time:** 2026-07-11 09:40 ET / 2026-07-11 13:40 UTC

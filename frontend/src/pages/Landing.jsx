@@ -45,15 +45,12 @@ export default function Landing() {
 
   function playDemo() {
     demoRef.current?.playWithSound()
-    document.getElementById('revv-demo')?.focus?.({ preventScroll: true })
+    document.getElementById('product-tour')?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
   }
 
   return (
     <div className="landing-page min-h-screen bg-void text-ink">
       <section className="landing-hero" aria-labelledby="landing-title">
-        <RevvDemo ref={demoRef} className="absolute inset-0" />
-        <div className="landing-hero-shade" aria-hidden="true" />
-
         <header className="landing-nav">
           <nav className="mx-auto flex w-full max-w-7xl items-center justify-between gap-6" aria-label="Main navigation">
             <Link to="/" className="landing-wordmark" aria-label="REVV home">
@@ -93,6 +90,10 @@ export default function Landing() {
             </button>
           </div>
         </div>
+      </section>
+
+      <section id="product-tour" className="landing-demo-stage" aria-label="REVV product tour">
+        <RevvDemo ref={demoRef} />
       </section>
 
       <main>

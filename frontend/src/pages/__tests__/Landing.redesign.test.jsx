@@ -23,7 +23,13 @@ describe('Landing redesign', () => {
     expect(screen.getByText('One live repair order')).toBeInTheDocument()
     expect(screen.getByText('$199')).toBeInTheDocument()
     expect(screen.getByAltText('REVV wordmark')).toHaveAttribute('src', '/revv-wordmark-transparent.png')
-    expect(document.querySelector('video.revv-demo-video')).toBeInTheDocument()
+    const video = document.querySelector('video.revv-demo-video')
+    const hero = document.querySelector('.landing-hero')
+    const productTour = document.querySelector('#product-tour')
+    expect(video).toBeInTheDocument()
+    expect(hero).not.toContainElement(video)
+    expect(productTour).toContainElement(video)
+    expect(productTour).toHaveClass('landing-demo-stage')
 
     const externalMedia = [...document.querySelectorAll('img, video, video source, audio')]
       .map((node) => node.getAttribute('src'))

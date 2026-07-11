@@ -554,9 +554,6 @@ textarea {
 
 .landing-hero {
   position: relative;
-  height: min(820px, 92svh);
-  min-height: 680px;
-  overflow: hidden;
   border-bottom: 1px solid var(--line);
   background: var(--void);
 }
@@ -588,25 +585,13 @@ textarea {
   color: var(--on-brand);
 }
 
-.landing-hero-shade {
-  position: absolute;
-  z-index: 20;
-  inset: 0;
-  pointer-events: none;
-  background:
-    linear-gradient(90deg, rgba(15, 17, 23, 0.99) 0%, rgba(15, 17, 23, 0.93) 31%, rgba(15, 17, 23, 0.34) 54%, rgba(15, 17, 23, 0.08) 100%),
-    linear-gradient(0deg, rgba(15, 17, 23, 0.62) 0%, transparent 28%);
-}
-
 .landing-hero-content {
   position: relative;
-  z-index: 30;
   display: flex;
   width: min(100%, 90rem);
-  height: calc(100% - 5rem);
   margin: 0 auto;
   align-items: center;
-  padding: 0 3rem 3rem;
+  padding: 4.5rem 3rem 5.5rem;
 }
 
 .landing-kicker,
@@ -632,7 +617,7 @@ textarea {
 }
 
 .landing-title {
-  max-width: 10ch;
+  max-width: 13ch;
   margin-top: 1.15rem;
   color: var(--on-brand);
   font-family: var(--font-display);
@@ -669,6 +654,13 @@ textarea {
 .landing-demo-cta:hover {
   border-color: var(--brand-lit);
   background: rgba(15, 17, 23, 0.78);
+}
+
+.landing-demo-stage {
+  scroll-margin-top: 0.75rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--void);
+  padding: 2rem;
 }
 
 .landing-proof-stat {
@@ -751,40 +743,44 @@ textarea {
 }
 
 .revv-demo {
-  position: absolute;
-  inset: 0;
+  position: relative;
+  width: min(100%, 90rem);
+  margin: 0 auto;
   overflow: hidden;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
   background: var(--void);
   color: var(--on-brand);
 }
 
-.revv-demo-media,
+.revv-demo-media {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: var(--void);
+}
+
 .revv-demo-video {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
-}
-
-.revv-demo-video {
-  object-fit: cover;
+  object-fit: contain;
   object-position: center;
   background: var(--void);
 }
 
 .revv-demo-readout {
-  position: absolute;
-  z-index: 25;
-  right: clamp(1.5rem, 3vw, 3rem);
-  bottom: 5.25rem;
   display: flex;
-  width: min(28rem, 36vw);
+  width: 100%;
   align-items: flex-end;
   justify-content: space-between;
   gap: 1rem;
+  border-top: 1px solid var(--line-2);
   border-left: 2px solid var(--brand-lit);
-  background: rgba(15, 17, 23, 0.88);
-  padding: 0.8rem 1rem;
+  background: var(--panel);
+  padding: 0.9rem 1rem;
 }
 
 .revv-demo-eyebrow {
@@ -820,11 +816,10 @@ textarea {
 }
 
 .revv-demo-controls {
-  position: absolute;
-  z-index: 25;
-  right: clamp(1.5rem, 3vw, 3rem);
-  bottom: 1.1rem;
-  width: min(24rem, 32vw);
+  width: 100%;
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+  padding: 0.7rem 1rem 0.9rem;
 }
 
 .revv-demo-progress {
@@ -881,26 +876,11 @@ textarea {
   }
 
   .landing-hero-content > div {
-    width: 54%;
-  }
-
-  .revv-demo-readout {
-    right: 1.5rem;
-    width: min(23rem, 43vw);
-  }
-
-  .revv-demo-controls {
-    right: 1.5rem;
-    width: min(22rem, 43vw);
+    width: min(100%, 42rem);
   }
 }
 
 @media (max-width: 767px) {
-  .landing-hero {
-    height: min(820px, 92svh);
-    min-height: 720px;
-  }
-
   .landing-nav {
     padding: 0.85rem 0.8rem;
   }
@@ -914,14 +894,9 @@ textarea {
     height: 1.25rem;
   }
 
-  .landing-hero-shade {
-    background: linear-gradient(180deg, rgba(15, 17, 23, 0.99) 0%, rgba(15, 17, 23, 0.96) 32%, rgba(15, 17, 23, 0.68) 48%, rgba(15, 17, 23, 0.12) 72%, rgba(15, 17, 23, 0.34) 100%);
-  }
-
   .landing-hero-content {
-    height: calc(100% - 5rem);
     align-items: flex-start;
-    padding: 3rem 1.25rem 12rem;
+    padding: 2.75rem 1.25rem 3.5rem;
   }
 
   .landing-hero-content > div {
@@ -929,7 +904,7 @@ textarea {
   }
 
   .landing-title {
-    max-width: 11ch;
+    max-width: 12ch;
     font-size: clamp(2.35rem, 10.5vw, 3.45rem);
   }
 
@@ -943,6 +918,10 @@ textarea {
     width: min(100%, 21rem);
   }
 
+  .landing-demo-stage {
+    padding: 0.75rem;
+  }
+
   .landing-section {
     padding: 4rem 1.25rem;
   }
@@ -952,14 +931,11 @@ textarea {
     padding: 1.25rem;
   }
 
-  .revv-demo-video {
-    object-position: center;
+  .revv-demo-media {
+    aspect-ratio: 9 / 16;
   }
 
   .revv-demo-readout {
-    right: 1rem;
-    bottom: 4.65rem;
-    width: calc(100% - 2rem);
     padding: 0.65rem 0.75rem;
   }
 
@@ -977,9 +953,7 @@ textarea {
   }
 
   .revv-demo-controls {
-    right: 1rem;
-    bottom: 0.8rem;
-    width: calc(100% - 2rem);
+    padding: 0.6rem 0.75rem 0.75rem;
   }
 }
 

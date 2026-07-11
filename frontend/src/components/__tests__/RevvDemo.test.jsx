@@ -20,7 +20,7 @@ describe('RevvDemo', () => {
     vi.unstubAllGlobals()
   })
 
-  it('mounts the five-beat demo over real local desktop and mobile video', () => {
+  it('mounts an unobstructed media row above the five-beat readout and controls', () => {
     setReducedMotion(false)
     const { container } = render(<RevvDemo />)
 
@@ -30,7 +30,10 @@ describe('RevvDemo', () => {
     expect(screen.getByRole('button', { name: 'Replay product tour muted' })).toBeInTheDocument()
 
     const video = container.querySelector('video.revv-demo-video')
+    const media = video.closest('.revv-demo-media')
     expect(video).toBeInTheDocument()
+    expect(media.nextElementSibling).toHaveClass('revv-demo-readout')
+    expect(media.nextElementSibling.nextElementSibling).toHaveClass('revv-demo-controls')
     expect(video).toHaveAttribute('poster', '/demo/revv-product-tour-poster.png')
     expect(video).toHaveAttribute('playsinline')
     expect(video.querySelectorAll('source')).toHaveLength(2)
