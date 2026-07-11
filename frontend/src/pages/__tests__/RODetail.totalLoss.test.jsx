@@ -219,6 +219,25 @@ describe('RODetail total loss action', () => {
     expect(screen.getByDisplayValue('0')).toBeInTheDocument()
   })
 
+  it('keeps modal failures visible above the app without using a browser alert', async () => {
+    stubApi(makeRo())
+    api.put.mockRejectedValueOnce({ response: { data: { error: 'Total loss update was rejected.' } } })
+    const user = userEvent.setup()
+    renderRODetail()
+
+    await screen.findByText('RO-1')
+    await user.click(screen.getByRole('button', { name: /more repair order actions/i }))
+    await user.click(screen.getByRole('menuitem', { name: /mark total loss/i }))
+    await user.click(await screen.findByRole('button', { name: /confirm total loss/i }))
+
+    const feedback = await screen.findByRole('alert')
+    expect(feedback).toHaveTextContent('Total loss update was rejected.')
+    expect(feedback.parentElement).toHaveClass('z-[220]')
+    expect(feedback.parentElement?.parentElement).toBe(document.body)
+    expect(window.alert).not.toHaveBeenCalled()
+    expect(screen.getByRole('dialog', { name: /mark total loss/i })).toBeInTheDocument()
+  })
+
   it('keeps pre-dropoff previews above the sidebar and allows the photo to be deleted', async () => {
     stubApi(makeRo(), {
       preDropoffPhotos: [{

@@ -56,6 +56,42 @@ const ro = await dbGet('SELECT * FROM ros WHERE id = $1 AND shop_id = $2', [id, 
 await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 ```
 
+## Dispatch Log — 2026-07-11 REVV Redesign Phase 6N: Complete RO Workspace + Global Closeout
+
+**Time:** 2026-07-11 06:01 ET / 2026-07-11 10:01 UTC
+**Status:** READY FOR CLAUDE CODE QA — FEATURE BRANCH ONLY — NOT DEPLOYED
+
+**Scope**
+- Completed the final semantic-token propagation across the full RO Detail workspace: customer, insurance, imported-estimate, claim status, supplement, parts, communications, photos, storage, inspection, notes, inline vehicle editing, and all four body-level overlays. `RODetail.jsx` now contains no raw hex colors, legacy named palette utilities, gradients, SVG gradients, or browser alerts.
+- Preserved every RO endpoint, payload, status/assignment/close gate, destructive confirmation, supplement action, storage charge, part/request update, customer update, claim/approval link, PDF, SMS, photo, inspection, and payment behavior. The original days-in-shop thresholds remain three-tiered: normal good, 8–14 day brand warning, and 15+ day critical.
+- Replaced 35 non-consequential browser alerts with a body-level `ROFeedbackPortal` above all page overlays (`z-[220]`). Errors use an assertive alert region; success/warning feedback uses a polite status region; consequential `window.confirm` gates remain unchanged.
+- Kept generic controls and status/navigation states on brand, current stepper/supplement/storage/money actions on gold, success/paid on good, and errors/total-loss/backorders on crit. Financial, parts, storage, approved, and profit values use monospaced tabular numerals.
+- Added regression coverage that locks the complete RO workspace against legacy styling/alerts and pins its status, supplement, payment, SMS, photo, overlay, hero-finder, and authoritative-cents contracts. Added a rendered failure-path test proving feedback remains visible above the open total-loss dialog without invoking `window.alert`.
+- Completed the redesign-wide source audit. All allowed migrated production JSX surfaces are tokenized; remaining matches are the explicitly excluded in-flight `ShopRegister.jsx`, test fixtures, token definitions/legacy compatibility selectors in `index.css`, and documentation comments in `errorReporter.js`.
+- Fully mocked browser QA covered dark tablet and light phone RO surfaces, imported estimate, parts, customer, communications, storage, storage billing, total loss, and failure feedback. All viewport/body widths matched exactly; all overlays covered the full viewport above the sidebar. A double-capture paint primer was used only to avoid a known headless Chrome stale-compositor screenshot artifact after tab-only React updates; the evidence frames and browser error list are clean.
+- No backend, API contract, auth rule, workflow, money math, database, seed, reset, migration, destructive script, hosted DB, provider, customer/shop/RO data, or Miles Automotive data changed. Browser data was fully mocked.
+
+**Files changed (4; batch cap respected)**
+- `frontend/src/pages/RODetail.jsx`
+- `frontend/src/pages/__tests__/RODetail.totalLoss.test.jsx`
+- `frontend/src/lib/__tests__/tokenConformance.test.js`
+- `CLAUDE.md`
+
+**Verification**
+```
+cd frontend && npm run test:run -- src/lib/__tests__/tokenConformance.test.js src/lib/__tests__/colorSemantics.test.js src/pages/__tests__/RODetail.totalLoss.test.jsx  # 3 files, 18/18 passed
+node --test native backend sweep  # 130/130 passed
+cd backend && npm run test:run  # extractor suite 7/7 passed
+cd frontend && npm run test:run  # 38 files, 121/121 passed
+cd frontend && npm run build  # clean; pre-existing Sentry/chunk-size warnings only
+Playwright fully mocked browser checks  # RO overview/insurance/parts/storage/customer/comms, storage + total-loss overlays, and error feedback above an open modal
+viewport results  # 1024x768 dark tablet and 390x844 light phone exact client/body scroll widths; app main is 800px after the 224px desktop sidebar; overlays are exactly 1024x768; zero unexpected console/page errors
+screenshots  # /tmp/revv-phase6n-ro-overview-tablet-dark.png, /tmp/revv-phase6n-ro-insurance-tablet-dark.png, /tmp/revv-phase6n-ro-parts-tablet-dark.png, /tmp/revv-phase6n-ro-storage-tablet-dark.png, /tmp/revv-phase6n-ro-storage-overlay-tablet-dark.png, /tmp/revv-phase6n-ro-customer-phone-light.png, /tmp/revv-phase6n-ro-comms-phone-light.png, /tmp/revv-phase6n-ro-total-loss-overlay-tablet-dark.png, /tmp/revv-phase6n-ro-feedback-over-overlay-tablet-dark.png
+rg raw hex / legacy named palettes / gradients / browser alerts across RODetail.jsx  # zero matches
+global frontend source audit  # only documented hard exclusions, token declarations/compatibility selectors, test fixtures, and comment-only matches remain
+rm -rf frontend/dist && git diff --check && git ls-files frontend/dist | wc -l  # 0
+```
+
 ## Dispatch Log — 2026-07-11 REVV Redesign Phase 6M: Dashboard, Estimate Builder, and Customer Work Surfaces
 
 **Time:** 2026-07-11 05:37 ET / 2026-07-11 09:37 UTC

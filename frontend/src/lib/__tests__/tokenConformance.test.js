@@ -52,6 +52,7 @@ const tokenizedFiles = [
   'src/components/AddROModal.jsx',
   'src/pages/Dashboard.jsx',
   'src/pages/EstimateBuilder.jsx',
+  'src/pages/RODetail.jsx',
 ]
 
 const phase6JFiles = [
@@ -90,6 +91,10 @@ const phase6MFiles = [
   'src/pages/Dashboard.jsx',
   'src/pages/EstimateBuilder.jsx',
   'src/pages/Customers.jsx',
+]
+
+const phase6NFiles = [
+  'src/pages/RODetail.jsx',
 ]
 
 function read(relativePath) {
@@ -254,5 +259,29 @@ describe('redesign token conformance', () => {
     expect(builder).toMatch(/<AppOverlay/)
     expect(builder).toMatch(/<EstimateSelectionToolbar/)
     expect(builder).toMatch(/role=\{actionFeedback\.type === 'error' \? 'alert' : 'status'\}/)
+  })
+
+  it('keeps the complete RO workspace tokenized while preserving every consequential workflow', () => {
+    for (const relativePath of phase6NFiles) {
+      const source = read(relativePath)
+      expect(source, relativePath).not.toMatch(/#[0-9a-f]{3,8}/i)
+      expect(source, relativePath).not.toMatch(/(?:bg|text|border|ring|from|to|via|placeholder|accent)-(?:indigo|blue|slate|yellow|red|green|emerald|amber|violet|purple|cyan|teal|orange|lime|pink|rose)-/)
+      expect(source, relativePath).not.toMatch(/(?:bg-gradient-|<linearGradient|\balert\s*\()/)
+    }
+
+    const detail = read('src/pages/RODetail.jsx')
+    expect(detail).toMatch(/createPortal\(/)
+    expect(detail).toMatch(/z-\[220\]/)
+    expect(detail).toMatch(/role=\{isError \? 'alert' : 'status'\}/)
+    expect(detail).toMatch(/api\.put\(`\/ros\/\$\{id\}\/status`/)
+    expect(detail).toMatch(/window\.confirm\(`Move back to/)
+    expect(detail).toMatch(/window\.confirm\(\s*`This RO is assigned to/)
+    expect(detail).toMatch(/api\.post\(`\/ros\/\$\{id\}\/supplements`/)
+    expect(detail).toMatch(/api\.post\(`\/ros\/\$\{id\}\/mark-paid`/)
+    expect(detail).toMatch(/api\.post\('\/sms\/send'/)
+    expect(detail).toMatch(/api\.post\(`\/photos\/ro\/\$\{id\}\/predropoff`/)
+    expect(detail.match(/<AppOverlay/g)?.length).toBe(4)
+    expect(detail).toMatch(/<SupplementFinderPanel[\s\S]*variant="hero"/)
+    expect(detail).toMatch(/<Money cents=\{ro\.amount_owed_cents/)
   })
 })

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Pencil, Save, X, Package, PackageCheck, PackageX, Plus, CheckCircle, AlertCircle, Clock, Truck, RefreshCw, ExternalLink, Car, DollarSign, ClipboardList, Smartphone, AlertTriangle, Copy, Printer, User, Phone, MessageSquare, Mail, Users, CreditCard, Search, Camera, Trash2, ChevronDown, ChevronUp, MoreHorizontal, ChevronRight } from 'lucide-react'
 import api from '../lib/api'
@@ -28,27 +29,27 @@ import PhotoLightbox from '../components/PhotoLightbox'
 import AppOverlay from '../components/AppOverlay'
 
 const PART_STATUS_META = {
-  ordered:     { label: 'Ordered',     cls: 'text-blue-400   bg-blue-900/30   border-blue-700',   icon: Clock },
-  backordered: { label: 'Backordered', cls: 'text-red-400    bg-red-900/30    border-red-700',    icon: AlertCircle },
-  received:    { label: 'Received',    cls: 'text-emerald-400 bg-emerald-900/30 border-emerald-700', icon: CheckCircle },
-  cancelled:   { label: 'Cancelled',  cls: 'text-slate-500  bg-slate-900/30  border-slate-700',  icon: X },
+  ordered:     { label: 'Ordered',     cls: 'border-brand/40 bg-brand/10 text-brand', icon: Clock },
+  backordered: { label: 'Backordered', cls: 'border-crit/40 bg-crit/10 text-crit', icon: AlertCircle },
+  received:    { label: 'Received',    cls: 'border-good/40 bg-good/10 text-good', icon: CheckCircle },
+  cancelled:   { label: 'Cancelled',   cls: 'border-line-2 bg-raised text-muted', icon: X },
 }
 
 const TRACKING_META = {
-  pending:          { label: 'Tracking Pending',    cls: 'text-slate-400',  dot: '#64748b' },
-  in_transit:       { label: 'In Transit',          cls: 'text-blue-400',   dot: '#3b82f6' },
-  out_for_delivery: { label: 'Out for Delivery',    cls: 'text-amber-400',  dot: '#f59e0b' },
-  delivered:        { label: 'Delivered to Shop',   cls: 'text-emerald-400',dot: '#10b981' },
-  exception:        { label: 'Shipping Exception',  cls: 'text-red-400',    dot: '#ef4444' },
-  expired:          { label: 'Tracking Expired',    cls: 'text-slate-500',  dot: '#64748b' },
+  pending:          { label: 'Tracking Pending',   cls: 'text-muted', dot: 'var(--muted)' },
+  in_transit:       { label: 'In Transit',         cls: 'text-brand', dot: 'var(--brand)' },
+  out_for_delivery: { label: 'Out for Delivery',   cls: 'text-brand', dot: 'var(--brand-lit)' },
+  delivered:        { label: 'Delivered to Shop',  cls: 'text-good', dot: 'var(--good)' },
+  exception:        { label: 'Shipping Exception', cls: 'text-crit', dot: 'var(--crit)' },
+  expired:          { label: 'Tracking Expired',   cls: 'text-faint', dot: 'var(--faint)' },
 }
 const CARRIER_LABELS = { ups:'UPS', fedex:'FedEx', usps:'USPS', dhl:'DHL', unknown:'Carrier' }
 
 const REQ_STATUS_META = {
-  pending:   { label: 'Pending',   cls: 'text-amber-400 bg-amber-900/30 border-amber-700/40',   Icon: Package },
-  ordered:   { label: 'Ordered',   cls: 'text-blue-400 bg-blue-900/30 border-blue-700/40',       Icon: PackageCheck },
-  received:  { label: 'Received',  cls: 'text-emerald-400 bg-emerald-900/30 border-emerald-700/40', Icon: PackageCheck },
-  cancelled: { label: 'Cancelled', cls: 'text-slate-500 bg-slate-900/30 border-slate-700/40',   Icon: PackageX },
+  pending:   { label: 'Pending',   cls: 'text-muted bg-raised border-line-2', Icon: Package },
+  ordered:   { label: 'Ordered',   cls: 'text-brand bg-brand/10 border-brand/40',       Icon: PackageCheck },
+  received:  { label: 'Received',  cls: 'text-good bg-good/10 border-good/40', Icon: PackageCheck },
+  cancelled: { label: 'Cancelled', cls: 'text-crit bg-crit/10 border-crit/40', Icon: PackageX },
 }
 
 const COMM_TYPE_META = {
@@ -60,18 +61,46 @@ const COMM_TYPE_META = {
 }
 
 const SUPP_STATUS_META = {
-  Pending:  { cls: 'text-amber-400 bg-amber-900/30 border-amber-700/40' },
-  Approved: { cls: 'text-emerald-400 bg-emerald-900/30 border-emerald-700/40' },
-  Denied:   { cls: 'text-red-400 bg-red-900/30 border-red-700/40' },
+  Pending:  { cls: 'text-gold bg-gold/10 border-gold/40' },
+  Approved: { cls: 'text-good bg-good/10 border-good/40' },
+  Denied:   { cls: 'text-crit bg-crit/10 border-crit/40' },
 }
 
 const AUDIT_PRIORITY_META = {
-  HIGH: { emoji: '🔴', cls: 'text-red-300 border-red-700/40 bg-red-900/20' },
-  MEDIUM: { emoji: '🟡', cls: 'text-amber-300 border-amber-700/40 bg-amber-900/20' },
-  LOW: { emoji: '🟢', cls: 'text-emerald-300 border-emerald-700/40 bg-emerald-900/20' },
+  HIGH: { label: 'High', cls: 'text-crit border-crit/40 bg-crit/10' },
+  MEDIUM: { label: 'Medium', cls: 'text-brand border-brand/40 bg-brand/10' },
+  LOW: { label: 'Low', cls: 'text-muted border-line-2 bg-raised' },
 }
 
 const STAGES = ['intake','estimate','approval','parts','repair','paint','qc','delivery','closed']
+
+function ROFeedbackPortal({ feedback, onDismiss }) {
+  if (!feedback || typeof document === 'undefined') return null
+  const isError = feedback.type === 'error'
+  const isWarning = feedback.type === 'warning'
+  const tone = isError
+    ? 'border-crit/50 bg-panel text-crit'
+    : isWarning
+      ? 'border-brand/50 bg-panel text-brand'
+      : 'border-good/50 bg-panel text-good'
+
+  return createPortal(
+    <div className="pointer-events-none fixed inset-x-3 top-3 z-[220] flex justify-center sm:inset-x-auto sm:right-4 sm:top-4">
+      <div
+        role={isError ? 'alert' : 'status'}
+        aria-live={isError ? 'assertive' : 'polite'}
+        aria-atomic="true"
+        className={`pointer-events-auto flex w-full max-w-md items-start gap-3 rounded-instrument border px-4 py-3 shadow-2xl ${tone}`}
+      >
+        <p className="min-w-0 flex-1 text-sm text-ink">{feedback.text}</p>
+        <button type="button" onClick={onDismiss} className="shrink-0 text-muted transition-colors hover:text-ink" aria-label="Dismiss message">
+          <X size={16} />
+        </button>
+      </div>
+    </div>,
+    document.body,
+  )
+}
 
 export default function RODetail() {
   const { t } = useLanguage()
@@ -81,6 +110,11 @@ export default function RODetail() {
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState({})
   const [saving, setSaving] = useState(false)
+  const [feedback, setFeedback] = useState(null)
+
+  function showFeedback(type, text) {
+    setFeedback({ type, text })
+  }
 
   const [parts, setParts]     = useState([])
   const [showAddPart, setShowAddPart] = useState(false)
@@ -335,7 +369,7 @@ export default function RODetail() {
       setShowAddPart(false)
       setPartForm({ part_name:'', part_number:'', vendor:'', quantity:1, unit_cost:'', expected_date:'', notes:'', tracking_number:'' })
     } catch (err) {
-      alert(err?.response?.data?.error || 'Could not add part')
+      showFeedback('error', err?.response?.data?.error || 'Could not add part')
     } finally { setSavingPart(false) }
   }
 
@@ -349,7 +383,7 @@ export default function RODetail() {
         load()
       }
     } catch (e) {
-      alert(e?.response?.data?.error || 'Could not refresh tracking')
+      showFeedback('error', e?.response?.data?.error || 'Could not refresh tracking')
     } finally {
       setRefreshingPart(null)
     }
@@ -359,7 +393,7 @@ export default function RODetail() {
     try {
       await api.put(`/parts/${partId}`, { status }); load()
     } catch (err) {
-      alert(err?.response?.data?.error || 'Could not update part status')
+      showFeedback('error', err?.response?.data?.error || 'Could not update part status')
     }
   }
 
@@ -367,7 +401,7 @@ export default function RODetail() {
     try {
       await api.delete(`/parts/${partId}`); load()
     } catch (err) {
-      alert(err?.response?.data?.error || 'Could not delete part')
+      showFeedback('error', err?.response?.data?.error || 'Could not delete part')
     }
   }
 
@@ -385,7 +419,7 @@ export default function RODetail() {
       setLinkCopied(true)
       setTimeout(() => setLinkCopied(false), 3000)
     } catch (e) {
-      alert('Error generating link')
+      showFeedback('error', e?.response?.data?.error || 'Could not generate claim link')
     } finally {
       setGeneratingLink(false)
     }
@@ -398,7 +432,7 @@ export default function RODetail() {
       setLinkCopied(true)
       setTimeout(() => setLinkCopied(false), 3000)
     } catch (err) {
-      alert('Could not copy link — clipboard access denied')
+      showFeedback('error', 'Could not copy link. Clipboard access was denied.')
     }
   }
 
@@ -412,7 +446,7 @@ export default function RODetail() {
       setLinkCopied(true)
       setTimeout(() => setLinkCopied(false), 3000)
     } catch (e) {
-      alert(e?.response?.data?.error || 'Could not generate tracking link')
+      showFeedback('error', e?.response?.data?.error || 'Could not generate tracking link')
     } finally {
       setSendingCustomerLinks(false)
     }
@@ -427,7 +461,7 @@ export default function RODetail() {
       setLinkCopied(true)
       setTimeout(() => setLinkCopied(false), 3000)
     } catch (e) {
-      alert(e?.response?.data?.error || 'Could not generate payment link')
+      showFeedback('error', e?.response?.data?.error || 'Could not generate payment link')
     } finally {
       setGeneratingPaymentLink(false)
     }
@@ -440,7 +474,7 @@ export default function RODetail() {
         await api.put(`/ros/${id}/status`, { status: STAGES[idx+1] })
         load()
       } catch (err) {
-        alert(err?.response?.data?.error || 'Failed to advance status')
+        showFeedback('error', err?.response?.data?.error || 'Failed to advance status')
       }
     }
   }
@@ -468,7 +502,7 @@ export default function RODetail() {
       setTotalLossNote('')
       load()
     } catch (err) {
-      alert(err?.response?.data?.error || 'Could not mark this RO as total loss')
+      showFeedback('error', err?.response?.data?.error || 'Could not mark this RO as total loss')
     } finally {
       setMarkingTotalLoss(false)
     }
@@ -519,7 +553,7 @@ export default function RODetail() {
       await api.patch(`/ros/${id}/assign`, { user_id: nextUserId })
       load()
     } catch (err) {
-      alert(err?.response?.data?.error || 'Could not assign technician')
+      showFeedback('error', err?.response?.data?.error || 'Could not assign technician')
     }
   }
 
@@ -534,11 +568,11 @@ export default function RODetail() {
 
   async function saveCustomerInfo() {
     if (!ro?.customer?.id) {
-      alert('No customer linked to this RO.')
+      showFeedback('warning', 'No customer is linked to this RO.')
       return
     }
     if (!customerForm.name.trim()) {
-      alert('Customer name is required.')
+      showFeedback('warning', 'Customer name is required.')
       return
     }
 
@@ -555,9 +589,9 @@ export default function RODetail() {
       const { data } = await api.put(`/customers/${ro.customer.id}`, payload)
       setRo((prev) => (prev ? { ...prev, customer: { ...(prev.customer || {}), ...data } } : prev))
       setSmsCustomerPhone(data?.phone || '')
-      alert('Customer updated.')
+      showFeedback('success', 'Customer updated.')
     } catch (err) {
-      alert(err?.response?.data?.error || 'Could not update customer')
+      showFeedback('error', err?.response?.data?.error || 'Could not update customer')
     } finally {
       setSavingCustomer(false)
     }
@@ -572,7 +606,7 @@ export default function RODetail() {
       setShowPartsReqForm(false)
       setPartsReqForm({ part_name: '', part_number: '', quantity: 1, notes: '' })
     } catch (err) {
-      alert(err?.response?.data?.error || 'Could not submit request')
+      showFeedback('error', err?.response?.data?.error || 'Could not submit request')
     } finally {
       setSubmittingPartsReq(false)
     }
@@ -583,7 +617,7 @@ export default function RODetail() {
       await api.patch(`/parts-requests/${reqId}`, { status })
       loadPartsRequests()
     } catch (err) {
-      alert(err?.response?.data?.error || 'Failed to update parts request')
+      showFeedback('error', err?.response?.data?.error || 'Failed to update parts request')
     }
   }
 
@@ -593,7 +627,7 @@ export default function RODetail() {
       await api.post(`/ros/${id}/approve-estimate`)
       load()
     } catch (err) {
-      alert(err?.response?.data?.error || 'Could not approve estimate')
+      showFeedback('error', err?.response?.data?.error || 'Could not approve estimate')
     } finally {
       setApprovingEstimate(false)
     }
@@ -606,9 +640,9 @@ export default function RODetail() {
       const url = data.link || `${window.location.origin}/approve/${data.token}`
       setApprovalLink(url)
       const copied = await tryCopyToClipboard(url)
-      alert(copied ? 'Approval link copied to clipboard.' : 'Approval link generated. Copy it from the highlighted box below.')
+      showFeedback('success', copied ? 'Approval link copied to clipboard.' : 'Approval link generated. Copy it from the highlighted box below.')
     } catch (err) {
-      alert(err?.response?.data?.error || 'Could not generate approval link')
+      showFeedback('error', err?.response?.data?.error || 'Could not generate approval link')
     } finally {
       setSendingForApproval(false)
     }
@@ -628,7 +662,7 @@ export default function RODetail() {
       anchor.remove()
       window.URL.revokeObjectURL(blobUrl)
     } catch (err) {
-      window.alert(safeExternalErrorMessage(err, 'Could not download the repair order PDF.'))
+      showFeedback('error', safeExternalErrorMessage(err, 'Could not download the repair order PDF.'))
     } finally {
       setPrintingRepairOrder(false)
     }
@@ -644,7 +678,7 @@ export default function RODetail() {
       setShowCommForm(false)
       loadComms()
     } catch (err) {
-      alert(err?.response?.data?.error || 'Could not log communication')
+      showFeedback('error', err?.response?.data?.error || 'Could not log communication')
     } finally {
       setSavingComm(false)
     }
@@ -656,7 +690,7 @@ export default function RODetail() {
       await api.delete(`/comms/${commId}`)
       loadComms()
     } catch (err) {
-      alert(err?.response?.data?.error || 'Could not delete communication entry')
+      showFeedback('error', err?.response?.data?.error || 'Could not delete communication entry')
     }
   }
 
@@ -670,7 +704,7 @@ export default function RODetail() {
       setInternalNoteText('')
       loadInternalNotes()
     } catch (err) {
-      alert(err?.response?.data?.error || 'Could not save internal note')
+      showFeedback('error', err?.response?.data?.error || 'Could not save internal note')
     } finally {
       setSavingInternalNote(false)
     }
@@ -686,7 +720,7 @@ export default function RODetail() {
       setSmsMessage('')
       loadSmsThread()
     } catch (err) {
-      alert(err?.response?.data?.error || 'Could not send text message')
+      showFeedback('error', err?.response?.data?.error || 'Could not send text message')
     } finally {
       setSmsSending(false)
     }
@@ -699,7 +733,7 @@ export default function RODetail() {
       await api.delete(`/ros/${id}/notes/${noteId}`)
       loadInternalNotes()
     } catch (err) {
-      alert(err?.response?.data?.error || 'Could not delete note')
+      showFeedback('error', err?.response?.data?.error || 'Could not delete note')
     } finally {
       setDeletingInternalNote(null)
     }
@@ -764,7 +798,7 @@ export default function RODetail() {
       setPreDropoffPhotos((current) => current.filter((photo) => photo.id !== photoId))
       setPreDropoffLightbox((current) => current?.id === photoId ? null : current)
     } catch (err) {
-      alert(err?.response?.data?.error || 'Could not delete photo')
+      showFeedback('error', err?.response?.data?.error || 'Could not delete photo')
     }
   }
 
@@ -775,7 +809,7 @@ export default function RODetail() {
       load()
       setShowMarkPaidModal(false)
     } catch (err) {
-      alert(err?.response?.data?.error || 'Could not mark as paid')
+      showFeedback('error', err?.response?.data?.error || 'Could not mark as paid')
     } finally {
       setMarkingPaid(false)
     }
@@ -797,7 +831,7 @@ export default function RODetail() {
       setShowSuppForm(false)
       loadSupplements()
     } catch (err) {
-      alert(err?.response?.data?.error || 'Could not add supplement')
+      showFeedback('error', err?.response?.data?.error || 'Could not add supplement')
     } finally {
       setSavingSupp(false)
     }
@@ -809,7 +843,7 @@ export default function RODetail() {
       await api.patch(`/ros/${id}/supplements/${suppId}`, { status })
       loadSupplements()
     } catch (err) {
-      alert(err?.response?.data?.error || 'Could not update supplement')
+      showFeedback('error', err?.response?.data?.error || 'Could not update supplement')
     } finally {
       setUpdatingSupp(null)
     }
@@ -821,7 +855,7 @@ export default function RODetail() {
       const { data } = await api.post('/inspections', { ro_id: id })
       navigate(`/ros/${id}/inspection/${data.inspection.id}`)
     } catch (err) {
-      alert(err?.response?.data?.error || 'Could not start inspection')
+      showFeedback('error', err?.response?.data?.error || 'Could not start inspection')
     } finally {
       setCreatingInspection(false)
     }
@@ -833,7 +867,7 @@ export default function RODetail() {
       await api.patch(`/storage/${id}`, nextValues)
       await load()
     } catch (err) {
-      alert(err?.response?.data?.error || 'Could not update storage settings')
+      showFeedback('error', err?.response?.data?.error || 'Could not update storage settings')
     } finally {
       setStorageSaving(false)
     }
@@ -861,7 +895,7 @@ export default function RODetail() {
       setShowStorageBillModal(false)
       await loadStorageCharges()
     } catch (err) {
-      alert(err?.response?.data?.error || 'Could not create storage charge')
+      showFeedback('error', err?.response?.data?.error || 'Could not create storage charge')
     } finally {
       setBillingStorageSaving(false)
     }
@@ -872,11 +906,11 @@ export default function RODetail() {
       await api.patch(`/storage/${id}/charges/${chargeId}`)
       await loadStorageCharges()
     } catch (err) {
-      alert(err?.response?.data?.error || 'Could not mark charge as paid')
+      showFeedback('error', err?.response?.data?.error || 'Could not mark charge as paid')
     }
   }
 
-  if (!ro) return <div className="flex items-center justify-center h-64 text-slate-500">{t('common.loading')}</div>
+  if (!ro) return <div className="flex items-center justify-center h-64 text-faint">{t('common.loading')}</div>
 
   const currentIdx = STAGES.indexOf(ro.status)
   const isClosedTotalLoss = ro.status === 'closed' && String(ro.claim_status || '').toLowerCase() === 'total_loss'
@@ -892,14 +926,14 @@ export default function RODetail() {
   const latestInspection = inspectionSummary[0] || null
   const inspectionStatusMeta = latestInspection
     ? latestInspection.status === 'viewed'
-      ? { label: 'Viewed', cls: 'bg-emerald-900/30 border-emerald-700/40 text-emerald-300' }
+      ? { label: 'Viewed', cls: 'bg-good/10 border-good/40 text-good' }
       : latestInspection.status === 'sent'
-        ? { label: 'Sent', cls: 'bg-blue-900/30 border-blue-700/40 text-blue-300' }
-        : { label: 'Draft', cls: 'bg-yellow-900/30 border-yellow-700/40 text-yellow-300' }
-    : { label: 'No Inspection', cls: 'bg-slate-900/30 border-slate-700/40 text-slate-300' }
+        ? { label: 'Sent', cls: 'bg-brand/10 border-brand/40 text-brand' }
+        : { label: 'Draft', cls: 'bg-raised border-line-2 text-muted' }
+    : { label: 'No Inspection', cls: 'bg-raised border-line-2 text-muted' }
   const showStripePanel = (ro.status === 'delivery' || ro.status === 'closed') && paymentStatus === 'unpaid'
   const daysIn = ro.intake_date ? Math.floor((Date.now() - new Date(ro.intake_date)) / 86400000) : 0
-  const daysColor = daysIn > 14 ? 'text-red-400' : daysIn > 7 ? 'text-yellow-400' : 'text-emerald-400'
+  const daysColor = daysIn > 14 ? 'text-crit' : daysIn > 7 ? 'text-brand' : 'text-good'
   const partsSubtotal = parts.reduce((sum, part) => sum + (Number(part.quantity || 0) * Number(part.unit_cost || 0)), 0)
   const storageDays = storageForm.storage_start_date
     ? Math.max(0, Math.floor((Date.now() - new Date(storageForm.storage_start_date).getTime()) / 86400000))
@@ -918,7 +952,7 @@ export default function RODetail() {
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean)
-  const inp = 'w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500'
+  const inp = 'w-full rounded-lg border border-line-2 bg-void px-3 py-2 text-sm text-ink focus:border-brand focus:outline-none'
   // damagedPanels useMemo moved above the if(!ro) early return to avoid hook violation
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
@@ -931,7 +965,7 @@ export default function RODetail() {
       setRo(data)
       setForm((prev) => ({ ...prev, notes: data?.notes || '' }))
     } catch (err) {
-      alert(err?.response?.data?.error || 'Could not update notes')
+      showFeedback('error', err?.response?.data?.error || 'Could not update notes')
     } finally {
       setSavingQuickNote(false)
     }
@@ -962,6 +996,7 @@ export default function RODetail() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-4">
+      <ROFeedbackPortal feedback={feedback} onDismiss={() => setFeedback(null)} />
       {/* Header */}
       <div className="relative rounded-instrument border border-line bg-panel p-4 shadow-[0_16px_48px_rgba(0,0,0,0.18)] sm:p-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -1130,19 +1165,19 @@ export default function RODetail() {
 
       {activeTab === 'storage' && (
         <div className="space-y-4">
-          <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 space-y-4">
+          <div className="bg-panel border border-line-2 rounded-instrument p-4 space-y-4">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <h2 className="text-sm font-semibold text-white">Storage Hold</h2>
-                <p className="text-xs text-slate-500">Track rental vehicle storage and billing.</p>
+                <h2 className="text-sm font-semibold text-ink">Storage Hold</h2>
+                <p className="text-xs text-faint">Track rental vehicle storage and billing.</p>
               </div>
-              <label className="flex items-center gap-2 text-xs text-slate-300">
+              <label className="flex items-center gap-2 text-xs text-ink">
                 <input
                   type="checkbox"
                   checked={!!storageForm.storage_hold}
                   disabled={userIsAssistant || storageSaving}
                   onChange={(e) => toggleStorageHold(e.target.checked)}
-                  className="accent-amber-400"
+                  className="accent-brand"
                 />
                 This vehicle is in storage hold
               </label>
@@ -1152,23 +1187,23 @@ export default function RODetail() {
               <>
                 <div className="grid sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="text-[11px] text-slate-500 block mb-1">Rental Company</label>
+                    <label className="text-[11px] text-faint block mb-1">Rental Company</label>
                     <input className={inp} value={storageForm.storage_company} onChange={(e) => setStorageForm((f) => ({ ...f, storage_company: e.target.value }))} disabled={userIsAssistant} />
                   </div>
                   <div>
-                    <label className="text-[11px] text-slate-500 block mb-1">Contact</label>
+                    <label className="text-[11px] text-faint block mb-1">Contact</label>
                     <input className={inp} value={storageForm.storage_contact} onChange={(e) => setStorageForm((f) => ({ ...f, storage_contact: e.target.value }))} disabled={userIsAssistant} />
                   </div>
                   <div>
-                    <label className="text-[11px] text-slate-500 block mb-1">Daily Rate</label>
+                    <label className="text-[11px] text-faint block mb-1">Daily Rate</label>
                     <input type="number" min="0" step="0.01" className={inp} value={storageForm.storage_rate_per_day} onChange={(e) => setStorageForm((f) => ({ ...f, storage_rate_per_day: e.target.value }))} disabled={userIsAssistant} />
                   </div>
                   <div>
-                    <label className="text-[11px] text-slate-500 block mb-1">Storage Start Date</label>
+                    <label className="text-[11px] text-faint block mb-1">Storage Start Date</label>
                     <input type="date" className={inp} value={storageForm.storage_start_date || ''} onChange={(e) => setStorageForm((f) => ({ ...f, storage_start_date: e.target.value }))} disabled={userIsAssistant} />
                   </div>
                   <div className="sm:col-span-2">
-                    <label className="text-[11px] text-slate-500 block mb-1">Notes</label>
+                    <label className="text-[11px] text-faint block mb-1">Notes</label>
                     <textarea rows={3} className={inp} value={storageForm.storage_notes} onChange={(e) => setStorageForm((f) => ({ ...f, storage_notes: e.target.value }))} disabled={userIsAssistant} />
                   </div>
                 </div>
@@ -1184,7 +1219,7 @@ export default function RODetail() {
                         storage_notes: storageForm.storage_notes,
                       })}
                       disabled={storageSaving}
-                      className="text-xs bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg disabled:opacity-60"
+                      className="text-xs bg-brand hover:bg-brand-lit text-on-brand px-3 py-1.5 rounded-lg disabled:opacity-60"
                     >
                       {storageSaving ? 'Saving...' : 'Save Storage Details'}
                     </button>
@@ -1200,7 +1235,7 @@ export default function RODetail() {
                         })
                         setShowStorageBillModal(true)
                       }}
-                      className="text-xs bg-amber-400 hover:bg-amber-300 text-[#0f1117] font-semibold px-3 py-1.5 rounded-lg"
+                      className="text-xs bg-gold hover:bg-gold-lit text-on-gold font-semibold px-3 py-1.5 rounded-lg"
                     >
                       Bill Storage
                     </button>
@@ -1208,34 +1243,34 @@ export default function RODetail() {
                 </div>
 
                 <div className="grid sm:grid-cols-3 gap-3">
-                  <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3">
-                    <div className="text-xs text-slate-500">Days Stored</div>
-                    <div className="text-xl text-white font-bold mt-1">{storageDays}</div>
+                  <div className="bg-void border border-line-2 rounded-lg p-3">
+                    <div className="text-xs text-faint">Days Stored</div>
+                    <div className="mt-1 font-mono text-xl font-bold tabular-nums text-ink">{storageDays}</div>
                   </div>
-                  <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3">
-                    <div className="text-xs text-slate-500">Total Accrued</div>
-                    <div className="text-xl text-emerald-300 font-bold mt-1">${storageAccrued.toFixed(2)}</div>
+                  <div className="bg-void border border-line-2 rounded-lg p-3">
+                    <div className="text-xs text-faint">Total Accrued</div>
+                    <div className="mt-1 font-mono text-xl font-bold tabular-nums text-gold">${storageAccrued.toFixed(2)}</div>
                   </div>
-                  <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3">
-                    <div className="text-xs text-slate-500">Unpaid Charges</div>
-                    <div className="text-xl text-amber-300 font-bold mt-1">${storageUnpaidTotal.toFixed(2)}</div>
+                  <div className="bg-void border border-line-2 rounded-lg p-3">
+                    <div className="text-xs text-faint">Unpaid Charges</div>
+                    <div className="mt-1 font-mono text-xl font-bold tabular-nums text-gold">${storageUnpaidTotal.toFixed(2)}</div>
                   </div>
                 </div>
               </>
             )}
           </div>
 
-          <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4">
+          <div className="bg-panel border border-line-2 rounded-instrument p-4">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold text-white">Storage Charges History</h3>
-              <span className="text-xs text-slate-400">Total billed: ${storageBilledTotal.toFixed(2)}</span>
+              <h3 className="text-sm font-semibold text-ink">Storage Charges History</h3>
+              <span className="font-mono text-xs tabular-nums text-gold">Total billed: ${storageBilledTotal.toFixed(2)}</span>
             </div>
             {storageCharges.length === 0 ? (
-              <p className="text-sm text-slate-500">No storage charges yet.</p>
+              <p className="text-sm text-faint">No storage charges yet.</p>
             ) : (
-              <div className="overflow-x-auto border border-[#2a2d3e] rounded-lg">
+              <div className="overflow-x-auto border border-line-2 rounded-lg">
                 <table className="w-full text-xs">
-                  <thead className="bg-[#0f1117] text-slate-400">
+                  <thead className="bg-void text-muted">
                     <tr>
                       <th className="px-3 py-2 text-left">Billed Date</th>
                       <th className="px-3 py-2 text-left">Days</th>
@@ -1248,14 +1283,14 @@ export default function RODetail() {
                   </thead>
                   <tbody>
                     {storageCharges.map((charge) => (
-                      <tr key={charge.id} className="border-t border-[#2a2d3e]">
-                        <td className="px-3 py-2 text-slate-300">{charge.billed_date || '—'}</td>
-                        <td className="px-3 py-2 text-slate-300">{charge.days}</td>
-                        <td className="px-3 py-2 text-slate-300">${Number(charge.rate_per_day || 0).toFixed(2)}</td>
-                        <td className="px-3 py-2 text-white">${Number(charge.total_amount || 0).toFixed(2)}</td>
-                        <td className="px-3 py-2 text-slate-300">{charge.billed_to || '—'}</td>
+                      <tr key={charge.id} className="border-t border-line-2">
+                        <td className="px-3 py-2 text-ink">{charge.billed_date || '—'}</td>
+                        <td className="px-3 py-2 text-ink">{charge.days}</td>
+                        <td className="px-3 py-2 font-mono tabular-nums text-ink">${Number(charge.rate_per_day || 0).toFixed(2)}</td>
+                        <td className="px-3 py-2 font-mono tabular-nums text-gold">${Number(charge.total_amount || 0).toFixed(2)}</td>
+                        <td className="px-3 py-2 text-ink">{charge.billed_to || '—'}</td>
                         <td className="px-3 py-2">
-                          <span className={`px-2 py-1 rounded-full border ${charge.paid ? 'text-emerald-300 border-emerald-700/40 bg-emerald-900/20' : 'text-amber-300 border-amber-700/40 bg-amber-900/20'}`}>
+                          <span className={`px-2 py-1 rounded-full border ${charge.paid ? 'text-good border-good/40 bg-good/10' : 'text-gold border-gold/40 bg-gold/10'}`}>
                             {charge.paid ? 'Paid' : 'Unpaid'}
                           </span>
                         </td>
@@ -1263,7 +1298,7 @@ export default function RODetail() {
                           {!charge.paid && !userIsAssistant && (
                             <button
                               onClick={() => markStorageChargePaid(charge.id)}
-                              className="text-xs bg-emerald-700 hover:bg-emerald-600 text-white px-2 py-1 rounded"
+                              className="text-xs bg-good hover:bg-good text-white px-2 py-1 rounded"
                             >
                               Mark Paid
                             </button>
@@ -1284,13 +1319,13 @@ export default function RODetail() {
       {overviewTab === 'core' && (
         <>
       {(ro.status === 'total_loss' || isClosedTotalLoss) && (
-        <div className="bg-red-950/30 border border-red-700/50 rounded-xl p-4 text-sm text-red-100">
+        <div className="bg-crit/15 border border-crit/50 rounded-instrument p-4 text-sm text-crit">
           This RO is closed as a total loss. Repair workflow steps are skipped, and financials remain editable for teardown, storage, and administrative billing.
         </div>
       )}
 
       {approvalLink && (
-        <div className="bg-yellow-900/20 border border-yellow-700/40 rounded-xl p-3 text-xs text-yellow-200">
+        <div className="rounded-instrument border border-brand/40 bg-brand/10 p-3 text-xs text-brand">
           Approval link ready: <span className="font-mono break-all">{approvalLink}</span>
         </div>
       )}
@@ -1344,11 +1379,11 @@ export default function RODetail() {
       )}
 
       {(ro.status === 'delivery' || ro.status === 'closed') && (
-        <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
-          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">Delivery Info</h2>
+        <div className="bg-panel rounded-instrument border border-line-2 p-4">
+          <h2 className="text-xs font-bold text-muted uppercase tracking-wide mb-3">Delivery Info</h2>
           <div className="flex flex-col sm:flex-row gap-4">
             <div className="flex flex-col gap-1">
-              <label className="text-xs text-slate-500">Date Delivered</label>
+              <label className="text-xs text-faint">Date Delivered</label>
               {canEditRo ? (
                 <input
                   type="date"
@@ -1357,14 +1392,14 @@ export default function RODetail() {
                     await api.patch(`/ros/${id}`, { actual_delivery: e.target.value || null })
                     load()
                   }}
-                  className="bg-[#0f1322] border border-[#2a2d3e] text-slate-200 text-xs rounded-lg px-3 py-1.5 focus:outline-none focus:border-indigo-500"
+                  className="bg-void border border-line-2 text-ink text-xs rounded-lg px-3 py-1.5 focus:outline-none focus:border-brand"
                 />
               ) : (
-                <span className="text-sm text-slate-200">{ro.actual_delivery ? new Date(ro.actual_delivery + 'T12:00:00').toLocaleDateString() : '—'}</span>
+                <span className="text-sm text-ink">{ro.actual_delivery ? new Date(ro.actual_delivery + 'T12:00:00').toLocaleDateString() : '—'}</span>
               )}
             </div>
             <div className="flex flex-col gap-1">
-              <label className="text-xs text-slate-500">Picked Up By</label>
+              <label className="text-xs text-faint">Picked Up By</label>
               <div className="flex gap-1">
                 <button
                   disabled={!canEditRo}
@@ -1373,7 +1408,7 @@ export default function RODetail() {
                     await api.patch(`/ros/${id}`, { pickup_type: 'customer' })
                     load()
                   }}
-                  className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors ${(ro.pickup_type || 'customer') === 'customer' ? 'bg-indigo-600 text-white' : 'bg-[#2a2d3e] text-slate-400 hover:bg-[#3a3d4e]'} ${!canEditRo ? 'cursor-default' : ''}`}
+                  className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors ${(ro.pickup_type || 'customer') === 'customer' ? 'bg-brand text-on-brand' : 'bg-raised text-muted hover:bg-raised'} ${!canEditRo ? 'cursor-default' : ''}`}
                 >
                   Customer
                 </button>
@@ -1384,7 +1419,7 @@ export default function RODetail() {
                     await api.patch(`/ros/${id}`, { pickup_type: 'insurance' })
                     load()
                   }}
-                  className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors ${ro.pickup_type === 'insurance' ? 'bg-blue-600 text-white' : 'bg-[#2a2d3e] text-slate-400 hover:bg-[#3a3d4e]'} ${!canEditRo ? 'cursor-default' : ''}`}
+                  className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors ${ro.pickup_type === 'insurance' ? 'bg-brand text-on-brand' : 'bg-raised text-muted hover:bg-raised'} ${!canEditRo ? 'cursor-default' : ''}`}
                 >
                   Insurance
                 </button>
@@ -1394,15 +1429,15 @@ export default function RODetail() {
         </div>
       )}
 
-      <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 flex items-center justify-between gap-3 flex-wrap">
+      <div className="bg-panel border border-line-2 rounded-instrument p-4 flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide">Digital Inspection</h2>
+          <h2 className="text-xs font-bold text-muted uppercase tracking-wide">Digital Inspection</h2>
           <div className="mt-1 flex items-center gap-2">
             <span className={`text-xs font-semibold px-2 py-1 rounded-full border ${inspectionStatusMeta.cls}`}>
               {inspectionStatusMeta.label}
             </span>
             {latestInspection?.status && (
-              <span className="text-xs text-slate-500">
+              <span className="text-xs text-faint">
                 Last updated {new Date(latestInspection.updated_at).toLocaleString()}
               </span>
             )}
@@ -1412,7 +1447,7 @@ export default function RODetail() {
           {latestInspection && (
             <button
               onClick={() => navigate(`/ros/${id}/inspection/${latestInspection.id}`)}
-              className="text-xs bg-[#2a2d3e] hover:bg-[#3a3d4e] text-slate-200 font-medium px-3 py-1.5 rounded-lg transition-colors"
+              className="text-xs bg-raised hover:bg-raised text-ink font-medium px-3 py-1.5 rounded-lg transition-colors"
             >
               Open Latest
             </button>
@@ -1420,7 +1455,7 @@ export default function RODetail() {
           <button
             onClick={startInspection}
             disabled={creatingInspection}
-            className="text-xs bg-brand hover:bg-brand-lit text-white font-semibold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60"
+            className="text-xs bg-brand hover:bg-brand-lit text-on-brand font-semibold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60"
           >
             {creatingInspection ? 'Starting...' : 'Start Inspection'}
           </button>
@@ -1428,20 +1463,20 @@ export default function RODetail() {
       </div>
 
       {canViewPreDropoff && (
-        <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
+        <div className="bg-panel rounded-instrument border border-line-2 p-4">
           <button
             type="button"
             onClick={() => setPreDropoffExpanded((v) => !v)}
             className="w-full flex items-center justify-between"
           >
-            <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
+            <h2 className="text-xs font-bold text-muted uppercase tracking-wide flex items-center gap-1.5">
               <Camera size={12} /> Pre-Dropoff Condition
             </h2>
-            <span className="text-slate-500">
+            <span className="text-faint">
               {preDropoffExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
             </span>
           </button>
-          <p className="text-xs text-slate-500 mt-2">
+          <p className="text-xs text-faint mt-2">
             These photos document vehicle condition before work begins
           </p>
 
@@ -1451,8 +1486,8 @@ export default function RODetail() {
                 <label
                   className={`inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg cursor-pointer transition-colors ${
                     preDropoffUploading
-                      ? 'bg-indigo-800 text-indigo-300 opacity-50 pointer-events-none'
-                      : 'bg-indigo-600 hover:bg-indigo-500 text-white'
+                      ? 'bg-brand-deep text-brand opacity-50 pointer-events-none'
+                      : 'bg-brand hover:bg-brand-lit text-on-brand'
                   }`}
                 >
                   <Camera size={12} /> {preDropoffUploading ? preDropoffUploadProgress : 'Upload Pre-Dropoff Photos'}
@@ -1469,13 +1504,13 @@ export default function RODetail() {
               )}
 
               {preDropoffUploadError && (
-                <p role="alert" className="rounded-lg border border-red-800/50 bg-red-950/30 px-3 py-2 text-xs text-red-300">
+                <p role="alert" className="rounded-lg border border-crit/50 bg-crit/15 px-3 py-2 text-xs text-crit">
                   {preDropoffUploadError}
                 </p>
               )}
 
               {preDropoffPhotos.length === 0 ? (
-                <p className="text-sm text-slate-500">No pre-dropoff photos added yet.</p>
+                <p className="text-sm text-faint">No pre-dropoff photos added yet.</p>
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   {preDropoffPhotos.map((photo) => {
@@ -1495,7 +1530,7 @@ export default function RODetail() {
                             setPreDropoffLightbox(photo)
                           }
                         }}
-                        className="relative group rounded-xl overflow-hidden border border-[#2a2d3e] aspect-video bg-[#0f1117] cursor-zoom-in"
+                        className="relative group rounded-instrument overflow-hidden border border-line-2 aspect-video bg-void cursor-zoom-in"
                       >
                         {photoUrl && !photoFailed ? (
                           <img
@@ -1505,13 +1540,13 @@ export default function RODetail() {
                             onError={() => setFailedPreDropoffPhotoIds((prev) => ({ ...prev, [photo.id]: true }))}
                           />
                         ) : (
-                          <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-slate-500">
-                            <Camera size={20} className="text-slate-600" />
+                          <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-faint">
+                            <Camera size={20} className="text-faint" />
                             <span className="text-xs font-medium">Photo unavailable</span>
                           </div>
                         )}
-                        <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/80">
-                          <span className="text-[9px] px-1.5 py-0.5 rounded-full border font-semibold text-cyan-300 bg-cyan-900/30 border-cyan-700/40">
+                        <div className="absolute bottom-0 left-0 right-0 p-2 bg-black/75">
+                          <span className="text-[9px] px-1.5 py-0.5 rounded-full border font-semibold text-brand bg-brand/10 border-brand/40">
                             Pre-Dropoff
                           </span>
                         </div>
@@ -1522,7 +1557,7 @@ export default function RODetail() {
                               event.stopPropagation()
                               deletePreDropoffPhoto(photo.id)
                             }}
-                            className="absolute right-1.5 top-1.5 z-20 rounded-md border border-red-500/40 bg-black/75 p-1.5 text-red-300 hover:bg-red-500/20 hover:text-red-200"
+                            className="absolute right-1.5 top-1.5 z-20 rounded-md border border-crit/40 bg-black/75 p-1.5 text-crit hover:bg-crit/20 hover:text-crit"
                             aria-label="Delete pre-dropoff photo"
                             title="Delete photo"
                           >
@@ -1553,130 +1588,130 @@ export default function RODetail() {
 
       <div className="grid md:grid-cols-2 gap-4">
         {/* Vehicle Info */}
-        <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
-          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3 flex items-center gap-1.5"><Car size={12} /> {t('common.vehicle')}</h2>
+        <div className="bg-panel rounded-instrument border border-line-2 p-4">
+          <h2 className="text-xs font-bold text-muted uppercase tracking-wide mb-3 flex items-center gap-1.5"><Car size={12} /> {t('common.vehicle')}</h2>
           <div className="space-y-2">
             <div className="flex justify-between items-start gap-3 text-xs">
-              <span className="text-slate-500">{t('common.year')}/{t('common.make')}/{t('common.model')}</span>
+              <span className="text-faint">{t('common.year')}/{t('common.make')}/{t('common.model')}</span>
               {editing ? (
                 <div className="grid grid-cols-3 gap-1.5 w-[320px] max-w-full">
                   <input
                     value={form.vehicle_year ?? ''}
                     onChange={e => set('vehicle_year', e.target.value)}
-                    className="bg-[#0f1117] border border-[#2a2d3e] rounded px-2 py-0.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+                    className="bg-void border border-line-2 rounded px-2 py-0.5 text-xs text-ink focus:outline-none focus:border-brand"
                     placeholder="Year"
                   />
                   <input
                     value={form.vehicle_make ?? ''}
                     onChange={e => set('vehicle_make', e.target.value)}
-                    className="bg-[#0f1117] border border-[#2a2d3e] rounded px-2 py-0.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+                    className="bg-void border border-line-2 rounded px-2 py-0.5 text-xs text-ink focus:outline-none focus:border-brand"
                     placeholder="Make"
                   />
                   <input
                     value={form.vehicle_model ?? ''}
                     onChange={e => set('vehicle_model', e.target.value)}
-                    className="bg-[#0f1117] border border-[#2a2d3e] rounded px-2 py-0.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+                    className="bg-void border border-line-2 rounded px-2 py-0.5 text-xs text-ink focus:outline-none focus:border-brand"
                     placeholder="Model"
                   />
                 </div>
               ) : inlineEdit.field === 'vehicle_ymm' ? (
                 <div className="flex items-center gap-1">
-                  <input autoFocus value={inlineEdit.value} onChange={e => setInlineEdit(v => ({ ...v, value: e.target.value }))} onKeyDown={e => { if (e.key === 'Enter') { const parts = inlineEdit.value.trim().split(/\s+/); api.patch(`/ros/${id}`, { vehicle_year: parts[0]||'', vehicle_make: parts[1]||'', vehicle_model: parts.slice(2).join(' ')||'' }).then(r => { setRo(r.data); setInlineEdit({ field: null, value: '' }) }).catch(err => { console.error('[RODetail] inline save:', err.message); setInlineEdit({ field: null, value: '' }) }) } else if (e.key === 'Escape') setInlineEdit({ field: null, value: '' }) }} className="bg-[#0f1117] border border-[#2a2d3e] rounded px-2 py-0.5 text-xs text-white focus:outline-none focus:border-indigo-500 w-48" placeholder="Year Make Model" />
-                  <button type="button" onClick={() => { const parts = inlineEdit.value.trim().split(/\s+/); api.patch(`/ros/${id}`, { vehicle_year: parts[0]||'', vehicle_make: parts[1]||'', vehicle_model: parts.slice(2).join(' ')||'' }).then(r => { setRo(r.data); setInlineEdit({ field: null, value: '' }) }).catch(err => { console.error('[RODetail] inline save:', err.message); setInlineEdit({ field: null, value: '' }) }) }} className="text-emerald-400 hover:text-emerald-300"><CheckCircle size={13} /></button>
-                  <button type="button" onClick={() => setInlineEdit({ field: null, value: '' })} className="text-slate-500 hover:text-red-400"><X size={13} /></button>
+                  <input autoFocus value={inlineEdit.value} onChange={e => setInlineEdit(v => ({ ...v, value: e.target.value }))} onKeyDown={e => { if (e.key === 'Enter') { const parts = inlineEdit.value.trim().split(/\s+/); api.patch(`/ros/${id}`, { vehicle_year: parts[0]||'', vehicle_make: parts[1]||'', vehicle_model: parts.slice(2).join(' ')||'' }).then(r => { setRo(r.data); setInlineEdit({ field: null, value: '' }) }).catch(err => { console.error('[RODetail] inline save:', err.message); setInlineEdit({ field: null, value: '' }) }) } else if (e.key === 'Escape') setInlineEdit({ field: null, value: '' }) }} className="bg-void border border-line-2 rounded px-2 py-0.5 text-xs text-ink focus:outline-none focus:border-brand w-48" placeholder="Year Make Model" />
+                  <button type="button" onClick={() => { const parts = inlineEdit.value.trim().split(/\s+/); api.patch(`/ros/${id}`, { vehicle_year: parts[0]||'', vehicle_make: parts[1]||'', vehicle_model: parts.slice(2).join(' ')||'' }).then(r => { setRo(r.data); setInlineEdit({ field: null, value: '' }) }).catch(err => { console.error('[RODetail] inline save:', err.message); setInlineEdit({ field: null, value: '' }) }) }} className="text-good hover:text-good"><CheckCircle size={13} /></button>
+                  <button type="button" onClick={() => setInlineEdit({ field: null, value: '' })} className="text-faint hover:text-crit"><X size={13} /></button>
                 </div>
               ) : (
-                <span className="text-white font-medium capitalize flex items-center gap-1.5">
+                <span className="text-ink font-medium capitalize flex items-center gap-1.5">
                   {[ro.vehicle?.year, ro.vehicle?.make, ro.vehicle?.model].filter(Boolean).join(' ') || '—'}
-                  {canEditRo && !editing && <button type="button" onClick={() => setInlineEdit({ field: 'vehicle_ymm', value: [ro.vehicle?.year, ro.vehicle?.make, ro.vehicle?.model].filter(Boolean).join(' ') })} className="text-slate-600 hover:text-slate-300 ml-0.5"><Pencil size={10} /></button>}
+                  {canEditRo && !editing && <button type="button" onClick={() => setInlineEdit({ field: 'vehicle_ymm', value: [ro.vehicle?.year, ro.vehicle?.make, ro.vehicle?.model].filter(Boolean).join(' ') })} className="text-faint hover:text-ink ml-0.5"><Pencil size={10} /></button>}
                 </span>
               )}
             </div>
             <div className="flex justify-between text-xs gap-3">
-              <span className="text-slate-500">Color</span>
+              <span className="text-faint">Color</span>
               {editing
-                ? <input value={form.vehicle_color || ''} onChange={e => set('vehicle_color', e.target.value)} className="bg-[#0f1117] border border-[#2a2d3e] rounded px-2 py-0.5 text-xs text-white focus:outline-none focus:border-indigo-500 w-52 max-w-full" placeholder="Color" />
+                ? <input value={form.vehicle_color || ''} onChange={e => set('vehicle_color', e.target.value)} className="bg-void border border-line-2 rounded px-2 py-0.5 text-xs text-ink focus:outline-none focus:border-brand w-52 max-w-full" placeholder="Color" />
                 : inlineEdit.field === 'vehicle_color' ? (
                   <div className="flex items-center gap-1">
-                    <input autoFocus value={inlineEdit.value} onChange={e => setInlineEdit(v => ({ ...v, value: e.target.value }))} onKeyDown={e => { if (e.key === 'Enter') saveInlineField('vehicle_color', inlineEdit.value); else if (e.key === 'Escape') setInlineEdit({ field: null, value: '' }) }} className="bg-[#0f1117] border border-[#2a2d3e] rounded px-2 py-0.5 text-xs text-white focus:outline-none focus:border-indigo-500 w-40" placeholder="Color" />
-                    <button type="button" onClick={() => saveInlineField('vehicle_color', inlineEdit.value)} className="text-emerald-400 hover:text-emerald-300"><CheckCircle size={13} /></button>
-                    <button type="button" onClick={() => setInlineEdit({ field: null, value: '' })} className="text-slate-500 hover:text-red-400"><X size={13} /></button>
+                    <input autoFocus value={inlineEdit.value} onChange={e => setInlineEdit(v => ({ ...v, value: e.target.value }))} onKeyDown={e => { if (e.key === 'Enter') saveInlineField('vehicle_color', inlineEdit.value); else if (e.key === 'Escape') setInlineEdit({ field: null, value: '' }) }} className="bg-void border border-line-2 rounded px-2 py-0.5 text-xs text-ink focus:outline-none focus:border-brand w-40" placeholder="Color" />
+                    <button type="button" onClick={() => saveInlineField('vehicle_color', inlineEdit.value)} className="text-good hover:text-good"><CheckCircle size={13} /></button>
+                    <button type="button" onClick={() => setInlineEdit({ field: null, value: '' })} className="text-faint hover:text-crit"><X size={13} /></button>
                   </div>
                 ) : (
-                  <span className="text-white font-medium capitalize flex items-center gap-1.5">
+                  <span className="text-ink font-medium capitalize flex items-center gap-1.5">
                     {ro.vehicle?.color || '—'}
-                    {canEditRo && !editing && <button type="button" onClick={() => setInlineEdit({ field: 'vehicle_color', value: ro.vehicle?.color || '' })} className="text-slate-600 hover:text-slate-300 ml-0.5"><Pencil size={10} /></button>}
+                    {canEditRo && !editing && <button type="button" onClick={() => setInlineEdit({ field: 'vehicle_color', value: ro.vehicle?.color || '' })} className="text-faint hover:text-ink ml-0.5"><Pencil size={10} /></button>}
                   </span>
                 )
               }
             </div>
             <div className="flex justify-between text-xs gap-3">
-              <span className="text-slate-500">Plate</span>
+              <span className="text-faint">Plate</span>
               {editing
-                ? <input value={form.vehicle_plate || ''} onChange={e => set('vehicle_plate', e.target.value)} className="bg-[#0f1117] border border-[#2a2d3e] rounded px-2 py-0.5 text-xs text-white focus:outline-none focus:border-indigo-500 w-52 max-w-full" placeholder="Plate" />
+                ? <input value={form.vehicle_plate || ''} onChange={e => set('vehicle_plate', e.target.value)} className="bg-void border border-line-2 rounded px-2 py-0.5 text-xs text-ink focus:outline-none focus:border-brand w-52 max-w-full" placeholder="Plate" />
                 : inlineEdit.field === 'vehicle_plate' ? (
                   <div className="flex items-center gap-1">
-                    <input autoFocus value={inlineEdit.value} onChange={e => setInlineEdit(v => ({ ...v, value: e.target.value }))} onKeyDown={e => { if (e.key === 'Enter') saveInlineField('vehicle_plate', inlineEdit.value); else if (e.key === 'Escape') setInlineEdit({ field: null, value: '' }) }} className="bg-[#0f1117] border border-[#2a2d3e] rounded px-2 py-0.5 text-xs text-white focus:outline-none focus:border-indigo-500 w-40" placeholder="Plate" />
-                    <button type="button" onClick={() => saveInlineField('vehicle_plate', inlineEdit.value)} className="text-emerald-400 hover:text-emerald-300"><CheckCircle size={13} /></button>
-                    <button type="button" onClick={() => setInlineEdit({ field: null, value: '' })} className="text-slate-500 hover:text-red-400"><X size={13} /></button>
+                    <input autoFocus value={inlineEdit.value} onChange={e => setInlineEdit(v => ({ ...v, value: e.target.value }))} onKeyDown={e => { if (e.key === 'Enter') saveInlineField('vehicle_plate', inlineEdit.value); else if (e.key === 'Escape') setInlineEdit({ field: null, value: '' }) }} className="bg-void border border-line-2 rounded px-2 py-0.5 text-xs text-ink focus:outline-none focus:border-brand w-40" placeholder="Plate" />
+                    <button type="button" onClick={() => saveInlineField('vehicle_plate', inlineEdit.value)} className="text-good hover:text-good"><CheckCircle size={13} /></button>
+                    <button type="button" onClick={() => setInlineEdit({ field: null, value: '' })} className="text-faint hover:text-crit"><X size={13} /></button>
                   </div>
                 ) : (
-                  <span className="text-white font-medium flex items-center gap-1.5">
+                  <span className="text-ink font-medium flex items-center gap-1.5">
                     {ro.vehicle?.plate || '—'}
-                    {canEditRo && !editing && <button type="button" onClick={() => setInlineEdit({ field: 'vehicle_plate', value: ro.vehicle?.plate || '' })} className="text-slate-600 hover:text-slate-300 ml-0.5"><Pencil size={10} /></button>}
+                    {canEditRo && !editing && <button type="button" onClick={() => setInlineEdit({ field: 'vehicle_plate', value: ro.vehicle?.plate || '' })} className="text-faint hover:text-ink ml-0.5"><Pencil size={10} /></button>}
                   </span>
                 )
               }
             </div>
             <div className="flex justify-between text-xs gap-3">
-              <span className="text-slate-500">Mileage</span>
+              <span className="text-faint">Mileage</span>
               {editing
-                ? <input type="number" min="0" value={form.vehicle_mileage ?? ''} onChange={e => set('vehicle_mileage', e.target.value)} className="bg-[#0f1117] border border-[#2a2d3e] rounded px-2 py-0.5 text-xs text-white focus:outline-none focus:border-indigo-500 w-40 max-w-full" placeholder="Mileage" />
+                ? <input type="number" min="0" value={form.vehicle_mileage ?? ''} onChange={e => set('vehicle_mileage', e.target.value)} className="bg-void border border-line-2 rounded px-2 py-0.5 text-xs text-ink focus:outline-none focus:border-brand w-40 max-w-full" placeholder="Mileage" />
                 : inlineEdit.field === 'vehicle_mileage' ? (
                   <div className="flex items-center gap-1">
-                    <input autoFocus type="number" min="0" value={inlineEdit.value} onChange={e => setInlineEdit(v => ({ ...v, value: e.target.value }))} onKeyDown={e => { if (e.key === 'Enter') saveInlineField('vehicle_mileage', inlineEdit.value); else if (e.key === 'Escape') setInlineEdit({ field: null, value: '' }) }} className="bg-[#0f1117] border border-[#2a2d3e] rounded px-2 py-0.5 text-xs text-white focus:outline-none focus:border-indigo-500 w-32" placeholder="Mileage" />
-                    <button type="button" onClick={() => saveInlineField('vehicle_mileage', inlineEdit.value)} className="text-emerald-400 hover:text-emerald-300"><CheckCircle size={13} /></button>
-                    <button type="button" onClick={() => setInlineEdit({ field: null, value: '' })} className="text-slate-500 hover:text-red-400"><X size={13} /></button>
+                    <input autoFocus type="number" min="0" value={inlineEdit.value} onChange={e => setInlineEdit(v => ({ ...v, value: e.target.value }))} onKeyDown={e => { if (e.key === 'Enter') saveInlineField('vehicle_mileage', inlineEdit.value); else if (e.key === 'Escape') setInlineEdit({ field: null, value: '' }) }} className="bg-void border border-line-2 rounded px-2 py-0.5 text-xs text-ink focus:outline-none focus:border-brand w-32" placeholder="Mileage" />
+                    <button type="button" onClick={() => saveInlineField('vehicle_mileage', inlineEdit.value)} className="text-good hover:text-good"><CheckCircle size={13} /></button>
+                    <button type="button" onClick={() => setInlineEdit({ field: null, value: '' })} className="text-faint hover:text-crit"><X size={13} /></button>
                   </div>
                 ) : (
-                  <span className="text-white font-medium flex items-center gap-1.5">
+                  <span className="text-ink font-medium flex items-center gap-1.5">
                     {ro.vehicle?.mileage ? Number(ro.vehicle.mileage).toLocaleString() : '—'}
-                    {canEditRo && !editing && <button type="button" onClick={() => setInlineEdit({ field: 'vehicle_mileage', value: ro.vehicle?.mileage ?? '' })} className="text-slate-600 hover:text-slate-300 ml-0.5"><Pencil size={10} /></button>}
+                    {canEditRo && !editing && <button type="button" onClick={() => setInlineEdit({ field: 'vehicle_mileage', value: ro.vehicle?.mileage ?? '' })} className="text-faint hover:text-ink ml-0.5"><Pencil size={10} /></button>}
                   </span>
                 )
               }
             </div>
             <div className="flex justify-between text-xs">
-              <span className="text-slate-500">{t('common.vin')}</span>
+              <span className="text-faint">{t('common.vin')}</span>
               {editing
-                ? <input value={form.vin || ''} onChange={e => set('vin', e.target.value)} className="bg-[#0f1117] border border-[#2a2d3e] rounded px-2 py-0.5 text-xs text-white focus:outline-none focus:border-indigo-500 w-52 max-w-full" placeholder="VIN" />
+                ? <input value={form.vin || ''} onChange={e => set('vin', e.target.value)} className="bg-void border border-line-2 rounded px-2 py-0.5 text-xs text-ink focus:outline-none focus:border-brand w-52 max-w-full" placeholder="VIN" />
                 : inlineEdit.field === 'vehicle_vin' ? (
                   <div className="flex items-center gap-1">
-                    <input autoFocus value={inlineEdit.value} onChange={e => setInlineEdit(v => ({ ...v, value: e.target.value }))} onKeyDown={e => { if (e.key === 'Enter') saveInlineField('vin', inlineEdit.value); else if (e.key === 'Escape') setInlineEdit({ field: null, value: '' }) }} className="bg-[#0f1117] border border-[#2a2d3e] rounded px-2 py-0.5 text-xs text-white focus:outline-none focus:border-indigo-500 w-52" placeholder="VIN" />
-                    <button type="button" onClick={() => saveInlineField('vin', inlineEdit.value)} className="text-emerald-400 hover:text-emerald-300"><CheckCircle size={13} /></button>
-                    <button type="button" onClick={() => setInlineEdit({ field: null, value: '' })} className="text-slate-500 hover:text-red-400"><X size={13} /></button>
+                    <input autoFocus value={inlineEdit.value} onChange={e => setInlineEdit(v => ({ ...v, value: e.target.value }))} onKeyDown={e => { if (e.key === 'Enter') saveInlineField('vin', inlineEdit.value); else if (e.key === 'Escape') setInlineEdit({ field: null, value: '' }) }} className="bg-void border border-line-2 rounded px-2 py-0.5 text-xs text-ink focus:outline-none focus:border-brand w-52" placeholder="VIN" />
+                    <button type="button" onClick={() => saveInlineField('vin', inlineEdit.value)} className="text-good hover:text-good"><CheckCircle size={13} /></button>
+                    <button type="button" onClick={() => setInlineEdit({ field: null, value: '' })} className="text-faint hover:text-crit"><X size={13} /></button>
                   </div>
                 ) : (
-                  <span className="text-white font-medium flex items-center gap-1.5">
+                  <span className="text-ink font-medium flex items-center gap-1.5">
                     {ro.vehicle?.vin || '—'}
-                    {canEditRo && !editing && <button type="button" onClick={() => setInlineEdit({ field: 'vehicle_vin', value: ro.vehicle?.vin || '' })} className="text-slate-600 hover:text-slate-300 ml-0.5"><Pencil size={10} /></button>}
+                    {canEditRo && !editing && <button type="button" onClick={() => setInlineEdit({ field: 'vehicle_vin', value: ro.vehicle?.vin || '' })} className="text-faint hover:text-ink ml-0.5"><Pencil size={10} /></button>}
                   </span>
                 )
               }
             </div>
             <div className="flex justify-between text-xs">
-              <span className="text-slate-500">Job Type</span>
-              <span className="text-white font-medium capitalize">{ro.job_type || '—'}</span>
+              <span className="text-faint">Job Type</span>
+              <span className="text-ink font-medium capitalize">{ro.job_type || '—'}</span>
             </div>
             <div className="flex justify-between text-xs">
-              <span className="text-slate-500">Intake Date</span>
-              <span className="text-white font-medium capitalize">{ro.intake_date || '—'}</span>
+              <span className="text-faint">Intake Date</span>
+              <span className="text-ink font-medium capitalize">{ro.intake_date || '—'}</span>
             </div>
             <div className="flex justify-between text-xs">
-              <span className="text-slate-500">{t('portal.estimatedCompletion')}</span>
+              <span className="text-faint">{t('portal.estimatedCompletion')}</span>
               {editing
-                ? <input type="date" value={form.estimated_delivery || ''} onChange={e => set('estimated_delivery', e.target.value)} className="bg-[#0f1117] border border-[#2a2d3e] rounded px-2 py-0.5 text-xs text-white focus:outline-none focus:border-indigo-500" />
-                : <span className="text-white font-medium">{ro.estimated_delivery || '—'}</span>
+                ? <input type="date" value={form.estimated_delivery || ''} onChange={e => set('estimated_delivery', e.target.value)} className="bg-void border border-line-2 rounded px-2 py-0.5 text-xs text-ink focus:outline-none focus:border-brand" />
+                : <span className="text-ink font-medium">{ro.estimated_delivery || '—'}</span>
               }
             </div>
             {!ro.estimated_delivery && (
@@ -1691,47 +1726,47 @@ export default function RODetail() {
         </div>
 
         {/* Vehicle History */}
-        <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
+        <div className="bg-panel rounded-instrument border border-line-2 p-4">
           <button
             type="button"
             onClick={() => setVehicleHistoryExpanded((v) => !v)}
             className="w-full flex items-center justify-between"
           >
-            <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
+            <h2 className="text-xs font-bold text-muted uppercase tracking-wide flex items-center gap-1.5">
               <Car size={12} /> Vehicle History
             </h2>
-            <span className="text-slate-500">
+            <span className="text-faint">
               {vehicleHistoryExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
             </span>
           </button>
-          <p className="text-xs text-slate-500 mt-2">
+          <p className="text-xs text-faint mt-2">
             Last 10 visits for {ro.customer?.name || 'this customer'}
           </p>
 
           {vehicleHistoryExpanded && (
             <div className="mt-3">
               {vehicleHistoryLoading ? (
-                <p className="text-sm text-slate-500">Loading history…</p>
+                <p className="text-sm text-faint">Loading history…</p>
               ) : vehicleHistoryError ? (
-                <p className="text-sm text-red-300">{vehicleHistoryError}</p>
+                <p className="text-sm text-crit">{vehicleHistoryError}</p>
               ) : vehicleHistory.length === 0 ? (
-                <p className="text-sm text-slate-500">No prior visits found.</p>
+                <p className="text-sm text-faint">No prior visits found.</p>
               ) : (
                 <div className="space-y-2">
                   {vehicleHistory.map((visit) => (
-                    <div key={visit.id} className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3">
+                    <div key={visit.id} className="bg-void border border-line-2 rounded-lg p-3">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
                           <button
                             onClick={() => navigate(`/ros/${visit.id}`)}
-                            className="text-sm font-semibold text-white hover:text-indigo-300"
+                            className="text-sm font-semibold text-ink hover:text-brand"
                           >
                             {visit.ro_number || 'RO'}
                           </button>
-                          <p className="text-[11px] text-slate-500 truncate">
+                          <p className="text-[11px] text-faint truncate">
                             {[visit.year, visit.make, visit.model].filter(Boolean).join(' ') || 'Vehicle not set'}
                           </p>
-                          <p className="text-[11px] text-slate-500">
+                          <p className="text-[11px] text-faint">
                             Opened: {visit.created_at ? new Date(visit.created_at).toLocaleDateString() : '—'}
                             {visit.actual_delivery ? ` · Closed: ${new Date(visit.actual_delivery).toLocaleDateString()}` : ''}
                           </p>
@@ -1747,8 +1782,8 @@ export default function RODetail() {
         </div>
 
         {/* Damage Diagram */}
-        <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4 col-span-full">
-          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-4 flex items-center gap-1.5">
+        <div className="bg-panel rounded-instrument border border-line-2 p-4 col-span-full">
+          <h2 className="text-xs font-bold text-muted uppercase tracking-wide mb-4 flex items-center gap-1.5">
             <Car size={12} /> Damage Diagram
           </h2>
           <div className="overflow-auto w-full">
@@ -1773,8 +1808,8 @@ export default function RODetail() {
 
         {/* Profit Breakdown */}
         {userIsAdmin && (
-          <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4 col-span-full">
-            <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3 flex items-center gap-1.5"><DollarSign size={12} /> Profit (NY Market)</h2>
+          <div className="bg-panel rounded-instrument border border-line-2 p-4 col-span-full">
+            <h2 className="text-xs font-bold text-muted uppercase tracking-wide mb-3 flex items-center gap-1.5"><DollarSign size={12} /> Profit (NY Market)</h2>
             {editing ? (
               <div className="space-y-2">
                 {[
@@ -1789,7 +1824,7 @@ export default function RODetail() {
                   ['Goodwill Repair ($)', 'goodwill_repair_cost'],
                 ].map(([label, key]) => (
                   <div key={key}>
-                    <label className="text-[10px] text-slate-500">{label}</label>
+                    <label className="text-[10px] text-faint">{label}</label>
                     <input type="number" className={inp + ' mt-0.5'} value={form[key] || ''} onChange={e => set(key, e.target.value)} placeholder="0" />
                   </div>
                 ))}
@@ -1806,7 +1841,7 @@ export default function RODetail() {
                   ['Net Estimate', `$${Math.max(0, parseFloat(ro.total||0) - parseFloat(ro.deductible||0)).toFixed(2)}`],
                 ].map(([k,v]) => (
                   <div key={k} className="flex justify-between text-xs">
-                    <span className="text-slate-500">{k}</span><span className="text-white">{v}</span>
+                    <span className="text-faint">{k}</span><span className="font-mono tabular-nums text-gold">{v}</span>
                   </div>
                 ))}
                 {/* Editable profit adjustment fields */}
@@ -1819,7 +1854,7 @@ export default function RODetail() {
                 ].map(([label, fieldKey, val]) => (
                   parseFloat(val || 0) > 0 || inlineEdit.field === fieldKey ? (
                     <div key={fieldKey} className="flex justify-between items-center text-xs">
-                      <span className={fieldKey === 'total' ? 'text-slate-300' : 'text-red-400'}>{label}</span>
+                      <span className={fieldKey === 'total' ? 'text-ink' : 'text-crit'}>{label}</span>
                       {inlineEdit.field === fieldKey ? (
                         <span className="flex items-center gap-1">
                           <input
@@ -1831,27 +1866,27 @@ export default function RODetail() {
                             onChange={e => setInlineEdit(v => ({ ...v, value: e.target.value }))}
                             onKeyDown={e => { if (e.key === 'Enter') saveInlineField(fieldKey, parseFloat(inlineEdit.value) || 0); else if (e.key === 'Escape') setInlineEdit({ field: null, value: '' }) }}
                             onBlur={() => saveInlineField(fieldKey, parseFloat(inlineEdit.value) || 0)}
-                            className="bg-[#0f1117] border border-[#2a2d3e] rounded px-2 py-0.5 text-xs text-white focus:outline-none focus:border-[#EAB308] w-24"
+                            className="w-24 rounded border border-line-2 bg-void px-2 py-0.5 font-mono text-xs tabular-nums text-ink focus:border-brand focus:outline-none"
                           />
                         </span>
                       ) : (
                         <span className="flex items-center gap-1">
-                          <span className={fieldKey === 'total' ? 'text-white' : 'text-red-400'}>{fieldKey === 'total' ? '' : '-'}${parseFloat(val || 0).toFixed(2)}</span>
-                          {userIsAdmin && <button type="button" onClick={() => setInlineEdit({ field: fieldKey, value: String(parseFloat(val || 0)) })} className="text-slate-600 hover:text-slate-300"><Pencil size={10} /></button>}
+                          <span className={`font-mono tabular-nums ${fieldKey === 'total' ? 'text-gold' : 'text-crit'}`}>{fieldKey === 'total' ? '' : '-'}${parseFloat(val || 0).toFixed(2)}</span>
+                          {userIsAdmin && <button type="button" onClick={() => setInlineEdit({ field: fieldKey, value: String(parseFloat(val || 0)) })} className="text-faint hover:text-ink"><Pencil size={10} /></button>}
                         </span>
                       )}
                     </div>
                   ) : (
                     userIsAdmin ? (
                       <div key={fieldKey} className="flex justify-between items-center text-xs">
-                        <span className="text-slate-600">{label}</span>
-                        <button type="button" onClick={() => setInlineEdit({ field: fieldKey, value: '0' })} className="text-slate-600 hover:text-slate-400 text-[10px]">+ set</button>
+                        <span className="text-faint">{label}</span>
+                        <button type="button" onClick={() => setInlineEdit({ field: fieldKey, value: '0' })} className="text-faint hover:text-muted text-[10px]">+ set</button>
                       </div>
                     ) : null
                   )
                 ))}
-                <div className="border-t border-[#2a2d3e] pt-2 flex justify-between items-center text-sm font-bold">
-                  <span className="text-emerald-400">True Profit</span>
+                <div className="border-t border-line-2 pt-2 flex justify-between items-center text-sm font-bold">
+                  <span className="text-gold">True Profit</span>
                   {inlineEdit.field === 'true_profit' ? (
                     <span className="flex items-center gap-1">
                       <input
@@ -1862,13 +1897,13 @@ export default function RODetail() {
                         onChange={e => setInlineEdit(v => ({ ...v, value: e.target.value }))}
                         onKeyDown={e => { if (e.key === 'Enter') saveInlineField('true_profit', parseFloat(inlineEdit.value) || 0); else if (e.key === 'Escape') setInlineEdit({ field: null, value: '' }) }}
                         onBlur={() => saveInlineField('true_profit', parseFloat(inlineEdit.value) || 0)}
-                        className="bg-[#0f1117] border border-emerald-700/50 rounded px-2 py-0.5 text-sm text-emerald-300 focus:outline-none focus:border-emerald-500 w-28"
+                        className="w-28 rounded border border-gold/50 bg-void px-2 py-0.5 font-mono text-sm tabular-nums text-gold focus:border-brand focus:outline-none"
                       />
                     </span>
                   ) : (
                     <span className="flex items-center gap-1">
-                      <span className="text-emerald-400">${parseFloat(ro.true_profit||0).toFixed(2)}</span>
-                      {userIsAdmin && <button type="button" onClick={() => setInlineEdit({ field: 'true_profit', value: String(parseFloat(ro.true_profit || 0)) })} className="text-slate-600 hover:text-slate-300"><Pencil size={10} /></button>}
+                      <span className="font-mono tabular-nums text-gold">${parseFloat(ro.true_profit||0).toFixed(2)}</span>
+                      {userIsAdmin && <button type="button" onClick={() => setInlineEdit({ field: 'true_profit', value: String(parseFloat(ro.true_profit || 0)) })} className="text-faint hover:text-ink"><Pencil size={10} /></button>}
                     </span>
                   )}
                 </div>
@@ -1880,16 +1915,16 @@ export default function RODetail() {
       </div>
 
       {/* Timeline */}
-      <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
-        <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3 flex items-center gap-1.5"><ClipboardList size={12} /> Timeline</h2>
+      <div className="bg-panel rounded-instrument border border-line-2 p-4">
+        <h2 className="text-xs font-bold text-muted uppercase tracking-wide mb-3 flex items-center gap-1.5"><ClipboardList size={12} /> Timeline</h2>
         <div className="space-y-2.5">
           {ro.log?.map((entry, i) => (
             <div key={i} className="flex items-start gap-2.5">
               <div className="w-2 h-2 rounded-full mt-1 flex-shrink-0" style={{background: STATUS_COLORS[entry.to_status]}} />
               <div className="flex-1">
-                <div className="text-xs text-white font-medium">{STATUS_LABELS[entry.to_status]}</div>
-                <div className="text-[10px] text-slate-500">{new Date(entry.created_at).toLocaleString()}</div>
-                {entry.note && <div className="text-[10px] text-slate-400 italic">{entry.note}</div>}
+                <div className="text-xs text-ink font-medium">{STATUS_LABELS[entry.to_status]}</div>
+                <div className="text-[10px] text-faint">{new Date(entry.created_at).toLocaleString()}</div>
+                {entry.note && <div className="text-[10px] text-muted italic">{entry.note}</div>}
               </div>
             </div>
           ))}
@@ -1897,25 +1932,25 @@ export default function RODetail() {
       </div>
 
       {/* Notes */}
-      <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
+      <div className="bg-panel rounded-instrument border border-line-2 p-4">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide">{t('common.notes')}</h2>
-          {savingQuickNote && <span className="text-[10px] text-slate-500">Saving...</span>}
+          <h2 className="text-xs font-bold text-muted uppercase tracking-wide">{t('common.notes')}</h2>
+          {savingQuickNote && <span className="text-[10px] text-faint">Saving...</span>}
         </div>
 
         {noteItems.length === 0 ? (
-          <p className="text-sm text-slate-500 mb-3">No notes yet.</p>
+          <p className="text-sm text-faint mb-3">No notes yet.</p>
         ) : (
           <div className="space-y-2 mb-3">
             {noteItems.map((note, idx) => (
-              <div key={`${idx}-${note.slice(0, 16)}`} className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3 flex items-start justify-between gap-3">
-                <p className="text-sm text-slate-200 whitespace-pre-wrap">{note}</p>
+              <div key={`${idx}-${note.slice(0, 16)}`} className="bg-void border border-line-2 rounded-lg p-3 flex items-start justify-between gap-3">
+                <p className="text-sm text-ink whitespace-pre-wrap">{note}</p>
                 {!userIsAssistant && (
                   <button
                     type="button"
                     onClick={() => removeQuickNote(idx)}
                     disabled={savingQuickNote}
-                    className="text-slate-500 hover:text-red-400 disabled:opacity-50"
+                    className="text-faint hover:text-crit disabled:opacity-50"
                     title="Delete note"
                   >
                     <Trash2 size={13} />
@@ -1938,13 +1973,13 @@ export default function RODetail() {
                 }
               }}
               placeholder="Add a note..."
-              className="flex-1 bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+              className="flex-1 bg-void border border-line-2 rounded-lg px-3 py-2 text-sm text-ink focus:outline-none focus:border-brand"
             />
             <button
               type="button"
               onClick={addQuickNote}
               disabled={savingQuickNote || !quickNoteText.trim()}
-              className="text-xs bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-3 py-2 rounded-lg disabled:opacity-50"
+              className="text-xs bg-brand hover:bg-brand-lit text-on-brand font-semibold px-3 py-2 rounded-lg disabled:opacity-50"
             >
               Add
             </button>
@@ -1956,20 +1991,20 @@ export default function RODetail() {
       )}
 
       {overviewTab === 'customer' && (
-        <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4 space-y-4">
+        <div className="bg-panel rounded-instrument border border-line-2 p-4 space-y-4">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
+              <h2 className="text-xs font-bold text-muted uppercase tracking-wide flex items-center gap-1.5">
                 <User size={12} /> Customer
               </h2>
-              <p className="text-xs text-slate-500 mt-1">Edit customer details without leaving this RO.</p>
+              <p className="text-xs text-faint mt-1">Edit customer details without leaving this RO.</p>
             </div>
             {!userIsAssistant && (
               <button
                 type="button"
                 onClick={saveCustomerInfo}
                 disabled={savingCustomer}
-                className="text-xs bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-3 py-1.5 rounded-lg disabled:opacity-50"
+                className="text-xs bg-brand hover:bg-brand-lit text-on-brand font-semibold px-3 py-1.5 rounded-lg disabled:opacity-50"
               >
                 {savingCustomer ? 'Saving...' : 'Save Customer'}
               </button>
@@ -1977,11 +2012,11 @@ export default function RODetail() {
           </div>
 
           {!ro.customer?.id ? (
-            <p className="text-sm text-amber-300">No customer is linked to this RO yet.</p>
+            <p className="text-sm text-crit">No customer is linked to this RO yet.</p>
           ) : (
             <div className="grid sm:grid-cols-2 gap-3">
               <div className="sm:col-span-2">
-                <label className="text-[11px] text-slate-500 block mb-1">Full Name *</label>
+                <label className="text-[11px] text-faint block mb-1">Full Name *</label>
                 <input
                   className={inp}
                   value={customerForm.name}
@@ -1990,7 +2025,7 @@ export default function RODetail() {
                 />
               </div>
               <div>
-                <label className="text-[11px] text-slate-500 block mb-1">Phone</label>
+                <label className="text-[11px] text-faint block mb-1">Phone</label>
                 <input
                   className={inp}
                   value={customerForm.phone}
@@ -1999,7 +2034,7 @@ export default function RODetail() {
                 />
               </div>
               <div>
-                <label className="text-[11px] text-slate-500 block mb-1">Email</label>
+                <label className="text-[11px] text-faint block mb-1">Email</label>
                 <input
                   type="email"
                   className={inp}
@@ -2009,7 +2044,7 @@ export default function RODetail() {
                 />
               </div>
               <div className="sm:col-span-2">
-                <label className="text-[11px] text-slate-500 block mb-1">Address</label>
+                <label className="text-[11px] text-faint block mb-1">Address</label>
                 <input
                   className={inp}
                   value={customerForm.address}
@@ -2018,7 +2053,7 @@ export default function RODetail() {
                 />
               </div>
               <div>
-                <label className="text-[11px] text-slate-500 block mb-1">Insurance Company</label>
+                <label className="text-[11px] text-faint block mb-1">Insurance Company</label>
                 <input
                   className={inp}
                   value={customerForm.insurance_company}
@@ -2027,7 +2062,7 @@ export default function RODetail() {
                 />
               </div>
               <div>
-                <label className="text-[11px] text-slate-500 block mb-1">Policy Number</label>
+                <label className="text-[11px] text-faint block mb-1">Policy Number</label>
                 <input
                   className={inp}
                   value={customerForm.policy_number}
@@ -2042,29 +2077,29 @@ export default function RODetail() {
 
       {overviewTab === 'insurance' && (
         <>
-      <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-4 space-y-2">
-        <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide">Imported Estimate</h2>
+      <div className="bg-panel border border-line-2 rounded-instrument p-4 space-y-2">
+        <h2 className="text-xs font-bold text-muted uppercase tracking-wide">Imported Estimate</h2>
         {estimateImport.loading ? (
-          <p className="text-sm text-slate-500">Checking imported estimate data...</p>
+          <p className="text-sm text-faint">Checking imported estimate data...</p>
         ) : importedItemsCount > 0 ? (
           <>
-            <p className="text-sm text-slate-200">
+            <p className="text-sm text-ink">
               {importedItemsCount} line item{importedItemsCount !== 1 ? 's' : ''} imported
               {importedLastAt > 0 ? ` · last import ${new Date(importedLastAt).toLocaleString()}` : ''}
             </p>
-            <p className="text-xs text-slate-400">
-              Estimate total in REVV: ${Number(estimateImport.summary?.grand_total || 0).toFixed(2)}
+            <p className="text-xs text-muted">
+              Estimate total in REVV: <span className="font-mono tabular-nums text-gold">${Number(estimateImport.summary?.grand_total || 0).toFixed(2)}</span>
             </p>
           </>
         ) : (
-          <p className="text-sm text-slate-500">No imported estimate items found yet for this RO.</p>
+          <p className="text-sm text-faint">No imported estimate items found yet for this RO.</p>
         )}
-        <p className="text-[11px] text-slate-500">
+        <p className="text-[11px] text-faint">
           REVV currently stores extracted line items from the upload. The original PDF file itself is not yet saved in the RO.
         </p>
         <button
           onClick={() => navigate(`/estimate-builder/${id}`)}
-          className="text-xs bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg"
+          className="text-xs bg-brand hover:bg-brand-lit text-on-brand px-3 py-1.5 rounded-lg"
         >
           Open Estimate Builder
         </button>
@@ -2098,38 +2133,38 @@ export default function RODetail() {
         <ClaimTrackerPanel roId={id} canEdit={!userIsAssistant} />
       )}
 
-      <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-5 space-y-4">
-        <h3 className="font-semibold text-white text-sm flex items-center gap-2">
+      <div className="bg-panel border border-line-2 rounded-instrument p-5 space-y-4">
+        <h3 className="font-semibold text-ink text-sm flex items-center gap-2">
           Insurance Adjustor
         </h3>
         {!claimLink ? (
           <div>
-            <p className="text-xs text-slate-500 mb-3">Generate a secure link to share with the insurance adjustor. They can view the RO details and submit their assessment without creating an account.</p>
-            <button onClick={generateClaimLink} disabled={generatingLink} className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium px-4 py-2 rounded-lg transition-colors disabled:opacity-50">
+            <p className="text-xs text-faint mb-3">Generate a secure link to share with the insurance adjustor. They can view the RO details and submit their assessment without creating an account.</p>
+            <button onClick={generateClaimLink} disabled={generatingLink} className="bg-brand hover:bg-brand-lit text-on-brand text-xs font-medium px-4 py-2 rounded-lg transition-colors disabled:opacity-50">
               {generatingLink ? 'Generating...' : 'Generate Adjustor Link'}
             </button>
           </div>
         ) : claimLink.submitted_at ? (
           <div className="space-y-3">
-            <div className="flex items-center gap-2 text-green-400 text-xs font-medium"><CheckCircle size={14} /> Assessment Received</div>
+            <div className="flex items-center gap-2 text-good text-xs font-medium"><CheckCircle size={14} /> Assessment Received</div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-              <div><span className="text-slate-500">Adjustor</span><p className="text-white">{claimLink.adjustor_name} — {claimLink.adjustor_company}</p></div>
-              <div><span className="text-slate-500">Submitted</span><p className="text-white">{new Date(claimLink.submitted_at).toLocaleDateString()}</p></div>
-              <div><span className="text-slate-500">Approved Labor</span><p className="text-white">${(claimLink.approved_labor||0).toLocaleString()}</p></div>
-              <div><span className="text-slate-500">Approved Parts</span><p className="text-white">${(claimLink.approved_parts||0).toLocaleString()}</p></div>
-              {claimLink.supplement_amount > 0 && <div><span className="text-slate-500">Supplement</span><p className="text-emerald-400 font-medium">${claimLink.supplement_amount.toLocaleString()}</p></div>}
-              {claimLink.adjustor_notes && <div className="col-span-2"><span className="text-slate-500">Notes</span><p className="text-white">{claimLink.adjustor_notes}</p></div>}
+              <div><span className="text-faint">Adjustor</span><p className="text-ink">{claimLink.adjustor_name} — {claimLink.adjustor_company}</p></div>
+              <div><span className="text-faint">Submitted</span><p className="text-ink">{new Date(claimLink.submitted_at).toLocaleDateString()}</p></div>
+              <div><span className="text-faint">Approved Labor</span><p className="font-mono tabular-nums text-gold">${(claimLink.approved_labor||0).toLocaleString()}</p></div>
+              <div><span className="text-faint">Approved Parts</span><p className="font-mono tabular-nums text-gold">${(claimLink.approved_parts||0).toLocaleString()}</p></div>
+              {claimLink.supplement_amount > 0 && <div><span className="text-faint">Supplement</span><p className="font-mono font-medium tabular-nums text-gold">${claimLink.supplement_amount.toLocaleString()}</p></div>}
+              {claimLink.adjustor_notes && <div className="col-span-2"><span className="text-faint">Notes</span><p className="text-ink">{claimLink.adjustor_notes}</p></div>}
             </div>
           </div>
         ) : (
           <div className="space-y-2">
-            <p className="text-xs text-slate-500">Link sent — waiting for adjustor assessment.</p>
+            <p className="text-xs text-faint">Link sent — waiting for adjustor assessment.</p>
             <div className="flex gap-2">
-              <button onClick={copyClaimLink} className="bg-[#0f1117] border border-[#2a2d3e] text-white text-xs px-3 py-2 rounded-lg hover:border-indigo-500 transition-colors flex items-center gap-1.5">
+              <button onClick={copyClaimLink} className="bg-void border border-line-2 text-ink text-xs px-3 py-2 rounded-lg hover:border-brand transition-colors flex items-center gap-1.5">
                 <Copy size={13} />
                 {linkCopied ? 'Copied!' : 'Copy Link'}
               </button>
-              <button onClick={generateClaimLink} className="text-slate-500 text-xs px-3 py-2 rounded-lg hover:text-white transition-colors">
+              <button onClick={generateClaimLink} className="text-faint text-xs px-3 py-2 rounded-lg hover:text-ink transition-colors">
                 Regenerate
               </button>
             </div>
@@ -2140,8 +2175,8 @@ export default function RODetail() {
       )}
 
       {overviewTab === 'core' && userIsAdmin && (
-        <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
-          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">🔒 Internal Notes</h2>
+        <div className="bg-panel rounded-instrument border border-line-2 p-4">
+          <h2 className="text-xs font-bold text-muted uppercase tracking-wide mb-3">🔒 Internal Notes</h2>
           <form onSubmit={submitInternalNote} className="space-y-2 mb-3">
             <textarea
               rows={3}
@@ -2154,7 +2189,7 @@ export default function RODetail() {
               <button
                 type="submit"
                 disabled={savingInternalNote}
-                className="text-xs bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-3 py-1.5 rounded-lg disabled:opacity-50"
+                className="text-xs bg-brand hover:bg-brand-lit text-on-brand font-semibold px-3 py-1.5 rounded-lg disabled:opacity-50"
               >
                 {savingInternalNote ? 'Adding...' : 'Add Note'}
               </button>
@@ -2162,13 +2197,13 @@ export default function RODetail() {
           </form>
 
           {internalNotes.length === 0 ? (
-            <p className="text-sm text-slate-500">No internal notes yet.</p>
+            <p className="text-sm text-faint">No internal notes yet.</p>
           ) : (
             <div className="space-y-2">
               {internalNotes.map((entry) => (
-                <div key={entry.id} className="bg-[#0f1117] border border-[#2a2d3e] rounded-xl p-3">
+                <div key={entry.id} className="bg-void border border-line-2 rounded-instrument p-3">
                   <div className="flex items-center justify-between gap-2 mb-1">
-                    <div className="text-[11px] text-slate-400">
+                    <div className="text-[11px] text-muted">
                       {new Date(entry.created_at).toLocaleString()} · {entry.author_name || 'Unknown'}
                     </div>
                     {userIsAdmin && (
@@ -2176,13 +2211,13 @@ export default function RODetail() {
                         type="button"
                         onClick={() => deleteInternalNote(entry.id)}
                         disabled={deletingInternalNote === entry.id}
-                        className="text-red-300 hover:text-red-200 disabled:opacity-50"
+                        className="text-crit hover:text-crit disabled:opacity-50"
                       >
                         <Trash2 size={12} />
                       </button>
                     )}
                   </div>
-                  <p className="text-sm text-slate-200 whitespace-pre-wrap">{entry.note}</p>
+                  <p className="text-sm text-ink whitespace-pre-wrap">{entry.note}</p>
                 </div>
               ))}
             </div>
@@ -2192,13 +2227,13 @@ export default function RODetail() {
 
       {/* SMS Thread */}
       {overviewTab === 'communication' && (
-      <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
+      <div className="bg-panel rounded-instrument border border-line-2 p-4">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
+          <h2 className="text-xs font-bold text-muted uppercase tracking-wide flex items-center gap-1.5">
             <MessageSquare size={13} /> Customer Text Messages
           </h2>
           {smsThread.some(m => m.direction === 'inbound') && (
-            <span className="text-[10px] bg-indigo-600 text-white px-2 py-0.5 rounded-full font-semibold">
+            <span className="text-[10px] bg-brand text-on-brand px-2 py-0.5 rounded-full font-semibold">
               {smsThread.filter(m => m.direction === 'inbound').length} reply
             </span>
           )}
@@ -2211,13 +2246,13 @@ export default function RODetail() {
             placeholder="Customer phone (e.g. +13015550123)"
             value={smsCustomerPhone}
             onChange={e => setSmsCustomerPhone(e.target.value)}
-            className="flex-1 text-xs bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+            className="flex-1 text-xs bg-void border border-line-2 rounded-lg px-3 py-2 text-ink placeholder:text-faint focus:outline-none focus:border-brand"
           />
           <button
             type="button"
             onClick={loadSmsThread}
             disabled={smsLoading}
-            className="text-xs text-slate-400 hover:text-white border border-[#2a2d3e] rounded-lg px-2 py-2"
+            className="text-xs text-muted hover:text-ink border border-line-2 rounded-lg px-2 py-2"
           >
             <RefreshCw size={13} className={smsLoading ? 'animate-spin' : ''} />
           </button>
@@ -2226,7 +2261,7 @@ export default function RODetail() {
         {/* Thread messages */}
         <div className="space-y-2 mb-3 max-h-64 overflow-y-auto">
           {smsThread.length === 0 && !smsLoading && (
-            <p className="text-xs text-slate-500 italic">No messages yet. Send the first text below.</p>
+            <p className="text-xs text-faint italic">No messages yet. Send the first text below.</p>
           )}
           {smsThread.map(msg => (
             <div
@@ -2234,14 +2269,14 @@ export default function RODetail() {
               className={`flex ${msg.direction === 'outbound' ? 'justify-end' : 'justify-start'}`}
             >
               <div
-                className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm ${
+                className={`max-w-[80%] rounded-instrument px-3 py-2 text-sm ${
                   msg.direction === 'outbound'
-                    ? 'bg-indigo-600 text-white rounded-br-sm'
-                    : 'bg-[#0f1117] border border-[#2a2d3e] text-slate-200 rounded-bl-sm'
+                    ? 'bg-brand text-on-brand rounded-br-sm'
+                    : 'bg-void border border-line-2 text-ink rounded-bl-sm'
                 }`}
               >
                 <p className="whitespace-pre-wrap leading-snug">{msg.body}</p>
-                <p className={`text-[10px] mt-1 ${msg.direction === 'outbound' ? 'text-indigo-200' : 'text-slate-500'}`}>
+                <p className={`text-[10px] mt-1 ${msg.direction === 'outbound' ? 'text-brand' : 'text-faint'}`}>
                   {msg.direction === 'inbound' ? '← Customer' : '→ Sent'} · {new Date(msg.created_at).toLocaleString()}
                 </p>
               </div>
@@ -2257,12 +2292,12 @@ export default function RODetail() {
             value={smsMessage}
             onChange={e => setSmsMessage(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendSmsMessage(e) } }}
-            className="flex-1 text-sm bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500 resize-none"
+            className="flex-1 text-sm bg-void border border-line-2 rounded-lg px-3 py-2 text-ink placeholder:text-faint focus:outline-none focus:border-brand resize-none"
           />
           <button
             type="submit"
             disabled={smsSending || !smsMessage.trim() || !smsCustomerPhone.trim()}
-            className="self-end px-3 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-lg text-xs font-semibold flex items-center gap-1"
+            className="self-end px-3 py-2 bg-brand hover:bg-brand-lit disabled:opacity-50 text-on-brand rounded-lg text-xs font-semibold flex items-center gap-1"
           >
             <Phone size={13} /> {smsSending ? 'Sending…' : 'Send'}
           </button>
@@ -2275,24 +2310,24 @@ export default function RODetail() {
 
       {/* Assigned Tech */}
       {overviewTab === 'core' && userIsEmployee && (
-        <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
-          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3 flex items-center gap-1.5">
+        <div className="bg-panel rounded-instrument border border-line-2 p-4">
+          <h2 className="text-xs font-bold text-muted uppercase tracking-wide mb-3 flex items-center gap-1.5">
             <User size={12} /> {t('ro.technician')}
           </h2>
           {techAssignmentMismatch && (
-            <div className="mb-3 text-xs text-amber-200 bg-amber-900/20 border border-amber-700/40 rounded-lg px-3 py-2">
+            <div className="mb-3 rounded-lg border border-brand/40 bg-brand/10 px-3 py-2 text-xs text-brand">
               You are not the currently assigned tech on this RO. You can still update assignment, and admin will be notified.
             </div>
           )}
           <div className="flex items-center gap-3 flex-wrap">
-            <span className="text-sm text-white font-medium">
-              {ro.assigned_tech ? ro.assigned_tech.name : <span className="text-slate-500 italic">Unassigned</span>}
+            <span className="text-sm text-ink font-medium">
+              {ro.assigned_tech ? ro.assigned_tech.name : <span className="text-faint italic">Unassigned</span>}
             </span>
             {!userIsAssistant && (
               <select
                 value={ro.assigned_to || ''}
                 onChange={e => assignTech(e.target.value)}
-                className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-indigo-500"
+                className="bg-void border border-line-2 rounded-lg px-3 py-1.5 text-xs text-ink focus:outline-none focus:border-brand"
               >
                 <option value="">Unassigned</option>
                 {shopUsers
@@ -2317,8 +2352,8 @@ export default function RODetail() {
 
       {/* Tech Notes */}
       {overviewTab === 'core' && userIsEmployee && (
-        <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
-          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+        <div className="bg-panel rounded-instrument border border-line-2 p-4">
+          <h2 className="text-xs font-bold text-muted uppercase tracking-wide mb-2 flex items-center gap-1.5">
             <ClipboardList size={12} /> {t('common.notes')}
           </h2>
           <textarea
@@ -2329,40 +2364,40 @@ export default function RODetail() {
             onBlur={saveTechNotes}
             placeholder="Internal tech notes — not visible to customer..."
           />
-          {savingNotes && <p className="text-[10px] text-slate-500 mt-1">Saving...</p>}
+          {savingNotes && <p className="text-[10px] text-faint mt-1">Saving...</p>}
         </div>
       )}
 
       {overviewTab === 'communication' && (
-      <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
+      <div className="bg-panel rounded-instrument border border-line-2 p-4">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
+          <h2 className="text-xs font-bold text-muted uppercase tracking-wide flex items-center gap-1.5">
             <MessageSquare size={12} /> Communication Log
           </h2>
           <button
             onClick={() => setShowCommForm(true)}
-            className="text-xs bg-brand hover:bg-brand-lit text-white font-semibold px-3 py-1.5 rounded-lg transition-colors"
+            className="text-xs bg-brand hover:bg-brand-lit text-on-brand font-semibold px-3 py-1.5 rounded-lg transition-colors"
           >
             Log Communication
           </button>
         </div>
 
         {comms.length === 0 ? (
-          <p className="text-slate-500 text-sm">No communication entries yet.</p>
+          <p className="text-faint text-sm">No communication entries yet.</p>
         ) : (
           <div className="space-y-2">
             {comms.map((entry) => {
               const meta = COMM_TYPE_META[entry.channel] || COMM_TYPE_META.call
               const Icon = meta.Icon
               return (
-                <div key={entry.id} className="bg-[#0f1117] border border-[#2a2d3e] rounded-xl p-3">
-                  <div className="flex items-center gap-2 text-xs text-slate-400 mb-1">
+                <div key={entry.id} className="bg-void border border-line-2 rounded-instrument p-3">
+                  <div className="flex items-center gap-2 text-xs text-muted mb-1">
                     <Icon size={12} className="text-brand" />
-                    <span className="text-white font-medium">{meta.label}</span>
+                    <span className="text-ink font-medium">{meta.label}</span>
                     <span className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold ${
                       entry.direction === 'inbound'
-                        ? 'bg-emerald-900/30 text-emerald-300 border-emerald-700/40'
-                        : 'bg-indigo-900/30 text-indigo-300 border-indigo-700/40'
+                        ? 'bg-good/10 text-good border-good/40'
+                        : 'bg-brand/10 text-brand border-brand/40'
                     }`}>
                       {entry.direction === 'inbound' ? 'Inbound' : 'Outbound'}
                     </span>
@@ -2372,12 +2407,12 @@ export default function RODetail() {
                     <span>{entry.logged_by || 'System'}</span>
                   </div>
                   <div className="flex items-start justify-between gap-3">
-                    <p className="text-sm text-slate-200 whitespace-pre-wrap">{entry.summary}</p>
+                    <p className="text-sm text-ink whitespace-pre-wrap">{entry.summary}</p>
                     {!userIsAssistant && (
                       <button
                         type="button"
                         onClick={() => deleteComm(entry.id)}
-                        className="text-slate-500 hover:text-red-400 transition-colors"
+                        className="text-faint hover:text-crit transition-colors"
                         title="Delete communication entry"
                       >
                         <Trash2 size={13} />
@@ -2394,24 +2429,24 @@ export default function RODetail() {
 
       {/* Parts Requests */}
       {overviewTab === 'parts' && userIsEmployee && (
-        <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
+        <div className="bg-panel rounded-instrument border border-line-2 p-4">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
+            <h2 className="text-xs font-bold text-muted uppercase tracking-wide flex items-center gap-1.5">
               <Package size={12} /> Parts Requests
             </h2>
             <button
               onClick={() => setShowPartsReqForm(s => !s)}
-              className="flex items-center gap-1.5 text-xs bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors"
+              className="flex items-center gap-1.5 text-xs bg-brand hover:bg-brand-lit text-on-brand font-semibold px-3 py-1.5 rounded-lg transition-colors"
             >
               <Plus size={12} /> Request Part
             </button>
           </div>
 
           {showPartsReqForm && (
-            <form onSubmit={submitPartsRequest} className="bg-[#0f1117] rounded-xl p-4 border border-[#2a2d3e] mb-4 space-y-3">
+            <form onSubmit={submitPartsRequest} className="bg-void rounded-instrument p-4 border border-line-2 mb-4 space-y-3">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <div className="sm:col-span-2">
-                  <label className="text-[10px] text-slate-500 block mb-1">Part Name *</label>
+                  <label className="text-[10px] text-faint block mb-1">Part Name *</label>
                   <input
                     className={inp + ' w-full'}
                     required
@@ -2421,7 +2456,7 @@ export default function RODetail() {
                   />
                 </div>
                 <div>
-                  <label className="text-[10px] text-slate-500 block mb-1">Part Number</label>
+                  <label className="text-[10px] text-faint block mb-1">Part Number</label>
                   <input
                     className={inp + ' w-full'}
                     value={partsReqForm.part_number}
@@ -2430,7 +2465,7 @@ export default function RODetail() {
                   />
                 </div>
                 <div>
-                  <label className="text-[10px] text-slate-500 block mb-1">Qty</label>
+                  <label className="text-[10px] text-faint block mb-1">Qty</label>
                   <input
                     type="number"
                     min="1"
@@ -2440,7 +2475,7 @@ export default function RODetail() {
                   />
                 </div>
                 <div className="sm:col-span-2">
-                  <label className="text-[10px] text-slate-500 block mb-1">Notes</label>
+                  <label className="text-[10px] text-faint block mb-1">Notes</label>
                   <input
                     className={inp + ' w-full'}
                     value={partsReqForm.notes}
@@ -2450,8 +2485,8 @@ export default function RODetail() {
                 </div>
               </div>
               <div className="flex gap-2">
-                <button type="button" onClick={() => setShowPartsReqForm(false)} className="flex-1 bg-[#1a1d2e] text-slate-400 rounded-lg py-2 text-xs border border-[#2a2d3e]">Cancel</button>
-                <button type="submit" disabled={submittingPartsReq} className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-lg py-2 text-xs disabled:opacity-50">
+                <button type="button" onClick={() => setShowPartsReqForm(false)} className="flex-1 bg-panel text-muted rounded-lg py-2 text-xs border border-line-2">Cancel</button>
+                <button type="submit" disabled={submittingPartsReq} className="flex-1 bg-brand hover:bg-brand-lit text-on-brand font-semibold rounded-lg py-2 text-xs disabled:opacity-50">
                   {submittingPartsReq ? 'Submitting...' : 'Submit Request'}
                 </button>
               </div>
@@ -2459,9 +2494,9 @@ export default function RODetail() {
           )}
 
           {partsRequests.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-8 border border-dashed border-[#2a2d3e] rounded-xl">
-              <Package size={24} className="text-slate-600 mb-2" />
-              <p className="text-slate-500 text-sm">No parts requested yet</p>
+            <div className="flex flex-col items-center justify-center py-8 border border-dashed border-line-2 rounded-instrument">
+              <Package size={24} className="text-faint mb-2" />
+              <p className="text-faint text-sm">No parts requested yet</p>
             </div>
           ) : (
             <div className="space-y-2">
@@ -2469,17 +2504,17 @@ export default function RODetail() {
                 const meta = REQ_STATUS_META[req.status] || REQ_STATUS_META.pending
                 const Icon = meta.Icon
                 return (
-                  <div key={req.id} className="flex items-start gap-3 bg-[#0f1117] rounded-xl p-3 border border-[#2a2d3e]">
+                  <div key={req.id} className="flex items-start gap-3 bg-void rounded-instrument p-3 border border-line-2">
                     <div className={`w-7 h-7 rounded-lg border flex items-center justify-center flex-shrink-0 ${meta.cls}`}>
                       <Icon size={13} />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm text-white font-medium">{req.part_name}</span>
-                        {req.part_number && <span className="text-[10px] text-slate-500">#{req.part_number}</span>}
-                        {req.quantity > 1 && <span className="text-[10px] text-slate-500">× {req.quantity}</span>}
+                        <span className="text-sm text-ink font-medium">{req.part_name}</span>
+                        {req.part_number && <span className="text-[10px] text-faint">#{req.part_number}</span>}
+                        {req.quantity > 1 && <span className="text-[10px] text-faint">× {req.quantity}</span>}
                       </div>
-                      {req.notes && <p className="text-[10px] text-slate-500 mt-0.5">{req.notes}</p>}
+                      {req.notes && <p className="text-[10px] text-faint mt-0.5">{req.notes}</p>}
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
                       {userIsAdmin ? (
@@ -2509,13 +2544,13 @@ export default function RODetail() {
 
       {/* Customer Updates + Links */}
       {overviewTab === 'communication' && (
-      <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4 space-y-3">
+      <div className="bg-panel rounded-instrument border border-line-2 p-4 space-y-3">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
+            <h2 className="text-xs font-bold text-muted uppercase tracking-wide flex items-center gap-1.5">
               <Smartphone size={12} /> Customer Updates
             </h2>
-            <p className="text-xs text-slate-500 mt-0.5">
+            <p className="text-xs text-faint mt-0.5">
               No customer portal account needed. Send direct tracking and payment links.
             </p>
           </div>
@@ -2523,14 +2558,14 @@ export default function RODetail() {
             <button
               onClick={generateCustomerLinks}
               disabled={sendingCustomerLinks}
-              className="flex items-center gap-1.5 bg-brand hover:bg-brand-lit text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+              className="flex items-center gap-1.5 bg-brand hover:bg-brand-lit text-on-brand text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
             >
               {sendingCustomerLinks ? 'Sending...' : 'Send Tracking Link'}
             </button>
             <button
               onClick={generatePaymentLinkOnly}
               disabled={generatingPaymentLink}
-              className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+              className="flex items-center gap-1.5 rounded-lg bg-gold px-3 py-1.5 text-xs font-semibold text-on-gold transition-colors hover:bg-gold-lit disabled:opacity-50"
             >
               {generatingPaymentLink ? 'Generating...' : 'Generate Payment Link'}
             </button>
@@ -2538,25 +2573,25 @@ export default function RODetail() {
         </div>
 
         {!ro.customer?.phone && (
-          <p className="text-xs text-amber-400 flex items-center gap-1.5">
+          <p className="flex items-center gap-1.5 text-xs text-crit">
             <AlertTriangle size={12} /> No customer phone on file. Add a phone number to send SMS links.
           </p>
         )}
         {!ro.customer?.email && (
-          <p className="text-xs text-amber-400 flex items-center gap-1.5">
+          <p className="flex items-center gap-1.5 text-xs text-crit">
             <AlertTriangle size={12} /> No customer email on file. Auto invoice emails require customer email.
           </p>
         )}
 
         {trackingLink && (
-          <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3">
-            <p className="text-[11px] text-slate-500 mb-2">Tracking Link</p>
+          <div className="bg-void border border-line-2 rounded-lg p-3">
+            <p className="text-[11px] text-faint mb-2">Tracking Link</p>
             <div className="flex items-center justify-between gap-2">
               <input
                 type="text"
                 readOnly
                 value={trackingLink}
-                className="flex-1 bg-transparent text-xs text-slate-300 font-mono truncate"
+                className="flex-1 bg-transparent text-xs text-ink font-mono truncate"
               />
               <button
                 onClick={() => {
@@ -2564,7 +2599,7 @@ export default function RODetail() {
                   setLinkCopied(true)
                   setTimeout(() => setLinkCopied(false), 3000)
                 }}
-                className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
+                className="text-xs text-brand hover:text-brand flex items-center gap-1"
               >
                 {linkCopied ? <><CheckCircle size={12} /> Copied!</> : <><Copy size={12} /> Copy</>}
               </button>
@@ -2573,14 +2608,14 @@ export default function RODetail() {
         )}
 
         {paymentLink && (
-          <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3">
-            <p className="text-[11px] text-slate-500 mb-2">Payment Link</p>
+          <div className="bg-void border border-line-2 rounded-lg p-3">
+            <p className="text-[11px] text-faint mb-2">Payment Link</p>
             <div className="flex items-center justify-between gap-2">
               <input
                 type="text"
                 readOnly
                 value={paymentLink}
-                className="flex-1 bg-transparent text-xs text-slate-300 font-mono truncate"
+                className="flex-1 bg-transparent text-xs text-ink font-mono truncate"
               />
               <button
                 onClick={() => {
@@ -2588,7 +2623,7 @@ export default function RODetail() {
                   setLinkCopied(true)
                   setTimeout(() => setLinkCopied(false), 3000)
                 }}
-                className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
+                className="text-xs text-brand hover:text-brand flex items-center gap-1"
               >
                 {linkCopied ? <><CheckCircle size={12} /> Copied!</> : <><Copy size={12} /> Copy</>}
               </button>
@@ -2600,23 +2635,23 @@ export default function RODetail() {
 
       {showCommForm && (
         <AppOverlay label="Log communication" onClose={() => setShowCommForm(false)} className="bg-black/50 p-4">
-          <form onSubmit={submitComm} className="w-full max-w-lg bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-5 space-y-3">
+          <form onSubmit={submitComm} className="w-full max-w-lg bg-panel border border-line-2 rounded-instrument p-5 space-y-3">
             <div className="flex items-center justify-between">
-              <h3 className="text-white font-semibold text-sm">Log Communication</h3>
+              <h3 className="text-ink font-semibold text-sm">Log Communication</h3>
               <button
                 type="button"
                 onClick={() => setShowCommForm(false)}
-                className="text-slate-500 hover:text-slate-300"
+                className="text-faint hover:text-ink"
               >
                 <X size={16} />
               </button>
             </div>
             <div>
-              <label className="text-[11px] text-slate-500 block mb-1">Channel</label>
+              <label className="text-[11px] text-faint block mb-1">Channel</label>
               <select
                 value={commForm.channel}
                 onChange={(e) => setCommForm((f) => ({ ...f, channel: e.target.value }))}
-                className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand"
+                className="w-full bg-void border border-line-2 rounded-lg px-3 py-2 text-sm text-ink focus:outline-none focus:border-brand"
               >
                 <option value="call">Call</option>
                 <option value="email">Email</option>
@@ -2625,15 +2660,15 @@ export default function RODetail() {
               </select>
             </div>
             <div>
-              <label className="text-[11px] text-slate-500 block mb-1">Direction</label>
+              <label className="text-[11px] text-faint block mb-1">Direction</label>
               <div className="flex gap-2">
                 <button
                   type="button"
                   onClick={() => setCommForm((f) => ({ ...f, direction: 'outbound' }))}
                   className={`flex-1 text-xs font-semibold px-3 py-2 rounded-lg border ${
                     commForm.direction === 'outbound'
-                      ? 'bg-indigo-900/30 text-indigo-300 border-indigo-700/40'
-                      : 'bg-[#0f1117] text-slate-400 border-[#2a2d3e]'
+                      ? 'bg-brand/10 text-brand border-brand/40'
+                      : 'bg-void text-muted border-line-2'
                   }`}
                 >
                   Outbound
@@ -2643,8 +2678,8 @@ export default function RODetail() {
                   onClick={() => setCommForm((f) => ({ ...f, direction: 'inbound' }))}
                   className={`flex-1 text-xs font-semibold px-3 py-2 rounded-lg border ${
                     commForm.direction === 'inbound'
-                      ? 'bg-emerald-900/30 text-emerald-300 border-emerald-700/40'
-                      : 'bg-[#0f1117] text-slate-400 border-[#2a2d3e]'
+                      ? 'bg-good/10 text-good border-good/40'
+                      : 'bg-void text-muted border-line-2'
                   }`}
                 >
                   Inbound
@@ -2652,27 +2687,27 @@ export default function RODetail() {
               </div>
             </div>
             <div>
-              <label className="text-[11px] text-slate-500 block mb-1">Summary</label>
+              <label className="text-[11px] text-faint block mb-1">Summary</label>
               <textarea
                 rows={4}
                 value={commForm.summary}
                 onChange={(e) => setCommForm((f) => ({ ...f, summary: e.target.value }))}
                 placeholder="Communication summary..."
-                className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand"
+                className="w-full bg-void border border-line-2 rounded-lg px-3 py-2 text-sm text-ink focus:outline-none focus:border-brand"
               />
             </div>
             <div className="flex gap-2">
               <button
                 type="button"
                 onClick={() => setShowCommForm(false)}
-                className="flex-1 bg-[#0f1117] border border-[#2a2d3e] text-slate-300 py-2 rounded-lg text-sm"
+                className="flex-1 bg-void border border-line-2 text-ink py-2 rounded-lg text-sm"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={savingComm}
-                className="flex-1 bg-brand hover:bg-brand-lit text-white py-2 rounded-lg text-sm font-semibold disabled:opacity-50"
+                className="flex-1 bg-brand hover:bg-brand-lit text-on-brand py-2 rounded-lg text-sm font-semibold disabled:opacity-50"
               >
                 {savingComm ? 'Saving...' : 'Save Communication'}
               </button>
@@ -2684,18 +2719,18 @@ export default function RODetail() {
       {/* Mark as Paid Modal */}
       {showMarkPaidModal && (
         <AppOverlay label="Mark as paid" onClose={() => setShowMarkPaidModal(false)} className="bg-black/50 p-4">
-          <div className="bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-6 max-w-sm w-full mx-4 space-y-4">
+          <div className="bg-panel border border-line-2 rounded-instrument p-6 max-w-sm w-full mx-4 space-y-4">
             <div className="flex items-center gap-2">
-              <DollarSign size={20} className="text-emerald-400" />
-              <h2 className="text-lg font-bold text-white">Mark as Paid</h2>
+              <DollarSign size={20} className="text-good" />
+              <h2 className="text-lg font-bold text-ink">Mark as Paid</h2>
             </div>
-            <p className="text-sm text-slate-400">Select payment method and confirm. This will mark the RO as paid and close it.</p>
+            <p className="text-sm text-muted">Select payment method and confirm. This will mark the RO as paid and close it.</p>
             <div className="space-y-2">
-              <label className="text-xs text-slate-500 block">Payment Method</label>
+              <label className="text-xs text-faint block">Payment Method</label>
               <select
                 value={paymentMethod}
                 onChange={e => setPaymentMethod(e.target.value)}
-                className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500"
+                className="w-full bg-void border border-line-2 rounded-lg px-3 py-2 text-sm text-ink focus:outline-none focus:border-good"
               >
                 <option value="cash">Cash</option>
                 <option value="card">Card</option>
@@ -2706,14 +2741,14 @@ export default function RODetail() {
             <div className="flex gap-2">
               <button
                 onClick={() => setShowMarkPaidModal(false)}
-                className="flex-1 bg-[#2a2d3e] text-slate-300 text-sm font-medium px-4 py-2 rounded-lg hover:bg-[#3a3d4e] transition-colors"
+                className="flex-1 bg-raised text-ink text-sm font-medium px-4 py-2 rounded-lg hover:bg-raised transition-colors"
               >
                 {t('common.cancel')}
               </button>
               <button
                 onClick={markPaid}
                 disabled={markingPaid}
-                className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-1"
+                className="flex-1 bg-good hover:bg-good text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-1"
               >
                 {markingPaid ? 'Processing...' : <>
                   <DollarSign size={14} /> Mark Paid
@@ -2726,22 +2761,22 @@ export default function RODetail() {
 
       {showTotalLossModal && (
         <AppOverlay label="Mark total loss" onClose={() => !markingTotalLoss && setShowTotalLossModal(false)} className="bg-black/50 p-4">
-          <div className="bg-[#1a1d2e] border border-red-800/60 rounded-xl p-6 max-w-md w-full mx-4 space-y-4">
+          <div className="bg-panel border border-crit/60 rounded-instrument p-6 max-w-md w-full mx-4 space-y-4">
             <div className="flex items-center gap-2">
-              <AlertTriangle size={20} className="text-red-400" />
-              <h2 className="text-lg font-bold text-white">Mark Total Loss</h2>
+              <AlertTriangle size={20} className="text-crit" />
+              <h2 className="text-lg font-bold text-ink">Mark Total Loss</h2>
             </div>
-            <p className="text-sm text-slate-300">
+            <p className="text-sm text-ink">
               This closes the RO immediately and skips parts, repair, paint, QC, and delivery. Financials stay editable for teardown, storage, and administrative charges.
             </p>
             <div className="space-y-2">
-              <label htmlFor="total-loss-note" className="text-xs text-slate-500 block">Internal Note</label>
+              <label htmlFor="total-loss-note" className="text-xs text-faint block">Internal Note</label>
               <textarea
                 id="total-loss-note"
                 value={totalLossNote}
                 onChange={e => setTotalLossNote(e.target.value)}
                 rows={3}
-                className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-red-500"
+                className="w-full bg-void border border-line-2 rounded-lg px-3 py-2 text-sm text-ink focus:outline-none focus:border-crit"
                 placeholder="Optional reason or claim note"
               />
             </div>
@@ -2749,14 +2784,14 @@ export default function RODetail() {
               <button
                 onClick={() => setShowTotalLossModal(false)}
                 disabled={markingTotalLoss}
-                className="flex-1 bg-[#2a2d3e] text-slate-300 text-sm font-medium px-4 py-2 rounded-lg hover:bg-[#3a3d4e] transition-colors disabled:opacity-50"
+                className="flex-1 bg-raised text-ink text-sm font-medium px-4 py-2 rounded-lg hover:bg-raised transition-colors disabled:opacity-50"
               >
                 {t('common.cancel')}
               </button>
               <button
                 onClick={markTotalLoss}
                 disabled={markingTotalLoss}
-                className="flex-1 bg-red-700 hover:bg-red-600 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-1"
+                className="flex-1 bg-crit hover:bg-crit text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-1"
               >
                 {markingTotalLoss ? 'Closing...' : <>
                   <AlertTriangle size={14} /> Confirm Total Loss
@@ -2769,18 +2804,18 @@ export default function RODetail() {
 
       {/* Parts Tracking */}
       {overviewTab === 'parts' && (
-      <div className="bg-[#1a1d2e] rounded-xl border border-[#2a2d3e] p-4">
+      <div className="bg-panel rounded-instrument border border-line-2 p-4">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
-            <Package size={15} className="text-indigo-400" />
-            <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wide">{t('ro.parts')}</h2>
+            <Package size={15} className="text-brand" />
+            <h2 className="text-xs font-bold text-muted uppercase tracking-wide">{t('ro.parts')}</h2>
             {parts.filter(p => p.status === 'backordered').length > 0 && (
-              <span className="text-[10px] bg-red-900/40 text-red-400 border border-red-700/40 px-2 py-0.5 rounded-full font-semibold flex items-center gap-1">
+              <span className="text-[10px] bg-crit/15 text-crit border border-crit/40 px-2 py-0.5 rounded-full font-semibold flex items-center gap-1">
                 <AlertTriangle size={11} /> {parts.filter(p=>p.status==='backordered').length} backordered
               </span>
             )}
             {parts.length > 0 && parts.every(p=>p.status==='received') && (
-              <span className="text-[10px] bg-emerald-900/40 text-emerald-400 border border-emerald-700/40 px-2 py-0.5 rounded-full font-semibold flex items-center gap-1">
+              <span className="text-[10px] bg-good/15 text-good border border-good/40 px-2 py-0.5 rounded-full font-semibold flex items-center gap-1">
                 <CheckCircle size={11} /> All parts in
               </span>
             )}
@@ -2788,12 +2823,12 @@ export default function RODetail() {
           <div className="flex items-center gap-2">
             <button
               onClick={() => setShowCatalogSearch(true)}
-              className="flex items-center gap-1.5 text-xs bg-brand hover:bg-brand-lit text-white font-semibold px-3 py-1.5 rounded-lg transition-colors"
+              className="flex items-center gap-1.5 text-xs bg-brand hover:bg-brand-lit text-on-brand font-semibold px-3 py-1.5 rounded-lg transition-colors"
             >
               <Search size={12} /> Search Catalog
             </button>
             <button onClick={() => setShowAddPart(s=>!s)}
-              className="flex items-center gap-1.5 text-xs bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors">
+              className="flex items-center gap-1.5 text-xs bg-brand hover:bg-brand-lit text-on-brand font-semibold px-3 py-1.5 rounded-lg transition-colors">
               <Plus size={12}/> {t('common.add')} {t('ro.parts')}
             </button>
           </div>
@@ -2801,18 +2836,18 @@ export default function RODetail() {
 
         {/* Add Part Form */}
         {showAddPart && (
-          <form onSubmit={addPart} className="bg-[#0f1117] rounded-xl p-4 border border-[#2a2d3e] mb-4 space-y-3">
+          <form onSubmit={addPart} className="bg-void rounded-instrument p-4 border border-line-2 mb-4 space-y-3">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <div className="sm:col-span-2">
-                <label className="text-[10px] text-slate-500 block mb-1">Part Name *</label>
+                <label className="text-[10px] text-faint block mb-1">Part Name *</label>
                 <input className={inp} required value={partForm.part_name} onChange={e=>setPartForm(f=>({...f,part_name:e.target.value}))} placeholder="Front bumper assembly" />
               </div>
               <div>
-                <label className="text-[10px] text-slate-500 block mb-1">Part Number</label>
+                <label className="text-[10px] text-faint block mb-1">Part Number</label>
                 <input className={inp} value={partForm.part_number} onChange={e=>setPartForm(f=>({...f,part_number:e.target.value}))} placeholder="OEM-12345" />
               </div>
               <div>
-                <label className="text-[10px] text-slate-500 block mb-1">Vendor</label>
+                <label className="text-[10px] text-faint block mb-1">Vendor</label>
                 <LibraryAutocomplete
                   value={partForm.vendor || ''}
                   onChange={v => setPartForm(f => ({...f, vendor: v}))}
@@ -2821,29 +2856,29 @@ export default function RODetail() {
                   placeholder="LKQ, NAPA, PPG..."
                   renderItem={v => (
                     <div>
-                      <div className="text-xs text-white font-medium">{v.name}</div>
-                      <div className="text-[10px] text-slate-400">{v.type}{v.phone ? ` · ${v.phone}` : ''}</div>
+                      <div className="text-xs text-ink font-medium">{v.name}</div>
+                      <div className="text-[10px] text-muted">{v.type}{v.phone ? ` · ${v.phone}` : ''}</div>
                     </div>
                   )}
                 />
               </div>
               <div>
-                <label className="text-[10px] text-slate-500 block mb-1">Expected Date</label>
+                <label className="text-[10px] text-faint block mb-1">Expected Date</label>
                 <input type="date" className={inp} value={partForm.expected_date} onChange={e=>setPartForm(f=>({...f,expected_date:e.target.value}))} />
               </div>
               <div>
-                <label className="text-[10px] text-slate-500 block mb-1">Qty</label>
+                <label className="text-[10px] text-faint block mb-1">Qty</label>
                 <input type="number" min="1" className={inp} value={partForm.quantity} onChange={e=>setPartForm(f=>({...f,quantity:e.target.value}))} />
               </div>
               <div className="sm:col-span-2">
-                <label className="text-[10px] text-slate-500 block mb-1">Tracking Number (optional — UPS / FedEx / USPS / DHL)</label>
+                <label className="text-[10px] text-faint block mb-1">Tracking Number (optional — UPS / FedEx / USPS / DHL)</label>
                 <input className={inp} value={partForm.tracking_number} onChange={e=>setPartForm(f=>({...f,tracking_number:e.target.value}))} placeholder="1Z999AA10123456784 or 94001116990045349715" />
-                <p className="text-[9px] text-slate-600 mt-0.5">Carrier is auto-detected. Status updates automatically when you have a tracking API key in Settings.</p>
+                <p className="text-[9px] text-faint mt-0.5">Carrier is auto-detected. Status updates automatically when you have a tracking API key in Settings.</p>
               </div>
             </div>
             <div className="flex gap-2">
-              <button type="button" onClick={()=>setShowAddPart(false)} className="flex-1 bg-[#1a1d2e] text-slate-400 rounded-lg py-2 text-xs border border-[#2a2d3e]">Cancel</button>
-              <button type="submit" disabled={savingPart} className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-lg py-2 text-xs disabled:opacity-50">
+              <button type="button" onClick={()=>setShowAddPart(false)} className="flex-1 bg-panel text-muted rounded-lg py-2 text-xs border border-line-2">Cancel</button>
+              <button type="submit" disabled={savingPart} className="flex-1 bg-brand hover:bg-brand-lit text-on-brand font-semibold rounded-lg py-2 text-xs disabled:opacity-50">
                 {savingPart ? 'Adding...' : 'Add Part'}
               </button>
             </div>
@@ -2851,15 +2886,15 @@ export default function RODetail() {
         )}
 
         {parts.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 gap-4 border border-dashed border-[#2a2d3e] rounded-xl">
+          <div className="flex flex-col items-center justify-center py-16 gap-4 border border-dashed border-line-2 rounded-instrument">
             <img src="/empty-parts.png" alt="No parts ordered" className="w-40 h-40 opacity-80 object-contain" />
-            <p className="text-slate-400 text-sm font-medium">Parts board is clear.</p>
-            <p className="text-slate-600 text-xs">No parts ordered yet.</p>
+            <p className="text-muted text-sm font-medium">Parts board is clear.</p>
+            <p className="text-faint text-xs">No parts ordered yet.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto border border-[#2a2d3e] rounded-xl">
+          <div className="overflow-x-auto border border-line-2 rounded-instrument">
             <table className="w-full text-xs">
-              <thead className="bg-[#0f1117] text-slate-400 uppercase">
+              <thead className="bg-void text-muted uppercase">
                 <tr>
                   <th className="px-3 py-2 text-left font-semibold">Part #</th>
                   <th className="px-3 py-2 text-left font-semibold">Description</th>
@@ -2879,13 +2914,13 @@ export default function RODetail() {
                   const rowTotal = qty * unit
 
                   return (
-                    <tr key={p.id} className="border-t border-[#2a2d3e] align-top">
-                      <td className="px-3 py-2 text-slate-300 font-mono">{p.part_number || '—'}</td>
-                      <td className="px-3 py-2 text-white">
+                    <tr key={p.id} className="border-t border-line-2 align-top">
+                      <td className="px-3 py-2 text-ink font-mono">{p.part_number || '—'}</td>
+                      <td className="px-3 py-2 text-ink">
                         <div className="font-medium">{p.part_name || '—'}</div>
                         {p.tracking_number && (
-                          <div className="mt-1 flex items-center gap-2 text-[10px] text-slate-500 flex-wrap">
-                            <Truck size={10} className="text-slate-500" />
+                          <div className="mt-1 flex items-center gap-2 text-[10px] text-faint flex-wrap">
+                            <Truck size={10} className="text-faint" />
                             <span>{CARRIER_LABELS[p.carrier] || 'Track'}: {p.tracking_number}</span>
                             {p.tracking_status && TRACKING_META[p.tracking_status] && (
                               <span className={`font-semibold ${TRACKING_META[p.tracking_status].cls}`}>
@@ -2900,24 +2935,24 @@ export default function RODetail() {
                                 e.preventDefault()
                                 api.get(`/tracking/url?carrier=${p.carrier||''}&num=${encodeURIComponent(p.tracking_number)}`).then(r => window.open(r.data.url, '_blank'))
                               }}
-                              className="text-indigo-400 hover:text-indigo-300 inline-flex items-center gap-0.5"
+                              className="text-brand hover:text-brand inline-flex items-center gap-0.5"
                             >
                               <ExternalLink size={9} /> Track
                             </a>
                             <button
                               onClick={() => refreshTracking(p.id)}
                               disabled={refreshingPart === p.id}
-                              className="text-slate-500 hover:text-amber-400 inline-flex items-center gap-0.5 disabled:opacity-50"
+                              className="inline-flex items-center gap-0.5 text-faint hover:text-brand disabled:opacity-50"
                             >
                               <RefreshCw size={9} className={refreshingPart === p.id ? 'animate-spin' : ''} /> Refresh
                             </button>
                           </div>
                         )}
                       </td>
-                      <td className="px-3 py-2 text-slate-300">{p.vendor || '—'}</td>
-                      <td className="px-3 py-2 text-right text-white">{qty || 1}</td>
-                      <td className="px-3 py-2 text-right text-white">${unit.toFixed(2)}</td>
-                      <td className="px-3 py-2 text-right text-white">${rowTotal.toFixed(2)}</td>
+                      <td className="px-3 py-2 text-ink">{p.vendor || '—'}</td>
+                      <td className="px-3 py-2 text-right font-mono tabular-nums text-ink">{qty || 1}</td>
+                      <td className="px-3 py-2 text-right font-mono tabular-nums text-gold">${unit.toFixed(2)}</td>
+                      <td className="px-3 py-2 text-right font-mono tabular-nums text-gold">${rowTotal.toFixed(2)}</td>
                       <td className="px-3 py-2">
                         <span className={`text-[10px] px-2 py-1 rounded-full border font-semibold ${meta.cls}`}>{meta.label}</span>
                       </td>
@@ -2925,14 +2960,14 @@ export default function RODetail() {
                         <div className="flex items-center justify-end gap-1">
                           {p.status === 'ordered' && (
                             <>
-                              <button onClick={()=>updatePartStatus(p.id,'backordered')} className="text-[10px] bg-red-900/30 text-red-400 border border-red-700/40 px-2 py-1 rounded-lg hover:bg-red-900/50 transition-colors">Backorder</button>
-                              <button onClick={()=>updatePartStatus(p.id,'received')} className="text-[10px] bg-emerald-900/30 text-emerald-400 border border-emerald-700/40 px-2 py-1 rounded-lg hover:bg-emerald-900/50 transition-colors">Received</button>
+                              <button onClick={()=>updatePartStatus(p.id,'backordered')} className="text-[10px] bg-crit/10 text-crit border border-crit/40 px-2 py-1 rounded-lg hover:bg-crit/20 transition-colors">Backorder</button>
+                              <button onClick={()=>updatePartStatus(p.id,'received')} className="text-[10px] bg-good/10 text-good border border-good/40 px-2 py-1 rounded-lg hover:bg-good/20 transition-colors">Received</button>
                             </>
                           )}
                           {p.status === 'backordered' && (
-                            <button onClick={()=>updatePartStatus(p.id,'received')} className="text-[10px] bg-emerald-900/30 text-emerald-400 border border-emerald-700/40 px-2 py-1 rounded-lg hover:bg-emerald-900/50 transition-colors inline-flex items-center gap-1">Received <CheckCircle size={10} /></button>
+                            <button onClick={()=>updatePartStatus(p.id,'received')} className="text-[10px] bg-good/10 text-good border border-good/40 px-2 py-1 rounded-lg hover:bg-good/20 transition-colors inline-flex items-center gap-1">Received <CheckCircle size={10} /></button>
                           )}
-                          <button onClick={()=>deletePart(p.id)} className="text-slate-600 hover:text-red-400 transition-colors ml-1">
+                          <button onClick={()=>deletePart(p.id)} className="text-faint hover:text-crit transition-colors ml-1">
                             <X size={13}/>
                           </button>
                         </div>
@@ -2942,9 +2977,9 @@ export default function RODetail() {
                 })}
               </tbody>
               <tfoot>
-                <tr className="border-t border-[#2a2d3e] bg-[#0f1117]">
-                  <td colSpan={5} className="px-3 py-2 text-right text-slate-300 font-semibold">Parts Subtotal</td>
-                  <td className="px-3 py-2 text-right text-emerald-400 font-semibold">${partsSubtotal.toFixed(2)}</td>
+                <tr className="border-t border-line-2 bg-void">
+                  <td colSpan={5} className="px-3 py-2 text-right text-ink font-semibold">Parts Subtotal</td>
+                  <td className="px-3 py-2 text-right font-mono font-semibold tabular-nums text-gold">${partsSubtotal.toFixed(2)}</td>
                   <td colSpan={2} />
                 </tr>
               </tfoot>
@@ -2958,32 +2993,32 @@ export default function RODetail() {
 
       {showStorageBillModal && (
         <AppOverlay label="Bill storage" onClose={() => setShowStorageBillModal(false)} className="bg-black/60 p-4">
-          <form onSubmit={billStorage} className="w-full max-w-md bg-[#1a1d2e] border border-[#2a2d3e] rounded-xl p-5 space-y-3">
-            <h3 className="text-white font-semibold text-sm">Bill Storage</h3>
+          <form onSubmit={billStorage} className="w-full max-w-md bg-panel border border-line-2 rounded-instrument p-5 space-y-3">
+            <h3 className="text-ink font-semibold text-sm">Bill Storage</h3>
             <div>
-              <label className="text-[11px] text-slate-500 block mb-1">Days</label>
+              <label className="text-[11px] text-faint block mb-1">Days</label>
               <input type="number" min="1" required className={inp} value={billingStorage.days} onChange={(e) => setBillingStorage((f) => ({ ...f, days: e.target.value }))} />
             </div>
             <div>
-              <label className="text-[11px] text-slate-500 block mb-1">Rate Per Day</label>
+              <label className="text-[11px] text-faint block mb-1">Rate Per Day</label>
               <input type="number" min="0" step="0.01" required className={inp} value={billingStorage.rate_per_day} onChange={(e) => setBillingStorage((f) => ({ ...f, rate_per_day: e.target.value }))} />
             </div>
             <div>
-              <label className="text-[11px] text-slate-500 block mb-1">Billed To</label>
+              <label className="text-[11px] text-faint block mb-1">Billed To</label>
               <input className={inp} value={billingStorage.billed_to} onChange={(e) => setBillingStorage((f) => ({ ...f, billed_to: e.target.value }))} />
             </div>
             <div>
-              <label className="text-[11px] text-slate-500 block mb-1">Notes</label>
+              <label className="text-[11px] text-faint block mb-1">Notes</label>
               <textarea rows={2} className={inp} value={billingStorage.notes} onChange={(e) => setBillingStorage((f) => ({ ...f, notes: e.target.value }))} />
             </div>
-            <div className="text-sm text-amber-300 font-semibold">
+            <div className="font-mono text-sm font-semibold tabular-nums text-gold">
               Total: ${(Number(billingStorage.days || 0) * Number(billingStorage.rate_per_day || 0)).toFixed(2)}
             </div>
             <div className="flex gap-2">
-              <button type="button" onClick={() => setShowStorageBillModal(false)} className="flex-1 bg-[#0f1117] border border-[#2a2d3e] text-slate-300 py-2 rounded-lg text-sm">
+              <button type="button" onClick={() => setShowStorageBillModal(false)} className="flex-1 bg-void border border-line-2 text-ink py-2 rounded-lg text-sm">
                 Cancel
               </button>
-              <button type="submit" disabled={billingStorageSaving} className="flex-1 bg-amber-400 hover:bg-amber-300 text-[#0f1117] py-2 rounded-lg text-sm font-semibold disabled:opacity-50">
+              <button type="submit" disabled={billingStorageSaving} className="flex-1 bg-gold hover:bg-gold-lit text-on-gold py-2 rounded-lg text-sm font-semibold disabled:opacity-50">
                 {billingStorageSaving ? 'Saving...' : 'Create Charge'}
               </button>
             </div>
