@@ -56,6 +56,56 @@ const ro = await dbGet('SELECT * FROM ros WHERE id = $1 AND shop_id = $2', [id, 
 await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 ```
 
+## Dispatch Log — 2026-07-10 Multi-Photo Intake
+
+**Status:** CODE COMPLETE — LOCAL VERIFICATION PASS — AWAITING CLAUDE CODE QA — NOT DEPLOYED
+
+**Requested behavior**
+- Pre-Dropoff Condition and every other existing photo/evidence upload surface must allow staff to select more than one file at a time.
+- A failed file must not discard successful files from the same selection.
+
+**Behavior implemented**
+- `RODetail.jsx` Pre-Dropoff Condition now accepts multiple images, optimizes and uploads them sequentially, shows `Uploading N of M`, refreshes the gallery once after the batch, and reports partial failures inline.
+- `ROPhotos.jsx` now uses the same batch path for both file-picker selections and drag/drop. Each image keeps the chosen photo type and shared caption; damage analysis remains per image.
+- `ClaimTrackerPanel.jsx` Claim Documentation now accepts multiple photos, videos, and PDFs, uploads each through the existing evidence endpoint, shows the selected-file count and upload progress, then reloads evidence once.
+- Existing backend endpoints remain single-file and shop-scoped; the frontend intentionally sends one request per file to preserve current authorization, storage, AI analysis, and per-file failure isolation.
+- Existing multi-file controls were audited and left intact: Appraisal Quick Intake, Estimate Builder, Insurance Estimate Import, Supplement Finder, Estimate Import Wizard, and Public Estimate Request damage photos.
+- Intentionally singular controls remain singular: shop-logo replacement and the Claim Portal assessment PDF.
+- No backend, schema, database, seed/reset path, customer/shop/RO/photo record, or Miles Automotive data was accessed or changed.
+
+**Files changed**
+- `frontend/src/pages/RODetail.jsx`
+- `frontend/src/components/ROPhotos.jsx`
+- `frontend/src/components/ClaimTrackerPanel.jsx`
+- `frontend/src/pages/__tests__/RODetail.totalLoss.test.jsx`
+- `frontend/src/components/__tests__/ROPhotos.phase31.test.jsx`
+- `frontend/src/components/__tests__/ClaimTrackerPanel.phase32.test.jsx`
+
+**Verification — local mocked only**
+```text
+Focused multi-file tests
+# 3 files, 14/14 passed
+
+cd frontend && npm run test:run
+# 27 files, 73/73 passed
+
+cd frontend && npm run build
+# clean production build
+
+node --test backend/src/__tests__/photos.scope.test.js
+# 3/3 passed; shop-scoped photo reads preserved
+
+rm -rf frontend/dist
+git diff --check
+git ls-files frontend/dist
+# clean; dist untracked
+```
+
+**QA requirements**
+- Read-only review must verify all three inputs carry `multiple`, selected files are uploaded sequentially, gallery/evidence reload happens once per successful batch, and a later failure does not erase an earlier successful upload.
+- Confirm estimate/appraisal multi-file workflows remain unchanged and the intentionally singular logo/PDF controls were not broadened.
+- Do not access a hosted database or mutate Miles Automotive data.
+
 ## Dispatch Log — 2026-07-10 Landscape Overlay + Complete Estimate Import
 
 **Status:** CLAUDE CODE QA PASS — CLEAR FOR HERMES — NOT DEPLOYED; LIVE LANDSCAPE VISUAL PENDING

@@ -15,6 +15,7 @@ vi.mock('../../lib/imageUpload', () => ({
 }))
 
 import api from '../../lib/api'
+import { optimizeImageForUpload } from '../../lib/imageUpload'
 import ROPhotos from '../ROPhotos'
 
 describe('ROPhotos uploaded media URLs', () => {
@@ -22,6 +23,7 @@ describe('ROPhotos uploaded media URLs', () => {
     api.get.mockReset()
     api.post.mockReset()
     api.delete.mockReset()
+    optimizeImageForUpload.mockClear()
     window.alert = vi.fn()
     window.confirm = vi.fn(() => true)
   })
@@ -64,6 +66,52 @@ describe('ROPhotos uploaded media URLs', () => {
 
     expect(await screen.findByText('Failed to load photos')).toBeInTheDocument()
     expect(screen.getByText('No photos yet')).toBeInTheDocument()
+  })
+
+  it('uploads multiple selected photos sequentially and refreshes once after the batch', async () => {
+    api.get.mockResolvedValue({ data: { photos: [] } })
+    api.post.mockResolvedValue({ data: { ok: true } })
+
+    render(<ROPhotos roId="ro-1" isAdmin />)
+    await screen.findByText('No photos yet')
+
+    const input = screen.getByLabelText('RO photos')
+    const first = new File(['first'], 'front.jpg', { type: 'image/jpeg' })
+    const second = new File(['second'], 'rear.jpg', { type: 'image/jpeg' })
+    expect(input).toHaveAttribute('multiple')
+
+    fireEvent.change(input, { target: { files: [first, second] } })
+
+    await waitFor(() => expect(api.post).toHaveBeenCalledTimes(2))
+    expect(api.post.mock.calls.map(([url]) => url)).toEqual(['/photos/ro-1', '/photos/ro-1'])
+    expect(api.post.mock.calls.map(([, form]) => form.get('photo').name)).toEqual(['front.jpg', 'rear.jpg'])
+    expect(optimizeImageForUpload).toHaveBeenCalledTimes(2)
+    await waitFor(() => expect(api.get).toHaveBeenCalledTimes(2))
+    expect(window.alert).not.toHaveBeenCalled()
+  })
+
+  it('keeps successful photos when another file in the batch fails', async () => {
+    api.get.mockResolvedValue({ data: { photos: [] } })
+    api.post
+      .mockResolvedValueOnce({ data: { ok: true } })
+      .mockRejectedValueOnce({ response: { data: { error: 'Image could not be stored' } } })
+
+    render(<ROPhotos roId="ro-1" isAdmin />)
+    await screen.findByText('No photos yet')
+
+    fireEvent.change(screen.getByLabelText('RO photos'), {
+      target: {
+        files: [
+          new File(['first'], 'front.jpg', { type: 'image/jpeg' }),
+          new File(['second'], 'rear.jpg', { type: 'image/jpeg' }),
+        ],
+      },
+    })
+
+    await waitFor(() => expect(api.post).toHaveBeenCalledTimes(2))
+    expect(await screen.findByRole('alert')).toHaveTextContent('1 of 2 photos could not be uploaded')
+    expect(screen.getByRole('alert')).toHaveTextContent('rear.jpg')
+    await waitFor(() => expect(api.get).toHaveBeenCalledTimes(2))
   })
 
   it('opens a bounded body-level viewer above the sidebar with working zoom controls', async () => {

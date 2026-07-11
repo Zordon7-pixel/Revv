@@ -23,6 +23,7 @@ import ROOperations from '../components/ROOperations'
 import ClaimTrackerPanel from '../components/ClaimTrackerPanel'
 import { optimizeImageForUpload } from '../lib/imageUpload'
 import { resolveUploadedMediaUrl } from '../lib/mediaUrls'
+import { safeExternalErrorMessage } from '../lib/safeErrors'
 import PhotoLightbox from '../components/PhotoLightbox'
 import AppOverlay from '../components/AppOverlay'
 
@@ -122,6 +123,8 @@ export default function RODetail() {
   const [deletingInternalNote, setDeletingInternalNote] = useState(null)
   const [preDropoffPhotos, setPreDropoffPhotos] = useState([])
   const [preDropoffUploading, setPreDropoffUploading] = useState(false)
+  const [preDropoffUploadProgress, setPreDropoffUploadProgress] = useState('')
+  const [preDropoffUploadError, setPreDropoffUploadError] = useState('')
   const [preDropoffExpanded, setPreDropoffExpanded] = useState(true)
   const [preDropoffLightbox, setPreDropoffLightbox] = useState(null)
   const [failedPreDropoffPhotoIds, setFailedPreDropoffPhotoIds] = useState({})
@@ -681,26 +684,55 @@ export default function RODetail() {
   }
 
   async function uploadPreDropoffPhoto(e) {
-    const file = e.target.files?.[0]
-    if (!file) return
+    const input = e.currentTarget
+    const files = Array.from(input.files || [])
+    if (!files.length) return
+
     setPreDropoffUploading(true)
-    try {
-      const preparedFile = await optimizeImageForUpload(file, {
-        maxDimension: 2048,
-        targetBytes: 3 * 1024 * 1024,
-      })
-      const fd = new FormData()
-      fd.append('photo', preparedFile)
-      await api.post(`/photos/ro/${id}/predropoff`, fd, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      })
-      loadPreDropoffPhotos()
-    } catch (err) {
-      alert(err?.response?.data?.error || 'Could not upload photo')
-    } finally {
-      setPreDropoffUploading(false)
-      e.target.value = ''
+    setPreDropoffUploadError('')
+    let uploadedCount = 0
+    const failures = []
+
+    for (let index = 0; index < files.length; index += 1) {
+      const file = files[index]
+      if (!String(file.type || '').startsWith('image/')) {
+        failures.push({ file, message: 'File is not an image.' })
+        continue
+      }
+
+      try {
+        setPreDropoffUploadProgress(`Uploading ${index + 1} of ${files.length}…`)
+        const preparedFile = await optimizeImageForUpload(file, {
+          maxDimension: 2048,
+          targetBytes: 3 * 1024 * 1024,
+        })
+        const fd = new FormData()
+        fd.append('photo', preparedFile)
+        await api.post(`/photos/ro/${id}/predropoff`, fd, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        })
+        uploadedCount += 1
+      } catch (err) {
+        failures.push({
+          file,
+          message: safeExternalErrorMessage(err, 'Could not upload photo'),
+        })
+      }
     }
+
+    if (uploadedCount > 0) {
+      await loadPreDropoffPhotos()
+    }
+    if (failures.length > 0) {
+      const firstFailure = failures[0]
+      setPreDropoffUploadError(
+        `${failures.length} of ${files.length} pre-dropoff photos could not be uploaded. ${firstFailure.file.name}: ${firstFailure.message}`
+      )
+    }
+
+    setPreDropoffUploading(false)
+    setPreDropoffUploadProgress('')
+    input.value = ''
   }
 
   async function deletePreDropoffPhoto(photoId) {
@@ -1396,15 +1428,23 @@ export default function RODetail() {
                       : 'bg-indigo-600 hover:bg-indigo-500 text-white'
                   }`}
                 >
-                  <Camera size={12} /> {preDropoffUploading ? 'Uploading...' : 'Upload Pre-Dropoff Photo'}
+                  <Camera size={12} /> {preDropoffUploading ? preDropoffUploadProgress : 'Upload Pre-Dropoff Photos'}
                   <input
                     type="file"
                     accept="image/*"
+                    multiple
+                    aria-label="Pre-dropoff photos"
                     className="hidden"
                     disabled={preDropoffUploading}
                     onChange={uploadPreDropoffPhoto}
                   />
                 </label>
+              )}
+
+              {preDropoffUploadError && (
+                <p role="alert" className="rounded-lg border border-red-800/50 bg-red-950/30 px-3 py-2 text-xs text-red-300">
+                  {preDropoffUploadError}
+                </p>
               )}
 
               {preDropoffPhotos.length === 0 ? (

@@ -66,6 +66,34 @@ describe('ClaimTrackerPanel evidence media', () => {
     expect(window.alert).not.toHaveBeenCalled()
   })
 
+  it('uploads every selected claim evidence file and reloads once after the batch', async () => {
+    api.get.mockResolvedValue({
+      data: { evidence: [], contacts: [], disputes: [] },
+    })
+    api.post.mockResolvedValue({ data: { ok: true } })
+
+    render(<ClaimTrackerPanel roId="ro-1" canEdit />)
+    await screen.findByText('No claim evidence files yet.')
+
+    const input = screen.getByLabelText('Claim evidence files')
+    const first = new File(['first'], 'front.jpg', { type: 'image/jpeg' })
+    const second = new File(['second'], 'appraisal.pdf', { type: 'application/pdf' })
+    expect(input).toHaveAttribute('multiple')
+
+    fireEvent.change(input, { target: { files: [first, second] } })
+    expect(screen.getByText('2 files selected')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Add 2 Files' }))
+
+    await waitFor(() => expect(api.post).toHaveBeenCalledTimes(2))
+    expect(api.post.mock.calls.map(([url]) => url)).toEqual([
+      '/claim-tracker/ro/ro-1/evidence',
+      '/claim-tracker/ro/ro-1/evidence',
+    ])
+    expect(api.post.mock.calls.map(([, form]) => form.get('media').name)).toEqual(['front.jpg', 'appraisal.pdf'])
+    await waitFor(() => expect(api.get).toHaveBeenCalledTimes(2))
+    expect(window.alert).not.toHaveBeenCalled()
+  })
+
   it('renders appraisal PDFs as document links instead of broken images', async () => {
     api.get.mockResolvedValue({
       data: {

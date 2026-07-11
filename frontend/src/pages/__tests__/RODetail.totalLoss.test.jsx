@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 
@@ -22,6 +22,10 @@ vi.mock('../../lib/auth', () => ({
 
 vi.mock('../../contexts/LanguageContext', () => ({
   useLanguage: () => ({ t: (key) => key }),
+}))
+
+vi.mock('../../lib/imageUpload', () => ({
+  optimizeImageForUpload: vi.fn((file) => Promise.resolve(file)),
 }))
 
 vi.mock('../RepairOrders', () => ({
@@ -225,5 +229,28 @@ describe('RODetail total loss action', () => {
     expect(window.confirm).toHaveBeenCalledWith('Delete this pre-dropoff photo?')
     await waitFor(() => expect(api.delete).toHaveBeenCalledWith('/photos/predropoff-1'))
     expect(screen.queryByRole('button', { name: 'View pre-dropoff photo: Driver side before work' })).not.toBeInTheDocument()
+  })
+
+  it('uploads multiple pre-dropoff photos and refreshes the gallery once after the batch', async () => {
+    stubApi(makeRo())
+    renderRODetail()
+
+    await screen.findByText('RO-1')
+    const input = screen.getByLabelText('Pre-dropoff photos')
+    const first = new File(['first'], 'driver-side.jpg', { type: 'image/jpeg' })
+    const second = new File(['second'], 'passenger-side.jpg', { type: 'image/jpeg' })
+    expect(input).toHaveAttribute('multiple')
+
+    fireEvent.change(input, { target: { files: [first, second] } })
+
+    await waitFor(() => {
+      const uploads = api.post.mock.calls.filter(([url]) => url === '/photos/ro/ro-1/predropoff')
+      expect(uploads).toHaveLength(2)
+      expect(uploads.map(([, form]) => form.get('photo').name)).toEqual(['driver-side.jpg', 'passenger-side.jpg'])
+    })
+    await waitFor(() => {
+      const galleryLoads = api.get.mock.calls.filter(([url]) => url === '/photos/ro/ro-1/predropoff')
+      expect(galleryLoads).toHaveLength(2)
+    })
   })
 })

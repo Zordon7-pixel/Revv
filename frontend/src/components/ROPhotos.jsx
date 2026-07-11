@@ -28,6 +28,7 @@ export default function ROPhotos({ roId, isAdmin, canDelete = isAdmin }) {
   const [photoType, setPhotoType] = useState('damage')
   const [isDragActive, setIsDragActive] = useState(false)
   const [photoLoadError, setPhotoLoadError] = useState('')
+  const [photoUploadError, setPhotoUploadError] = useState('')
   const fileRef = useRef(null)
   const dropZoneRef = useRef(null)
 
@@ -45,33 +46,66 @@ export default function ROPhotos({ roId, isAdmin, canDelete = isAdmin }) {
 
   useEffect(() => { load() }, [roId])
 
-  async function handleUpload(e) {
-    const file = e.target.files?.[0]
-    if (!file) return
+  async function uploadPhotoFiles(fileList) {
+    const files = Array.from(fileList || [])
+    if (!files.length) return
+
     setUploading(true)
-    setAnalyzingMsg('Optimizing photo…')
-    try {
-      const preparedFile = await optimizeImageForUpload(file, {
-        maxDimension: 2048,
-        targetBytes: 3 * 1024 * 1024,
-      })
-      setAnalyzingMsg(photoType === 'damage' ? 'Analyzing damage…' : 'Uploading…')
-      const fd = new FormData()
-      fd.append('photo', preparedFile)
-      fd.append('caption', caption)
-      fd.append('photo_type', photoType)
-      await api.post(`/photos/${roId}`, fd, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      })
-      setCaption('')
-      load()
-    } catch (err) {
-      alert(safeExternalErrorMessage(err, 'Upload failed'))
-    } finally {
-      setUploading(false)
-      setAnalyzingMsg('')
-      if (fileRef.current) fileRef.current.value = ''
+    setPhotoUploadError('')
+    let uploadedCount = 0
+    const failures = []
+
+    for (let index = 0; index < files.length; index += 1) {
+      const file = files[index]
+      if (!String(file.type || '').startsWith('image/')) {
+        failures.push({ file, message: 'File is not an image.' })
+        continue
+      }
+
+      try {
+        setAnalyzingMsg(`Optimizing ${index + 1} of ${files.length}…`)
+        const preparedFile = await optimizeImageForUpload(file, {
+          maxDimension: 2048,
+          targetBytes: 3 * 1024 * 1024,
+        })
+        setAnalyzingMsg(photoType === 'damage'
+          ? `Analyzing ${index + 1} of ${files.length}…`
+          : `Uploading ${index + 1} of ${files.length}…`)
+        const fd = new FormData()
+        fd.append('photo', preparedFile)
+        fd.append('caption', caption)
+        fd.append('photo_type', photoType)
+        await api.post(`/photos/${roId}`, fd, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        })
+        uploadedCount += 1
+      } catch (err) {
+        failures.push({
+          file,
+          message: safeExternalErrorMessage(err, 'Upload failed'),
+        })
+      }
     }
+
+    if (uploadedCount > 0) {
+      setCaption('')
+      await load()
+    }
+    if (failures.length > 0) {
+      const firstFailure = failures[0]
+      setPhotoUploadError(
+        `${failures.length} of ${files.length} photos could not be uploaded. ${firstFailure.file.name}: ${firstFailure.message}`
+      )
+    }
+
+    setUploading(false)
+    setAnalyzingMsg('')
+  }
+
+  async function handleUpload(e) {
+    const input = e.currentTarget
+    await uploadPhotoFiles(input.files)
+    input.value = ''
   }
 
   async function deletePhoto(photoId) {
@@ -111,39 +145,7 @@ export default function ROPhotos({ roId, isAdmin, canDelete = isAdmin }) {
     setIsDragActive(false)
     const files = e.dataTransfer?.files
     if (!files || files.length === 0) return
-    
-    // Process each dropped file
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i]
-      if (!file.type.startsWith('image/')) {
-        alert(`${file.name} is not an image`)
-        continue
-      }
-      
-      setUploading(true)
-      setAnalyzingMsg('Optimizing photo…')
-      try {
-        const preparedFile = await optimizeImageForUpload(file, {
-          maxDimension: 2048,
-          targetBytes: 3 * 1024 * 1024,
-        })
-        setAnalyzingMsg(photoType === 'damage' ? 'Analyzing damage…' : 'Uploading…')
-        const fd = new FormData()
-        fd.append('photo', preparedFile)
-        fd.append('caption', caption)
-        fd.append('photo_type', photoType)
-        await api.post(`/photos/${roId}`, fd, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        })
-      } catch (err) {
-        alert(safeExternalErrorMessage(err, `Upload of ${file.name} failed`))
-      } finally {
-        setUploading(false)
-        setAnalyzingMsg('')
-      }
-    }
-    setCaption('')
-    load()
+    await uploadPhotoFiles(files)
   }
 
   const inp = 'bg-[#0f1117] border border-[#2a2d3e] rounded-lg text-xs text-slate-300 px-2 py-1.5 focus:outline-none focus:border-indigo-500'
@@ -180,12 +182,14 @@ export default function ROPhotos({ roId, isAdmin, canDelete = isAdmin }) {
           >
             {uploading
               ? <><Sparkles size={12} className="animate-pulse" /> {analyzingMsg}</>
-              : <><Upload size={12} /> Upload</>
+              : <><Upload size={12} /> Upload Photos</>
             }
             <input
               ref={fileRef}
               type="file"
               accept="image/*"
+              multiple
+              aria-label="RO photos"
               className="hidden"
               onChange={handleUpload}
               disabled={uploading}
@@ -204,6 +208,12 @@ export default function ROPhotos({ roId, isAdmin, canDelete = isAdmin }) {
       {photoLoadError && (
         <div className="mb-3 rounded-lg border border-red-800/50 bg-red-950/30 px-3 py-2 text-xs text-red-300">
           {photoLoadError}
+        </div>
+      )}
+
+      {photoUploadError && (
+        <div role="alert" className="mb-3 rounded-lg border border-red-800/50 bg-red-950/30 px-3 py-2 text-xs text-red-300">
+          {photoUploadError}
         </div>
       )}
 

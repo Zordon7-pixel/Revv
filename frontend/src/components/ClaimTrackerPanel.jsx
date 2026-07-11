@@ -44,9 +44,10 @@ export default function ClaimTrackerPanel({ roId, canEdit }) {
   const [contacts, setContacts] = useState([])
   const [disputes, setDisputes] = useState([])
 
-  const [selectedEvidenceFile, setSelectedEvidenceFile] = useState(null)
+  const [selectedEvidenceFiles, setSelectedEvidenceFiles] = useState([])
   const [evidenceCaption, setEvidenceCaption] = useState('')
   const [uploadingEvidence, setUploadingEvidence] = useState(false)
+  const [evidenceUploadProgress, setEvidenceUploadProgress] = useState('')
   const [deletingEvidenceId, setDeletingEvidenceId] = useState('')
   const [selectedEvidencePhoto, setSelectedEvidencePhoto] = useState(null)
 
@@ -83,27 +84,48 @@ export default function ClaimTrackerPanel({ roId, canEdit }) {
 
   async function uploadEvidence(e) {
     e.preventDefault()
-    if (!selectedEvidenceFile) return
+    const files = selectedEvidenceFiles
+    if (!files.length) return
 
     setUploadingEvidence(true)
     setActionError('')
-    try {
-      const fd = new FormData()
-      fd.append('media', selectedEvidenceFile)
-      fd.append('caption', evidenceCaption.trim())
-      await api.post(`/claim-tracker/ro/${roId}/evidence`, fd, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      })
+    let uploadedCount = 0
+    const failures = []
 
-      setSelectedEvidenceFile(null)
-      setEvidenceCaption('')
-      if (fileInputRef.current) fileInputRef.current.value = ''
-      await loadTracker()
-    } catch (err) {
-      setActionError(safeExternalErrorMessage(err, 'Could not upload evidence file'))
-    } finally {
-      setUploadingEvidence(false)
+    for (let index = 0; index < files.length; index += 1) {
+      const file = files[index]
+      try {
+        setEvidenceUploadProgress(`Uploading ${index + 1} of ${files.length}…`)
+        const fd = new FormData()
+        fd.append('media', file)
+        fd.append('caption', evidenceCaption.trim())
+        await api.post(`/claim-tracker/ro/${roId}/evidence`, fd, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        })
+        uploadedCount += 1
+      } catch (err) {
+        failures.push({
+          file,
+          message: safeExternalErrorMessage(err, 'Could not upload evidence file'),
+        })
+      }
     }
+
+    setSelectedEvidenceFiles([])
+    if (fileInputRef.current) fileInputRef.current.value = ''
+    if (uploadedCount > 0) {
+      setEvidenceCaption('')
+      await loadTracker()
+    }
+    if (failures.length > 0) {
+      const firstFailure = failures[0]
+      setActionError(
+        `${failures.length} of ${files.length} evidence files could not be uploaded. ${firstFailure.file.name}: ${firstFailure.message}`
+      )
+    }
+
+    setUploadingEvidence(false)
+    setEvidenceUploadProgress('')
   }
 
   async function removeEvidence(evidenceId) {
@@ -239,7 +261,9 @@ export default function ClaimTrackerPanel({ roId, canEdit }) {
                 ref={fileInputRef}
                 type="file"
                 accept="image/*,video/*,application/pdf"
-                onChange={(e) => setSelectedEvidenceFile(e.target.files?.[0] || null)}
+                multiple
+                aria-label="Claim evidence files"
+                onChange={(e) => setSelectedEvidenceFiles(Array.from(e.target.files || []))}
                 className={inp}
                 disabled={uploadingEvidence}
               />
@@ -255,11 +279,16 @@ export default function ClaimTrackerPanel({ roId, canEdit }) {
             </div>
             <button
               type="submit"
-              disabled={uploadingEvidence || !selectedEvidenceFile}
+              disabled={uploadingEvidence || selectedEvidenceFiles.length === 0}
               className="text-xs bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] font-semibold px-3 py-2 rounded-lg disabled:opacity-50"
             >
-              {uploadingEvidence ? 'Uploading...' : 'Add Evidence'}
+              {uploadingEvidence ? evidenceUploadProgress : `Add ${selectedEvidenceFiles.length > 1 ? `${selectedEvidenceFiles.length} Files` : 'Evidence'}`}
             </button>
+            {selectedEvidenceFiles.length > 0 && (
+              <p aria-live="polite" className="sm:col-span-3 text-xs text-slate-400">
+                {selectedEvidenceFiles.length} file{selectedEvidenceFiles.length === 1 ? '' : 's'} selected
+              </p>
+            )}
           </form>
         )}
 
