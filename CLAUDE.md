@@ -58,7 +58,7 @@ await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 
 ## Dispatch Log — 2026-07-10 Estimate Upload Reuse + Zero-Line OCR Recovery
 
-**Status:** CLAUDE CODE QA PASS — CLEARED FOR HERMES — NOT DEPLOYED
+**Status:** DEPLOYED + CLAUDE QA PASS + LIVE HEALTH VERIFIED
 
 **Reported behavior**
 - Insurance Import showed `Review this CCC estimate before import` but returned 0 selectable rows.
@@ -132,6 +132,14 @@ Rendered-app smoke at 1180x820 with synthetic shop/RO responses only
 - Re-ran `123/123` Node backend tests, `7/7` extractor tests, `77/77` frontend tests, the production build, diff checks, and dist tracking check.
 - Findings: zero CRITICAL, HIGH, or MEDIUM issues.
 - Verdict: **PASS; commit `dab3e3f` is clear for Hermes to ship.**
+
+**Hermes deployment verification**
+- Fast-forwarded `2a6b443..7756e3f` to `origin/main`; no force push or history rewrite.
+- `SPEC-revv-redesign.md` remained untracked and was excluded.
+- `https://revvshop.app/api/health` and the Railway health endpoint both returned HTTP 200 with commit `7756e3f98199be7f416394c15322b1037e4ef1fa`.
+- `./scripts/smoke-test.sh` returned 6/6 PASS plus the documented local-shell `RESEND_API_KEY` warning; SPF passed.
+- Railway logs showed `[migrate] All idempotent migrations complete.` after applying the additive `import_draft` migration.
+- No seed, reset, manual data mutation, or Miles Automotive data access occurred.
 
 ## Dispatch Log — 2026-07-10 Multi-Photo Intake
 
