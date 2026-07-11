@@ -18,10 +18,8 @@ const BEATS = [
     end: 5_500,
     eyebrow: 'REVV PROFIT SIGNAL',
     title: 'This RO is $1,450 short.',
-    detail: 'The estimate is moving. The missed money is not.',
     metric: '-$1,450',
     tone: 'critical',
-    asset: '/demo/job-costing.png',
   },
   {
     id: 'floor',
@@ -29,10 +27,8 @@ const BEATS = [
     end: 11_000,
     eyebrow: 'LIVE PRODUCTION FLOOR',
     title: 'Parts stalled. Paint is waiting.',
-    detail: 'REVV connects the handoffs before cycle time slips.',
     metric: '2 BLOCKS',
     tone: 'brand',
-    asset: '/demo/repair-orders.png',
   },
   {
     id: 'catch',
@@ -40,10 +36,8 @@ const BEATS = [
     end: 17_000,
     eyebrow: 'THE CATCH',
     title: 'Three operations never made the estimate.',
-    detail: 'Proof, labor, and supplements surface while the RO is still open.',
     metric: '3 FOUND',
     tone: 'brand',
-    asset: '/demo/ro-detail.png',
   },
   {
     id: 'payout',
@@ -51,10 +45,8 @@ const BEATS = [
     end: 23_500,
     eyebrow: 'PROFIT RECOVERED',
     title: '$1,450 protected before delivery.',
-    detail: 'One operating system keeps the job, proof, and money in sync.',
     metric: '+$1,450',
     tone: 'money',
-    asset: '/demo/job-costing.png',
   },
   {
     id: 'cta',
@@ -62,10 +54,8 @@ const BEATS = [
     end: DURATION_MS + 1,
     eyebrow: 'REVV SHOP OPERATING SYSTEM',
     title: 'Run every repair. Protect every dollar.',
-    detail: 'From first photo to final payment, the whole shop moves together.',
     metric: 'IN SYNC',
     tone: 'brand',
-    asset: '/demo/repair-orders.png',
   },
 ]
 
@@ -110,8 +100,7 @@ const RevvDemo = forwardRef(function RevvDemo({ className = '' }, ref) {
   const [elapsed, setElapsed] = useState(() => (prefersReducedMotion() ? DURATION_MS : 0))
   const [playing, setPlaying] = useState(() => !prefersReducedMotion())
   const [soundEnabled, setSoundEnabled] = useState(false)
-  const frameRef = useRef(null)
-  const startedAtRef = useRef(null)
+  const videoRef = useRef(null)
   const voiceRef = useRef(null)
   const scoreRef = useRef(null)
 
@@ -126,26 +115,38 @@ const RevvDemo = forwardRef(function RevvDemo({ className = '' }, ref) {
     }
   }, [])
 
-  const start = useCallback(async ({ sound = false } = {}) => {
+  const start = useCallback(({ sound = false } = {}) => {
     stopAudio()
     setSoundEnabled(sound)
     setElapsed(0)
-    startedAtRef.current = null
+    const video = videoRef.current
+    let videoPlayback = null
+    if (video) {
+      video.pause()
+      video.currentTime = 0
+      video.muted = true
+      if (!reducedMotion) videoPlayback = video.play()
+    }
     setPlaying(!reducedMotion)
 
+    let voicePlayback = null
     if (sound) {
       scoreRef.current = scheduleScore()
       if (scoreRef.current?.state === 'suspended') {
-        await scoreRef.current.resume().catch(() => {})
+        scoreRef.current.resume().catch(() => {})
       }
       if (voiceRef.current) {
         voiceRef.current.currentTime = 0
-        const playback = voiceRef.current.play()
-        await playback?.catch?.(() => {})
+        voicePlayback = voiceRef.current.play()
       }
     }
 
-    if (reducedMotion) setElapsed(DURATION_MS)
+    videoPlayback?.catch?.(() => setPlaying(false))
+    voicePlayback?.catch?.(() => setSoundEnabled(false))
+    if (reducedMotion) {
+      setElapsed(DURATION_MS)
+      setPlaying(false)
+    }
   }, [reducedMotion, stopAudio])
 
   useImperativeHandle(ref, () => ({
@@ -160,33 +161,23 @@ const RevvDemo = forwardRef(function RevvDemo({ className = '' }, ref) {
       setReducedMotion(event.matches)
       setPlaying(!event.matches)
       setElapsed(event.matches ? DURATION_MS : 0)
-      startedAtRef.current = null
-      if (event.matches) stopAudio()
+      const video = videoRef.current
+      if (event.matches) {
+        if (video) {
+          video.pause()
+          if (Number.isFinite(video.duration)) video.currentTime = Math.max(0, video.duration - 0.05)
+        }
+        stopAudio()
+      } else if (video) {
+        video.currentTime = 0
+        video.play().catch(() => setPlaying(false))
+      }
     }
     query.addEventListener?.('change', handleChange)
     return () => query.removeEventListener?.('change', handleChange)
   }, [stopAudio])
 
-  useEffect(() => {
-    if (!playing || reducedMotion) return undefined
-    const tick = (timestamp) => {
-      if (startedAtRef.current === null) startedAtRef.current = timestamp
-      const nextElapsed = Math.min(DURATION_MS, timestamp - startedAtRef.current)
-      setElapsed(nextElapsed)
-      if (nextElapsed < DURATION_MS) {
-        frameRef.current = window.requestAnimationFrame(tick)
-      } else {
-        setPlaying(false)
-      }
-    }
-    frameRef.current = window.requestAnimationFrame(tick)
-    return () => window.cancelAnimationFrame(frameRef.current)
-  }, [playing, reducedMotion])
-
-  useEffect(() => () => {
-    if (frameRef.current) window.cancelAnimationFrame(frameRef.current)
-    stopAudio()
-  }, [stopAudio])
+  useEffect(() => () => stopAudio(), [stopAudio])
 
   const beat = useMemo(
     () => BEATS.find((item) => elapsed >= item.start && elapsed < item.end) || BEATS.at(-1),
@@ -200,25 +191,40 @@ const RevvDemo = forwardRef(function RevvDemo({ className = '' }, ref) {
       className={`revv-demo ${className}`}
       data-beat={beat.id}
       data-reduced-motion={reducedMotion ? 'true' : 'false'}
+      data-playing={playing ? 'true' : 'false'}
       aria-label="Thirty second REVV product demo"
     >
       <div className="revv-demo-media" aria-hidden="true">
-        {BEATS.map((item) => (
-          <img
-            key={item.id}
-            src={item.asset}
-            alt=""
-            className={`revv-demo-screen ${item.id === beat.id ? 'is-active' : ''}`}
-          />
-        ))}
+        <video
+          ref={videoRef}
+          className="revv-demo-video"
+          autoPlay={!reducedMotion}
+          muted
+          playsInline
+          preload="auto"
+          poster="/demo/revv-product-tour-poster.png"
+          onLoadedMetadata={(event) => {
+            if (reducedMotion && Number.isFinite(event.currentTarget.duration)) {
+              event.currentTarget.currentTime = Math.max(0, event.currentTarget.duration - 0.05)
+            }
+          }}
+          onTimeUpdate={(event) => setElapsed(Math.min(DURATION_MS, event.currentTarget.currentTime * 1000))}
+          onPlay={() => setPlaying(true)}
+          onEnded={() => {
+            setElapsed(DURATION_MS)
+            setPlaying(false)
+          }}
+        >
+          <source src="/demo/revv-product-tour-mobile.mp4" type="video/mp4" media="(max-width: 767px)" />
+          <source src="/demo/revv-product-tour-desktop.mp4" type="video/mp4" />
+        </video>
       </div>
-      <div className="revv-demo-grid" aria-hidden="true" />
-      <div className="revv-demo-sweep" aria-hidden="true" />
 
       <div className="revv-demo-readout" aria-live="polite" aria-atomic="true">
-        <p className="revv-demo-eyebrow">{beat.eyebrow}</p>
-        <p className="revv-demo-title">{beat.title}</p>
-        <p className="revv-demo-detail">{beat.detail}</p>
+        <div>
+          <p className="revv-demo-eyebrow">{beat.eyebrow}</p>
+          <p className="revv-demo-title">{beat.title}</p>
+        </div>
         <p className={`revv-demo-metric is-${beat.tone}`}>{beat.metric}</p>
       </div>
 
@@ -230,18 +236,19 @@ const RevvDemo = forwardRef(function RevvDemo({ className = '' }, ref) {
           <span className="revv-demo-time">0:{String(Math.min(30, Math.floor(elapsed / 1000))).padStart(2, '0')} / 0:30</span>
           <button
             type="button"
-            className="revv-demo-control"
+            className="revv-demo-icon-control"
             onClick={() => start({ sound: true })}
-            aria-label="Play demo with sound"
+            aria-label="Restart product tour with sound"
+            title="Restart with sound"
           >
             {soundEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
-            <span>{soundEnabled ? 'Sound on' : 'Play with sound'}</span>
           </button>
           <button
             type="button"
             className="revv-demo-icon-control"
             onClick={() => start({ sound: false })}
-            aria-label="Replay demo muted"
+            aria-label="Replay product tour muted"
+            title="Replay muted"
           >
             <RotateCcw size={16} />
           </button>

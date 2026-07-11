@@ -56,6 +56,45 @@ const ro = await dbGet('SELECT * FROM ros WHERE id = $1 AND shop_id = $2', [id, 
 await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 ```
 
+## Dispatch Log — 2026-07-11 Landing Product Video + Advertising Focus
+
+**Time:** 2026-07-11 09:40 ET / 2026-07-11 13:40 UTC
+**Status:** READY FOR CLAUDE CODE QA — FEATURE BRANCH ONLY — NOT DEPLOYED
+
+**Scope**
+- Fixed the public-page report that the 30-second voiceover played without a visible product video. The prior `RevvDemo` was five still `<img>` layers hidden behind a dense mobile shade and overlapping hero/readout controls; it contained no video element.
+- Added real local H.264 product-tour media generated exclusively from current, fully mocked REVV redesign screenshots: a 1280x720 desktop/tablet MP4 and a 720x1280 phone MP4. Both are exactly 30 seconds, 30 fps, YUV420p, fast-start enabled, and under 1 MB. A current Dashboard poster provides a useful fallback without loading customer data.
+- Rebuilt `RevvDemo` around a muted autoplaying, inline `<video>` with responsive `<source media>` selection. The video clock now drives the existing five-beat captions and progress; the existing local voiceover and Web Audio score restart in sync from the hero CTA. Reduced-motion users receive a paused final frame and final message.
+- Removed the decorative demo grid/sweep, large detail copy, and text-heavy sound control. The remaining compact readout, progress, sound restart icon, and muted replay icon preserve control without covering the product.
+- Simplified only the public landing page; the authenticated REVV UI was not changed. The hero now has one advertising message and one product-tour CTA while the navigation retains sign-in/start-free conversion. Removed the duplicate hero signup, value rail, repeated eight-stage operations band, separate free-trial card, and native-app waitlist. The remaining page is hero + proof strip + three differentiators + one pricing offer + contact.
+- Browser QA verified that video time advances automatically, the tour CTA restarts video and audio together, mobile selects the 720x1280 asset, tablet/desktop select 1280x720, media readyState is 4, and the audio is playing. Phone, tablet, and desktop client/body scroll widths match exactly with zero console/page errors; only four main advertising sections remain.
+- No logged-in component, API, auth rule, workflow, money logic, backend, database, migration, seed/reset script, provider configuration, customer/shop/RO/payment data, or Miles Automotive data changed. All product-tour screenshots use synthetic `Visual QA Shop` data.
+
+**Files changed (9; batch cap respected)**
+- `frontend/src/components/RevvDemo.jsx`
+- `frontend/src/components/__tests__/RevvDemo.test.jsx`
+- `frontend/src/pages/Landing.jsx`
+- `frontend/src/pages/__tests__/Landing.redesign.test.jsx`
+- `frontend/src/index.css`
+- `frontend/public/demo/revv-product-tour-desktop.mp4`
+- `frontend/public/demo/revv-product-tour-mobile.mp4`
+- `frontend/public/demo/revv-product-tour-poster.png`
+- `CLAUDE.md`
+
+**Verification**
+```
+cd frontend && npm run test:run -- src/components/__tests__/RevvDemo.test.jsx src/pages/__tests__/Landing.redesign.test.jsx  # 2 files, 4/4 passed
+node --test native backend sweep  # 130/130 passed
+cd backend && npm run test:run  # extractor suite 7/7 passed
+cd frontend && npm run test:run  # 38 files, 121/121 passed
+cd frontend && npm run build  # clean; pre-existing Sentry/chunk-size warnings only
+ffprobe desktop  # H.264, 1280x720, yuv420p, 30 fps, 30.000s, 728,050 bytes
+ffprobe mobile  # H.264, 720x1280, yuv420p, 30 fps, 30.000s, 874,994 bytes
+Playwright local browser QA  # 390x844, 1024x768, 1440x900; correct responsive source; video autoplay advances; CTA restarts video + MP3; readyState 4; exact client/body widths; 4 main sections; zero console/page errors
+screenshots  # /tmp/revv-landing-video-phone-hero.png, /tmp/revv-landing-video-phone-second-scene.png, /tmp/revv-landing-video-phone-full.png, /tmp/revv-landing-video-tablet-hero.png, /tmp/revv-landing-video-desktop-hero.png, /tmp/revv-landing-video-desktop-second-scene.png, /tmp/revv-landing-video-desktop-full.png
+rm -rf frontend/dist && git diff --check && git ls-files frontend/dist | wc -l  # 0
+```
+
 ## Dispatch Log — 2026-07-11 REVV Redesign Phase 6N: Complete RO Workspace + Global Closeout
 
 **Time:** 2026-07-11 06:01 ET / 2026-07-11 10:01 UTC

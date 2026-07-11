@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 
 vi.mock('../../components/LeadCaptureForm', () => ({
@@ -17,31 +17,28 @@ describe('Landing redesign', () => {
   it('keeps the real REVV brand, registration CTA, features, and local demo visible', () => {
     render(<MemoryRouter><Landing /></MemoryRouter>)
 
-    expect(screen.getByRole('heading', { name: 'Collision shop operations, in one live system.' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Watch REVV run/ })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Run every repair. Protect every dollar.' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Watch the product tour/ })).toBeInTheDocument()
     expect(screen.getAllByRole('link', { name: /Start free/i })[0]).toHaveAttribute('href', '/shop-register')
     expect(screen.getByText('One live repair order')).toBeInTheDocument()
     expect(screen.getByText('$199')).toBeInTheDocument()
     expect(screen.getByAltText('REVV wordmark')).toHaveAttribute('src', '/revv-wordmark-transparent.png')
+    expect(document.querySelector('video.revv-demo-video')).toBeInTheDocument()
 
-    const externalMedia = [...document.querySelectorAll('img, audio')]
+    const externalMedia = [...document.querySelectorAll('img, video, video source, audio')]
       .map((node) => node.getAttribute('src'))
       .filter((source) => /^https?:\/\//.test(source || ''))
     expect(externalMedia).toHaveLength(0)
   })
 
-  it('preserves the mobile waitlist submission flow', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true })
-    vi.stubGlobal('fetch', fetchMock)
+  it('keeps only the advertising and conversion sections needed to sell REVV', () => {
     render(<MemoryRouter><Landing /></MemoryRouter>)
 
-    fireEvent.change(screen.getByLabelText('Work email'), { target: { value: 'shop@example.com' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Notify me' }))
-
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/waitlist', expect.objectContaining({
-      method: 'POST',
-      body: JSON.stringify({ email: 'shop@example.com', source: 'landing-download' }),
-    })))
-    expect(await screen.findByText('You are on the list.')).toBeInTheDocument()
+    expect(screen.getByText('Protect profit before delivery')).toBeInTheDocument()
+    expect(screen.getByText('Proof ready when insurers ask')).toBeInTheDocument()
+    expect(screen.getByText('Fourteen days free. No credit card or setup fee.')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Bring one real workflow. We will show you the difference.' })).toBeInTheDocument()
+    expect(screen.queryByText('Get native app early access')).not.toBeInTheDocument()
+    expect(screen.queryByText('One accountable workflow')).not.toBeInTheDocument()
   })
 })

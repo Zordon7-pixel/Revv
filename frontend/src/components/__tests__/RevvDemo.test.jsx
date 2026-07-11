@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render, screen } from '@testing-library/react'
+import { statSync } from 'node:fs'
+import { resolve } from 'node:path'
 import RevvDemo from '../RevvDemo'
 
 function setReducedMotion(matches) {
@@ -18,20 +20,36 @@ describe('RevvDemo', () => {
     vi.unstubAllGlobals()
   })
 
-  it('mounts the five-beat demo using only local assets', () => {
+  it('mounts the five-beat demo over real local desktop and mobile video', () => {
     setReducedMotion(false)
     const { container } = render(<RevvDemo />)
 
     expect(screen.getByText('This RO is $1,450 short.')).toBeInTheDocument()
     expect(screen.getByText('-$1,450')).toHaveClass('is-critical')
-    expect(screen.getByRole('button', { name: 'Play demo with sound' })).toBeInTheDocument()
-    expect(container.querySelectorAll('.revv-demo-screen')).toHaveLength(5)
+    expect(screen.getByRole('button', { name: 'Restart product tour with sound' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Replay product tour muted' })).toBeInTheDocument()
 
-    const sources = [...container.querySelectorAll('img, audio')]
+    const video = container.querySelector('video.revv-demo-video')
+    expect(video).toBeInTheDocument()
+    expect(video).toHaveAttribute('poster', '/demo/revv-product-tour-poster.png')
+    expect(video).toHaveAttribute('playsinline')
+    expect(video.querySelectorAll('source')).toHaveLength(2)
+    expect(container.querySelector('.revv-demo-grid')).not.toBeInTheDocument()
+    expect(container.querySelector('.revv-demo-sweep')).not.toBeInTheDocument()
+
+    const sources = [...container.querySelectorAll('video source, audio')]
       .map((node) => node.getAttribute('src'))
       .filter(Boolean)
-    expect(sources).not.toHaveLength(0)
+    expect(sources).toEqual([
+      '/demo/revv-product-tour-mobile.mp4',
+      '/demo/revv-product-tour-desktop.mp4',
+      '/demo/revv-wow-tv-ad.mp3',
+    ])
     expect(sources.every((source) => source.startsWith('/demo/'))).toBe(true)
+
+    for (const source of sources) {
+      expect(statSync(resolve(process.cwd(), 'public', source.slice(1))).size, source).toBeGreaterThan(50_000)
+    }
   })
 
   it('shows the final static frame when reduced motion is requested', () => {
