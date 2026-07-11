@@ -103,7 +103,6 @@ export default function VehicleDiagram({ value = [], onChange, readOnly = false 
     const isSelected = selected.includes(panel.id)
     const isHovered = hovered === panel.id
     const shapeProps = {
-      key: panel.id,
       fill: getPanelFill(panel, isSelected, isHovered),
       stroke: getPanelStroke(panel, isSelected),
       strokeWidth: isSelected ? 2 : 1,
@@ -115,15 +114,15 @@ export default function VehicleDiagram({ value = [], onChange, readOnly = false 
     }
 
     if (panel.type === 'ellipse') {
-      return <ellipse {...shapeProps} cx={panel.cx} cy={panel.cy} rx={panel.rx} ry={panel.ry} />
+      return <ellipse key={panel.id} {...shapeProps} cx={panel.cx} cy={panel.cy} rx={panel.rx} ry={panel.ry} />
     }
     if (panel.type === 'circle') {
-      return <circle {...shapeProps} cx={panel.cx} cy={panel.cy} r={panel.r} />
+      return <circle key={panel.id} {...shapeProps} cx={panel.cx} cy={panel.cy} r={panel.r} />
     }
     if (panel.type === 'rect') {
-      return <rect {...shapeProps} x={panel.x} y={panel.y} width={panel.width} height={panel.height} rx={panel.rx || 0} />
+      return <rect key={panel.id} {...shapeProps} x={panel.x} y={panel.y} width={panel.width} height={panel.height} rx={panel.rx || 0} />
     }
-    return <path {...shapeProps} d={panel.d} />
+    return <path key={panel.id} {...shapeProps} d={panel.d} />
   }
 
   function renderExteriorCanvas() {

@@ -2341,7 +2341,7 @@ export default function RODetail() {
           </h2>
           <button
             onClick={() => setShowCommForm(true)}
-            className="text-xs bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] font-semibold px-3 py-1.5 rounded-lg transition-colors"
+            className="text-xs bg-brand hover:bg-brand-lit text-white font-semibold px-3 py-1.5 rounded-lg transition-colors"
           >
             Log Communication
           </button>
@@ -2357,7 +2357,7 @@ export default function RODetail() {
               return (
                 <div key={entry.id} className="bg-[#0f1117] border border-[#2a2d3e] rounded-xl p-3">
                   <div className="flex items-center gap-2 text-xs text-slate-400 mb-1">
-                    <Icon size={12} className="text-[#EAB308]" />
+                    <Icon size={12} className="text-brand" />
                     <span className="text-white font-medium">{meta.label}</span>
                     <span className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold ${
                       entry.direction === 'inbound'
@@ -2523,7 +2523,7 @@ export default function RODetail() {
             <button
               onClick={generateCustomerLinks}
               disabled={sendingCustomerLinks}
-              className="flex items-center gap-1.5 bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+              className="flex items-center gap-1.5 bg-brand hover:bg-brand-lit text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
             >
               {sendingCustomerLinks ? 'Sending...' : 'Send Tracking Link'}
             </button>
@@ -2616,7 +2616,7 @@ export default function RODetail() {
               <select
                 value={commForm.channel}
                 onChange={(e) => setCommForm((f) => ({ ...f, channel: e.target.value }))}
-                className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#EAB308]"
+                className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand"
               >
                 <option value="call">Call</option>
                 <option value="email">Email</option>
@@ -2658,7 +2658,7 @@ export default function RODetail() {
                 value={commForm.summary}
                 onChange={(e) => setCommForm((f) => ({ ...f, summary: e.target.value }))}
                 placeholder="Communication summary..."
-                className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#EAB308]"
+                className="w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand"
               />
             </div>
             <div className="flex gap-2">
@@ -2672,7 +2672,7 @@ export default function RODetail() {
               <button
                 type="submit"
                 disabled={savingComm}
-                className="flex-1 bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] py-2 rounded-lg text-sm font-semibold disabled:opacity-50"
+                className="flex-1 bg-brand hover:bg-brand-lit text-white py-2 rounded-lg text-sm font-semibold disabled:opacity-50"
               >
                 {savingComm ? 'Saving...' : 'Save Communication'}
               </button>
@@ -2788,7 +2788,7 @@ export default function RODetail() {
           <div className="flex items-center gap-2">
             <button
               onClick={() => setShowCatalogSearch(true)}
-              className="flex items-center gap-1.5 text-xs bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] font-semibold px-3 py-1.5 rounded-lg transition-colors"
+              className="flex items-center gap-1.5 text-xs bg-brand hover:bg-brand-lit text-white font-semibold px-3 py-1.5 rounded-lg transition-colors"
             >
               <Search size={12} /> Search Catalog
             </button>

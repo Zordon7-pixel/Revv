@@ -222,7 +222,7 @@ export default function ClaimTrackerPanel({ roId, canEdit }) {
     }
   }
 
-  const inp = 'w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#EAB308]'
+  const inp = 'w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand'
 
   if (loading) {
     return (
@@ -280,7 +280,7 @@ export default function ClaimTrackerPanel({ roId, canEdit }) {
             <button
               type="submit"
               disabled={uploadingEvidence || selectedEvidenceFiles.length === 0}
-              className="text-xs bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] font-semibold px-3 py-2 rounded-lg disabled:opacity-50"
+              className="text-xs bg-brand hover:bg-brand-lit text-white font-semibold px-3 py-2 rounded-lg disabled:opacity-50"
             >
               {uploadingEvidence ? evidenceUploadProgress : `Add ${selectedEvidenceFiles.length > 1 ? `${selectedEvidenceFiles.length} Files` : 'Evidence'}`}
             </button>
@@ -304,7 +304,7 @@ export default function ClaimTrackerPanel({ roId, canEdit }) {
                 <div key={item.id} className="bg-[#0f1117] border border-[#2a2d3e] rounded-xl p-3">
                   <div className="rounded-lg overflow-hidden border border-[#2a2d3e] bg-black mb-2">
                     {mediaUrl && !mediaFailed && item.media_type === 'document' ? (
-                      <a href={mediaUrl} target="_blank" rel="noreferrer" className="flex h-40 w-full flex-col items-center justify-center gap-2 text-[#EAB308] hover:bg-[#EAB308]/5">
+                      <a href={mediaUrl} target="_blank" rel="noreferrer" className="flex h-40 w-full flex-col items-center justify-center gap-2 text-brand hover:bg-brand/5">
                         <FileText size={28} />
                         <span className="text-xs font-semibold">Open appraisal document</span>
                       </a>
@@ -338,7 +338,7 @@ export default function ClaimTrackerPanel({ roId, canEdit }) {
                   </div>
 
                   <div className="flex items-center justify-between gap-2 mb-1">
-                    <span className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold ${item.media_type === 'photo' ? 'text-emerald-300 bg-emerald-900/20 border-emerald-700/40' : 'text-[#EAB308] bg-[#EAB308]/10 border-[#EAB308]/40'}`}>
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold ${item.media_type === 'photo' ? 'text-emerald-300 bg-emerald-900/20 border-emerald-700/40' : 'text-brand bg-brand/10 border-brand/40'}`}>
                       {item.media_type === 'document' ? <span className="inline-flex items-center gap-1"><FileText size={10} /> Document</span> : item.media_type === 'video' ? <span className="inline-flex items-center gap-1"><Film size={10} /> Video</span> : <span className="inline-flex items-center gap-1"><Camera size={10} /> Photo</span>}
                     </span>
                     {canEdit && (
@@ -452,7 +452,7 @@ export default function ClaimTrackerPanel({ roId, canEdit }) {
             <button
               type="submit"
               disabled={savingContact}
-              className="text-xs bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] font-semibold px-3 py-2 rounded-lg disabled:opacity-50"
+              className="text-xs bg-brand hover:bg-brand-lit text-white font-semibold px-3 py-2 rounded-lg disabled:opacity-50"
             >
               {savingContact ? 'Saving...' : 'Add Contact Entry'}
             </button>
@@ -517,7 +517,7 @@ export default function ClaimTrackerPanel({ roId, canEdit }) {
             <button
               type="submit"
               disabled={savingDispute || !disputeNote.trim()}
-              className="text-xs bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] font-semibold px-3 py-2 rounded-lg disabled:opacity-50"
+              className="text-xs bg-brand hover:bg-brand-lit text-white font-semibold px-3 py-2 rounded-lg disabled:opacity-50"
             >
               {savingDispute ? 'Saving...' : 'Add Dispute Note'}
             </button>

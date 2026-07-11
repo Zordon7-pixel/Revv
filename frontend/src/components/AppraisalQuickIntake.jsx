@@ -40,7 +40,7 @@ export default function AppraisalQuickIntake({ onApply }) {
   const [applying, setApplying] = useState(false)
   const [error, setError] = useState('')
 
-  const inp = 'w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-[#EAB308]'
+  const inp = 'w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-brand'
   const lbl = 'block text-xs font-medium text-slate-400 mb-1'
 
   function addFiles(nextFiles) {
@@ -114,9 +114,9 @@ export default function AppraisalQuickIntake({ onApply }) {
       <button
         type="button"
         onClick={() => inputRef.current?.click()}
-        className="flex min-h-32 w-full flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-[#3a4257] bg-[#0f1117] px-4 text-center hover:border-[#EAB308]/70"
+        className="flex min-h-32 w-full flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-[#3a4257] bg-[#0f1117] px-4 text-center hover:border-brand/70"
       >
-        <Upload size={24} className="text-[#EAB308]" />
+        <Upload size={24} className="text-brand" />
         <span className="text-sm font-semibold text-white">Add appraisal PDF or photos</span>
         <span className="text-xs text-slate-500">Take several photos when the appraisal has multiple pages.</span>
       </button>
@@ -137,12 +137,12 @@ export default function AppraisalQuickIntake({ onApply }) {
         <div className="space-y-2">
           <div className="flex items-center justify-between gap-3">
             <p className="text-xs font-semibold text-slate-300">{files.length} of {MAX_FILES} pages selected</p>
-            <button type="button" onClick={() => { setFiles([]); setFields(null); setEstimateDraft(null) }} className="text-xs text-slate-400 hover:text-[#EAB308]">Clear</button>
+            <button type="button" onClick={() => { setFiles([]); setFields(null); setEstimateDraft(null) }} className="text-xs text-slate-400 hover:text-brand">Clear</button>
           </div>
           <div className="max-h-36 space-y-1 overflow-y-auto">
             {files.map((file, index) => (
               <div key={fileKey(file)} className="flex items-center gap-2 rounded-lg border border-[#2a2d3e] bg-[#0f1117] px-3 py-2">
-                <FileText size={14} className="shrink-0 text-[#EAB308]" />
+                <FileText size={14} className="shrink-0 text-brand" />
                 <span className="min-w-0 flex-1 truncate text-xs text-slate-300">{file.name}</span>
                 <button
                   type="button"
@@ -159,7 +159,7 @@ export default function AppraisalQuickIntake({ onApply }) {
             type="button"
             disabled={parsing}
             onClick={parseAppraisal}
-            className="inline-flex items-center gap-2 rounded-lg bg-[#EAB308] px-4 py-2.5 text-sm font-semibold text-[#0f1117] hover:bg-yellow-400 disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-lit disabled:opacity-50"
           >
             {parsing ? <Loader2 size={15} className="animate-spin" /> : <FileText size={15} />}
             {parsing ? 'Reading appraisal...' : 'Read Appraisal'}
@@ -189,7 +189,7 @@ export default function AppraisalQuickIntake({ onApply }) {
               </div>
             ))}
           </div>
-          <div className="rounded-lg border border-[#EAB308]/30 bg-[#EAB308]/5 px-3 py-2 text-xs text-slate-300">
+          <div className="rounded-lg border border-brand/30 bg-brand/5 px-3 py-2 text-xs text-slate-300">
             Customer notification consent is never inferred from paperwork. Confirm SMS or email consent in the New RO form.
           </div>
           {estimateDraft && (
@@ -201,7 +201,7 @@ export default function AppraisalQuickIntake({ onApply }) {
             type="button"
             disabled={applying}
             onClick={applyDetails}
-            className="inline-flex items-center gap-2 rounded-lg bg-[#EAB308] px-4 py-2.5 text-sm font-semibold text-[#0f1117] hover:bg-yellow-400 disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-lit disabled:opacity-50"
           >
             {applying && <Loader2 size={15} className="animate-spin" />}
             {applying ? 'Applying details...' : 'Use Details in New RO'}

@@ -326,7 +326,7 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
   }, [form.insurance_approved_amount, form.supplement_amount])
 
   const supplementMeta = SUPPLEMENT_META[form.supplement_status] || SUPPLEMENT_META.none
-  const inp = 'w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#EAB308]'
+  const inp = 'w-full bg-[#0f1117] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand'
   const selectedOcrCount = Object.values(ocrSelected).filter(Boolean).length
 
   function set(key, value) {
@@ -458,7 +458,7 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
                     type="button"
                     onClick={parseAttachedAppraisal}
                     disabled={ocrParsing}
-                    className="mb-2 w-full flex items-center justify-center gap-2 border border-[#EAB308]/40 bg-[#EAB308]/10 rounded-lg py-3 text-sm font-semibold text-[#EAB308] hover:bg-[#EAB308]/15 disabled:opacity-50"
+                    className="mb-2 w-full flex items-center justify-center gap-2 border border-brand/40 bg-brand/10 rounded-lg py-3 text-sm font-semibold text-brand hover:bg-brand/15 disabled:opacity-50"
                   >
                     <FileImage size={15} /> {ocrParsing ? 'Reading attached appraisal…' : `Use ${attachedAppraisalEvidence.length} Attached Appraisal Page${attachedAppraisalEvidence.length === 1 ? '' : 's'}`}
                   </button>
@@ -487,7 +487,7 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
                   disabled={ocrParsing || ocrFiles.length >= 12}
-                  className="w-full border border-[#2a2d3e] hover:border-[#EAB308]/60 disabled:opacity-50 text-slate-300 text-xs font-semibold py-2 rounded-lg"
+                  className="w-full border border-[#2a2d3e] hover:border-brand/60 disabled:opacity-50 text-slate-300 text-xs font-semibold py-2 rounded-lg"
                 >
                   Add another photo / PDF
                 </button>
@@ -534,7 +534,7 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
                     type="button"
                     onClick={importSelected}
                     disabled={ocrImporting || selectedOcrCount === 0}
-                    className="min-h-11 bg-[#EAB308] hover:bg-yellow-400 disabled:opacity-50 text-[#0f1117] text-xs font-semibold px-4 py-2 rounded-lg"
+                    className="min-h-11 bg-brand hover:bg-brand-lit disabled:opacity-50 text-white text-xs font-semibold px-4 py-2 rounded-lg"
                   >
                     {ocrImporting ? 'Importing…' : `Import ${selectedOcrCount} item${selectedOcrCount === 1 ? '' : 's'}`}
                   </button>
@@ -686,7 +686,7 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
                 type="button"
                 onClick={requestSupplement}
                 disabled={requesting}
-                className="bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] text-xs font-semibold px-3 py-2 rounded-lg disabled:opacity-50"
+                className="bg-gold hover:bg-gold-lit text-[var(--on-gold)] text-xs font-semibold px-3 py-2 rounded-lg disabled:opacity-50"
               >
                 {requesting ? 'Requesting...' : 'Request Supplement'}
               </button>
@@ -694,7 +694,7 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
                 type="button"
                 onClick={saveInsurance}
                 disabled={saving}
-                className="bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] text-xs font-semibold px-3 py-2 rounded-lg disabled:opacity-50"
+                className="bg-brand hover:bg-brand-lit text-white text-xs font-semibold px-3 py-2 rounded-lg disabled:opacity-50"
               >
                 {saving ? 'Saving...' : 'Save Insurance'}
               </button>

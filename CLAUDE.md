@@ -56,6 +56,47 @@ const ro = await dbGet('SELECT * FROM ros WHERE id = $1 AND shop_id = $2', [id, 
 await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 ```
 
+## Dispatch Log — 2026-07-11 REVV Redesign Phase 6E: Core Workflow Color Semantics
+
+**Time:** 2026-07-11 01:53 ET / 2026-07-11 05:53 UTC
+**Status:** READY FOR CLAUDE CODE QA — FEATURE BRANCH ONLY — NOT DEPLOYED — FINAL REDESIGN AUDIT FIX
+
+**Scope**
+- Closed the final-audit color-semantics gap in the highest-use RO workflows. Generic actions such as log/save communication, send tracking link, search catalog, New RO navigation, appraisal reading/application, estimate import, insurance save, claim evidence/contact/dispute actions, diagnostic scans, and inspection delivery now use brand indigo rather than money-only gold.
+- Preserved gold on the explicitly approved revenue actions: New RO creation and Request Supplement. No endpoint, payload, workflow gate, role, money value, or customer notification behavior changed.
+- Added a source-level regression guard that checks every migrated generic action stays off gold while asserting New RO and Request Supplement remain gold.
+- Fixed the React console warning in `VehicleDiagram`: SVG element keys are now passed directly to each path/ellipse/circle/rect rather than spread through the props object. Diagram geometry, selection, and events are unchanged.
+- Verified the full-page New RO flow at 1024x768 light tablet width, Vehicle Diagnostics at 390x844 light phone width, RODetail Comms at 1440x1000 dark desktop width, and Inspection at 1440x900 light desktop width. Every tested action computed to the brand color, client/scroll widths matched, and the final RO render produced zero console/page errors.
+- No backend, database, seed, reset, migration, destructive script, hosted DB, or customer/shop/RO data changed. Miles Automotive data was not touched; all visual data was route-mocked.
+
+**Files changed (10; batch cap respected)**
+- `frontend/src/pages/RODetail.jsx`
+- `frontend/src/components/AddROModal.jsx`
+- `frontend/src/components/AppraisalQuickIntake.jsx`
+- `frontend/src/components/InsurancePanel.jsx`
+- `frontend/src/components/ClaimTrackerPanel.jsx`
+- `frontend/src/pages/VehicleDiagnostics.jsx`
+- `frontend/src/pages/InspectionEditor.jsx`
+- `frontend/src/components/VehicleDiagram.jsx`
+- `frontend/src/lib/__tests__/colorSemantics.test.js`
+- `CLAUDE.md`
+
+**Verification**
+```
+cd frontend && npm run test:run -- colorSemantics  # 2/2 passed
+cd frontend && npm run test:run -- AddROModal.appraisal AddROModal.feedback AppOverlay.architecture AppraisalQuickIntake ClaimTrackerPanel.phase32 InsurancePanel.phase31 RODetail.totalLoss colorSemantics  # 8 files, 28/28 passed
+node --test native backend sweep  # 130/130 passed
+cd backend && npm run test:run  # extractor suite 7/7 passed
+cd frontend && npm run test:run  # 37 files, 110/110 passed
+cd frontend && npm run build  # clean; pre-existing chunk-size warning only
+Playwright mocked app shell  # RODetail Comms dark desktop, New RO light tablet, Diagnostics light phone, Inspection light desktop
+computed generic-action backgrounds  # brand rgb(99,102,241) dark / rgb(79,70,229) light; white foreground
+viewport results  # exact client/scroll widths at 1440, 1024, and 390
+RODetail console re-check after VehicleDiagram fix  # zero console/page errors
+screenshots  # /tmp/revv-phase6e-ro-comms-dark-final.png, /tmp/revv-phase6e-new-ro-light-tablet.png, /tmp/revv-phase6e-diagnostics-light-phone.png, /tmp/revv-phase6e-inspection-light-desktop.png
+rm -rf frontend/dist && git diff --check && git ls-files frontend/dist | wc -l  # 0
+```
+
 ## Dispatch Log — 2026-07-11 REVV Redesign Phase 6D: Public + Customer Portals
 
 **Time:** 2026-07-11 01:19 ET / 2026-07-11 05:19 UTC

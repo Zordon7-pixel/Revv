@@ -109,7 +109,7 @@ export default function InspectionEditor() {
           <button
             onClick={sendToCustomer}
             disabled={sending}
-            className="inline-flex items-center gap-1 bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] text-sm font-semibold px-3 py-2 rounded-lg transition-colors disabled:opacity-60"
+            className="inline-flex items-center gap-1 bg-brand hover:bg-brand-lit text-white text-sm font-semibold px-3 py-2 rounded-lg transition-colors disabled:opacity-60"
           >
             <Send size={14} /> {sending ? 'Sending...' : 'Send to Customer'}
           </button>
@@ -162,7 +162,7 @@ export default function InspectionEditor() {
                   onChange={(e) => updateLocal(item.id, 'note', e.target.value)}
                   onBlur={() => updateItem(item.id, { note: item.note || '' })}
                   placeholder="Technician notes..."
-                  className="w-full bg-[#1a1d2e] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-[#EAB308]"
+                  className="w-full bg-[#1a1d2e] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-brand"
                 />
 
                 <input
@@ -170,7 +170,7 @@ export default function InspectionEditor() {
                   onChange={(e) => updateLocal(item.id, 'photo_url', e.target.value)}
                   onBlur={() => updateItem(item.id, { photo_url: item.photo_url || '' })}
                   placeholder="Photo URL (optional)"
-                  className="w-full bg-[#1a1d2e] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-[#EAB308]"
+                  className="w-full bg-[#1a1d2e] border border-[#2a2d3e] rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-brand"
                 />
 
                 {item.condition && (

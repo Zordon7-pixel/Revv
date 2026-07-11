@@ -575,7 +575,7 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
               role="tab"
               aria-selected={entryMode === 'manual'}
               onClick={() => setEntryMode('manual')}
-              className={`rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${entryMode === 'manual' ? 'bg-[#EAB308] text-[#0f1117]' : 'border border-[#2a2d3e] bg-[#0f1117] text-slate-400 hover:border-[#EAB308]/50'}`}
+              className={`rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${entryMode === 'manual' ? 'bg-brand text-white' : 'border border-[#2a2d3e] bg-[#0f1117] text-slate-400 hover:border-brand/50'}`}
             >
               Manual Entry
             </button>
@@ -584,7 +584,7 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
               role="tab"
               aria-selected={entryMode === 'appraisal'}
               onClick={() => setEntryMode('appraisal')}
-              className={`rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${entryMode === 'appraisal' ? 'bg-[#EAB308] text-[#0f1117]' : 'border border-[#2a2d3e] bg-[#0f1117] text-slate-400 hover:border-[#EAB308]/50'}`}
+              className={`rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${entryMode === 'appraisal' ? 'bg-brand text-white' : 'border border-[#2a2d3e] bg-[#0f1117] text-slate-400 hover:border-brand/50'}`}
             >
               Appraisal Quick Intake
             </button>
@@ -715,7 +715,7 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
                   type="checkbox"
                   checked={form.email_consent}
                   onChange={e => set('email_consent', e.target.checked)}
-                  className="mt-0.5 h-4 w-4 rounded border-[#2a2d3e] bg-[#0f1117] accent-[#EAB308]"
+                  className="mt-0.5 h-4 w-4 rounded border-[#2a2d3e] bg-[#0f1117] accent-brand"
                 />
                 Customer consents to receive email status updates
               </label>
@@ -845,7 +845,7 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
               <button
                 type="button"
                 onClick={dismissCompactEditor}
-                className="shrink-0 rounded-lg border border-[#EAB308]/50 bg-[#EAB308]/10 px-3 py-1.5 text-xs font-semibold text-[#EAB308]"
+                className="shrink-0 rounded-lg border border-brand/50 bg-brand/10 px-3 py-1.5 text-xs font-semibold text-brand"
               >
                 Done
               </button>
@@ -860,7 +860,7 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
                 placeholder={compactEditor.placeholder}
                 maxLength={compactEditor.maxLength}
                 rows={2}
-                className="w-full rounded-lg border border-[#EAB308] bg-[#0f1117] px-3 py-2 text-base text-white outline-none shadow-[0_0_0_3px_rgba(234,179,8,0.2)]"
+                className="w-full rounded-lg border border-brand bg-[#0f1117] px-3 py-2 text-base text-white outline-none shadow-[0_0_0_3px_color-mix(in_srgb,var(--brand)_20%,transparent)]"
               />
             ) : (
               <input
@@ -877,7 +877,7 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
                 min={compactEditor.min}
                 max={compactEditor.max}
                 step={compactEditor.step}
-                className="w-full rounded-lg border border-[#EAB308] bg-[#0f1117] px-3 py-2 text-base text-white outline-none shadow-[0_0_0_3px_rgba(234,179,8,0.2)]"
+                className="w-full rounded-lg border border-brand bg-[#0f1117] px-3 py-2 text-base text-white outline-none shadow-[0_0_0_3px_color-mix(in_srgb,var(--brand)_20%,transparent)]"
               />
             )}
           </div>
@@ -887,13 +887,13 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
             <>
               <button type="button" onClick={onClose} className="text-sm text-slate-400 transition-colors hover:text-white">{t('common.cancel')}</button>
               <span className="text-xs text-slate-500">Upload · Review · Apply</span>
-              <button type="button" onClick={() => setEntryMode('manual')} className="rounded-lg border border-[#2a2d3e] px-3 py-2 text-xs font-semibold text-slate-300 hover:border-[#EAB308]/50">Manual Entry</button>
+              <button type="button" onClick={() => setEntryMode('manual')} className="rounded-lg border border-[#2a2d3e] px-3 py-2 text-xs font-semibold text-slate-300 hover:border-brand/50">Manual Entry</button>
             </>
           ) : createdRoWithPendingDocuments ? (
             <>
               <button type="button" onClick={() => onSaved(createdRoWithPendingDocuments)} className="text-sm text-slate-400 transition-colors hover:text-white">Open RO now</button>
               <span className="text-xs text-amber-300">RO already created</span>
-              <button type="button" onClick={retryPendingDocuments} disabled={loading} className="rounded-lg bg-[#EAB308] px-4 py-2 text-sm font-semibold text-[#0f1117] hover:bg-yellow-400 disabled:opacity-50">{loading ? 'Retrying...' : 'Retry Appraisal Setup'}</button>
+              <button type="button" onClick={retryPendingDocuments} disabled={loading} className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-lit disabled:opacity-50">{loading ? 'Retrying...' : 'Retry Appraisal Setup'}</button>
             </>
           ) : (
             <>
@@ -901,7 +901,7 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
                 {step > 1 ? `← ${t('common.back')}` : t('common.cancel')}
               </button>
               <div className="flex items-center gap-2">
-                {[1,2,3].map(i => <div key={i} className={`w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full ${step>=i ? 'bg-[#EAB308]' : 'bg-[#2a2d3e]'}`} />)}
+                {[1,2,3].map(i => <div key={i} className={`w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full ${step>=i ? 'bg-brand' : 'bg-[#2a2d3e]'}`} />)}
               </div>
               {step < 3 ? (
                 <button onClick={() => {
@@ -909,7 +909,7 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
                   if (message) { setFormError(message); return }
                   setFormError('')
                   setStep(s=>s+1)
-                }} className="bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] text-sm font-semibold px-4 py-2 rounded-lg transition-colors">Next →</button>
+                }} className="bg-brand hover:bg-brand-lit text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors">Next →</button>
               ) : (
                 <button onClick={submit} disabled={loading} className="bg-[#EAB308] hover:bg-yellow-400 text-[#0f1117] text-sm font-semibold px-4 py-2 rounded-lg transition-colors disabled:opacity-50">{loading ? 'Creating...' : <span className="inline-flex items-center gap-1">{t('ro.addRO')} <CheckCircle size={13} /></span>}</button>
               )}

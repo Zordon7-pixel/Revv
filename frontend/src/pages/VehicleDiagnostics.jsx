@@ -245,7 +245,7 @@ export default function VehicleDiagnostics() {
             setError('')
             setShowModal(true)
           }}
-          className="inline-flex items-center gap-2 rounded-lg bg-[#EAB308] px-4 py-2 text-sm font-semibold text-[#0f1117] hover:bg-yellow-400"
+          className="inline-flex items-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-lit"
         >
           <Plus size={16} />
           New Scan
@@ -364,7 +364,7 @@ export default function VehicleDiagnostics() {
                   <input
                     value={form.ro_id}
                     onChange={(e) => setField('ro_id', e.target.value)}
-                    className="w-full rounded-lg border border-[#2a2d3e] bg-[#0f1117] px-3 py-2 text-sm text-white focus:border-[#EAB308] focus:outline-none"
+                    className="w-full rounded-lg border border-[#2a2d3e] bg-[#0f1117] px-3 py-2 text-sm text-white focus:border-brand focus:outline-none"
                   />
                 </div>
                 <div>
@@ -372,7 +372,7 @@ export default function VehicleDiagnostics() {
                   <input
                     value={form.vehicle_id}
                     onChange={(e) => setField('vehicle_id', e.target.value)}
-                    className="w-full rounded-lg border border-[#2a2d3e] bg-[#0f1117] px-3 py-2 text-sm text-white focus:border-[#EAB308] focus:outline-none"
+                    className="w-full rounded-lg border border-[#2a2d3e] bg-[#0f1117] px-3 py-2 text-sm text-white focus:border-brand focus:outline-none"
                   />
                 </div>
                 <div>
@@ -381,7 +381,7 @@ export default function VehicleDiagnostics() {
                     required
                     value={form.vin}
                     onChange={(e) => setField('vin', e.target.value)}
-                    className="w-full rounded-lg border border-[#2a2d3e] bg-[#0f1117] px-3 py-2 text-sm text-white focus:border-[#EAB308] focus:outline-none"
+                    className="w-full rounded-lg border border-[#2a2d3e] bg-[#0f1117] px-3 py-2 text-sm text-white focus:border-brand focus:outline-none"
                   />
                 </div>
                 <div>
@@ -390,7 +390,7 @@ export default function VehicleDiagnostics() {
                     type="datetime-local"
                     value={form.scan_date}
                     onChange={(e) => setField('scan_date', e.target.value)}
-                    className="w-full rounded-lg border border-[#2a2d3e] bg-[#0f1117] px-3 py-2 text-sm text-white focus:border-[#EAB308] focus:outline-none"
+                    className="w-full rounded-lg border border-[#2a2d3e] bg-[#0f1117] px-3 py-2 text-sm text-white focus:border-brand focus:outline-none"
                   />
                 </div>
                 <div>
@@ -399,7 +399,7 @@ export default function VehicleDiagnostics() {
                     required
                     value={form.scanned_by}
                     onChange={(e) => setField('scanned_by', e.target.value)}
-                    className="w-full rounded-lg border border-[#2a2d3e] bg-[#0f1117] px-3 py-2 text-sm text-white focus:border-[#EAB308] focus:outline-none"
+                    className="w-full rounded-lg border border-[#2a2d3e] bg-[#0f1117] px-3 py-2 text-sm text-white focus:border-brand focus:outline-none"
                   />
                 </div>
                 <div>
@@ -408,7 +408,7 @@ export default function VehicleDiagnostics() {
                     value={form.scanner_tool}
                     onChange={(e) => setField('scanner_tool', e.target.value)}
                     placeholder="Autel MaxiSys"
-                    className="w-full rounded-lg border border-[#2a2d3e] bg-[#0f1117] px-3 py-2 text-sm text-white focus:border-[#EAB308] focus:outline-none"
+                    className="w-full rounded-lg border border-[#2a2d3e] bg-[#0f1117] px-3 py-2 text-sm text-white focus:border-brand focus:outline-none"
                   />
                 </div>
               </div>
@@ -437,7 +437,7 @@ export default function VehicleDiagnostics() {
               <div className="space-y-2 rounded-xl border border-[#2a2d3e] bg-[#0f1117] p-3">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-white">DTC Codes</h3>
-                  <button type="button" onClick={addDtcRow} className="rounded-md border border-[#2a2d3e] px-2 py-1 text-xs text-slate-200 hover:border-[#EAB308]">
+                  <button type="button" onClick={addDtcRow} className="rounded-md border border-[#2a2d3e] px-2 py-1 text-xs text-slate-200 hover:border-brand">
                     Add DTC
                   </button>
                 </div>
@@ -474,7 +474,7 @@ export default function VehicleDiagnostics() {
               <div className="space-y-2 rounded-xl border border-[#2a2d3e] bg-[#0f1117] p-3">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-white">ADAS Systems</h3>
-                  <button type="button" onClick={addAdasRow} className="rounded-md border border-[#2a2d3e] px-2 py-1 text-xs text-slate-200 hover:border-[#EAB308]">
+                  <button type="button" onClick={addAdasRow} className="rounded-md border border-[#2a2d3e] px-2 py-1 text-xs text-slate-200 hover:border-brand">
                     Add ADAS
                   </button>
                 </div>
@@ -508,7 +508,7 @@ export default function VehicleDiagnostics() {
                   value={form.notes}
                   onChange={(e) => setField('notes', e.target.value)}
                   rows={4}
-                  className="w-full rounded-lg border border-[#2a2d3e] bg-[#0f1117] px-3 py-2 text-sm text-white focus:border-[#EAB308] focus:outline-none"
+                  className="w-full rounded-lg border border-[#2a2d3e] bg-[#0f1117] px-3 py-2 text-sm text-white focus:border-brand focus:outline-none"
                 />
               </div>
 
@@ -519,7 +519,7 @@ export default function VehicleDiagnostics() {
                 <button
                   type="submit"
                   disabled={saving}
-                  className="rounded-lg bg-[#EAB308] px-4 py-2 text-sm font-semibold text-[#0f1117] hover:bg-yellow-400 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-lit disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {saving ? 'Saving...' : 'Save Scan'}
                 </button>
