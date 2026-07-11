@@ -147,6 +147,7 @@ export default function RODetail() {
   const [activeTab, setActiveTab] = useState('overview')
   const [overviewTab, setOverviewTab] = useState('core')
   const [showActionMenu, setShowActionMenu] = useState(false)
+  const [printingRepairOrder, setPrintingRepairOrder] = useState(false)
   const [customerForm, setCustomerForm] = useState({
     name: '',
     phone: '',
@@ -613,6 +614,26 @@ export default function RODetail() {
     }
   }
 
+  async function downloadRepairOrderPdf() {
+    setShowActionMenu(false)
+    setPrintingRepairOrder(true)
+    try {
+      const response = await api.get(`/invoice/${id}/repair-order`, { responseType: 'blob' })
+      const blobUrl = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }))
+      const anchor = document.createElement('a')
+      anchor.href = blobUrl
+      anchor.download = `repair-order-${ro?.ro_number || id}.pdf`
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+      window.URL.revokeObjectURL(blobUrl)
+    } catch (err) {
+      window.alert(safeExternalErrorMessage(err, 'Could not download the repair order PDF.'))
+    } finally {
+      setPrintingRepairOrder(false)
+    }
+  }
+
   async function submitComm(e) {
     e.preventDefault()
     if (!commForm.summary.trim()) return
@@ -1041,6 +1062,9 @@ export default function RODetail() {
                   {canStepBack && <button type="button" role="menuitem" onClick={() => { setShowActionMenu(false); goBack() }} className="revv-menu-item">Move to previous stage</button>}
                   <button type="button" role="menuitem" onClick={() => { setShowActionMenu(false); setActiveTab('storage') }} className="revv-menu-item">Storage hold</button>
                   <button type="button" role="menuitem" onClick={() => { setShowActionMenu(false); window.open(`/invoice/${id}`, '_blank') }} className="revv-menu-item">Open invoice</button>
+                  <button type="button" role="menuitem" onClick={downloadRepairOrderPdf} disabled={printingRepairOrder} className="revv-menu-item">
+                    {printingRepairOrder ? 'Preparing repair order…' : 'Print repair order'}
+                  </button>
                   {canEditRo && !editing && <button type="button" role="menuitem" onClick={() => { setShowActionMenu(false); setEditing(true) }} className="revv-menu-item">Edit RO details</button>}
                   {ro.status !== 'total_loss' && !isClosedTotalLoss && !userIsAssistant && (
                     <button type="button" role="menuitem" onClick={() => { setShowActionMenu(false); setShowTotalLossModal(true) }} className="revv-menu-item text-crit">Mark total loss</button>

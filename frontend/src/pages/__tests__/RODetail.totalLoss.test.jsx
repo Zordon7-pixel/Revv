@@ -79,6 +79,9 @@ vi.mock('../../components/ClaimTrackerPanel', () => ({ default: () => null }))
 import api from '../../lib/api'
 import RODetail from '../RODetail'
 
+const originalCreateObjectURLDescriptor = Object.getOwnPropertyDescriptor(window.URL, 'createObjectURL')
+const originalRevokeObjectURLDescriptor = Object.getOwnPropertyDescriptor(window.URL, 'revokeObjectURL')
+
 function makeRo(overrides = {}) {
   return {
     id: 'ro-1',
@@ -169,11 +172,22 @@ describe('RODetail total loss action', () => {
     api.put.mockReset()
     api.delete.mockReset()
     window.confirm = vi.fn(() => true)
+    window.alert = vi.fn()
   })
 
   afterEach(() => {
     cleanup()
     vi.restoreAllMocks()
+    if (originalCreateObjectURLDescriptor) {
+      Object.defineProperty(window.URL, 'createObjectURL', originalCreateObjectURLDescriptor)
+    } else {
+      delete window.URL.createObjectURL
+    }
+    if (originalRevokeObjectURLDescriptor) {
+      Object.defineProperty(window.URL, 'revokeObjectURL', originalRevokeObjectURLDescriptor)
+    } else {
+      delete window.URL.revokeObjectURL
+    }
   })
 
   it('confirms total loss, sends the status note, and keeps profit fields editable', async () => {
@@ -291,5 +305,35 @@ describe('RODetail total loss action', () => {
 
     await user.click(screen.getByRole('tab', { name: 'Photos' }))
     expect(await screen.findByText('Photo workspace')).toBeInTheDocument()
+  })
+
+  it('downloads the branded repair-order PDF through the authenticated API client', async () => {
+    stubApi(makeRo())
+    const defaultGet = api.get.getMockImplementation()
+    api.get.mockImplementation((url, options) => {
+      if (url === '/invoice/ro-1/repair-order') {
+        expect(options).toEqual({ responseType: 'blob' })
+        return Promise.resolve({ data: new Blob(['repair-order'], { type: 'application/pdf' }) })
+      }
+      return defaultGet(url, options)
+    })
+    const createObjectURL = vi.fn(() => 'blob:repair-order')
+    const revokeObjectURL = vi.fn()
+    Object.defineProperty(window.URL, 'createObjectURL', { configurable: true, value: createObjectURL })
+    Object.defineProperty(window.URL, 'revokeObjectURL', { configurable: true, value: revokeObjectURL })
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+
+    const user = userEvent.setup()
+    renderRODetail()
+    await screen.findByText('RO-1')
+    await user.click(screen.getByRole('button', { name: /more repair order actions/i }))
+    await user.click(screen.getByRole('menuitem', { name: /print repair order/i }))
+
+    await waitFor(() => {
+      expect(api.get).toHaveBeenCalledWith('/invoice/ro-1/repair-order', { responseType: 'blob' })
+      expect(createObjectURL).toHaveBeenCalledTimes(1)
+      expect(revokeObjectURL).toHaveBeenCalledWith('blob:repair-order')
+    })
+    expect(window.alert).not.toHaveBeenCalled()
   })
 })

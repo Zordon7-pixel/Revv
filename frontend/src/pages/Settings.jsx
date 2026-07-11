@@ -3,6 +3,7 @@ import { MapPin, Wrench, DollarSign, Save, RefreshCw, CheckCircle, ShieldCheck, 
 import api from '../lib/api'
 import { optimizeImageForUpload } from '../lib/imageUpload'
 import { isAdmin } from '../lib/auth'
+import { resolveUploadedMediaUrl } from '../lib/mediaUrls'
 import AppOverlay from '../components/AppOverlay'
 
 const TIER_COLORS = {
@@ -12,15 +13,6 @@ const TIER_COLORS = {
   4: 'text-slate-400 bg-slate-900/30 border-slate-700',
 }
 const TIER_LABELS = { 1:'Major Metro', 2:'Large City', 3:'Mid-Size Market', 4:'Small Market' }
-
-function fileToDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(String(reader.result || ''))
-    reader.onerror = (err) => reject(err)
-    reader.readAsDataURL(file)
-  })
-}
 
 export default function Settings() {
   const currentYearMonth = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
@@ -68,6 +60,7 @@ export default function Settings() {
   const [billingLoading, setBillingLoading] = useState(true)
   const [billingAction, setBillingAction] = useState('')
   const [logoBusy, setLogoBusy] = useState(false)
+  const [logoMessage, setLogoMessage] = useState({ type: '', text: '' })
   const [quickbooksStatus, setQuickbooksStatus] = useState({
     configured: false,
     connected: false,
@@ -278,8 +271,10 @@ export default function Settings() {
     setSaving(true)
     setSaveError('')
     try {
+      const shopFields = { ...form }
+      delete shopFields.logo_url
       const { data } = await api.put('/market/shop', {
-        ...form,
+        ...shopFields,
         labor_rate:               parseFloat(form.labor_rate),
         parts_markup:             parseFloat(form.parts_markup) / 100,
         tax_rate:                 parseFloat(form.tax_rate) / 100,
@@ -293,7 +288,6 @@ export default function Settings() {
         twilio_api_key:           (form.twilio_api_key || '').trim() || undefined,
         twilio_api_secret:        (form.twilio_api_secret || '').trim() || undefined,
         monthly_revenue_target:   parseInt(form.monthly_revenue_target, 10) || 85000,
-        logo_url:                 form.logo_url || null,
       })
       await api.patch('/settings', {
         sms_notifications_enabled: !!smsNotificationsEnabled,
@@ -322,6 +316,9 @@ export default function Settings() {
       setSaved(true)
       setTimeout(() => setSaved(false), 2500)
       setSaveError('')
+      window.dispatchEvent(new CustomEvent('revv:shop-logo-updated', {
+        detail: { name: data.name || '', logo_url: data.logo_url || '' },
+      }))
       refreshSmsStatus()
     } catch (err) {
       setSaveError(err?.response?.data?.error || 'Failed to save settings. Please try again.')
@@ -334,24 +331,43 @@ export default function Settings() {
     const file = e.target.files?.[0]
     e.target.value = ''
     if (!file) return
+    if (!['image/png', 'image/jpeg'].includes(file.type)) {
+      setLogoMessage({ type: 'error', text: 'Choose a PNG or JPEG logo.' })
+      return
+    }
     setLogoBusy(true)
+    setLogoMessage({ type: '', text: '' })
     try {
       const optimized = await optimizeImageForUpload(file, {
         maxDimension: 560,
-        targetBytes: 220 * 1024,
+        targetBytes: 1.5 * 1024 * 1024,
       })
-      const dataUrl = await fileToDataUrl(optimized)
-      if (!dataUrl.startsWith('data:image/')) {
-        alert('Please upload an image file.')
-        return
-      }
-      if (dataUrl.length > 900000) {
-        alert('Logo is too large. Please use a smaller image.')
-        return
-      }
-      setForm((prev) => ({ ...prev, logo_url: dataUrl }))
-    } catch {
-      alert('Could not process logo image.')
+      const payload = new FormData()
+      payload.append('logo', optimized)
+      const { data } = await api.post('/market/shop/logo', payload)
+      const logoUrl = data?.logo_url || ''
+      setForm((prev) => ({ ...prev, logo_url: logoUrl }))
+      setShop((prev) => prev ? { ...prev, logo_url: logoUrl } : prev)
+      setLogoMessage({ type: 'success', text: 'Shop logo updated.' })
+      window.dispatchEvent(new CustomEvent('revv:shop-logo-updated', { detail: { name: form.name || '', logo_url: logoUrl } }))
+    } catch (err) {
+      setLogoMessage({ type: 'error', text: err?.response?.data?.error || 'Could not upload shop logo.' })
+    } finally {
+      setLogoBusy(false)
+    }
+  }
+
+  async function removeShopLogo() {
+    setLogoBusy(true)
+    setLogoMessage({ type: '', text: '' })
+    try {
+      await api.delete('/market/shop/logo')
+      setForm((prev) => ({ ...prev, logo_url: '' }))
+      setShop((prev) => prev ? { ...prev, logo_url: null } : prev)
+      setLogoMessage({ type: 'success', text: 'Shop logo removed.' })
+      window.dispatchEvent(new CustomEvent('revv:shop-logo-updated', { detail: { name: form.name || '', logo_url: '' } }))
+    } catch (err) {
+      setLogoMessage({ type: 'error', text: err?.response?.data?.error || 'Could not remove shop logo.' })
     } finally {
       setLogoBusy(false)
     }
@@ -706,27 +722,36 @@ export default function Settings() {
                   <input className={inp} value={form.phone || ''} onChange={e => setForm(f => ({...f, phone: e.target.value}))} placeholder="(555) 000-0000" />
                 </div>
                 <div className="col-span-2">
-                  <label className={lbl}>Invoice Logo</label>
+                  <label className={lbl}>Shop Logo</label>
                   <div className="bg-[#0f1117] border border-[#2a2d3e] rounded-lg p-3 space-y-3">
                     <div className="flex items-center gap-3 flex-wrap">
                       <label className="text-xs bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-3 py-1.5 rounded-lg cursor-pointer">
-                        {logoBusy ? 'Processing...' : 'Upload Logo'}
-                        <input type="file" accept="image/*" className="hidden" onChange={onLogoPick} disabled={logoBusy} />
+                        {logoBusy ? 'Working...' : form.logo_url ? 'Replace Logo' : 'Upload Logo'}
+                        <input type="file" accept="image/png,image/jpeg" className="hidden" onChange={onLogoPick} disabled={logoBusy} />
                       </label>
                       {!!form.logo_url && (
                         <button
                           type="button"
-                          onClick={() => setForm((f) => ({ ...f, logo_url: '' }))}
+                          onClick={removeShopLogo}
+                          disabled={logoBusy}
                           className="text-xs bg-[#23273a] hover:bg-[#2a2d3e] text-slate-200 px-3 py-1.5 rounded-lg"
                         >
                           Remove Logo
                         </button>
                       )}
-                      <span className="text-[11px] text-slate-500">Shown on invoice and PDF exports.</span>
+                      <span className="text-[11px] text-slate-500">PNG or JPEG, up to 2 MB. Shown in REVV and on printed documents.</span>
                     </div>
+                    {logoMessage.text && (
+                      <p
+                        role={logoMessage.type === 'error' ? 'alert' : 'status'}
+                        className={`text-xs ${logoMessage.type === 'error' ? 'text-red-400' : 'text-emerald-400'}`}
+                      >
+                        {logoMessage.text}
+                      </p>
+                    )}
                     {form.logo_url ? (
                       <div className="inline-flex bg-white rounded-lg p-2 border border-[#2a2d3e]">
-                        <img src={form.logo_url} alt="Shop logo preview" className="h-14 w-auto object-contain" />
+                        <img src={resolveUploadedMediaUrl(form.logo_url)} alt="Shop logo preview" className="h-14 w-auto object-contain" />
                       </div>
                     ) : (
                       <p className="text-[11px] text-slate-600">No logo uploaded yet.</p>

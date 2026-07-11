@@ -11,6 +11,8 @@ import { useTheme } from '../contexts/ThemeContext'
 import LanguageToggle from './LanguageToggle'
 import AppOverlay from './AppOverlay'
 import CommandPalette from './CommandPalette'
+import { Logo } from './ui'
+import { resolveUploadedMediaUrl } from '../lib/mediaUrls'
 
 const NAV_GROUPS = [
   { id: 'core', label: 'Core', defaultOpen: true },
@@ -72,6 +74,7 @@ export default function Layout() {
   const [currentUserName, setCurrentUserName] = useState('')
   const [currentUserEmail, setCurrentUserEmail] = useState('')
   const [currentUserPhone, setCurrentUserPhone] = useState('')
+  const [shopIdentity, setShopIdentity] = useState({ name: '', logo_url: '' })
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const [accountOpen, setAccountOpen] = useState(false)
   const [profileForm, setProfileForm] = useState({ name: '', phone: '' })
@@ -154,6 +157,31 @@ export default function Layout() {
       })
       .catch(() => {})
     return () => { active = false }
+  }, [])
+
+  useEffect(() => {
+    let active = true
+    api.get('/market/shop')
+      .then((res) => {
+        if (!active) return
+        setShopIdentity({
+          name: String(res?.data?.name || '').trim(),
+          logo_url: String(res?.data?.logo_url || '').trim(),
+        })
+      })
+      .catch(() => {})
+
+    const onShopLogoUpdated = (event) => {
+      setShopIdentity((prev) => ({
+        name: event?.detail?.name === undefined ? prev.name : String(event.detail.name || '').trim(),
+        logo_url: event?.detail?.logo_url === undefined ? prev.logo_url : String(event.detail.logo_url || '').trim(),
+      }))
+    }
+    window.addEventListener('revv:shop-logo-updated', onShopLogoUpdated)
+    return () => {
+      active = false
+      window.removeEventListener('revv:shop-logo-updated', onShopLogoUpdated)
+    }
   }, [])
 
   useEffect(() => {
@@ -294,12 +322,16 @@ export default function Layout() {
     <div className="flex flex-col h-full min-h-0">
       <div className="p-5 border-b border-[#2a2d3e]">
         <div className="flex items-center gap-3 mb-1">
-          <div className="w-9 h-9 rounded-lg overflow-hidden flex-shrink-0">
-            <img src="/revv-app-icon-1024.png" alt="REVV" className="w-full h-full object-cover" />
+          <div className="grid h-9 w-9 flex-shrink-0 place-items-center overflow-hidden rounded-lg bg-white p-1">
+            {shopIdentity.logo_url ? (
+              <img src={resolveUploadedMediaUrl(shopIdentity.logo_url)} alt={`${shopIdentity.name || 'Shop'} logo`} className="h-full w-full object-contain" />
+            ) : (
+              <Logo variant="mark" className="h-full w-full object-contain" />
+            )}
           </div>
-          <div>
-            <div className="font-bold text-white text-sm">REVV</div>
-            <div className="text-[10px] text-slate-500">Shop HQ</div>
+          <div className="min-w-0">
+            <div className="truncate text-sm font-bold text-white">{shopIdentity.name || 'REVV'}</div>
+            <div className="text-[10px] text-slate-500">Shop HQ · REVV</div>
           </div>
         </div>
         <div className="text-[10px] text-slate-300 mt-2 leading-tight">
@@ -395,8 +427,14 @@ export default function Layout() {
             <Menu size={20} />
           </button>
           <div className="flex items-center gap-2 flex-1">
-            <img src="/revv-app-icon-1024.png" alt="REVV" className="w-6 h-6 rounded object-cover" />
-            <span className="font-bold text-sm">REVV</span>
+            <div className="grid h-6 w-6 shrink-0 place-items-center overflow-hidden rounded bg-white p-0.5">
+              {shopIdentity.logo_url ? (
+                <img src={resolveUploadedMediaUrl(shopIdentity.logo_url)} alt={`${shopIdentity.name || 'Shop'} logo`} className="h-full w-full object-contain" />
+              ) : (
+                <Logo variant="mark" className="h-full w-full object-contain" />
+              )}
+            </div>
+            <span className="min-w-0 truncate text-sm font-bold">{shopIdentity.name || 'REVV'}</span>
           </div>
           <button
             onClick={goBackOrDashboard}

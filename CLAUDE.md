@@ -56,6 +56,54 @@ const ro = await dbGet('SELECT * FROM ros WHERE id = $1 AND shop_id = $2', [id, 
 await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 ```
 
+## Dispatch Log — 2026-07-10 Full Redesign Phase 4: Shop Branding + Printed Documents
+
+**Time:** 2026-07-10 22:44 ET / 2026-07-11 02:44 UTC
+**Status:** READY FOR CLAUDE CODE QA — FEATURE BRANCH ONLY — NOT DEPLOYED
+
+**Scope**
+- Replaced the legacy base64 shop-logo setting with authenticated, admin-gated, token-shop-scoped PNG/JPEG upload and removal endpoints. Uploads are limited to one 2 MB file, receive server-generated names, and never accept a client-provided shop ID.
+- Settings now uploads/replaces/removes the logo immediately through multipart requests, reports success/failure inline, and resolves stored `/uploads/...` paths for preview. Normal shop saves no longer carry `logo_url`.
+- Layout now loads the authenticated shop identity and shows the shop logo beside the shop name in desktop and mobile chrome, falling back to the permanent REVV mark.
+- Rebuilt the PDF renderer as a shared invoice/repair-order document path. Both documents lead with shop branding, show customer/vehicle/insurance details and estimate lines, and render every monetary value through integer cents from canonical `roMoney` conversion/summary helpers.
+- Added authenticated `GET /api/invoice/:roId/repair-order`, exposed it as `Print repair order` in the RO action menu, and added the customer authorization/signature block.
+- Both PDFs carry a restrained REVV mark plus `Estimated & tracked with REVV · revvshop.app`; date-only values no longer shift back one day in New York.
+- No hosted backend/database was opened. No customer, shop, RO, payment, feedback, seed, reset, migration, or Miles Automotive data was read or changed.
+
+**Files changed (9; phase cap respected)**
+- `backend/src/routes/market.js`
+- `backend/src/routes/invoice.js`
+- `backend/src/__tests__/redesign.phase4.test.js`
+- `frontend/src/components/Layout.jsx`
+- `frontend/src/pages/Settings.jsx`
+- `frontend/src/pages/RODetail.jsx`
+- `frontend/src/pages/__tests__/Phase4.branding.test.jsx`
+- `frontend/src/pages/__tests__/RODetail.totalLoss.test.jsx`
+- `CLAUDE.md`
+
+**Verification**
+```text
+node --check backend/src/routes/market.js backend/src/routes/invoice.js
+  -> clean
+node --test backend/src/__tests__/*.test.js + Node-native backend/test files
+  -> 119/119 passed
+cd backend && npm run test:run
+  -> 3 files, 7/7 extractor tests passed
+cd frontend && npm run test:run
+  -> 31 files, 86/86 tests passed
+cd frontend && npm run build
+  -> clean production build
+Actual pdfkit render + pdftoppm inspection
+  -> one-page repair order; exact $9,156.60 subtotal, $812.65 tax, $9,969.25 total; authorization and REVV footer visible
+  -> /tmp/revv-phase4-repair-order.pdf and /tmp/revv-phase4-repair-order-final.png
+Playwright mocked Chrome render at 1024x768
+  -> Settings and RO Detail have zero page-level horizontal overflow
+  -> RO action menu bounds 755..979 remain to the right of the 224px sidebar; Print repair order visible
+  -> /tmp/revv-phase4-settings-tablet.png and /tmp/revv-phase4-ro-menu-tablet.png
+git diff --check && git ls-files frontend/dist
+  -> clean; dist untracked after cleanup
+```
+
 ## Dispatch Log — 2026-07-10 Full Redesign Phase 3: Repair Orders + RO Detail
 
 **Time:** 2026-07-10 22:08 ET / 2026-07-11 02:08 UTC

@@ -4,17 +4,23 @@ const fs = require('fs');
 const path = require('path');
 const auth = require('../middleware/auth');
 const { dbGet, dbAll } = require('../db');
-const { calculateDeliveryFeeBreakdown, toMoney } = require('../services/deliveryFees');
-const { centsToDollars, getRoMoneySummary } = require('../services/roMoney');
+const { calculateDeliveryFeeBreakdown } = require('../services/deliveryFees');
+const { dollarsToCents, getRoMoneySummary } = require('../services/roMoney');
 
-function money(value) {
-  const n = Number(value || 0);
-  return `$${n.toFixed(2)}`;
+function moneyCents(value) {
+  const normalized = String(value ?? '').trim();
+  const cents = /^-?\d+$/.test(normalized) ? BigInt(normalized) : 0n;
+  const negative = cents < 0n;
+  const absolute = negative ? -cents : cents;
+  const dollars = absolute / 100n;
+  const remainder = String(absolute % 100n).padStart(2, '0');
+  return `${negative ? '-' : ''}$${dollars.toLocaleString('en-US')}.${remainder}`;
 }
 
 function formatDate(value) {
   if (!value) return 'N/A';
-  const date = new Date(value);
+  const raw = String(value).trim();
+  const date = new Date(/^\d{4}-\d{2}-\d{2}$/.test(raw) ? `${raw}T12:00:00` : raw);
   if (Number.isNaN(date.getTime())) return 'N/A';
   return date.toLocaleDateString('en-US', {
     year: 'numeric',
@@ -25,13 +31,19 @@ function formatDate(value) {
 
 function drawSectionTitle(doc, title) {
   doc.moveDown(0.7);
-  doc.font('Helvetica-Bold').fontSize(11).fillColor('#111827').text(title);
+  doc.font('Helvetica-Bold').fontSize(11).fillColor('#111827').text(title, 50, doc.y, { width: 512 });
   doc.moveDown(0.2);
 }
 
-function addRow(doc, label, value) {
-  doc.font('Helvetica-Bold').fontSize(9).fillColor('#374151').text(`${label}: `, { continued: true });
-  doc.font('Helvetica').fillColor('#111827').text(value || 'N/A');
+function drawInfoColumn(doc, title, rows, x, y, width = 150) {
+  doc.font('Helvetica-Bold').fontSize(11).fillColor('#111827').text(title, x, y, { width });
+  let rowY = y + 19;
+  for (const [label, value] of rows) {
+    doc.font('Helvetica-Bold').fontSize(7).fillColor('#6B7280').text(String(label).toUpperCase(), x, rowY, { width });
+    doc.font('Helvetica').fontSize(9).fillColor('#111827').text(value || 'N/A', x, rowY + 9, { width, ellipsis: true });
+    rowY += 25;
+  }
+  return rowY;
 }
 
 function ensureRoom(doc, heightNeeded = 24) {
@@ -75,6 +87,18 @@ function decodeDataUrlImage(dataUrl) {
   }
 }
 
+function resolveShopLogoImage(logoUrl) {
+  const embedded = decodeDataUrlImage(logoUrl);
+  if (embedded) return embedded;
+
+  const raw = String(logoUrl || '').trim();
+  if (!raw.startsWith('/uploads/shop-logos/')) return null;
+  const uploadRoot = path.resolve(__dirname, '../../uploads/shop-logos');
+  const candidate = path.resolve(uploadRoot, path.basename(raw));
+  if (path.dirname(candidate) !== uploadRoot || !fs.existsSync(candidate)) return null;
+  return candidate;
+}
+
 async function loadInvoiceContext(roId, shopId) {
   const ro = await dbGet(
     'SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2',
@@ -100,24 +124,25 @@ async function loadInvoiceContext(roId, shopId) {
   return { ro, shop, customer, vehicle, lineItems, moneySummary, deliveryFeeBreakdown };
 }
 
-function streamInvoicePdf(res, context) {
+function streamDocumentPdf(res, context, { documentType = 'invoice' } = {}) {
   const { ro, shop, customer, vehicle, lineItems, moneySummary, deliveryFeeBreakdown } = context;
   const estimateItems = Array.isArray(lineItems) ? lineItems : [];
-  const estimateSubtotal = centsToDollars(moneySummary?.subtotalCents || 0);
-  const tax = centsToDollars(moneySummary?.taxCents || 0);
-  const deliveryFeeTotal = Number(deliveryFeeBreakdown?.total_fee || 0);
-  const subtotal = estimateSubtotal + deliveryFeeTotal;
-  const total = toMoney(centsToDollars(moneySummary?.totalCents || 0) + deliveryFeeTotal);
+  const estimateSubtotalCents = Number(moneySummary?.subtotalCents || 0);
+  const taxCents = Number(moneySummary?.taxCents || 0);
+  const deliveryFeeCents = dollarsToCents(deliveryFeeBreakdown?.total_fee || 0);
+  const subtotalCents = estimateSubtotalCents + deliveryFeeCents;
+  const totalCents = Number(moneySummary?.totalCents || 0) + deliveryFeeCents;
+  const isRepairOrder = documentType === 'repair-order';
 
-  const safeRo = String(ro.ro_number || ro.id || 'invoice').replace(/[^a-zA-Z0-9-_]+/g, '-');
+  const safeRo = String(ro.ro_number || ro.id || documentType).replace(/[^a-zA-Z0-9-_]+/g, '-');
   res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename="invoice-${safeRo}.pdf"`);
+  res.setHeader('Content-Disposition', `attachment; filename="${isRepairOrder ? 'repair-order' : 'invoice'}-${safeRo}.pdf"`);
 
   const doc = new PDFDocument({ size: 'LETTER', margin: 50 });
   doc.pipe(res);
 
-  const shopLogo = decodeDataUrlImage(shop?.logo_url);
-  const revvLogoPath = path.join(__dirname, '../../../frontend/public/icon-192.png');
+  const shopLogo = resolveShopLogoImage(shop?.logo_url);
+  const revvLogoPath = path.join(__dirname, '../../../frontend/public/revv-mark-transparent.png');
   const hasRevvLogo = fs.existsSync(revvLogoPath);
   let headerLeft = 50;
   if (shopLogo) {
@@ -139,24 +164,35 @@ function streamInvoicePdf(res, context) {
   }
   if (shop?.phone) doc.text(shop.phone, headerLeft, contactY, { width: 240 });
 
-  doc.font('Helvetica-Bold').fontSize(20).fillColor('#111827').text('INVOICE', 400, 50, { align: 'right' });
+  doc.font('Helvetica-Bold').fontSize(20).fillColor('#111827').text(isRepairOrder ? 'REPAIR ORDER' : 'INVOICE', 360, 50, { width: 202, align: 'right' });
   doc.font('Helvetica').fontSize(10).fillColor('#374151');
   doc.text(`RO #: ${ro.ro_number || 'N/A'}`, 400, 78, { align: 'right' });
   doc.text(`Date: ${formatDate(ro.created_at)}`, 400, 93, { align: 'right' });
   doc.text(`Status: ${ro.status || 'N/A'}`, 400, 108, { align: 'right' });
 
-  doc.moveTo(50, 135).lineTo(562, 135).strokeColor('#D1D5DB').lineWidth(1).stroke();
+  doc.moveTo(50, 135).lineTo(470, 135).strokeColor('#4F46E5').lineWidth(2).stroke();
+  doc.moveTo(470, 135).lineTo(562, 135).strokeColor('#EAB308').lineWidth(2).stroke();
   doc.y = 148;
 
-  drawSectionTitle(doc, 'Customer');
-  addRow(doc, 'Name', customer?.name || 'N/A');
-  addRow(doc, 'Phone', customer?.phone || 'N/A');
-  addRow(doc, 'Email', customer?.email || 'N/A');
-
-  drawSectionTitle(doc, 'Vehicle');
-  addRow(doc, 'Vehicle', [vehicle?.year, vehicle?.make, vehicle?.model].filter(Boolean).join(' ') || 'N/A');
-  addRow(doc, 'VIN', vehicle?.vin || 'N/A');
-  addRow(doc, 'Plate', vehicle?.plate || 'N/A');
+  const infoY = 154;
+  const customerEndY = drawInfoColumn(doc, 'Customer', [
+    ['Name', customer?.name || 'N/A'],
+    ['Phone', customer?.phone || 'N/A'],
+    ['Email', customer?.email || 'N/A'],
+  ], 50, infoY, 154);
+  const vehicleEndY = drawInfoColumn(doc, 'Vehicle', [
+    ['Vehicle', [vehicle?.year, vehicle?.make, vehicle?.model].filter(Boolean).join(' ') || 'N/A'],
+    ['VIN', vehicle?.vin || 'N/A'],
+    ['Plate', vehicle?.plate || 'N/A'],
+  ], 224, infoY, 154);
+  const insuranceEndY = drawInfoColumn(doc, 'Insurance', [
+    ['Insurer', ro.insurance_company || ro.insurer || customer?.insurance_company || 'N/A'],
+    ['Claim #', ro.claim_number || ro.insurance_claim_number || 'N/A'],
+    ['Policy #', ro.policy_number || customer?.policy_number || 'N/A'],
+    ['Adjuster', ro.adjuster_name || 'N/A'],
+    ['Deductible', moneyCents(dollarsToCents(ro.deductible || 0))],
+  ], 398, infoY, 164);
+  doc.y = Math.max(customerEndY, vehicleEndY, insuranceEndY) + 2;
 
   drawSectionTitle(doc, 'Line Items');
 
@@ -167,15 +203,15 @@ function streamInvoicePdf(res, context) {
   for (const item of estimateItems) {
     rowY = ensureTableRow(doc, rowY, col);
     const qty = Number(item.quantity || 1);
-    const unit = Number(item.unit_price || 0);
-    const lineTotal = Number(item.total || 0);
+    const unitCents = dollarsToCents(item.unit_price || 0);
+    const lineTotalCents = dollarsToCents(item.total || 0);
     const typeLabel = String(item.type || 'line').toUpperCase();
     const title = `${typeLabel}: ${item.description || 'Estimate line item'}`;
     doc.font('Helvetica').fontSize(10).fillColor('#111827');
     doc.text(title, col.item, rowY, { width: 290 });
     doc.text(String(qty), col.qty, rowY, { width: 40, align: 'center' });
-    doc.text(money(unit), col.unit, rowY, { width: 70, align: 'right' });
-    doc.text(money(lineTotal), col.total, rowY, { width: 60, align: 'right' });
+    doc.text(moneyCents(unitCents), col.unit, rowY, { width: 70, align: 'right' });
+    doc.text(moneyCents(lineTotalCents), col.total, rowY, { width: 60, align: 'right' });
     rowY += 18;
     doc.moveTo(50, rowY - 3).lineTo(562, rowY - 3).strokeColor('#F3F4F6').lineWidth(1).stroke();
   }
@@ -196,13 +232,13 @@ function streamInvoicePdf(res, context) {
     let detail = '';
     if (deliveryLeg.method === 'per_mile') detail = ` (${Number(deliveryLeg.miles || 0).toFixed(1)} mi)`;
     if (deliveryLeg.method === 'zone' && deliveryLeg.applied_zone) detail = ` (${deliveryLeg.applied_zone})`;
-    serviceItems.push({ description: `Delivery Fee${detail}`, amount: Number(deliveryLeg.amount || 0) });
+    serviceItems.push({ description: `Delivery Fee${detail}`, amountCents: dollarsToCents(deliveryLeg.amount || 0) });
   }
   if (pickupLeg?.enabled && Number(pickupLeg.amount || 0) > 0) {
     let detail = '';
     if (pickupLeg.method === 'per_mile') detail = ` (${Number(pickupLeg.miles || 0).toFixed(1)} mi)`;
     if (pickupLeg.method === 'zone' && pickupLeg.applied_zone) detail = ` (${pickupLeg.applied_zone})`;
-    serviceItems.push({ description: `Pickup Fee${detail}`, amount: Number(pickupLeg.amount || 0) });
+    serviceItems.push({ description: `Pickup Fee${detail}`, amountCents: dollarsToCents(pickupLeg.amount || 0) });
   }
 
   for (const item of serviceItems) {
@@ -210,8 +246,8 @@ function streamInvoicePdf(res, context) {
     doc.font('Helvetica').fontSize(10).fillColor('#111827');
     doc.text(item.description, col.item, rowY, { width: 290 });
     doc.text('1', col.qty, rowY, { width: 40, align: 'center' });
-    doc.text(money(item.amount), col.unit, rowY, { width: 70, align: 'right' });
-    doc.text(money(item.amount), col.total, rowY, { width: 60, align: 'right' });
+    doc.text(moneyCents(item.amountCents), col.unit, rowY, { width: 70, align: 'right' });
+    doc.text(moneyCents(item.amountCents), col.total, rowY, { width: 60, align: 'right' });
     rowY += 18;
     doc.moveTo(50, rowY - 3).lineTo(562, rowY - 3).strokeColor('#F3F4F6').lineWidth(1).stroke();
   }
@@ -223,26 +259,26 @@ function streamInvoicePdf(res, context) {
   doc.moveTo(50, doc.y).lineTo(562, doc.y).strokeColor('#D1D5DB').lineWidth(1.5).stroke();
   doc.moveDown(0.4);
 
-  const summaryX = 380;
-  const summaryValueX = 520;
+  const summaryX = 360;
+  const summaryValueX = 472;
   doc.font('Helvetica').fontSize(11).fillColor('#374151');
   doc.text('Subtotal', summaryX, doc.y, { width: 130 });
-  doc.text(money(subtotal), summaryValueX, doc.y, { width: 40, align: 'right' });
+  doc.text(moneyCents(subtotalCents), summaryValueX, doc.y, { width: 90, align: 'right' });
 
   doc.moveDown(0.6);
   doc.text('Tax', summaryX, doc.y, { width: 130 });
-  doc.text(money(tax), summaryValueX, doc.y, { width: 40, align: 'right' });
+  doc.text(moneyCents(taxCents), summaryValueX, doc.y, { width: 90, align: 'right' });
 
-  if (deliveryFeeTotal > 0) {
+  if (deliveryFeeCents > 0) {
     doc.moveDown(0.6);
     doc.text('Delivery/Pickup Fee', summaryX, doc.y, { width: 130 });
-    doc.text(money(deliveryFeeTotal), summaryValueX, doc.y, { width: 40, align: 'right' });
+    doc.text(moneyCents(deliveryFeeCents), summaryValueX, doc.y, { width: 90, align: 'right' });
   }
 
   doc.moveDown(0.8);
   doc.font('Helvetica-Bold').fontSize(12).fillColor('#111827');
   doc.text('Total', summaryX, doc.y, { width: 130 });
-  doc.text(money(total), summaryValueX, doc.y, { width: 40, align: 'right' });
+  doc.text(moneyCents(totalCents), summaryValueX, doc.y, { width: 90, align: 'right' });
 
   doc.moveDown(1.2);
   const paymentStatus = normalizedPaymentStatus(ro);
@@ -260,18 +296,33 @@ function streamInvoicePdf(res, context) {
     });
   }
 
-  const footerY = doc.page.height - 40;
+  if (isRepairOrder) {
+    ensureRoom(doc, 110);
+    doc.moveDown(1.5);
+    drawSectionTitle(doc, 'Repair Authorization');
+    doc.font('Helvetica').fontSize(9).fillColor('#374151').text(
+      'I authorize the repair facility to perform the work described on this repair order and to operate the vehicle for inspection, testing, and delivery purposes.',
+      { width: 500 }
+    );
+    const signatureY = doc.y + 30;
+    doc.moveTo(50, signatureY).lineTo(340, signatureY).strokeColor('#9CA3AF').lineWidth(0.8).stroke();
+    doc.moveTo(380, signatureY).lineTo(562, signatureY).strokeColor('#9CA3AF').lineWidth(0.8).stroke();
+    doc.font('Helvetica').fontSize(8).fillColor('#6B7280');
+    doc.text('Customer authorization signature', 50, signatureY + 5, { width: 290 });
+    doc.text('Date', 380, signatureY + 5, { width: 182 });
+  }
+
+  const footerY = doc.page.height - 70;
   doc.font('Helvetica').fontSize(9).fillColor('#6B7280');
-  doc.text('Thank you for your business.', 50, footerY);
   if (hasRevvLogo) {
     try {
-      doc.image(revvLogoPath, 438, footerY - 2, { fit: [11, 11] });
+      doc.image(revvLogoPath, 171, footerY - 3, { fit: [12, 12] });
     } catch {
       // Non-blocking branding asset.
     }
   }
-  doc.font('Helvetica-Bold').fontSize(8).fillColor('#64748B');
-  doc.text('Powered by REVV', 452, footerY + 1);
+  doc.font('Helvetica').fontSize(8).fillColor('#64748B');
+  doc.text('Estimated & tracked with REVV · revvshop.app', 188, footerY, { width: 250, align: 'center' });
 
   doc.end();
 }
@@ -293,9 +344,22 @@ router.get('/public/:token', async (req, res) => {
       return res.status(403).json({ error: 'Invoice is available after the repair order is closed and paid' });
     }
 
-    return streamInvoicePdf(res, context);
+    return streamDocumentPdf(res, context);
   } catch (err) {
     return res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/:roId/repair-order', auth, async (req, res) => {
+  try {
+    const context = await loadInvoiceContext(req.params.roId, req.user.shop_id);
+    if (!context) return res.status(404).json({ error: 'Repair order not found' });
+    return streamDocumentPdf(res, context, { documentType: 'repair-order' });
+  } catch (err) {
+    if (!res.headersSent) {
+      return res.status(500).json({ error: err.message });
+    }
+    return res.end();
   }
 });
 
@@ -303,7 +367,7 @@ router.get('/:roId', auth, async (req, res) => {
   try {
     const context = await loadInvoiceContext(req.params.roId, req.user.shop_id);
     if (!context) return res.status(404).json({ error: 'Repair order not found' });
-    return streamInvoicePdf(res, context);
+    return streamDocumentPdf(res, context);
   } catch (err) {
     if (!res.headersSent) {
       return res.status(500).json({ error: err.message });
@@ -313,3 +377,9 @@ router.get('/:roId', auth, async (req, res) => {
 });
 
 module.exports = router;
+module.exports._test = {
+  loadInvoiceContext,
+  moneyCents,
+  resolveShopLogoImage,
+  streamDocumentPdf,
+};
