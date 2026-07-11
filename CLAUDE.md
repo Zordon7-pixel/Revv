@@ -58,7 +58,7 @@ await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 
 ## Dispatch Log — 2026-07-10 Multi-Photo Intake
 
-**Status:** CODE COMPLETE — LOCAL VERIFICATION PASS — AWAITING CLAUDE CODE QA — NOT DEPLOYED
+**Status:** CLAUDE CODE QA PASS — CLEAR FOR HERMES — NOT DEPLOYED
 
 **Requested behavior**
 - Pre-Dropoff Condition and every other existing photo/evidence upload surface must allow staff to select more than one file at a time.
@@ -105,6 +105,14 @@ git ls-files frontend/dist
 - Read-only review must verify all three inputs carry `multiple`, selected files are uploaded sequentially, gallery/evidence reload happens once per successful batch, and a later failure does not erase an earlier successful upload.
 - Confirm estimate/appraisal multi-file workflows remain unchanged and the intentionally singular logo/PDF controls were not broadened.
 - Do not access a hosted database or mutate Miles Automotive data.
+
+**Claude Code read-only QA — PASS (`f9ce285`)**
+- Final verdict: `QA PASS — CLEAR FOR HERMES`; zero CRITICAL, HIGH, or MEDIUM findings.
+- Independently confirmed all three multi-file inputs, unchanged endpoint/FormData contracts, sequential requests, one post-batch reload, progress/disabled states, shared drag/drop path, and accessible partial-failure reporting.
+- Confirmed the new tests are behavioral: two requests per two selected files, one gallery reload after initial load, and a forced second-file failure that preserves the first upload.
+- Re-ran frontend 27 files / 73 tests, production build, photo tenant-scope 3/3, diff guard, and untracked-dist guard.
+- Confirmed no backend/schema/data file changed and the pre-existing untracked `SPEC-revv-redesign.md` remains untouched.
+- Physical iPad/Safari was unavailable. Native picker behavior and progress visibility remain an honest post-deploy physical-device spot check, not a claimed visual pass.
 
 ## Dispatch Log — 2026-07-10 Landscape Overlay + Complete Estimate Import
 
