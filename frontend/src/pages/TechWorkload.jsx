@@ -72,25 +72,26 @@ export default function TechWorkload() {
     }
   }
 
-  if (loading) return <div className="flex items-center justify-center h-64 text-slate-500">Loading workload…</div>
+  if (loading) return <div className="flex h-64 items-center justify-center text-faint" role="status">Loading workload…</div>
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-white">Tech Workload</h1>
-          <p className="text-slate-500 text-sm">{totalActive} active ROs across all techs</p>
+          <h1 className="font-display text-xl font-bold text-ink">Tech Workload</h1>
+          <p className="text-sm text-muted">{totalActive} active ROs across all techs</p>
         </div>
         <button
+          type="button"
           onClick={load}
-          className="text-xs bg-[#2a2d3e] hover:bg-[#3a3d4e] text-slate-200 px-3 py-1.5 rounded-lg"
+          className="rounded-instrument border border-line-2 bg-raised px-3 py-1.5 text-xs text-ink transition-colors hover:border-brand"
         >
           Refresh
         </button>
       </div>
 
       {error && (
-        <div className="text-xs bg-red-900/30 border border-red-700/40 text-red-200 rounded-lg px-3 py-2">
+        <div role="alert" className="rounded-instrument border border-crit/40 bg-crit/10 px-3 py-2 text-xs text-crit">
           {error}
         </div>
       )}
@@ -111,18 +112,18 @@ export default function TechWorkload() {
               }}
               className={`w-80 rounded-xl border p-3 transition-colors ${
                 hoveredColumn === column.tech_id
-                  ? 'border-indigo-500 bg-indigo-900/20'
-                  : 'border-[#2a2d3e] bg-[#1a1d2e]'
+                  ? 'border-brand bg-brand/10'
+                  : 'border-line-2 bg-panel'
               }`}
             >
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2 min-w-0">
                   {column.tech_id === 'unassigned'
-                    ? <User size={14} className="text-amber-300" />
-                    : <Wrench size={14} className="text-indigo-300" />}
-                  <h2 className="text-sm font-semibold text-white truncate">{column.tech_name}</h2>
+                    ? <User size={14} className="text-muted" />
+                    : <Wrench size={14} className="text-brand" />}
+                  <h2 className="truncate text-sm font-semibold text-ink">{column.tech_name}</h2>
                 </div>
-                <span className="text-[11px] text-slate-400">{column.count || 0}</span>
+                <span className="font-mono text-[11px] tabular-nums text-muted">{column.count || 0}</span>
               </div>
 
               {column.ros?.length ? (
@@ -136,23 +137,24 @@ export default function TechWorkload() {
                         setDragging(null)
                         setHoveredColumn('')
                       }}
-                      className={`rounded-lg border border-[#2a2d3e] bg-[#0f1117] p-3 cursor-grab active:cursor-grabbing ${
+                      className={`cursor-grab rounded-instrument border border-line-2 bg-void p-3 active:cursor-grabbing ${
                         savingRoId === ro.id ? 'opacity-60' : ''
                       }`}
                     >
                       <div className="flex items-start justify-between gap-2 mb-2">
                         <button
+                          type="button"
                           onClick={() => navigate(`/ros/${ro.id}`)}
-                          className="text-sm text-white font-semibold hover:text-indigo-300 text-left"
+                          className="text-left text-sm font-semibold text-ink transition-colors hover:text-brand"
                         >
                           {ro.ro_number || 'RO'}
                         </button>
                         <StatusBadge status={ro.status} />
                       </div>
-                      <div className="text-xs text-slate-300 truncate">{ro.customer_name || 'Unknown customer'}</div>
-                      <div className="text-[11px] text-slate-500 truncate">{ro.vehicle || 'Vehicle not set'}</div>
+                      <div className="truncate text-xs text-muted">{ro.customer_name || 'Unknown customer'}</div>
+                      <div className="truncate text-[11px] text-faint">{ro.vehicle || 'Vehicle not set'}</div>
                       {ro.estimated_delivery && (
-                        <div className="text-[11px] text-slate-500 mt-1">
+                        <div className="mt-1 font-mono text-[11px] text-faint">
                           ETA: {new Date(ro.estimated_delivery).toLocaleDateString()}
                         </div>
                       )}
@@ -160,7 +162,7 @@ export default function TechWorkload() {
                   ))}
                 </div>
               ) : (
-                <div className="rounded-lg border border-dashed border-[#2a2d3e] p-6 text-center text-xs text-slate-500">
+                <div className="rounded-instrument border border-dashed border-line-2 p-6 text-center text-xs text-faint">
                   Drop RO cards here
                 </div>
               )}

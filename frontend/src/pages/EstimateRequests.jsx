@@ -20,9 +20,9 @@ function formatDate(value) {
 }
 
 function statusPill(status) {
-  if (status === 'converted') return 'bg-emerald-900/30 text-emerald-300 border-emerald-700/40'
-  if (status === 'contacted') return 'bg-blue-900/30 text-blue-300 border-blue-700/40'
-  return 'bg-amber-900/30 text-amber-300 border-amber-700/40'
+  if (status === 'converted') return 'border-good/40 bg-good/10 text-good'
+  if (status === 'contacted') return 'border-brand/40 bg-brand/10 text-brand'
+  return 'border-line-2 bg-raised text-muted'
 }
 
 export default function EstimateRequests() {
@@ -71,12 +71,13 @@ export default function EstimateRequests() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-white">Estimate Requests</h1>
-          <p className="text-sm text-slate-400">Incoming public estimate leads from customers</p>
+          <h1 className="font-display text-xl font-semibold text-ink">Estimate Requests</h1>
+          <p className="text-sm text-muted">Incoming public estimate leads from customers</p>
         </div>
         <button
+          type="button"
           onClick={() => loadRequests(statusFilter)}
-          className="inline-flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200 hover:border-blue-500"
+          className="inline-flex items-center gap-2 rounded-instrument border border-line-2 bg-raised px-3 py-2 text-sm text-ink transition-colors hover:border-brand"
         >
           <RefreshCcw size={14} />
           Refresh
@@ -87,11 +88,12 @@ export default function EstimateRequests() {
         {STATUSES.map((status) => (
           <button
             key={status}
+            type="button"
             onClick={() => setStatusFilter(status)}
             className={`rounded-lg px-3 py-1.5 text-xs font-medium capitalize transition-colors ${
               statusFilter === status
-                ? 'bg-blue-600 text-white'
-                : 'border border-slate-700 bg-slate-800 text-slate-300 hover:border-blue-500'
+                ? 'bg-brand text-white'
+                : 'border border-line-2 bg-raised text-muted hover:border-brand hover:text-ink'
             }`}
           >
             {status}
@@ -99,20 +101,71 @@ export default function EstimateRequests() {
         ))}
       </div>
 
-      <div className="rounded-xl border border-slate-700 bg-slate-800 overflow-hidden">
+      <div className="overflow-hidden rounded-instrument border border-line-2 bg-panel">
         {loading ? (
-          <div className="flex h-44 items-center justify-center gap-2 text-slate-400">
+          <div className="flex h-44 items-center justify-center gap-2 text-muted" role="status">
             <Loader2 className="h-4 w-4 animate-spin" />
             Loading requests...
           </div>
         ) : error ? (
-          <div className="p-4 text-sm text-red-300">{error}</div>
+          <div role="alert" className="p-4 text-sm text-crit">{error}</div>
         ) : requests.length === 0 ? (
-          <div className="flex h-44 items-center justify-center text-slate-500">{emptyLabel}</div>
+          <div className="flex h-44 items-center justify-center text-faint">{emptyLabel}</div>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+            <div className="divide-y divide-line-2 md:hidden">
+              {requests.map((row) => (
+                <article key={row.id} className="space-y-3 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-medium text-ink">{row.name}</p>
+                      <p className="truncate text-xs text-muted">{row.email}</p>
+                    </div>
+                    <span className={`shrink-0 rounded-full border px-2 py-1 text-xs capitalize ${statusPill(row.status)}`}>
+                      {row.status}
+                    </span>
+                  </div>
+                  <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                    <div>
+                      <dt className="text-faint">Phone</dt>
+                      <dd className="mt-0.5 text-ink">{row.phone}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-faint">Vehicle</dt>
+                      <dd className="mt-0.5 text-ink">{formatVehicle(row)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-faint">Damage</dt>
+                      <dd className="mt-0.5 capitalize text-ink">{row.damage_type}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-faint">Received</dt>
+                      <dd className="mt-0.5 font-mono text-ink">{formatDate(row.created_at)}</dd>
+                    </div>
+                  </dl>
+                  {row.preferred_date && (
+                    <p className="text-xs text-muted">Preferred drop-off: <span className="font-mono text-ink">{row.preferred_date}</span></p>
+                  )}
+                  <label className="block text-xs text-faint">
+                    Update status
+                    <select
+                      aria-label={`Change status for ${row.name}`}
+                      value={row.status}
+                      disabled={updatingId === row.id}
+                      onChange={(e) => updateStatus(row.id, e.target.value)}
+                      className="mt-1 w-full rounded-instrument border border-line-2 bg-void px-3 py-2 text-sm text-ink focus:border-brand focus:outline-none"
+                    >
+                      {STATUSES.map((status) => (
+                        <option key={status} value={status}>{status}</option>
+                      ))}
+                    </select>
+                  </label>
+                </article>
+              ))}
+            </div>
+            <div className="hidden overflow-x-auto md:block">
             <table className="min-w-full text-sm">
-              <thead className="bg-slate-900/70 text-slate-400">
+              <thead className="bg-void text-muted">
                 <tr>
                   <th className="px-4 py-3 text-left font-medium">Customer</th>
                   <th className="px-4 py-3 text-left font-medium">Phone</th>
@@ -124,28 +177,28 @@ export default function EstimateRequests() {
               </thead>
               <tbody>
                 {requests.map((row) => (
-                  <tr key={row.id} className="border-t border-slate-700 text-slate-200 align-top">
+                  <tr key={row.id} className="border-t border-line-2 align-top text-ink">
                     <td className="px-4 py-3">
-                      <div className="font-medium text-white">{row.name}</div>
-                      <div className="text-xs text-slate-400">{row.email}</div>
+                      <div className="font-medium text-ink">{row.name}</div>
+                      <div className="text-xs text-muted">{row.email}</div>
                     </td>
                     <td className="px-4 py-3">
                       <div className="inline-flex items-center gap-1.5">
-                        <Phone size={13} className="text-blue-400" />
+                        <Phone size={13} className="text-brand" />
                         {row.phone}
                       </div>
                     </td>
                     <td className="px-4 py-3">
                       <div className="inline-flex items-center gap-1.5">
-                        <Car size={13} className="text-blue-400" />
+                        <Car size={13} className="text-brand" />
                         {formatVehicle(row)}
                       </div>
                     </td>
                     <td className="px-4 py-3">
                       <div className="capitalize">{row.damage_type}</div>
-                      {row.preferred_date && <div className="text-xs text-slate-400 mt-1">Drop-off: {row.preferred_date}</div>}
+                      {row.preferred_date && <div className="mt-1 text-xs text-muted">Drop-off: {row.preferred_date}</div>}
                     </td>
-                    <td className="px-4 py-3 text-slate-300">{formatDate(row.created_at)}</td>
+                    <td className="px-4 py-3 font-mono text-muted">{formatDate(row.created_at)}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <span className={`rounded-full border px-2 py-1 text-xs capitalize ${statusPill(row.status)}`}>
@@ -155,7 +208,7 @@ export default function EstimateRequests() {
                           value={row.status}
                           disabled={updatingId === row.id}
                           onChange={(e) => updateStatus(row.id, e.target.value)}
-                          className="rounded-md border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-slate-200 focus:border-blue-500 focus:outline-none"
+                          className="rounded-md border border-line-2 bg-void px-2 py-1 text-xs text-ink focus:border-brand focus:outline-none"
                         >
                           {STATUSES.map((status) => (
                             <option key={status} value={status}>{status}</option>
@@ -167,7 +220,8 @@ export default function EstimateRequests() {
                 ))}
               </tbody>
             </table>
-          </div>
+            </div>
+          </>
         )}
       </div>
     </div>

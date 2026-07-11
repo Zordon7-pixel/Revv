@@ -32,9 +32,9 @@ function toPercent(actual, goal) {
 }
 
 function progressMeta(percent) {
-  if (percent >= 100) return { tone: 'text-emerald-300', bar: 'bg-emerald-500', label: 'On target' }
-  if (percent >= 75) return { tone: 'text-amber-300', bar: 'bg-amber-400', label: 'At risk' }
-  return { tone: 'text-red-300', bar: 'bg-red-500', label: 'Behind' }
+  if (percent >= 100) return { tone: 'text-good', bar: 'bg-good', label: 'On target' }
+  if (percent >= 75) return { tone: 'text-brand', bar: 'bg-brand', label: 'At risk' }
+  return { tone: 'text-crit', bar: 'bg-crit', label: 'Behind' }
 }
 
 function MonthCard({ title, monthData }) {
@@ -44,52 +44,52 @@ function MonthCard({ title, monthData }) {
   const roMeta = progressMeta(roPercent)
 
   return (
-    <div className="bg-[#1a1d2e] border border-[#1e2130] rounded-xl p-4 space-y-4">
+    <section className="space-y-4 rounded-instrument border border-line-2 bg-panel p-4">
       <div>
-        <h2 className="text-sm font-semibold text-white">{title}</h2>
-        <p className="text-xs text-slate-400 mt-0.5">{monthLabel(monthData.yearMonth)}</p>
+        <h2 className="font-display text-sm font-semibold text-ink">{title}</h2>
+        <p className="mt-0.5 text-xs text-muted">{monthLabel(monthData.yearMonth)}</p>
       </div>
 
       <div className="grid grid-cols-2 gap-3">
-        <div className="bg-[#0d0f18] border border-[#1e2130] rounded-lg p-3">
-          <div className="text-[11px] text-slate-500">Revenue Goal</div>
-          <div className="text-lg font-bold text-indigo-300">{formatCurrency(monthData.revenue_goal)}</div>
+        <div className="rounded-instrument border border-line-2 bg-void p-3">
+          <div className="text-[11px] text-faint">Revenue Goal</div>
+          <div className="font-mono text-lg font-bold tabular-nums text-gold">{formatCurrency(monthData.revenue_goal)}</div>
         </div>
-        <div className="bg-[#0d0f18] border border-[#1e2130] rounded-lg p-3">
-          <div className="text-[11px] text-slate-500">RO Goal</div>
-          <div className="text-lg font-bold text-indigo-300">{Number(monthData.ro_goal || 0).toLocaleString()}</div>
+        <div className="rounded-instrument border border-line-2 bg-void p-3">
+          <div className="text-[11px] text-faint">RO Goal</div>
+          <div className="font-mono text-lg font-bold tabular-nums text-brand">{Number(monthData.ro_goal || 0).toLocaleString()}</div>
         </div>
-        <div className="bg-[#0d0f18] border border-[#1e2130] rounded-lg p-3">
-          <div className="text-[11px] text-slate-500">Actual Revenue</div>
-          <div className="text-lg font-bold text-emerald-300">{formatCurrency(monthData.actual_revenue)}</div>
+        <div className="rounded-instrument border border-line-2 bg-void p-3">
+          <div className="text-[11px] text-faint">Actual Revenue</div>
+          <div className="font-mono text-lg font-bold tabular-nums text-gold">{formatCurrency(monthData.actual_revenue)}</div>
         </div>
-        <div className="bg-[#0d0f18] border border-[#1e2130] rounded-lg p-3">
-          <div className="text-[11px] text-slate-500">Actual ROs</div>
-          <div className="text-lg font-bold text-emerald-300">{Number(monthData.actual_ro_count || 0).toLocaleString()}</div>
+        <div className="rounded-instrument border border-line-2 bg-void p-3">
+          <div className="text-[11px] text-faint">Actual ROs</div>
+          <div className="font-mono text-lg font-bold tabular-nums text-ink">{Number(monthData.actual_ro_count || 0).toLocaleString()}</div>
         </div>
       </div>
 
       <div className="space-y-3">
         <div>
           <div className="flex items-center justify-between text-xs mb-1">
-            <span className="text-slate-400 inline-flex items-center gap-1"><TrendingUp size={12} /> Revenue Progress</span>
-            <span className={`${revenueMeta.tone} font-semibold`}>{Math.round(revenuePercent)}% · {revenueMeta.label}</span>
+            <span className="inline-flex items-center gap-1 text-muted"><TrendingUp size={12} /> Revenue Progress</span>
+            <span className={`${revenueMeta.tone} font-mono font-semibold tabular-nums`}>{Math.round(revenuePercent)}% · {revenueMeta.label}</span>
           </div>
-          <div className="h-2 bg-[#0d0f18] rounded-full overflow-hidden">
+          <div className="h-2 overflow-hidden rounded-full bg-raised">
             <div className={`h-full ${revenueMeta.bar} transition-all`} style={{ width: `${Math.min(revenuePercent, 100)}%` }} />
           </div>
         </div>
         <div>
           <div className="flex items-center justify-between text-xs mb-1">
-            <span className="text-slate-400 inline-flex items-center gap-1"><ClipboardList size={12} /> RO Progress</span>
-            <span className={`${roMeta.tone} font-semibold`}>{Math.round(roPercent)}% · {roMeta.label}</span>
+            <span className="inline-flex items-center gap-1 text-muted"><ClipboardList size={12} /> RO Progress</span>
+            <span className={`${roMeta.tone} font-mono font-semibold tabular-nums`}>{Math.round(roPercent)}% · {roMeta.label}</span>
           </div>
-          <div className="h-2 bg-[#0d0f18] rounded-full overflow-hidden">
+          <div className="h-2 overflow-hidden rounded-full bg-raised">
             <div className={`h-full ${roMeta.bar} transition-all`} style={{ width: `${Math.min(roPercent, 100)}%` }} />
           </div>
         </div>
       </div>
-    </div>
+    </section>
   )
 }
 
@@ -151,8 +151,14 @@ export default function Goals() {
     e.preventDefault()
     const revenueGoal = Number(form.revenue_goal)
     const roGoal = Number(form.ro_goal)
-    if (!Number.isFinite(revenueGoal) || revenueGoal < 0) return alert('Revenue goal must be a non-negative number')
-    if (!Number.isInteger(roGoal) || roGoal < 0) return alert('RO goal must be a non-negative integer')
+    if (!Number.isFinite(revenueGoal) || revenueGoal < 0) {
+      setError('Revenue goal must be a non-negative number')
+      return
+    }
+    if (!Number.isInteger(roGoal) || roGoal < 0) {
+      setError('RO goal must be a non-negative integer')
+      return
+    }
 
     setSaving(true)
     setError('')
@@ -173,21 +179,21 @@ export default function Goals() {
   }
 
   if (!canView) {
-    return <div className="text-slate-400 text-sm">Admin access required.</div>
+    return <div className="text-sm text-muted">Admin access required.</div>
   }
 
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-2">
-        <Target size={18} className="text-indigo-300" />
+        <Target size={18} className="text-brand" />
         <div>
-          <h1 className="text-xl font-bold text-white">Monthly Goals</h1>
-          <p className="text-sm text-slate-500">Track goal performance for current and previous month.</p>
+          <h1 className="font-display text-xl font-bold text-ink">Monthly Goals</h1>
+          <p className="text-sm text-muted">Track goal performance for current and previous month.</p>
         </div>
       </div>
 
       {loading ? (
-        <div className="text-sm text-slate-500">Loading goals...</div>
+        <div className="text-sm text-faint" role="status">Loading goals...</div>
       ) : (
         <>
           <div className="grid md:grid-cols-2 gap-4">
@@ -195,47 +201,47 @@ export default function Goals() {
             {previousData && <MonthCard title="Previous Month" monthData={previousData} />}
           </div>
 
-          <form onSubmit={saveGoals} className="bg-[#1a1d2e] border border-[#1e2130] rounded-xl p-4 space-y-3">
-            <h2 className="text-sm font-semibold text-white">Set Current Month Goals</h2>
+          <form onSubmit={saveGoals} className="space-y-3 rounded-instrument border border-line-2 bg-panel p-4">
+            <h2 className="font-display text-sm font-semibold text-ink">Set Current Month Goals</h2>
             <div className="grid sm:grid-cols-2 gap-3">
               <div>
-                <label className="text-xs text-slate-500 block mb-1">Revenue Goal ($)</label>
+                <label className="mb-1 block text-xs text-muted">Revenue Goal ($)</label>
                 <input
                   type="number"
                   min="0"
                   step="100"
                   value={form.revenue_goal}
                   onChange={(e) => setForm((f) => ({ ...f, revenue_goal: e.target.value }))}
-                  className="w-full bg-[#0d0f18] border border-[#1e2130] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+                  className="w-full rounded-instrument border border-line-2 bg-void px-3 py-2 font-mono text-sm tabular-nums text-ink focus:border-brand focus:outline-none"
                   disabled={!canEdit || saving}
                 />
               </div>
               <div>
-                <label className="text-xs text-slate-500 block mb-1">RO Goal (count)</label>
+                <label className="mb-1 block text-xs text-muted">RO Goal (count)</label>
                 <input
                   type="number"
                   min="0"
                   step="1"
                   value={form.ro_goal}
                   onChange={(e) => setForm((f) => ({ ...f, ro_goal: e.target.value }))}
-                  className="w-full bg-[#0d0f18] border border-[#1e2130] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+                  className="w-full rounded-instrument border border-line-2 bg-void px-3 py-2 font-mono text-sm tabular-nums text-ink focus:border-brand focus:outline-none"
                   disabled={!canEdit || saving}
                 />
               </div>
             </div>
             <div className="flex items-center justify-between">
-              <div className="text-xs text-slate-500">
+              <div className="text-xs text-faint">
                 {canEdit ? 'Admins can update monthly goals.' : 'Read-only access.'}
               </div>
               <button
                 type="submit"
                 disabled={!canEdit || saving}
-                className="text-xs bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-3 py-1.5 rounded-lg disabled:opacity-50"
+                className="rounded-instrument bg-brand px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-brand-lit disabled:opacity-50"
               >
                 {saved ? 'Saved!' : saving ? 'Saving...' : 'Save Goals'}
               </button>
             </div>
-            {error && <p className="text-xs text-red-400">{error}</p>}
+            {error && <p role="alert" className="text-xs text-crit">{error}</p>}
           </form>
         </>
       )}

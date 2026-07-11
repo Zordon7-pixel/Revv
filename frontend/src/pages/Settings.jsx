@@ -73,6 +73,7 @@ export default function Settings() {
   const [quickbooksBusy, setQuickbooksBusy] = useState('')
   const [quickbooksMessage, setQuickbooksMessage] = useState('')
   const [activeSettingsTab, setActiveSettingsTab] = useState('core')
+  const [actionMessage, setActionMessage] = useState({ type: '', text: '' })
   const userIsAdmin = isAdmin()
 
   async function refreshSmsStatus() {
@@ -391,6 +392,7 @@ export default function Settings() {
   async function logoutAllDevices() {
     if (!window.confirm('This will immediately sign out all devices logged into your account. You will need to log in again on this device. Continue?')) return
     setRevokingAll(true)
+    setActionMessage({ type: '', text: '' })
     try {
       await api.post('/auth/logout-all')
       setRevokeAllDone(true)
@@ -399,7 +401,7 @@ export default function Settings() {
         window.location.href = '/login'
       }, 1500)
     } catch {
-      alert('Something went wrong. Please try again.')
+      setActionMessage({ type: 'error', text: 'Something went wrong. Please try again.' })
     } finally {
       setRevokingAll(false)
     }
@@ -443,12 +445,13 @@ export default function Settings() {
   async function clearDemoData() {
     if (!window.confirm('This will permanently delete all repair orders, customers, and vehicles.\n\nYour shop settings, staff accounts, and rates will NOT be touched.\n\nAre you sure?')) return
     setClearing(true)
+    setActionMessage({ type: '', text: '' })
     try {
       await api.delete('/market/demo-data')
-      alert('Done! All demo data cleared. You\'re starting fresh.')
-      window.location.reload()
-    } catch(e) {
-      alert('Something went wrong. Try again.')
+      setActionMessage({ type: 'success', text: 'Done. All demo data cleared. You are starting fresh.' })
+      setTimeout(() => window.location.reload(), 900)
+    } catch {
+      setActionMessage({ type: 'error', text: 'Something went wrong. Try again.' })
     } finally { setClearing(false) }
   }
 
@@ -519,11 +522,12 @@ export default function Settings() {
 
   async function startCheckout(plan) {
     setBillingAction('checkout')
+    setActionMessage({ type: '', text: '' })
     try {
       const { data } = await api.post('/subscriptions/checkout', { plan })
       if (data?.url) window.location.href = data.url
     } catch (e) {
-      alert(e?.response?.data?.error || 'Unable to start checkout.')
+      setActionMessage({ type: 'error', text: e?.response?.data?.error || 'Unable to start checkout.' })
     } finally {
       setBillingAction('')
     }
@@ -531,11 +535,12 @@ export default function Settings() {
 
   async function openBillingPortal() {
     setBillingAction('portal')
+    setActionMessage({ type: '', text: '' })
     try {
       const { data } = await api.post('/subscriptions/portal')
       if (data?.url) window.location.href = data.url
     } catch (e) {
-      alert(e?.response?.data?.error || 'Unable to open billing portal.')
+      setActionMessage({ type: 'error', text: e?.response?.data?.error || 'Unable to open billing portal.' })
     } finally {
       setBillingAction('')
     }
@@ -608,6 +613,19 @@ export default function Settings() {
           })}
         </div>
       </div>
+
+      {actionMessage.text && (
+        <div
+          role={actionMessage.type === 'error' ? 'alert' : 'status'}
+          className={`rounded-instrument border px-3 py-2 text-sm ${
+            actionMessage.type === 'error'
+              ? 'border-crit/40 bg-crit/10 text-crit'
+              : 'border-good/40 bg-good/10 text-good'
+          }`}
+        >
+          {actionMessage.text}
+        </div>
+      )}
 
       {activeSettingsTab === 'financial' && (
         <>

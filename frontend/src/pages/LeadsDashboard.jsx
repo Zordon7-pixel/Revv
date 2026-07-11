@@ -13,8 +13,8 @@ export default function LeadsDashboard() {
       const q = query(collection(db, 'leads'), orderBy('createdAt', 'desc'))
       const snap = await getDocs(q)
       setLeads(snap.docs.map((doc) => ({ id: doc.id, ...doc.data() })))
-    } catch (err) {
-      console.error('[LeadsDashboard] Error fetching leads:', err)
+    } catch {
+      console.error('[LeadsDashboard] Failed to fetch leads')
     } finally {
       setLoading(false)
     }
@@ -54,26 +54,28 @@ export default function LeadsDashboard() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <Users size={22} className="text-indigo-400" />
-          <h1 className="text-2xl font-bold text-slate-100">Leads</h1>
-          <span className="rounded-full bg-indigo-500/15 px-2.5 py-0.5 text-xs font-semibold text-indigo-300">
+          <Users size={22} className="text-brand" />
+          <h1 className="font-display text-2xl font-bold text-ink">Leads</h1>
+          <span className="rounded-full bg-brand/10 px-2.5 py-0.5 font-mono text-xs font-semibold tabular-nums text-brand">
             {leads.length}
           </span>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           <button
+            type="button"
             onClick={fetchLeads}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-600 px-3 py-2 text-sm text-slate-300 transition hover:border-indigo-500 hover:text-white"
+            className="inline-flex items-center gap-2 rounded-instrument border border-line-2 bg-raised px-3 py-2 text-sm text-muted transition-colors hover:border-brand hover:text-ink"
           >
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
             Refresh
           </button>
           <button
+            type="button"
             onClick={exportCSV}
             disabled={leads.length === 0}
-            className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-instrument bg-brand px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-lit disabled:opacity-50"
           >
             <Download size={14} />
             Export CSV
@@ -82,37 +84,37 @@ export default function LeadsDashboard() {
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center py-20 text-slate-400">Loading leads...</div>
+        <div className="flex items-center justify-center py-20 text-muted" role="status">Loading leads...</div>
       ) : leads.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+        <div className="flex flex-col items-center justify-center rounded-instrument border border-line-2 bg-panel py-20 text-muted">
           <Users size={40} className="mb-3 opacity-40" />
           <p>No leads yet.</p>
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-slate-700/60">
+        <div className="overflow-x-auto rounded-instrument border border-line-2 bg-panel">
           <table className="w-full text-left text-sm">
             <thead>
-              <tr className="border-b border-slate-700/60 bg-slate-800/50">
-                <th className="px-4 py-3 font-semibold text-slate-300">Date</th>
-                <th className="px-4 py-3 font-semibold text-slate-300">Name</th>
-                <th className="px-4 py-3 font-semibold text-slate-300">Email</th>
-                <th className="px-4 py-3 font-semibold text-slate-300">Phone</th>
-                <th className="px-4 py-3 font-semibold text-slate-300">Business</th>
-                <th className="px-4 py-3 font-semibold text-slate-300">Message</th>
-                <th className="px-4 py-3 font-semibold text-slate-300">Source</th>
+              <tr className="border-b border-line-2 bg-void">
+                <th className="px-4 py-3 font-semibold text-muted">Date</th>
+                <th className="px-4 py-3 font-semibold text-muted">Name</th>
+                <th className="px-4 py-3 font-semibold text-muted">Email</th>
+                <th className="px-4 py-3 font-semibold text-muted">Phone</th>
+                <th className="px-4 py-3 font-semibold text-muted">Business</th>
+                <th className="px-4 py-3 font-semibold text-muted">Message</th>
+                <th className="px-4 py-3 font-semibold text-muted">Source</th>
               </tr>
             </thead>
             <tbody>
               {leads.map((lead) => (
-                <tr key={lead.id} className="border-b border-slate-700/30 hover:bg-slate-800/30 transition">
-                  <td className="whitespace-nowrap px-4 py-3 text-slate-400">{formatDate(lead.createdAt)}</td>
-                  <td className="px-4 py-3 font-medium text-white">{lead.name}</td>
-                  <td className="px-4 py-3 text-indigo-300">{lead.email}</td>
-                  <td className="px-4 py-3 text-slate-400">{lead.phone || '—'}</td>
-                  <td className="px-4 py-3 text-slate-400">{lead.businessName || '—'}</td>
-                  <td className="max-w-xs truncate px-4 py-3 text-slate-400">{lead.message || '—'}</td>
+                <tr key={lead.id} className="border-b border-line transition-colors hover:bg-raised">
+                  <td className="whitespace-nowrap px-4 py-3 font-mono text-muted">{formatDate(lead.createdAt)}</td>
+                  <td className="px-4 py-3 font-medium text-ink">{lead.name}</td>
+                  <td className="px-4 py-3 text-brand">{lead.email}</td>
+                  <td className="px-4 py-3 text-muted">{lead.phone || '—'}</td>
+                  <td className="px-4 py-3 text-muted">{lead.businessName || '—'}</td>
+                  <td className="max-w-xs truncate px-4 py-3 text-muted">{lead.message || '—'}</td>
                   <td className="px-4 py-3">
-                    <span className="rounded-full bg-indigo-500/15 px-2 py-0.5 text-xs font-medium text-indigo-300">
+                    <span className="rounded-full bg-brand/10 px-2 py-0.5 text-xs font-medium text-brand">
                       {lead.source || 'unknown'}
                     </span>
                   </td>

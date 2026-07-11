@@ -35,6 +35,14 @@ const tokenizedFiles = [
   'src/components/PartsSearch.jsx',
   'src/pages/ADASCalibration.jsx',
   'src/pages/Customers.jsx',
+  'src/pages/Goals.jsx',
+  'src/pages/Performance.jsx',
+  'src/pages/LeadsDashboard.jsx',
+  'src/pages/Reviews.jsx',
+  'src/pages/EstimateRequests.jsx',
+  'src/pages/TechWorkload.jsx',
+  'src/pages/Schedule.jsx',
+  'src/pages/Settings.jsx',
 ]
 
 const phase6JFiles = [
@@ -46,6 +54,17 @@ const phase6JFiles = [
   'src/components/PartsSearch.jsx',
   'src/pages/ADASCalibration.jsx',
   'src/pages/Customers.jsx',
+]
+
+const phase6KFiles = [
+  'src/pages/Goals.jsx',
+  'src/pages/Performance.jsx',
+  'src/pages/LeadsDashboard.jsx',
+  'src/pages/Reviews.jsx',
+  'src/pages/EstimateRequests.jsx',
+  'src/pages/TechWorkload.jsx',
+  'src/pages/Schedule.jsx',
+  'src/pages/Settings.jsx',
 ]
 
 function read(relativePath) {
@@ -128,5 +147,26 @@ describe('redesign token conformance', () => {
     expect(payment).toMatch(/onMarkManual/)
     expect(parts).toMatch(/AppOverlay/)
     expect(parts).toMatch(/api\.post\(`\/parts\/ro\/\$\{roId\}`/)
+  })
+
+  it('keeps secondary operations and insights tokenized without changing workflow contracts', () => {
+    for (const relativePath of phase6KFiles) {
+      const source = read(relativePath)
+      expect(source, relativePath).not.toMatch(/#[0-9a-f]{3,8}/i)
+      expect(source, relativePath).not.toMatch(/(?:bg|text|border|ring|from|to|via)-(?:indigo|blue|slate|yellow|red|green|emerald|amber|violet|purple|cyan|teal|orange|lime|pink|rose)-/)
+      expect(source, relativePath).not.toMatch(/(?:bg-gradient-|<linearGradient|\balert\s*\()/)
+    }
+
+    const goals = read('src/pages/Goals.jsx')
+    const workload = read('src/pages/TechWorkload.jsx')
+    const schedule = read('src/pages/Schedule.jsx')
+    const settings = read('src/pages/Settings.jsx')
+    expect(goals).toMatch(/api\.put\(`\/goals\/\$\{months\.current\}`/)
+    expect(workload).toMatch(/api\.patch\(`\/ros\/\$\{dragging\.ro\.id\}\/assign`/)
+    expect(schedule).toMatch(/api\.post\(`\/ros\/from-schedule\/\$\{shiftId\}`/)
+    expect(schedule).toMatch(/confirm\('Remove this shift\?'\)/)
+    expect(settings).toMatch(/window\.confirm/)
+    expect(settings).toMatch(/api\.delete\('\/market\/demo-data'\)/)
+    expect(settings).toMatch(/api\.post\('\/subscriptions\/checkout'/)
   })
 })

@@ -56,6 +56,47 @@ const ro = await dbGet('SELECT * FROM ros WHERE id = $1 AND shop_id = $2', [id, 
 await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 ```
 
+## Dispatch Log — 2026-07-11 REVV Redesign Phase 6K: Goals, Reviews, Leads, and Shop Operations
+
+**Time:** 2026-07-11 04:42 ET / 2026-07-11 08:42 UTC
+**Status:** READY FOR CLAUDE CODE QA — FEATURE BRANCH ONLY — NOT DEPLOYED
+
+**Scope**
+- Completed semantic-token propagation for monthly goals, technician performance, public estimate leads, customer reviews, technician workload, scheduling, and account/shop settings. The audited production files contain no raw hex colors, legacy named palette utilities, gradients, or browser alerts.
+- Preserved every existing API route, payload, role gate, schedule mutation, RO-from-schedule action, workload assignment, goal calculation, review/lead load, subscription redirect, QuickBooks integration, demo-data confirmation, logout-all behavior, and owner-activity preference flow.
+- Kept gold restricted to revenue goals and financial performance values. Generic controls and neutral progress use brand, success uses good, and errors/destructive actions use crit. Operational counts, dates, hours, ratings, and money use monospaced tabular numerals where applicable.
+- Replaced Settings and Goals browser alerts with inline `role="alert"` / `role="status"` feedback while preserving consequential `window.confirm` gates. Lead-fetch logging no longer emits raw provider error objects.
+- Added a complete phone card view for Estimate Requests so customer, vehicle, damage, received date, preferred drop-off, status, and the update control are all visible without hidden table columns or page-level horizontal scrolling. The desktop table remains unchanged.
+- Expanded `tokenConformance.test.js` to lock all eight migrated production files against legacy styling/alerts and pin the goal, workload, schedule, demo-data, and subscription contracts.
+- No backend, API contract, auth rule, workflow, money math, database, seed, reset, migration, destructive script, hosted DB, provider, customer/shop/RO data, or Miles Automotive data changed. Browser data was fully mocked.
+
+**Files changed (10; batch cap respected)**
+- `frontend/src/pages/Goals.jsx`
+- `frontend/src/pages/Performance.jsx`
+- `frontend/src/pages/LeadsDashboard.jsx`
+- `frontend/src/pages/Reviews.jsx`
+- `frontend/src/pages/EstimateRequests.jsx`
+- `frontend/src/pages/TechWorkload.jsx`
+- `frontend/src/pages/Schedule.jsx`
+- `frontend/src/pages/Settings.jsx`
+- `frontend/src/lib/__tests__/tokenConformance.test.js`
+- `CLAUDE.md`
+
+**Verification**
+```
+cd frontend && npm run test:run -- src/lib/__tests__/tokenConformance.test.js src/pages/__tests__/WorkSurfaces.test.jsx src/lib/__tests__/colorSemantics.test.js  # 3 files, 13/13 passed
+node --test native backend sweep  # 130/130 passed
+cd backend && npm run test:run  # extractor suite 7/7 passed
+cd frontend && npm run test:run  # 38 files, 117/117 passed
+cd frontend && npm run build  # clean; pre-existing Sentry/chunk-size warnings only
+Playwright fully mocked browser checks  # Performance, Tech Workload, Reviews, Estimate Requests, Monthly Goals
+viewport results  # 1024x768 dark/light tablet and 390x844 dark/light phone exact client/scroll widths; zero console/page errors
+responsive lead result  # phone Estimate Requests renders complete stacked cards with status controls and no horizontal overflow
+screenshots  # /tmp/revv-phase6k-performance-tablet-dark.png, /tmp/revv-phase6k-workload-tablet-light.png, /tmp/revv-phase6k-reviews-tablet-dark.png, /tmp/revv-phase6k-estimate-requests-phone-dark.png, /tmp/revv-phase6k-goals-phone-light.png
+rg raw hex / legacy named palettes / gradients / browser alerts across 8 production files  # zero matches
+rm -rf frontend/dist && git diff --check && git ls-files frontend/dist | wc -l  # 0
+```
+
 ## Dispatch Log — 2026-07-11 REVV Redesign Phase 6J: Shared Payment, Status, and Review Semantics
 
 **Time:** 2026-07-11 04:23 ET / 2026-07-11 08:23 UTC

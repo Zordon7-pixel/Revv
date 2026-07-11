@@ -134,7 +134,7 @@ function ShiftModal({ employees, prefill, shift, onClose, onSaved, onDeleted }) 
   }
 
   return (
-    <AppOverlay label={isEdit ? 'Edit shift' : 'Add shift'} onClose={onClose} className="bg-black/70 p-4">
+    <AppOverlay label={isEdit ? 'Edit shift' : 'Add shift'} onClose={onClose} className="bg-void/75 p-4">
       <div className="bg-panel rounded-instrument border border-line-2 w-full max-w-sm p-5 space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="font-bold text-ink text-sm">{isEdit ? 'Edit Shift' : 'Add Shift'}</h3>
@@ -162,10 +162,10 @@ function ShiftModal({ employees, prefill, shift, onClose, onSaved, onDeleted }) 
           <div><label className={lbl}>Notes (optional)</label>
             <input className={inp} placeholder="Any instructions…" value={form.notes} onChange={e => setForm(f=>({...f,notes:e.target.value}))} /></div>
         </div>
-        {err && <p className="text-xs text-red-400">{err}</p>}
+        {err && <p role="alert" className="text-xs text-crit">{err}</p>}
         <div className="flex justify-between pt-2">
           {isEdit ? (
-            <button onClick={deleteShift} disabled={deleting || saving} className="text-red-300 text-sm hover:text-red-200 disabled:opacity-60">
+            <button type="button" onClick={deleteShift} disabled={deleting || saving} className="text-sm text-crit transition-colors hover:opacity-80 disabled:opacity-60">
               {deleting ? 'Removing…' : 'Delete Shift'}
             </button>
           ) : (
@@ -203,7 +203,7 @@ function EarlyAuthModal({ employee, onClose, onSuccess }) {
   }
 
   return (
-    <AppOverlay label="Authorize early clock-in" onClose={onClose} className="bg-black/70 p-4">
+    <AppOverlay label="Authorize early clock-in" onClose={onClose} className="bg-void/75 p-4">
       <div className="bg-panel rounded-instrument border border-line-2 w-full max-w-sm p-5 space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="font-bold text-ink text-sm">Admin Password Required</h3>
@@ -217,7 +217,7 @@ function EarlyAuthModal({ employee, onClose, onSuccess }) {
           placeholder="Admin Password"
           className="w-full bg-void border border-line-2 rounded-lg px-3 py-2 text-sm text-ink focus:outline-none focus:border-brand"
         />
-        {error && <p className="text-xs text-red-400">{error}</p>}
+        {error && <p role="alert" className="text-xs text-crit">{error}</p>}
         <div className="flex justify-end gap-2">
           <button onClick={onClose} className="text-muted text-sm hover:text-ink">Cancel</button>
           <button onClick={submit} disabled={saving || !password} className="bg-brand hover:bg-brand-lit text-white text-sm font-bold px-4 py-2 rounded-lg disabled:opacity-50">
@@ -483,13 +483,13 @@ export default function Schedule() {
       />
 
       {createRoError && (
-        <div className="fixed right-4 top-4 z-[90] max-w-xs rounded-lg border border-red-500/40 bg-red-900/85 px-3 py-2 text-xs text-red-100 shadow-lg">
+        <div role="alert" className="fixed right-4 top-4 z-[90] max-w-xs rounded-instrument border border-crit/40 bg-panel px-3 py-2 text-xs text-crit shadow-lg">
           {createRoError}
         </div>
       )}
 
       {loadError && (
-        <div className="fixed right-4 top-20 z-[90] max-w-xs rounded-lg border border-red-500/40 bg-red-900/85 px-3 py-2 text-xs text-red-100 shadow-lg">
+        <div role="alert" className="fixed right-4 top-20 z-[90] max-w-xs rounded-instrument border border-crit/40 bg-panel px-3 py-2 text-xs text-crit shadow-lg">
           {loadError}
         </div>
       )}
@@ -557,7 +557,7 @@ export default function Schedule() {
                     <div className="text-[10px] font-semibold text-brand-lit truncate">{s.user?.name?.split(' ')[0]}</div>
                     <div className="text-[9px] text-muted">{shiftTimeLabel(s)}</div>
                     {s.shift_date !== dayIso && (
-                      <div className="text-[9px] text-cyan-300">Carryover from previous day</div>
+                      <div className="text-[9px] text-brand">Carryover from previous day</div>
                     )}
                     {s.notes && <div className="text-[9px] text-faint truncate mt-0.5">{s.notes}</div>}
                     {canCreateRo && (
@@ -568,14 +568,14 @@ export default function Schedule() {
                           createRoFromShift(s.id)
                         }}
                         disabled={creatingRoShiftId === s.id}
-                        className="mt-1 rounded-md border border-emerald-600/40 bg-emerald-900/25 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-300 hover:bg-emerald-900/40 disabled:opacity-60"
+                        className="mt-1 rounded-md border border-gold/40 bg-gold/10 px-1.5 py-0.5 text-[9px] font-semibold text-gold transition-colors hover:bg-gold/15 disabled:opacity-60"
                       >
                         {creatingRoShiftId === s.id ? 'Creating…' : 'Create RO'}
                       </button>
                     )}
                     {canManage && (
                       <button onClick={(e) => { e.stopPropagation(); deleteShift(s.id) }}
-                        className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 p-0.5 rounded text-faint hover:text-red-400 transition-all">
+                        className="absolute right-1 top-1 rounded p-0.5 text-faint opacity-0 transition-all hover:text-crit group-hover:opacity-100">
                         <Trash2 size={10}/>
                       </button>
                     )}
@@ -650,7 +650,7 @@ export default function Schedule() {
                             createRoFromShift(s.id)
                           }}
                           disabled={creatingRoShiftId === s.id}
-                          className="mt-0.5 text-[8px] font-semibold text-emerald-300 hover:text-emerald-200 disabled:opacity-60"
+                          className="mt-0.5 text-[8px] font-semibold text-gold transition-colors hover:text-gold-lit disabled:opacity-60"
                         >
                           {creatingRoShiftId === s.id ? 'Creating…' : 'Create RO'}
                         </button>
@@ -692,11 +692,11 @@ export default function Schedule() {
                     <span className="text-brand font-semibold">{totalHours.toFixed(1)}h scheduled</span>
                     {hasShiftToday && canAuthorizeEarly && (
                       authorizedToday[emp.id] ? (
-                        <span className="text-[10px] bg-emerald-900/40 text-emerald-400 px-2 py-1 rounded-full font-semibold inline-flex items-center gap-1"><CheckCircle size={10} /> Authorized for today</span>
+                        <span className="inline-flex items-center gap-1 rounded-full bg-good/10 px-2 py-1 text-[10px] font-semibold text-good"><CheckCircle size={10} /> Authorized for today</span>
                       ) : (
                         <button
                           onClick={() => setAuthModalEmployee(emp)}
-                          className="text-[10px] bg-amber-900/40 text-amber-300 border border-amber-700/40 px-2 py-1 rounded-full hover:bg-amber-800/40"
+                          className="rounded-full border border-brand/40 bg-brand/10 px-2 py-1 text-[10px] text-brand transition-colors hover:bg-brand/15"
                         >
                           Allow Early Today
                         </button>
