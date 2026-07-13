@@ -27,6 +27,8 @@ test('shop schema creates and backfills the paint rate used by supplement analys
   assert.match(migrationSource, /ALTER TABLE shops ADD COLUMN IF NOT EXISTS paint_rate NUMERIC\(10,2\) DEFAULT 62/);
   assert.match(schemaSource, /CREATE TABLE IF NOT EXISTS shops[\s\S]*paint_rate NUMERIC\(10,2\) DEFAULT 62/);
   assert.match(marketSource, /fields\.push\('paint_rate'\)/);
+  assert.doesNotMatch(schemaSource, /ADD CONSTRAINT IF NOT EXISTS/);
+  assert.match(schemaSource, /DO \$\$[\s\S]*ADD CONSTRAINT fk_users_customer_id[\s\S]*WHEN duplicate_object THEN NULL/);
 });
 
 test('customer list does not select a production column that is absent', () => {

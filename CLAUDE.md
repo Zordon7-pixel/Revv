@@ -96,6 +96,7 @@ Screenshot: /Users/zordon/.openclaw/workspace/revv-overlay-ipad-landscape-202607
 - Verdict: PASS; no critical, high, or medium findings.
 - Confirmed all 10 requested checks: paint-rate schema/update coverage, customer scoping and safe failure UI, insurer snapshot authority, exact $13,330.12 gross / $12,330.12 net fixture, no line-math fallback write, metadata-first deduplicated imports, manual-row compatibility, content-area overlay geometry, untouched photo rows, and no unrelated/destructive changes.
 - Confirmed ready for persistent-volume setup, targeted RO financial resync, deployment, and post-deploy verification.
+- Post-deploy log follow-up: replaced PostgreSQL's unsupported `ADD CONSTRAINT IF NOT EXISTS` syntax for `fk_users_customer_id` with an idempotent guarded `DO` block so the full schema script no longer aborts before the migration list.
 
 ## Dispatch Log — 2026-07-11 Product Tour Embedded Voice
 

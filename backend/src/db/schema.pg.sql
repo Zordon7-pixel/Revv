@@ -86,9 +86,16 @@ CREATE TABLE IF NOT EXISTS shop_notification_preferences (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-ALTER TABLE users
-  ADD CONSTRAINT IF NOT EXISTS fk_users_customer_id
-  FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL;
+DO $$
+BEGIN
+  ALTER TABLE users
+    ADD CONSTRAINT fk_users_customer_id
+    FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL;
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+  WHEN undefined_table THEN NULL;
+  WHEN undefined_column THEN NULL;
+END$$;
 
 CREATE TABLE IF NOT EXISTS vehicles (
   id UUID PRIMARY KEY,
