@@ -196,6 +196,64 @@ function buildFinancialsFromAdjusterTotals(summary, rawTotals) {
   };
 }
 
+function buildAuthoritativeSummary(lineSummary, rawTotals) {
+  const totals = parseJsonMaybe(rawTotals);
+  if (!totals || typeof totals !== 'object') return null;
+
+  const grossTotal = firstMoney(totals.total_cost_of_repairs, totals.gross_total, totals.estimate_gross_total);
+  const netTotal = firstMoney(totals.net_cost_of_repairs, totals.net_estimate_total, totals.total_customer_responsibility);
+  const partsTotal = firstMoney(totals.parts, totals.parts_total);
+  const laborTotal = sumMoney(
+    totals.body_labor_cost,
+    totals.paint_labor_cost,
+    totals.refinish_labor_cost,
+    totals.mechanical_labor_cost,
+    totals.frame_labor_cost,
+    totals.glass_labor_cost
+  );
+  const subletTotal = sumMoney(
+    totals.sublet,
+    totals.sublet_cost,
+    totals.paint_supplies_cost,
+    totals.miscellaneous,
+    totals.other_charges
+  );
+  const taxTotal = sumPresentMoney(
+    totals.sales_tax_cost,
+    totals.county_tax_cost,
+    totals.other_tax_1_cost,
+    totals.tax,
+    totals.tax_total,
+    totals.tax_amount
+  );
+  const deductible = Math.abs(firstMoney(totals.deductible));
+  const statedSubtotal = hasMoneyValue(totals.subtotal) ? firstMoney(totals.subtotal) : null;
+  const financials = buildFinancialsFromAdjusterTotals(lineSummary, totals);
+
+  if (!grossTotal && !netTotal && !partsTotal && !laborTotal && !subletTotal && !taxTotal && statedSubtotal === null) {
+    return null;
+  }
+
+  return {
+    ...lineSummary,
+    line_subtotal: lineSummary.subtotal,
+    line_grand_total: lineSummary.grand_total,
+    subtotal: statedSubtotal,
+    labor_total: Number(laborTotal.toFixed(2)),
+    parts_total: Number(partsTotal.toFixed(2)),
+    sublet_total: Number(subletTotal.toFixed(2)),
+    other_total: 0,
+    taxable_subtotal: statedSubtotal,
+    tax_amount: Number(taxTotal.toFixed(2)),
+    grand_total: Number(grossTotal.toFixed(2)),
+    net_estimate_total: Number((netTotal || Math.max(0, grossTotal - deductible)).toFixed(2)),
+    deductible: Number(deductible.toFixed(2)),
+    source: 'adjuster_totals',
+    financial_review_required: financials?.needs_review === true,
+    reconciliation: financials?.reconciliation || null,
+  };
+}
+
 async function ensureRepairOrder(roId, shopId) {
   return dbGet(
     `SELECT ro.id, ro.shop_id, COALESCE(s.tax_rate, 0) AS tax_rate
@@ -207,7 +265,8 @@ async function ensureRepairOrder(roId, shopId) {
 }
 
 async function getSummary(roId, shopId) {
-  const summaryRow = await dbGet(
+  const [summaryRow, metadata] = await Promise.all([
+    dbGet(
     `SELECT
       COALESCE(SUM(total), 0) AS subtotal,
       COALESCE(SUM(CASE WHEN type = 'labor' THEN total ELSE 0 END), 0) AS labor_total,
@@ -219,7 +278,14 @@ async function getSummary(roId, shopId) {
      FROM estimate_line_items
      WHERE ro_id = $1 AND shop_id = $2`,
     [roId, shopId]
-  );
+    ),
+    dbGet(
+      `SELECT adjuster_totals
+       FROM estimate_metadata
+       WHERE ro_id = $1 AND shop_id = $2`,
+      [roId, shopId]
+    ),
+  ]);
 
   const ro = await ensureRepairOrder(roId, shopId);
   const taxRate = toNumber(ro?.tax_rate, 0);
@@ -227,7 +293,7 @@ async function getSummary(roId, shopId) {
   const taxAmount = taxableSubtotal * taxRate;
   const subtotal = toNumber(summaryRow?.subtotal, 0);
 
-  return {
+  const lineSummary = {
     subtotal,
     labor_total: toNumber(summaryRow?.labor_total, 0),
     parts_total: toNumber(summaryRow?.parts_total, 0),
@@ -238,7 +304,10 @@ async function getSummary(roId, shopId) {
     tax_amount: taxAmount,
     grand_total: subtotal + taxAmount,
     line_count: toInteger(summaryRow?.line_count, 0),
+    source: 'line_items',
   };
+
+  return buildAuthoritativeSummary(lineSummary, metadata?.adjuster_totals) || lineSummary;
 }
 
 async function getProfitOpportunities(roId, shopId) {
@@ -348,7 +417,8 @@ async function syncRepairOrderFinancials(roId, shopId, summary, options = {}) {
   if (!ro) return;
 
   const adjusterFinancials = buildFinancialsFromAdjusterTotals(summary, metadata?.adjuster_totals);
-  if (adjusterFinancials?.needs_review && options.enforceAdjusterReconcile) return adjusterFinancials;
+  // Once an insurer snapshot exists, never replace it with inferred line-item math.
+  if (adjusterFinancials?.needs_review) return adjusterFinancials;
   const nextValues = adjusterFinancials && !adjusterFinancials.needs_review ? adjusterFinancials : {
     parts_cost: toNumber(summary?.parts_total, 0),
     labor_cost: toNumber(summary?.labor_total, 0),
@@ -491,6 +561,25 @@ router.post('/:roId', auth, async (req, res) => {
     const sortOrder = req.body?.sort_order === undefined
       ? toInteger(maxSortRow?.max_sort, -1) + 1
       : toInteger(req.body?.sort_order, 0);
+
+    if (req.body?.dedupe === true) {
+      const duplicate = await dbGet(
+        `SELECT id, ro_id, shop_id, type, description, quantity, unit_price, total, taxable, sort_order, created_at, updated_at
+         FROM estimate_line_items
+         WHERE ro_id = $1
+           AND shop_id = $2
+           AND type = $3
+           AND LOWER(TRIM(description)) = LOWER(TRIM($4))
+           AND ABS(quantity - $5) < 0.0001
+           AND ABS(unit_price - $6) < 0.005
+         ORDER BY created_at ASC
+         LIMIT 1`,
+        [req.params.roId, req.user.shop_id, nextType, description, quantity, unitPrice]
+      );
+      if (duplicate) {
+        return res.json({ success: true, duplicate: true, item: duplicate, summary: await getSummary(req.params.roId, req.user.shop_id) });
+      }
+    }
 
     const inserted = await dbGet(
       `INSERT INTO estimate_line_items (id, ro_id, shop_id, type, description, quantity, unit_price, taxable, sort_order)
@@ -671,5 +760,6 @@ router.post('/metadata/:roId', auth, async (req, res) => {
 
 module.exports = router;
 module.exports.buildFinancialsFromAdjusterTotals = buildFinancialsFromAdjusterTotals;
+module.exports.getSummary = getSummary;
 module.exports.syncRepairOrderFinancials = syncRepairOrderFinancials;
 module.exports.normalizeImportDraft = normalizeImportDraft;

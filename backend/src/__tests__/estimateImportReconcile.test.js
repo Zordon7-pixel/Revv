@@ -80,7 +80,7 @@ test('syncRepairOrderFinancials import mode does not write scalar RO money when 
   assert.equal(calls.dbRun.length, 0);
 });
 
-test('syncRepairOrderFinancials line-item mode falls back to line-item summary when stored adjuster totals need review', async () => {
+test('syncRepairOrderFinancials never replaces a stored insurer snapshot with line-item math when totals need review', async () => {
   const { calls, route } = loadEstimateRoute({
     adjusterTotals: {
       parts: 5000,
@@ -100,7 +100,5 @@ test('syncRepairOrderFinancials line-item mode falls back to line-item summary w
   });
 
   assert.equal(result.needs_review, true);
-  assert.equal(calls.dbRun.length, 1);
-  assert.match(calls.dbRun[0].sql, /UPDATE repair_orders/);
-  assert.deepEqual(calls.dbRun[0].params.slice(0, 6), [111, 222, 333, 44, 710, 710]);
+  assert.equal(calls.dbRun.length, 0);
 });

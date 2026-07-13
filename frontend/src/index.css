@@ -196,6 +196,22 @@ input[type="number"] {
   height: var(--app-viewport-height);
 }
 
+.app-overlay {
+  width: var(--app-viewport-width);
+  height: var(--app-viewport-height);
+  max-width: var(--app-viewport-width);
+  overflow: hidden;
+}
+
+@media (min-width: 768px) {
+  html[data-sidebar-collapsed="false"] .app-overlay {
+    left: 14rem;
+    right: auto;
+    width: calc(var(--app-viewport-width) - 14rem);
+    max-width: calc(var(--app-viewport-width) - 14rem);
+  }
+}
+
 .app-mobile-sidebar {
   padding-top: env(safe-area-inset-top);
   padding-bottom: env(safe-area-inset-bottom);

@@ -246,6 +246,10 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
     if (!toImport.length) return
     setOcrImporting(true)
     try {
+      await api.post(`/estimate-metadata/metadata/${roId}`, {
+        adjuster_totals: ocrParsedMeta?.estimate_totals || undefined,
+        import_draft: null,
+      })
       let imported = 0
       for (const item of toImport) {
         await api.post(`/estimate-items/${roId}`, {
@@ -253,15 +257,12 @@ export default function InsurancePanel({ roId, ro, onUpdated }) {
           type: item.type || 'labor',
           quantity: item.quantity ?? 1,
           unit_price: item.unit_price ?? 0,
+          dedupe: true,
         })
         imported += 1
       }
       let financialNotice = 'Estimate lines and financials imported to this RO.'
       try {
-        await api.post(`/estimate-metadata/metadata/${roId}`, {
-          adjuster_totals: ocrParsedMeta?.estimate_totals || undefined,
-          import_draft: null,
-        })
         await api.post(`/estimate-items/${roId}/import-financials`)
       } catch (financialErr) {
         financialNotice = `Imported ${imported} line${imported !== 1 ? 's' : ''}. ${financialErr?.response?.data?.error || 'Financial totals need review before they can be synced.'}`

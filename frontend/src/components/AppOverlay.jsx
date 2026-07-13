@@ -31,7 +31,7 @@ export default function AppOverlay({
       role="dialog"
       aria-modal="true"
       aria-label={label}
-      className={`fixed inset-0 flex items-center justify-center ${zClassName} ${className}`}
+      className={`app-overlay fixed inset-0 flex items-center justify-center ${zClassName} ${className}`}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose?.()
       }}

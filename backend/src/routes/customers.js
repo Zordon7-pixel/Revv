@@ -32,7 +32,6 @@ router.get('/', auth, async (req, res) => {
          c.insurance_company,
          c.policy_number,
          c.created_at,
-         c.updated_at,
          (SELECT COUNT(*)::int
             FROM vehicles v
            WHERE v.customer_id::text = c.id::text

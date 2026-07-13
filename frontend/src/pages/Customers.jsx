@@ -401,6 +401,8 @@ export default function Customers() {
   const [loading, setLoading] = useState(false)
   const [formError, setFormError] = useState('')
   const [deleteError, setDeleteError] = useState('')
+  const [customerLoadError, setCustomerLoadError] = useState('')
+  const [customerLoading, setCustomerLoading] = useState(true)
   const adminUser = isAdmin()
   const assistantUser = isAssistant()
 
@@ -408,8 +410,12 @@ export default function Customers() {
     try {
       const r = await api.get('/customers')
       setCustomers(r.data.customers || [])
-    } catch {
-      // keep existing list on transient errors
+      setCustomerLoadError('')
+    } catch (error) {
+      console.error('[Customers] load failed:', error)
+      setCustomerLoadError('Customers could not be loaded. Refresh and try again.')
+    } finally {
+      setCustomerLoading(false)
     }
   }
 
@@ -509,7 +515,9 @@ export default function Customers() {
       <PageHeader
         eyebrow="Customer book"
         title="Customers"
-        description={`${customers.length} customer${customers.length === 1 ? '' : 's'} on file · ${customers.reduce((sum, customer) => sum + Number(customer.active_ro_count || 0), 0)} active repair orders`}
+        description={customerLoading
+          ? 'Loading customer book...'
+          : `${customers.length} customer${customers.length === 1 ? '' : 's'} on file · ${customers.reduce((sum, customer) => sum + Number(customer.active_ro_count || 0), 0)} active repair orders`}
         actions={!assistantUser && (
           <button onClick={openAddCustomerModal} className="bg-brand hover:bg-brand-lit text-white text-xs font-medium px-3 py-2 rounded-lg transition-colors">
             + Add Customer
@@ -520,6 +528,12 @@ export default function Customers() {
       {deleteError && (
         <div role="alert" className="rounded-instrument border border-crit/40 bg-crit/10 px-3 py-2 text-sm text-crit">
           {deleteError}
+        </div>
+      )}
+
+      {customerLoadError && (
+        <div role="alert" className="rounded-instrument border border-crit/40 bg-crit/10 px-3 py-2 text-sm text-crit">
+          {customerLoadError}
         </div>
       )}
 
@@ -564,7 +578,7 @@ export default function Customers() {
         )}
       </Panel>
 
-      {customers.length === 0 ? (
+      {customerLoadError && customers.length === 0 ? null : !customerLoading && customers.length === 0 ? (
         <Panel>
           <EmptyState
             media={<img src="/empty-customers.png" alt="" className="mx-auto h-32 w-32 object-contain" />}

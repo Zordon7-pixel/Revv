@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS shops (
   zip TEXT,
   market_tier INTEGER DEFAULT 3,
   labor_rate NUMERIC(10,2) DEFAULT 62,
+  paint_rate NUMERIC(10,2) DEFAULT 62,
   parts_markup NUMERIC(8,4) DEFAULT 0.30,
   tax_rate NUMERIC(8,4) DEFAULT 0.0700,
   lat DOUBLE PRECISION,

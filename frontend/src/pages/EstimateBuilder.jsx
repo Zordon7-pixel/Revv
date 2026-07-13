@@ -574,6 +574,9 @@ export default function EstimateBuilder() {
     let partsRequestsCreated = 0
     let partsRequestsFailed = 0
     try {
+      if (adjusterTotals) {
+        await api.post(`/estimate-metadata/metadata/${roId}`, { adjuster_totals: adjusterTotals })
+      }
       for (const item of toImport) {
         const nextSort = items.length + imported
         const { data } = await api.post(`/estimate-items/${roId}`, {
@@ -583,6 +586,7 @@ export default function EstimateBuilder() {
           unit_price: asNumber(item.unit_price, 0),
           taxable: false,
           sort_order: nextSort,
+          dedupe: true,
         })
         setItems((prev) => [...prev, data.item])
         lastSummary = data.summary || lastSummary
@@ -621,9 +625,6 @@ export default function EstimateBuilder() {
       }
       let financialsImported = false
       try {
-        if (adjusterTotals) {
-          await api.post(`/estimate-metadata/metadata/${roId}`, { adjuster_totals: adjusterTotals })
-        }
         const { data: financialData } = await api.post(`/estimate-items/${roId}/import-financials`)
         if (financialData?.summary) setSummary(financialData.summary)
         if (financialData?.financials) {
@@ -1024,7 +1025,7 @@ export default function EstimateBuilder() {
             <tr className="border-t border-line-2 bg-void text-ink text-sm font-medium">
               <td className="px-3 py-2" colSpan={3}>Taxable Subtotal: {money(totals.taxable_subtotal)}</td>
               <td className="px-3 py-2" colSpan={2}>Tax ({(asNumber(totals.tax_rate, 0) * 100).toFixed(2)}%): {money(totals.tax_amount)}</td>
-              <td className="px-3 py-2 text-right" colSpan={2}>Subtotal: {money(totals.subtotal)}</td>
+              <td className="px-3 py-2 text-right" colSpan={2}>{totals.source === 'adjuster_totals' ? 'Insurer Subtotal' : 'Line Subtotal'}: {money(totals.subtotal)}</td>
               <td className="px-3 py-2 text-right">Grand Total: {money(totals.grand_total)}</td>
             </tr>
           </tfoot>

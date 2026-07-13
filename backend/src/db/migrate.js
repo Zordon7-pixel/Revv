@@ -34,6 +34,7 @@ async function runMigrations() {
     // These ALWAYS run regardless of schema state. Each wrapped independently.
     const alters = [
       `ALTER TABLE shops ADD COLUMN IF NOT EXISTS onboarded BOOLEAN DEFAULT FALSE`,
+      `ALTER TABLE shops ADD COLUMN IF NOT EXISTS paint_rate NUMERIC(10,2) DEFAULT 62`,
       `ALTER TABLE shops ADD COLUMN IF NOT EXISTS sms_notifications_enabled BOOLEAN DEFAULT TRUE`,
       `ALTER TABLE shops ADD COLUMN IF NOT EXISTS email_notifications_enabled BOOLEAN DEFAULT TRUE`,
       `ALTER TABLE shops ADD COLUMN IF NOT EXISTS twilio_account_sid TEXT`,

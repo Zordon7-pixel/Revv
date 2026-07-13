@@ -22,6 +22,7 @@ async function initDb() {
       zip TEXT,
       market_tier INTEGER DEFAULT 3,
       labor_rate REAL DEFAULT 62,
+      paint_rate REAL DEFAULT 62,
       parts_markup REAL DEFAULT 0.30,
       tax_rate REAL DEFAULT 0.0700,
       lat REAL,
@@ -465,6 +466,7 @@ async function initDb() {
   await pool.query(`UPDATE repair_orders SET payment_status = 'unpaid' WHERE payment_status IS NULL`);
   await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS onboarded BOOLEAN DEFAULT FALSE`);
   await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS logo_url TEXT`);
+  await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS paint_rate REAL DEFAULT 62`);
   await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS quickbooks_company_id TEXT`);
   await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS quickbooks_realm_id TEXT`);
   await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS quickbooks_access_token TEXT`);

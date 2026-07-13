@@ -31,6 +31,7 @@ describe('AppOverlay architecture', () => {
     expect(overlay).toHaveAttribute('data-app-overlay', 'true')
     expect(overlay.parentElement).toBe(document.body)
     expect(overlay.className).toContain('z-[150]')
+    expect(overlay.className).toContain('app-overlay')
 
     fireEvent.keyDown(window, { key: 'Escape' })
     expect(onClose).toHaveBeenCalledTimes(1)
@@ -42,5 +43,11 @@ describe('AppOverlay architecture', () => {
       expect(source, relativePath).toContain('AppOverlay')
       expect(source, relativePath).not.toContain('className="fixed inset-0')
     }
+  })
+
+  it('centers desktop overlays inside the usable area when the sidebar is open', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/index.css'), 'utf8')
+    expect(source).toMatch(/data-sidebar-collapsed="false"\] \.app-overlay[\s\S]*left: 14rem/)
+    expect(source).toMatch(/width: calc\(var\(--app-viewport-width\) - 14rem\)/)
   })
 })

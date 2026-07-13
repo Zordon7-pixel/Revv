@@ -56,6 +56,41 @@ const ro = await dbGet('SELECT * FROM ros WHERE id = $1 AND shop_id = $2', [id, 
 await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 ```
 
+---
+
+## Dispatch Log - 2026-07-12 Production Incident Fixes
+
+**Production audit (read-only)**
+- Production commit before the fix: `05c72c65882198eac3c683027f02eecc796d47e9`.
+- Miles Automotive data is intact: 65 customer rows, 46 repair orders, and 46 valid RO-to-customer links. No customer data was deleted or recreated.
+- The customer list failed because `GET /api/customers` selected a non-existent `customers.updated_at` column; the frontend then hid the error behind an empty state.
+- RO `RO-2026-0059-7FDF6E31` had an imported-line sum of $24,440.11, while its stored insurer snapshot is gross $13,330.12, deductible $1,000.00, and net $12,330.12.
+- Miles has 48 photo rows, but all 48 referenced files are absent from the ephemeral REVV container. The rows remain; no photo rows were deleted. Eight files still present in the current container were backed up before persistent storage setup.
+
+**Behavior shipped in this build**
+- `backend/src/db/index.js`, `backend/src/db/migrate.js`, `backend/src/db/schema.pg.sql`, `backend/src/routes/market.js`: create/backfill `shops.paint_rate` and make it readable/updatable, fixing Supplement Finder's `column "paint_rate" does not exist` failure.
+- `backend/src/routes/estimateLineItems.js`: insurer-extracted totals are the displayed and persisted financial authority; imported line math is retained separately for review and cannot overwrite a stored insurer snapshot when reconciliation fails. Repeat imports can request logical-line deduplication.
+- `frontend/src/pages/EstimateBuilder.jsx`, `frontend/src/components/InsurancePanel.jsx`: persist the insurer financial snapshot before importing detailed rows, request deduplication, and label the source-of-truth subtotal accurately.
+- `backend/src/routes/customers.js`, `frontend/src/pages/Customers.jsx`: remove the invalid production column read and show a real load error instead of falsely reporting zero customers.
+- `frontend/src/components/AppOverlay.jsx`, `frontend/src/index.css`: all shared authenticated overlays center inside the usable content area to the right of the open desktop/tablet sidebar.
+- After QA PASS, persistent upload storage will be added as a Railway volume mounted at `/app/backend/uploads`; existing missing photo bytes cannot be reconstructed from database URL rows and require the original files to be re-uploaded.
+
+**Verification before Claude Code QA**
+```text
+node --check backend/src/routes/estimateLineItems.js backend/src/routes/customers.js backend/src/routes/market.js backend/src/db/index.js backend/src/db/migrate.js
+node --test backend/src/__tests__/*.test.js plus Node-based backend/test files: 114/114 passed
+cd backend && npm run test:run: 3 files, 7/7 passed
+cd frontend && npm run test:run: 38 files, 123/123 passed
+cd frontend && npm run build: passed
+git diff --check: passed
+Playwright/Chrome at 1366x1024: sidebar right=224, overlay left=224, dialog x=283..1307 within viewport 0..1366
+Screenshot: /Users/zordon/.openclaw/workspace/revv-overlay-ipad-landscape-20260712.png
+```
+
+**Data safety**
+- No seed, reset, delete, migration command, or production data write was run during the audit/build.
+- Miles Automotive customer, RO, and photo rows were read only.
+
 ## Dispatch Log — 2026-07-11 Product Tour Embedded Voice
 
 **Time:** 2026-07-11 13:12 ET / 2026-07-11 17:12 UTC

@@ -123,6 +123,16 @@ describe('Customers mobile form flow', () => {
     expect(within(card).getByText('ROs')).toBeInTheDocument()
     expect(within(card).getByText('Active')).toBeInTheDocument()
   })
+
+  it('shows a load failure instead of pretending the customer book is empty', async () => {
+    api.get.mockRejectedValueOnce({ response: { data: { error: 'column c.updated_at does not exist' } } })
+
+    render(<Customers />)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Customers could not be loaded. Refresh and try again.')
+    expect(screen.queryByText('Your customer book is waiting.')).not.toBeInTheDocument()
+    expect(screen.queryByText(/column c\.updated_at/i)).not.toBeInTheDocument()
+  })
 })
 
 describe('Phase 6 turnaround guard', () => {

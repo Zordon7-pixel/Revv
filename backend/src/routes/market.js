@@ -66,7 +66,7 @@ function receiveShopLogo(req, res, next) {
 async function getShopProfile(shopId) {
   return dbGet(
     `SELECT id, name, phone, logo_url, address, city, state, zip, market_tier,
-            labor_rate, parts_markup, tax_rate, lat, lng, geofence_radius,
+            labor_rate, paint_rate, parts_markup, tax_rate, lat, lng, geofence_radius,
             twilio_phone_number, monthly_revenue_target
      FROM shops
      WHERE id::text = $1::text`,
@@ -142,7 +142,7 @@ router.put('/shop', auth, async (req, res) => {
     const ALLOWED_MARKET_FIELDS = ['state','labor_rate','paint_rate','parts_markup','name','phone','twilio_account_sid','twilio_auth_token','twilio_phone_number','twilio_api_key','twilio_api_secret','address','city','zip','tax_rate','lat','lng','geofence_radius','tracking_api_key','monthly_revenue_target'];
     const updates = Object.fromEntries(Object.entries(req.body).filter(([k]) => ALLOWED_MARKET_FIELDS.includes(k)));
     const {
-      name, phone, address, city, state, zip, labor_rate, parts_markup, tax_rate,
+      name, phone, address, city, state, zip, labor_rate, paint_rate, parts_markup, tax_rate,
       lat, lng, geofence_radius, tracking_api_key, twilio_account_sid, twilio_auth_token,
       twilio_phone_number, twilio_api_key, twilio_api_secret, monthly_revenue_target,
     } = updates;
@@ -162,6 +162,7 @@ router.put('/shop', auth, async (req, res) => {
     if (zip          != null) { fields.push('zip');          vals.push(zip); }
     if (market_tier  != null) { fields.push('market_tier');  vals.push(market_tier); }
     if (labor_rate      != null) { fields.push('labor_rate');      vals.push(parseFloat(labor_rate)); }
+    if (paint_rate      != null) { fields.push('paint_rate');      vals.push(parseFloat(paint_rate)); }
     if (parts_markup    != null) { fields.push('parts_markup');    vals.push(parseFloat(parts_markup)); }
     if (tax_rate        != null) { fields.push('tax_rate');        vals.push(parseFloat(tax_rate)); }
     if (lat             != null) { fields.push('lat');             vals.push(parseFloat(lat)); }
