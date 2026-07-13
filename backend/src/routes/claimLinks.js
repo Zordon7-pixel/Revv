@@ -8,6 +8,7 @@ const multer = require('multer');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
 const fs = require('fs');
+const { discardUploadedMedia, persistUploadedFile } = require('../services/mediaStorage');
 
 const uploadDir = path.join(__dirname, '../../uploads/assessments');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
@@ -19,6 +20,57 @@ const publicTokenLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: 'Too many requests. Try again in 15 minutes.' },
 });
+
+async function submitClaimAssessment(req, res) {
+  const assessmentUrl = req.file ? `/uploads/assessments/${req.file.filename}` : null;
+  let storageAttempted = false;
+  let storageReady = false;
+  let committed = false;
+  try {
+    const link = await dbGet('SELECT * FROM claim_links WHERE token = $1', [req.params.token]);
+    if (!link) {
+      if (assessmentUrl) await discardUploadedMedia(assessmentUrl).catch((err) => console.error('[ClaimLinks] rejected upload cleanup failed:', err.message));
+      return res.status(404).json({ error: 'Link not found' });
+    }
+    if (link.submitted_at) {
+      if (assessmentUrl) await discardUploadedMedia(assessmentUrl).catch((err) => console.error('[ClaimLinks] duplicate upload cleanup failed:', err.message));
+      return res.status(400).json({ error: 'Already submitted' });
+    }
+
+    const { adjustor_name, adjustor_company, adjustor_email, approved_labor, approved_parts, supplement_amount, adjustor_notes } = req.body;
+    const filename = req.file ? req.file.filename : null;
+    if (req.file) {
+      storageAttempted = true;
+      await persistUploadedFile(req.file, assessmentUrl);
+      storageReady = true;
+    }
+
+    await dbRun(`
+      UPDATE claim_links SET
+        adjustor_name = $1, adjustor_company = $2, adjustor_email = $3,
+        approved_labor = $4, approved_parts = $5, supplement_amount = $6,
+        adjustor_notes = $7, assessment_filename = $8, submitted_at = NOW()
+      WHERE token = $9
+    `, [
+      adjustor_name || null, adjustor_company || null, adjustor_email || null,
+      Number.isFinite(parseFloat(approved_labor)) ? parseFloat(approved_labor) : null,
+      Number.isFinite(parseFloat(approved_parts)) ? parseFloat(approved_parts) : null,
+      Number.isFinite(parseFloat(supplement_amount)) ? parseFloat(supplement_amount) : null,
+      adjustor_notes || null, filename, req.params.token
+    ]);
+    committed = true;
+    return res.json({ ok: true });
+  } catch (err) {
+    if (!committed && assessmentUrl) {
+      await discardUploadedMedia(assessmentUrl).catch((cleanupErr) => console.error('[ClaimLinks] upload rollback failed:', cleanupErr.message));
+    }
+    console.error('[ClaimLinks] assessment submit failed:', err);
+    if (storageAttempted && !storageReady) {
+      return res.status(503).json({ error: 'Media storage is temporarily unavailable. Nothing was saved. Please retry.' });
+    }
+    return res.status(500).json({ error: 'Could not submit claim assessment' });
+  }
+}
 
 router.post('/:roId', auth, async (req, res) => {
   try {
@@ -69,61 +121,9 @@ router.get('/:token', publicTokenLimiter, async (req, res, next) => {
   }
 });
 
-router.post('/view/:token/submit', publicTokenLimiter, upload.single('assessment'), async (req, res) => {
-  try {
-    const link = await dbGet('SELECT * FROM claim_links WHERE token = $1', [req.params.token]);
-    if (!link) return res.status(404).json({ error: 'Link not found' });
-    if (link.submitted_at) return res.status(400).json({ error: 'Already submitted' });
+router.post('/view/:token/submit', publicTokenLimiter, upload.single('assessment'), submitClaimAssessment);
 
-    const { adjustor_name, adjustor_company, adjustor_email, approved_labor, approved_parts, supplement_amount, adjustor_notes } = req.body;
-    const filename = req.file ? req.file.filename : null;
-
-    await dbRun(`
-      UPDATE claim_links SET
-        adjustor_name = $1, adjustor_company = $2, adjustor_email = $3,
-        approved_labor = $4, approved_parts = $5, supplement_amount = $6,
-        adjustor_notes = $7, assessment_filename = $8, submitted_at = NOW()
-      WHERE token = $9
-    `, [
-      adjustor_name || null, adjustor_company || null, adjustor_email || null,
-      Number.isFinite(parseFloat(approved_labor)) ? parseFloat(approved_labor) : null,
-      Number.isFinite(parseFloat(approved_parts)) ? parseFloat(approved_parts) : null,
-      Number.isFinite(parseFloat(supplement_amount)) ? parseFloat(supplement_amount) : null,
-      adjustor_notes || null, filename, req.params.token
-    ]);
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-router.post('/:token/submit', publicTokenLimiter, upload.single('assessment'), async (req, res) => {
-  try {
-    const link = await dbGet('SELECT * FROM claim_links WHERE token = $1', [req.params.token]);
-    if (!link) return res.status(404).json({ error: 'Link not found' });
-    if (link.submitted_at) return res.status(400).json({ error: 'Already submitted' });
-
-    const { adjustor_name, adjustor_company, adjustor_email, approved_labor, approved_parts, supplement_amount, adjustor_notes } = req.body;
-    const filename = req.file ? req.file.filename : null;
-
-    await dbRun(`
-      UPDATE claim_links SET
-        adjustor_name = $1, adjustor_company = $2, adjustor_email = $3,
-        approved_labor = $4, approved_parts = $5, supplement_amount = $6,
-        adjustor_notes = $7, assessment_filename = $8, submitted_at = NOW()
-      WHERE token = $9
-    `, [
-      adjustor_name || null, adjustor_company || null, adjustor_email || null,
-      Number.isFinite(parseFloat(approved_labor)) ? parseFloat(approved_labor) : null,
-      Number.isFinite(parseFloat(approved_parts)) ? parseFloat(approved_parts) : null,
-      Number.isFinite(parseFloat(supplement_amount)) ? parseFloat(supplement_amount) : null,
-      adjustor_notes || null, filename, req.params.token
-    ]);
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+router.post('/:token/submit', publicTokenLimiter, upload.single('assessment'), submitClaimAssessment);
 
 router.get('/ro/:roId', auth, async (req, res) => {
   try {

@@ -6,6 +6,7 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const notificationsRouter = require('./routes/notifications');
 const subscriptionsRouter = require('./routes/subscriptions');
+const { getObjectMedia, isObjectStorageConfigured } = require('./services/mediaStorage');
 
 // Refuse to start without JWT_SECRET
 if (!process.env.JWT_SECRET) {
@@ -116,7 +117,32 @@ app.use('/api/v1/leads', require('./routes/leads'));
 app.use(sentry.errorHandler());
 
 // Serve uploaded files
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+app.use('/uploads', express.static(path.join(__dirname, '../uploads'), { fallthrough: true }));
+app.get('/uploads/*', async (req, res) => {
+  try {
+    const media = await getObjectMedia(req.originalUrl, { range: req.headers.range });
+    if (!media?.Body) return res.status(404).json({ error: 'Media not found' });
+
+    if (media.ContentType) res.set('Content-Type', media.ContentType);
+    if (media.ContentLength != null) res.set('Content-Length', String(media.ContentLength));
+    if (media.ContentRange) res.set('Content-Range', media.ContentRange);
+    if (media.AcceptRanges) res.set('Accept-Ranges', media.AcceptRanges);
+    if (media.ETag) res.set('ETag', media.ETag);
+    if (media.LastModified) res.set('Last-Modified', new Date(media.LastModified).toUTCString());
+    res.set('Cache-Control', media.CacheControl || 'private, max-age=86400');
+    if (req.headers.range && media.ContentRange) res.status(206);
+
+    media.Body.on('error', (err) => {
+      console.error('[MediaStorage] stream failed:', err.message);
+      if (!res.headersSent) res.status(502).json({ error: 'Media temporarily unavailable' });
+      else res.destroy(err);
+    });
+    return media.Body.pipe(res);
+  } catch (err) {
+    console.error('[MediaStorage] object fallback failed:', err.message);
+    return res.status(502).json({ error: 'Media temporarily unavailable' });
+  }
+});
 
 // Serve frontend build
 const frontendDist = path.join(__dirname, '../../frontend/dist');
@@ -131,9 +157,11 @@ const { initDb, dbAll } = require('./db');
 const { runMonthCarryover } = require('./jobs/monthCarryover');
 const { runFeedbackDailyAudit } = require('./jobs/feedbackDailyAudit');
 const { runOwnerActivityDigest } = require('./jobs/ownerActivityDigest');
+const { runMediaIntegrityAudit } = require('./jobs/mediaIntegrity');
 
 const DAILY_FEEDBACK_AUDIT_MS = 24 * 60 * 60 * 1000;
 const OWNER_ACTIVITY_DIGEST_MS = 60 * 60 * 1000;
+const MEDIA_INTEGRITY_AUDIT_MS = 24 * 60 * 60 * 1000;
 
 async function runCarryoverForActiveShops() {
   try {
@@ -171,6 +199,19 @@ async function runDailyOwnerActivityDigest() {
   }
 }
 
+async function runDailyMediaIntegrityAudit() {
+  try {
+    const result = await runMediaIntegrityAudit();
+    console.log(
+      `[MediaIntegrity] bucket=${result.configured ? 'configured' : 'disabled'} `
+      + `references=${result.references} healthy=${result.healthy} mirrored=${result.mirrored} `
+      + `restored=${result.restored} local_only=${result.localOnly} missing=${result.missing}`
+    );
+  } catch (err) {
+    console.error('[MediaIntegrity] audit failed:', err.message);
+  }
+}
+
 initDb()
   .then(async () => {
     // Run PostgreSQL migrations (idempotent — safe every startup)
@@ -193,11 +234,14 @@ initDb()
     app.listen(PORT, '0.0.0.0', () => {
       console.log(`🔧 REVV running on http://localhost:${PORT}`);
       console.log(`   PostgreSQL: ${process.env.DATABASE_URL ? 'connected' : 'local'}`);
+      console.log(`   Media bucket: ${isObjectStorageConfigured() ? 'configured' : 'not configured'}`);
       setImmediate(runCarryoverForActiveShops);
       setImmediate(runDailyFeedbackAudit);
       setImmediate(runDailyOwnerActivityDigest);
+      setImmediate(runDailyMediaIntegrityAudit);
       setInterval(runDailyFeedbackAudit, DAILY_FEEDBACK_AUDIT_MS).unref();
       setInterval(runDailyOwnerActivityDigest, OWNER_ACTIVITY_DIGEST_MS).unref();
+      setInterval(runDailyMediaIntegrityAudit, MEDIA_INTEGRITY_AUDIT_MS).unref();
     });
   })
   .catch(err => {

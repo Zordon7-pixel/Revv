@@ -8,6 +8,7 @@ const auth = require('../middleware/auth');
 const { requireAdmin } = require('../middleware/roles');
 const { getRatesForState, getAllStates } = require('../data/market-rates');
 const { isConfiguredForShop, getTwilioConfigForShop } = require('../services/sms');
+const { deleteStoredMedia, discardUploadedMedia, persistUploadedFile } = require('../services/mediaStorage');
 
 const MAX_SHOP_LOGO_BYTES = 2 * 1024 * 1024;
 const SHOP_LOGO_MIME_TYPES = Object.freeze({
@@ -26,12 +27,6 @@ function localShopLogoPath(logoUrl) {
   if (!filename || !String(logoUrl || '').startsWith('/uploads/shop-logos/')) return null;
   const candidate = path.join(shopLogoDir, filename);
   return path.dirname(candidate) === shopLogoDir ? candidate : null;
-}
-
-function removeLocalShopLogo(logoUrl) {
-  const filePath = localShopLogoPath(logoUrl);
-  if (!filePath) return;
-  fs.promises.unlink(filePath).catch(() => {});
 }
 
 const shopLogoStorage = multer.diskStorage({
@@ -95,26 +90,41 @@ router.get('/shop', auth, async (req, res) => {
 
 router.post('/shop/logo', auth, requireAdmin, receiveShopLogo, async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Choose a PNG or JPEG logo.' });
+  const logoUrl = `/uploads/shop-logos/${req.file.filename}`;
+  let storageAttempted = false;
+  let storageReady = false;
+  let committed = false;
   try {
     const shop = await dbGet(
       'SELECT id, logo_url FROM shops WHERE id::text = $1::text',
       [req.user.shop_id]
     );
     if (!shop) {
-      removeLocalShopLogo(`/uploads/shop-logos/${req.file.filename}`);
+      await discardUploadedMedia(logoUrl).catch((err) => console.error('[Market] rejected logo cleanup failed:', err.message));
       return res.status(404).json({ error: 'Shop not found' });
     }
 
-    const logoUrl = `/uploads/shop-logos/${req.file.filename}`;
+    storageAttempted = true;
+    await persistUploadedFile(req.file, logoUrl);
+    storageReady = true;
     await dbRun(
       'UPDATE shops SET logo_url = $1 WHERE id::text = $2::text',
       [logoUrl, req.user.shop_id]
     );
-    removeLocalShopLogo(shop.logo_url);
+    committed = true;
+    if (shop.logo_url && shop.logo_url !== logoUrl) {
+      await deleteStoredMedia(shop.logo_url).catch((err) => console.error('[Market] old logo cleanup failed:', err.message));
+    }
     return res.json({ logo_url: logoUrl });
   } catch (err) {
-    removeLocalShopLogo(`/uploads/shop-logos/${req.file.filename}`);
-    return res.status(500).json({ error: err.message });
+    if (!committed) {
+      await discardUploadedMedia(logoUrl).catch((cleanupErr) => console.error('[Market] logo rollback failed:', cleanupErr.message));
+    }
+    console.error('[Market] shop logo upload failed:', err);
+    if (storageAttempted && !storageReady) {
+      return res.status(503).json({ error: 'Media storage is temporarily unavailable. Nothing was saved. Please retry.' });
+    }
+    return res.status(500).json({ error: 'Could not update shop logo' });
   }
 });
 
@@ -126,11 +136,15 @@ router.delete('/shop/logo', auth, requireAdmin, async (req, res) => {
     );
     if (!shop) return res.status(404).json({ error: 'Shop not found' });
 
-    await dbRun(
-      'UPDATE shops SET logo_url = NULL WHERE id::text = $1::text',
-      [req.user.shop_id]
-    );
-    removeLocalShopLogo(shop.logo_url);
+    if (shop.logo_url) {
+      try {
+        await deleteStoredMedia(shop.logo_url);
+      } catch (storageErr) {
+        console.error('[Market] shop logo delete failed:', storageErr);
+        return res.status(503).json({ error: 'Media storage is temporarily unavailable. The logo was not deleted.' });
+      }
+    }
+    await dbRun('UPDATE shops SET logo_url = NULL WHERE id::text = $1::text', [req.user.shop_id]);
     return res.json({ logo_url: null });
   } catch (err) {
     return res.status(500).json({ error: err.message });

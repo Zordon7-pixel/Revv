@@ -6,6 +6,7 @@ const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const Anthropic = require('@anthropic-ai/sdk');
+const { deleteStoredMedia, discardUploadedMedia, persistUploadedFile } = require('../services/mediaStorage');
 
 const MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024;
 const MAX_UPLOAD_SIZE_MB = Math.round(MAX_UPLOAD_SIZE_BYTES / (1024 * 1024));
@@ -67,26 +68,45 @@ const upload = multer({
   },
 });
 
+async function discardPhotoUpload(photoUrl) {
+  if (!photoUrl) return;
+  try {
+    await discardUploadedMedia(photoUrl);
+  } catch (err) {
+    console.error('[Photos] upload rollback failed:', { photoUrl, error: err.message });
+  }
+}
+
 router.post('/ro/:roId/predropoff', auth, upload.single('photo'), async (req, res) => {
+  let photoUrl = req.file ? `/uploads/photos/${req.file.filename}` : null;
+  let storageAttempted = false;
+  let storageReady = false;
+  let committed = false;
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
     const ro = await dbGet(
       'SELECT id FROM repair_orders WHERE id = $1 AND shop_id = $2',
       [req.params.roId, req.user.shop_id]
     );
-    if (!ro) return res.status(404).json({ error: 'Repair order not found' });
+    if (!ro) {
+      await discardPhotoUpload(photoUrl);
+      return res.status(404).json({ error: 'Repair order not found' });
+    }
 
     const id = uuidv4();
-    const photo_url = `/uploads/photos/${req.file.filename}`;
     const caption = String(req.body?.caption || '').trim() || null;
     const fullPath = path.join(uploadDir, req.file.filename);
     const ai = await analyzeDamagePhoto(fullPath);
+    storageAttempted = true;
+    await persistUploadedFile(req.file, photoUrl);
+    storageReady = true;
     await dbRun(
       `INSERT INTO ro_photos (id, ro_id, user_id, photo_url, caption, photo_type, ai_severity, ai_zones, ai_description)
        VALUES ($1, $2, $3, $4, $5, 'predropoff', $6, $7, $8)`,
-      [id, req.params.roId, req.user.id, photo_url, caption,
+      [id, req.params.roId, req.user.id, photoUrl, caption,
        ai?.severity || null, ai?.zones ? JSON.stringify(ai.zones) : null, ai?.description || null]
     );
+    committed = true;
     return res.status(201).json(await dbGet(
       `SELECT p.*
        FROM ro_photos p
@@ -95,7 +115,11 @@ router.post('/ro/:roId/predropoff', auth, upload.single('photo'), async (req, re
       [id, req.user.shop_id]
     ));
   } catch (err) {
+    if (!committed) await discardPhotoUpload(photoUrl);
     console.error('[Photos] POST predropoff error:', err);
+    if (storageAttempted && !storageReady) {
+      return res.status(503).json({ error: 'Media storage is temporarily unavailable. Nothing was saved. Please retry.' });
+    }
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -126,6 +150,10 @@ router.get('/ro/:roId/predropoff', auth, async (req, res) => {
 });
 
 router.post('/:ro_id', auth, upload.single('photo'), async (req, res) => {
+  let photoUrl = req.file ? `/uploads/photos/${req.file.filename}` : null;
+  let storageAttempted = false;
+  let storageReady = false;
+  let committed = false;
   try {
     if (Array.isArray(req.body?.photos) && req.body.photos.length > 5) {
       return res.status(400).json({ error: 'A maximum of 5 photos is allowed' });
@@ -133,7 +161,10 @@ router.post('/:ro_id', auth, upload.single('photo'), async (req, res) => {
 
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
     const ro = await dbGet('SELECT id FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.ro_id, req.user.shop_id]);
-    if (!ro) return res.status(404).json({ error: 'Repair order not found' });
+    if (!ro) {
+      await discardPhotoUpload(photoUrl);
+      return res.status(404).json({ error: 'Repair order not found' });
+    }
 
     const existingCountRow = await dbGet(
       `SELECT COUNT(*)::int AS count
@@ -143,20 +174,24 @@ router.post('/:ro_id', auth, upload.single('photo'), async (req, res) => {
       [req.params.ro_id, req.user.shop_id]
     );
     if ((existingCountRow?.count || 0) >= 5) {
+      await discardPhotoUpload(photoUrl);
       return res.status(400).json({ error: 'A maximum of 5 photos is allowed' });
     }
 
     const { caption, photo_type } = req.body;
     const id = uuidv4();
-    const photo_url = `/uploads/photos/${req.file.filename}`;
     const resolvedType = photo_type || 'damage';
     const fullPath = path.join(uploadDir, req.file.filename);
     const ai = resolvedType === 'damage' ? await analyzeDamagePhoto(fullPath) : null;
+    storageAttempted = true;
+    await persistUploadedFile(req.file, photoUrl);
+    storageReady = true;
     await dbRun(
       'INSERT INTO ro_photos (id, ro_id, user_id, photo_url, caption, photo_type, ai_severity, ai_zones, ai_description) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)',
-      [id, req.params.ro_id, req.user.id, photo_url, caption || null, resolvedType,
+      [id, req.params.ro_id, req.user.id, photoUrl, caption || null, resolvedType,
        ai?.severity || null, ai?.zones ? JSON.stringify(ai.zones) : null, ai?.description || null]
     );
+    committed = true;
     res.status(201).json(await dbGet(
       `SELECT p.*
        FROM ro_photos p
@@ -165,7 +200,11 @@ router.post('/:ro_id', auth, upload.single('photo'), async (req, res) => {
       [id, req.user.shop_id]
     ));
   } catch (err) {
+    if (!committed) await discardPhotoUpload(photoUrl);
     console.error('[Photos] POST upload error:', err);
+    if (storageAttempted && !storageReady) {
+      return res.status(503).json({ error: 'Media storage is temporarily unavailable. Nothing was saved. Please retry.' });
+    }
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -198,11 +237,11 @@ router.delete('/:photo_id', auth, async (req, res) => {
     );
     if (!photo) return res.status(404).json({ error: 'Not found' });
     if (photo.shop_id !== req.user.shop_id) return res.status(403).json({ error: 'Forbidden' });
-    const filePath = path.join(__dirname, '../../', photo.photo_url);
     try {
-      fs.unlinkSync(filePath);
-    } catch (unlinkErr) {
-      console.error('[Photos] DELETE file cleanup error:', { photo_id: req.params.photo_id, filePath, error: unlinkErr.message });
+      await deleteStoredMedia(photo.photo_url);
+    } catch (storageErr) {
+      console.error('[Photos] DELETE media cleanup error:', { photo_id: req.params.photo_id, error: storageErr.message });
+      return res.status(503).json({ error: 'Media storage is temporarily unavailable. The photo was not deleted.' });
     }
     await dbRun(
       `DELETE FROM ro_photos

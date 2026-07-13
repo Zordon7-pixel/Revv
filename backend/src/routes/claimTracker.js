@@ -6,6 +6,7 @@ const { v4: uuidv4 } = require('uuid');
 const { dbGet, dbAll, dbRun } = require('../db');
 const auth = require('../middleware/auth');
 const { requireTechnician } = require('../middleware/roles');
+const { deleteStoredMedia, discardUploadedMedia, persistUploadedFile } = require('../services/mediaStorage');
 
 const MAX_EVIDENCE_FILE_SIZE_BYTES = 40 * 1024 * 1024;
 const MAX_EVIDENCE_FILE_SIZE_MB = Math.round(MAX_EVIDENCE_FILE_SIZE_BYTES / (1024 * 1024));
@@ -204,20 +205,32 @@ router.get('/ro/:roId', auth, async (req, res) => {
 });
 
 router.post('/ro/:roId/evidence', auth, requireTechnician, upload.single('media'), async (req, res) => {
+  const mediaUrl = req.file ? `/uploads/claim-evidence/${req.file.filename}` : null;
+  let storageAttempted = false;
+  let storageReady = false;
+  let committed = false;
   try {
     await ensureClaimTrackerTables();
 
     const ro = await ensureRoAccess(req.params.roId, req.user.shop_id);
-    if (!ro) return res.status(404).json({ error: 'Repair order not found' });
+    if (!ro) {
+      if (mediaUrl) await discardUploadedMedia(mediaUrl).catch((err) => console.error('[ClaimTracker] rejected upload cleanup failed:', err.message));
+      return res.status(404).json({ error: 'Repair order not found' });
+    }
     if (!req.file) return res.status(400).json({ error: 'No media file uploaded' });
 
     const mimeType = String(req.file.mimetype || '').toLowerCase();
     const mediaType = classifyEvidenceMediaType(mimeType, req.file.originalname);
-    if (!mediaType) return res.status(400).json({ error: 'Unsupported media type' });
+    if (!mediaType) {
+      await discardUploadedMedia(mediaUrl).catch((err) => console.error('[ClaimTracker] invalid upload cleanup failed:', err.message));
+      return res.status(400).json({ error: 'Unsupported media type' });
+    }
 
     const caption = normalizeText(req.body?.caption, 300);
     const evidenceId = uuidv4();
-    const mediaUrl = `/uploads/claim-evidence/${req.file.filename}`;
+    storageAttempted = true;
+    await persistUploadedFile(req.file, mediaUrl);
+    storageReady = true;
 
     await dbRun(
       `INSERT INTO ro_claim_evidence (id, ro_id, shop_id, uploaded_by, media_url, media_type, mime_type, caption)
@@ -233,6 +246,7 @@ router.post('/ro/:roId/evidence', auth, requireTechnician, upload.single('media'
         caption || null,
       ]
     );
+    committed = true;
 
     const created = await dbGet(
       `SELECT
@@ -252,6 +266,13 @@ router.post('/ro/:roId/evidence', auth, requireTechnician, upload.single('media'
 
     return res.status(201).json({ evidence: created });
   } catch (err) {
+    if (!committed && mediaUrl) {
+      await discardUploadedMedia(mediaUrl).catch((cleanupErr) => console.error('[ClaimTracker] upload rollback failed:', cleanupErr.message));
+    }
+    if (storageAttempted && !storageReady) {
+      console.error('[ClaimTracker] Media storage unavailable:', err);
+      return res.status(503).json({ error: 'Media storage is temporarily unavailable. Nothing was saved. Please retry.' });
+    }
     return logAndRespond(res, 'Upload evidence failed', err, 'Could not upload evidence file');
   }
 });
@@ -266,17 +287,16 @@ router.delete('/evidence/:id', auth, requireTechnician, async (req, res) => {
     );
     if (!existing) return res.status(404).json({ error: 'Evidence item not found' });
 
-    await dbRun('DELETE FROM ro_claim_evidence WHERE id::text = $1::text AND shop_id::text = $2::text', [req.params.id, req.user.shop_id]);
-
     if (existing.media_url) {
-      const relativePath = String(existing.media_url).replace(/^\//, '');
-      const filePath = path.join(__dirname, '../../', relativePath);
       try {
-        fs.unlinkSync(filePath);
-      } catch (unlinkErr) {
-        console.error('[ClaimTracker] Evidence file cleanup error:', { filePath, error: unlinkErr.message });
+        await deleteStoredMedia(existing.media_url);
+      } catch (storageErr) {
+        console.error('[ClaimTracker] Evidence media cleanup error:', { id: req.params.id, error: storageErr.message });
+        return res.status(503).json({ error: 'Media storage is temporarily unavailable. The evidence was not deleted.' });
       }
     }
+
+    await dbRun('DELETE FROM ro_claim_evidence WHERE id::text = $1::text AND shop_id::text = $2::text', [req.params.id, req.user.shop_id]);
 
     return res.json({ ok: true });
   } catch (err) {

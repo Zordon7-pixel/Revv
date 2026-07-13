@@ -3568,3 +3568,52 @@ Expected:
 - No production customer/shop/RO data is touched.
 - Verdict should say whether this closes the Area 3 enforcement gap and whether Hermes can review after QA.
 ```
+
+## Dispatch Log — 2026-07-13 Durable Media Storage
+
+**Status:** READY FOR CLAUDE CODE QA - NOT DEPLOYED
+
+**Incident boundary**
+- The production audit found 48 `ro_photos` rows and one `ro_claim_evidence` row whose historical bytes were already absent from the old ephemeral filesystem.
+- The eight files currently present on the Railway volume were backed up locally and verified byte-for-byte before this build.
+- This build prevents recurrence. It does not fabricate or delete the 49 historical references, and it cannot recover bytes that no longer exist.
+- No Miles Automotive customer, shop, RO, photo, evidence, seed, reset, or migration data was mutated during the build.
+
+**Behavior shipped in this build**
+- Added a private S3-compatible media service with upload verification, SHA-256 metadata, range-capable reads, safe path normalization, deletion, and volume restoration.
+- RO photos, pre-dropoff photos, customer portal photos, claim evidence, claim assessments, and shop logos now mirror to object storage before their DB metadata is committed.
+- Required object storage fails closed with a safe `503`; rejected uploads are rolled back without creating orphan DB rows.
+- Existing `/uploads/...` URLs remain unchanged. Express serves the Railway volume first and proxies the private bucket only when the local file is absent.
+- Startup and daily integrity audits mirror volume-only files, restore bucket-only files, treat verified bucket objects as authoritative on checksum mismatch, and report unrecoverable references without deleting them.
+- Added the `@aws-sdk/client-s3` backend dependency and the operational runbook at `docs/revv-media-storage.md`.
+
+**Files changed**
+- `backend/package.json`
+- `backend/package-lock.json`
+- `backend/src/app.js`
+- `backend/src/services/mediaStorage.js`
+- `backend/src/jobs/mediaIntegrity.js`
+- `backend/src/routes/photos.js`
+- `backend/src/routes/portal.js`
+- `backend/src/routes/claimTracker.js`
+- `backend/src/routes/claimLinks.js`
+- `backend/src/routes/market.js`
+- `backend/src/__tests__/mediaStorage.test.js`
+- `backend/src/__tests__/mediaIntegrity.test.js`
+- `backend/src/__tests__/mediaRoutes.storage.test.js`
+- `backend/src/__tests__/redesign.phase4.test.js`
+- `docs/revv-media-storage.md`
+- `CLAUDE.md`
+
+**Verification**
+```text
+node --check backend/src/services/mediaStorage.js backend/src/jobs/mediaIntegrity.js backend/src/app.js backend/src/routes/photos.js backend/src/routes/portal.js backend/src/routes/claimTracker.js backend/src/routes/claimLinks.js backend/src/routes/market.js  # PASS
+node --test backend/src/__tests__/*.test.js  # 125/125 passed
+cd backend && npm run test:run  # 3 files, 7/7 passed
+cd frontend && npm run test:run  # 38 files, 123/123 passed
+cd frontend && npm run build  # PASS
+```
+
+**Deployment gate**
+- Commit locally and run Claude Code read-only QA against the exact commit.
+- On QA PASS only: provision the private Railway bucket, set server-only media variables with `MEDIA_REQUIRE_OBJECT_STORAGE=true`, enable Railway volume backups, push to `main`, and verify production bucket fallback plus integrity logs.

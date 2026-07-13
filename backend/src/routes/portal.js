@@ -8,6 +8,7 @@ const multer = require('multer');
 const rateLimit = require('express-rate-limit');
 const { createNotification } = require('../services/notifications');
 const { createPaymentCheckoutLinkForRo, ensureTrackingToken } = require('../services/customerBilling');
+const { discardUploadedMedia, persistUploadedFile } = require('../services/mediaStorage');
 
 const MAX_PORTAL_PHOTO_BYTES = 10 * 1024 * 1024;
 const MAX_PORTAL_PHOTO_MB = Math.round(MAX_PORTAL_PHOTO_BYTES / (1024 * 1024));
@@ -262,18 +263,28 @@ router.post('/track/:token/message', async (req, res) => {
 });
 
 router.post('/track/:token/photo', upload.single('photo'), async (req, res) => {
+  const photoUrl = req.file ? `/uploads/portal-photos/${req.file.filename}` : null;
+  let storageAttempted = false;
+  let storageReady = false;
+  let committed = false;
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
     const tokenRecord = await dbGet('SELECT ro_id, shop_id FROM portal_tokens WHERE token = $1', [req.params.token]);
-    if (!tokenRecord) return res.status(404).json({ error: 'Tracking link not found' });
+    if (!tokenRecord) {
+      await discardUploadedMedia(photoUrl).catch((err) => console.error('[Portal Photo] rejected upload cleanup failed:', err.message));
+      return res.status(404).json({ error: 'Tracking link not found' });
+    }
 
     const photoId = uuidv4();
-    const photoUrl = `/uploads/portal-photos/${req.file.filename}`;
+    storageAttempted = true;
+    await persistUploadedFile(req.file, photoUrl);
+    storageReady = true;
     await dbRun(
       'INSERT INTO ro_photos (id, ro_id, user_id, photo_url, caption, photo_type) VALUES ($1, $2, $3, $4, $5, $6)',
       [photoId, tokenRecord.ro_id, null, photoUrl, req.body?.caption || 'Customer upload', 'customer']
     );
+    committed = true;
 
     const ro = await dbGet('SELECT ro_number FROM repair_orders WHERE id = $1', [tokenRecord.ro_id]);
     await notifyOwnersAndAdmins(
@@ -286,7 +297,14 @@ router.post('/track/:token/photo', upload.single('photo'), async (req, res) => {
 
     return res.status(201).json({ ok: true, photo_url: photoUrl });
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    if (!committed && photoUrl) {
+      await discardUploadedMedia(photoUrl).catch((cleanupErr) => console.error('[Portal Photo] upload rollback failed:', cleanupErr.message));
+    }
+    console.error('[Portal Photo] upload failed:', err);
+    if (storageAttempted && !storageReady) {
+      return res.status(503).json({ error: 'Media storage is temporarily unavailable. Nothing was saved. Please retry.' });
+    }
+    return res.status(500).json({ error: 'Could not upload customer photo' });
   }
 });
 

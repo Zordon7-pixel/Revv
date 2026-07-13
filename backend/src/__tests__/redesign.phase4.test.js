@@ -51,6 +51,11 @@ test('shop logo upload accepts only PDF-safe images and cannot target another sh
     getTwilioConfigForShop: async () => null,
     isConfiguredForShop: async () => false,
   });
+  installMock(require.resolve('../services/mediaStorage'), {
+    deleteStoredMedia: async () => ({ deleted: true }),
+    discardUploadedMedia: async () => ({ discarded: true }),
+    persistUploadedFile: async () => ({ mirrored: true }),
+  });
 
   const router = require('../routes/market');
   assert.equal(router._test.isSupportedShopLogoMime('image/jpeg'), true);
