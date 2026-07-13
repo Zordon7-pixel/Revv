@@ -73,7 +73,7 @@ await dbRun('DELETE FROM ros WHERE id = $1', [id]); // ← SECURITY BUG
 - `frontend/src/pages/EstimateBuilder.jsx`, `frontend/src/components/InsurancePanel.jsx`: persist the insurer financial snapshot before importing detailed rows, request deduplication, and label the source-of-truth subtotal accurately.
 - `backend/src/routes/customers.js`, `frontend/src/pages/Customers.jsx`: remove the invalid production column read and show a real load error instead of falsely reporting zero customers.
 - `frontend/src/components/AppOverlay.jsx`, `frontend/src/index.css`: all shared authenticated overlays center inside the usable content area to the right of the open desktop/tablet sidebar.
-- After QA PASS, persistent upload storage will be added as a Railway volume mounted at `/app/backend/uploads`; existing missing photo bytes cannot be reconstructed from database URL rows and require the original files to be re-uploaded.
+- Production now uses a 5 GB Railway volume mounted at `/app/backend/uploads`; eight surviving files were backed up before the mount and restored successfully. Existing missing photo bytes cannot be reconstructed from database URL rows and require the original files to be re-uploaded.
 
 **Verification before Claude Code QA**
 ```text
@@ -98,6 +98,18 @@ Screenshot: /Users/zordon/.openclaw/workspace/revv-overlay-ipad-landscape-202607
 - Confirmed ready for persistent-volume setup, targeted RO financial resync, deployment, and post-deploy verification.
 - Post-deploy log follow-up: replaced PostgreSQL's unsupported `ADD CONSTRAINT IF NOT EXISTS` syntax for `fk_users_customer_id` with an idempotent guarded `DO` block so the full schema script no longer aborts before the migration list.
 - Claude Code follow-up QA reviewed `519d7a5`: PASS; cleared for push/deploy and startup-log verification with no destructive DDL or data mutation.
+
+**Production verification**
+- Both production domains served commit `6350c599e8a7825d5fb6c02be6d90a754844c389` during the code verification pass; the final docs-only commit follows it.
+- `GET /api/customers` as the Miles owner returned HTTP 200 with 65 customers.
+- `GET /api/estimate-items/<affected-ro>/summary` returned source `adjuster_totals`, subtotal $12,243.51, gross $13,330.12, deductible $1,000.00, and net $12,330.12.
+- `GET /api/estimate-items/<affected-ro>/opportunities` returned HTTP 200 with `paint_rate=62`; the former missing-column error is resolved.
+- Targeted resync of only `RO-2026-0059-7FDF6E31` changed its stored financial buckets from the incorrect imported-line sum to insurer-authoritative values: total $13,330.12, parts $9,135.11, labor $2,142.00, materials/sublet/other $966.40, tax $1,086.61, deductible $1,000.00. No status, payment, customer, photo, or other RO row changed.
+- Production browser checks at 1366x1024 rendered 65 customer cards and the exact insurer totals with document width equal to viewport width and zero console errors.
+- Evidence: `/Users/zordon/.openclaw/workspace/revv-customers-production-20260712.png`, `/Users/zordon/.openclaw/workspace/revv-estimate-production-20260712.png`, `/Users/zordon/.openclaw/workspace/revv-overlay-ipad-landscape-20260712.png`.
+- Persistent upload volume retained all eight restored files across deployments; representative logo/photo URLs returned HTTP 200.
+- Smoke test: 6 PASS with the documented local-shell `RESEND_API_KEY` warning; production logs confirm Resend is configured.
+- Residual schema debt: the existing TEXT-ID production database still logs a best-effort full-schema warning when the unused `market_config` UUID foreign key is evaluated. The idempotent migration list completes. No live ID type conversion was attempted in this incident.
 
 ## Dispatch Log — 2026-07-11 Product Tour Embedded Voice
 
