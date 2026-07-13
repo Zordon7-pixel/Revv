@@ -143,6 +143,16 @@ test('daily mirror restores a corrupted volume copy from the verified bucket obj
   assert.deepEqual(fake.objects.get(mediaStorage.normalizeMediaKey(mediaUrl)).body, original);
 });
 
+test('daily mirror continues when a listed local file disappears before inspection', async () => {
+  const fake = createFakeObjectClient();
+  mediaStorage._test.setClientFactory(() => fake.client);
+  const mediaUrl = `/uploads/photos/${crypto.randomUUID()}.jpg`;
+
+  const result = await mediaStorage.mirrorAllLocalMedia({ env: STORAGE_ENV, mediaUrls: [mediaUrl] });
+
+  assert.deepEqual(result, { checked: 1, mirrored: 0, restored: 0, skipped: 1, configured: true });
+});
+
 test('required object storage fails closed and media keys cannot traverse upload root', async () => {
   const { mediaUrl, filePath } = await writeTestMedia(`${crypto.randomUUID()}.jpg`, 'local only');
   await assert.rejects(

@@ -334,23 +334,31 @@ async function mirrorAllLocalMedia({ env = process.env, mediaUrls } = {}) {
   let restored = 0;
   let skipped = 0;
   for (const mediaUrl of urls) {
-    const head = await objectHead(mediaUrl, env);
-    const filePath = localPathForMedia(mediaUrl);
-    const stat = await fs.promises.stat(filePath);
-    const checksumMatches = head?.Metadata?.sha256
-      ? await hashFile(filePath) === head.Metadata.sha256
-      : false;
-    if (head && Number(head.ContentLength) === stat.size && checksumMatches) {
-      skipped += 1;
-      continue;
+    try {
+      const head = await objectHead(mediaUrl, env);
+      const filePath = localPathForMedia(mediaUrl);
+      const stat = await fs.promises.stat(filePath);
+      const checksumMatches = head?.Metadata?.sha256
+        ? await hashFile(filePath) === head.Metadata.sha256
+        : false;
+      if (head && Number(head.ContentLength) === stat.size && checksumMatches) {
+        skipped += 1;
+        continue;
+      }
+      if (head?.Metadata?.sha256) {
+        await restoreLocalFileFromObject(mediaUrl, { env });
+        restored += 1;
+        continue;
+      }
+      await mirrorLocalFile(mediaUrl, { env });
+      mirrored += 1;
+    } catch (err) {
+      if (err?.code === 'ENOENT') {
+        skipped += 1;
+        continue;
+      }
+      throw err;
     }
-    if (head?.Metadata?.sha256) {
-      await restoreLocalFileFromObject(mediaUrl, { env });
-      restored += 1;
-      continue;
-    }
-    await mirrorLocalFile(mediaUrl, { env });
-    mirrored += 1;
   }
   return { checked: urls.length, mirrored, restored, skipped, configured: true };
 }
