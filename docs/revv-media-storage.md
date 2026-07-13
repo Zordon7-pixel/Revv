@@ -48,6 +48,13 @@ The service also accepts Railway/AWS-compatible aliases (`BUCKET`, `ENDPOINT`, `
 
 Railway volume backups are an additional disaster-recovery layer. They do not replace the private object copy.
 
+## Production State — 2026-07-13
+
+- Private Railway bucket `revv-media` is configured in US West with server-only credentials and `MEDIA_REQUIRE_OBJECT_STORAGE=true`.
+- Startup reconciliation mirrored all eight surviving volume files. A second pass reported eight checked and eight checksum-verified skips.
+- A non-customer sentinel was served through the bucket fallback after its local volume copy was removed; the returned bytes and SHA-256 matched exactly. The sentinel was then removed from both stores.
+- Railway-native volume backup schedules are unavailable on the current Hobby plan (`maxBackupsCount: 0`). The pre-deploy volume snapshot remains checksum-verified at `/Users/zordon/.openclaw/workspace/revv-upload-backup-20260712`. Upgrade the Railway workspace before enabling daily, weekly, and monthly native snapshots.
+
 ## Historical Incident Boundary
 
 The July 2026 audit found 48 historical `ro_photos` rows and one claim-evidence row whose files were already absent from the old ephemeral filesystem. The object-storage rollout prevents recurrence but cannot reconstruct bytes that no longer exist. Those records must remain intact so a shop can identify and re-upload the originals if found.

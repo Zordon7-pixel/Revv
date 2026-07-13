@@ -3571,7 +3571,7 @@ Expected:
 
 ## Dispatch Log — 2026-07-13 Durable Media Storage
 
-**Status:** READY FOR CLAUDE CODE QA - NOT DEPLOYED
+**Status:** DEPLOYED - CLAUDE CODE QA PASS
 
 **Incident boundary**
 - The production audit found 48 `ro_photos` rows and one `ro_claim_evidence` row whose historical bytes were already absent from the old ephemeral filesystem.
@@ -3615,5 +3615,23 @@ cd frontend && npm run build  # PASS
 ```
 
 **Deployment gate**
-- Commit locally and run Claude Code read-only QA against the exact commit.
-- On QA PASS only: provision the private Railway bucket, set server-only media variables with `MEDIA_REQUIRE_OBJECT_STORAGE=true`, enable Railway volume backups, push to `main`, and verify production bucket fallback plus integrity logs.
+- Claude Code read-only QA passed exact head `daffc50` with zero critical, high, or medium findings. The only prior low finding, a list/stat delete race, was fixed in `daffc50` and locked by regression coverage.
+- Private Railway bucket `revv-media` was provisioned in US West. All seven server-only media variables are present and `MEDIA_REQUIRE_OBJECT_STORAGE=true`.
+- Railway-native volume backup scheduling was attempted but is unavailable on the current Hobby plan (`maxBackupsCount: 0`). The existing volume snapshot at `/Users/zordon/.openclaw/workspace/revv-upload-backup-20260712` remains checksum-verified; native schedules require a Railway plan upgrade.
+- Production deployment `4617eebd-6395-4c8c-87cd-c5e1b794518e` succeeded at commit `daffc508a9983f744ba43de489624b31cbd58893`.
+
+**Production verification**
+```text
+GET https://revvshop.app/api/health  # 200, commit daffc508a9983f744ba43de489624b31cbd58893
+startup log  # Media bucket: configured
+integrity log  # references=50 healthy=1 mirrored=8 restored=0 local_only=0 missing=49
+second mirror pass  # checked=8 mirrored=0 restored=0 skipped=8 configured=true
+bucket inventory after cleanup  # 8 objects, 21075 bytes
+bucket fallback sentinel  # 200 image/png, 68 bytes, SHA-256 exact match after local copy removal
+sentinel cleanup  # absent from volume and bucket
+Miles read-only counts  # customers=65, repair_orders=46, photos=48, claim_evidence=1
+inspection photo URL audit  # total=0, REVV-managed=0; no uncovered inspections upload path
+./scripts/smoke-test.sh  # 6 PASS + 1 documented local RESEND_API_KEY warning
+```
+
+Historical boundary remains unchanged: the 48 photo references and one claim-evidence reference whose bytes were already absent were not deleted, altered, or fabricated. No Miles Automotive customer, shop, RO, photo, or evidence row was mutated by this release.
