@@ -1,0 +1,43 @@
+## QA Report — Estimate OCR Tier 1c (Job Financials Card)
+
+**Branch:** `feat/estimate-import-bms` | **Commit:** `54be2b4` vs `origin/main`
+**Scope:** Frontend display-only — surface `parsed.estimate_totals` in `EstimateImportWizard` via read-only Job Financials card.
+**Files changed (2, both frontend):** `EstimateImportWizard.jsx` (+54), `EstimateImportWizard.test.jsx` (+64/−1). No backend touched. ✅ confirmed via `git diff --stat origin/main...54be2b4`.
+
+### Executed Verification (real output)
+
+| Command | Result |
+|---|---|
+| `cd frontend && npm run test:run` | ✅ **15 files, 31 tests passed** (2.10s) |
+| `npm run build` | ✅ **built in 1.94s**, 1831 modules; only pre-existing chunk-size + sentry dynamic-import warnings |
+| `rm -rf dist && git diff --check` | ✅ **DIFF-CHECK-CLEAN** (no whitespace errors) |
+| `git ls-files frontend/dist` | ✅ **empty** (no tracked dist) |
+
+### Assessment
+
+**1. Conditional render & test assertions — PASS**
+- `showFinancials = estimateTotals && (hasNumber(revenue) || hasNumber(subtotal))`; card wrapped in `{showFinancials && (…)}`. Absent → `estimateTotals` null → no card. Empty `{}` → fields `undefined` → `hasNumber(undefined)=false` → no card. No empty card, no NaN, no `$null` literal anywhere (`formatUSD` returns `''` on non-finite; `money` returns `'0.00'`).
+- Tests genuinely assert both halves: (a) `'Job Financials'`, `'This job brings in $7,770.11'`, body `'48.2 hrs @ $50.00/hr = $2,410.00'` and paint `'20.5 hrs @ $50.00/hr = $1,025.00'` rate rows present; (b) parametrized absent + empty cases assert `queryByText('Job Financials')` not present.
+
+**2. formatUSD / rate visibility — PASS (with MED caveat below)**
+- `formatUSD` guards `!Number.isFinite` → `''`. Labor rows render `hours @ rate/hr = cost` with the **rate explicitly visible** — Bryan's core ask is delivered and test-locked. Revenue headline uses `estimate_totals.revenue`; backend resolves `revenue = net_cost_of_repairs ?? total_cost_of_repairs` (`insuranceOcr.js:317`, `bmsParser`), matching spec.
+
+**3. No regression — PASS**
+- Change is purely additive: new helpers (`formatUSD`, `hasNumber`, `laborSummary`), one `estimateTotals` state, one `setEstimateTotals` after parse, and the card JSX. `createRo`, line-item handling, `parsedToForm`, and the request contract are untouched. Deductible preserved at `parsed?.estimate_totals?.deductible ?? ''` (line 64). Existing import/confirm/create test still green.
+
+**4. Safety — PASS**
+- No new network calls (`setEstimateTotals` reuses the already-fetched parse response). No `console.*` added; no secrets/PII beyond the financial figures already in scope. `safeExternalErrorMessage` error wrapping intact.
+
+### Findings
+
+**MED-1 — Genuinely-absent categories render `$0.00` instead of being omitted (spec "omit null" gap + test blind spot).**
+Both backend paths (`normalizeEstimateTotals` and `parseEstimateTotalsFromPdfText`, plus `bmsParser`) emit **explicit `null`** for every unfound field — never `undefined`. In the frontend, `Number(null) === 0` is finite, so `hasNumber(null)` returns `true` and `formatUSD(null)` returns `"$0.00"`. Consequence: a real estimate missing a category (e.g. no mechanical labor, no paint) renders `Mechanical Labor: 0 hrs @ $0.00/hr = $0.00`, `Parts: $0.00`, etc., rather than omitting the row as the spec requires ("only render rows whose value is non-null"). The two negative tests use `{}` (fields `undefined`, correctly omitted) and so **do not exercise the real backend shape** (explicit nulls), masking this. Not CRITICAL/HIGH: no NaN/`$null`/crash, the headline + populated rows are correct, the reference estimate (all categories present) displays perfectly, and `$0.00` is factually defensible. Suggested tightening: treat `null`/`undefined` as absent in `hasNumber`/`laborSummary` (e.g. `value != null && Number.isFinite(Number(value))`) and add a test feeding explicit-null category fields.
+
+**LOW-1 — `laborSummary` early-return `if (!hasNumber(cost))` never trips for `null` cost** (same `Number(null)=0` root cause as MED-1); folds into the MED-1 fix.
+
+**LOW-2 — Test coverage gap:** negative-case tests should include an `estimate_totals` with explicit `null` category fields to match production data, not just `{}`.
+
+### Conclusion
+Tests, build, and dist hygiene all green. The feature delivers the core requirement (revenue headline + visible labor/paint rates), is purely additive with zero regression to the import/create flow or parsed contract, and is safe. The single MED finding is a presentational polish gap (extra `$0.00` rows for absent categories) that does not block ship; recommend tracking for a fast follow-up. No CRITICAL, no HIGH.
+
+QA VERDICT: PASS

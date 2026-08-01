@@ -1,0 +1,44 @@
+All verification complete. Here is the structured QA report.
+
+---
+
+# QA REPORT — Estimate Import (CIECA BMS) — `feat/estimate-import-bms`
+
+**Commits reviewed:** `38fe9ce` (Phase 1 parser) + `a1e1576` (Phase 2 route + wiring) vs `origin/main`
+**Scope:** review-only, no files modified. Diff: +1217 lines across 11 files (parser, route, ros wiring, app mount, 2 test files, 2 fixtures, spec, deps).
+
+## Executed verification (real output)
+
+| Step | Result |
+|------|--------|
+| `node --check` × 7 touched backend files | **All OK** (estimateImport, ros, app, bmsParser, insuranceOcr, both tests) |
+| `node --test bmsParser.test.js estimateImport.test.js` | **7/7 pass** (0 fail) — header mapping, line-items, RNI/RPR classification, XXE/billion-laughs inert, route contract, shop-scoped create, malformed/XXE rejected w/ no DB writes |
+| `frontend npm run test:run` | **28/28 pass** (15 files) |
+| `frontend npm run build` | **clean** (only pre-existing chunk-size warning) |
+| `rm -rf dist && git diff --check` | **clean** |
+| `git ls-files frontend/dist` | **empty** (dist not tracked) |
+
+## Guardrail assessment
+
+**1. XXE / XML safety — PASS.** Defense in depth:
+- *Route layer* (`estimateImport.js:54-65`): `validateXmlBuffer` hard-rejects any `<!DOCTYPE` via regex and requires leading `<` **before** parsing → DTD upload → 400. `XMLValidator.validate` catches malformed XML → 400 (wrapped in try/catch, no crash).
+- *Parser layer* (`bmsParser.js`): `stripDoctype()` strips the DOCTYPE/entity block, and `XMLParser` is configured `processEntities:false, htmlEntities:false` → entities stay literal even if parser is called directly. Test proves `&xxe;`/`&lol3;` are inert, no `/etc/passwd` leak, no billion-laughs amplification (serialized < 2000 bytes).
+- *Size cap* (`estimateImport.js:11,27,37`): multer `fileSize: 5MB`, `LIMIT_FILE_SIZE` → 400. Line-item cap `MAX_BMS_LINE_ITEMS=300` → 400. MIME/extension filter enforced.
+
+**2. OCR fallback intact — PASS.** `git diff origin/main…HEAD -- insuranceOcr.js` is **empty**. `insuranceOcrLimiter` still exported (line 732) and reused by the new route. Wizard, SupplementFinder, InsurancePanel, EstimateBuilder all still call `/insurance-ocr/parse` unchanged.
+
+**3. Exact parsed contract — PASS.** `/parse-bms` returns `{success, parsed}` with key order identical to `insuranceOcr.js:572-588` (test asserts `deepEqual(Object.keys(...))`). Enrichment fields (`operation_code`, `labor_units`, `part_type`, `part_number`) are additive. Wizard `normalizeItems` (`EstimateImportWizard.jsx:54`) uses the same `['labor','parts','sublet','other']` whitelist and ignores unknown keys — contract stays consumable.
+
+**4. Tenancy — PASS.** `importEstimateHandler` writes customers/vehicles/repair_orders/ro_operations all scoped to `req.user.shop_id` (test verifies `params[1]==='shop-1'` on each INSERT); `parts_requests` scoped via freshly-created shop-scoped `ro_id` + `requested_by=req.user.id` (consistent with existing schema — table has no shop_id column). All SQL parameterized, zero string interpolation. `/create` gated `requireTechnician + roLimitGuard + insuranceOcrLimiter`; `/parse-bms` gated `auth + insuranceOcrLimiter` (matches OCR `/parse`, and it creates nothing). No cross-shop read-back path.
+
+**5. Miles data untouched — PASS.** No seed/reset/migration/mutation run. Tests use a fully mocked DB (`createDbMock`) against synthetic `cieca-sample.xml` only. Fixtures contain no real PII (Acme Mutual, Casey Rivera, `example.test`, 555-01xx, fabricated VIN).
+
+## Findings
+
+- **LOW (observation):** `estimateImport.js` adds a `/create` endpoint beyond the literal Phase-2 spec wording ("returns parsed for the wizard to confirm"). It is correctly gated and reuses the shop-scoped `importEstimateHandler`, so no security impact — just slightly ahead of documented scope.
+- **LOW (observation):** `processEntities:false` also leaves standard predefined entities (`&amp;`) undecoded in text values — minor data-fidelity edge, not a security issue; correct trade-off for XXE safety.
+- **INFO:** Phase 3 (wizard "Import BMS" source button) is intentionally not in these commits; wizard still consumes the OCR shape. Spec's manual-proof-against-real-Miles-export gate remains open for Phase 3 ship — does not block Phase 1/2.
+
+**0 CRITICAL · 0 HIGH · 0 MED · 2 LOW (observations) · 1 INFO**
+
+QA VERDICT: PASS

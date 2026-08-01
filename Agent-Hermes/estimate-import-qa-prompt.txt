@@ -1,0 +1,17 @@
+You are the INDEPENDENT QA reviewer for the REVV Estimate Import (CIECA BMS) feature on branch feat/estimate-import-bms. Review commits 38fe9ce (Phase 1 parser) + a1e1576 (Phase 2 route + creation wiring) vs origin/main. Review-only — do not modify files.
+
+READ: docs/SPEC-estimate-import.md, backend/src/lib/bmsParser.js, backend/src/routes/estimateImport.js, backend/src/routes/insuranceOcr.js (the OCR fallback — must stay intact), backend/src/routes/ros.js (creation wiring), backend/src/app.js, backend/test/bmsParser.test.js, backend/test/estimateImport.test.js.
+
+EXECUTE and report real output:
+- node --check on every touched backend file (estimateImport.js, ros.js, app.js, bmsParser.js, test files)
+- node --test backend/test/bmsParser.test.js backend/test/estimateImport.test.js
+- cd frontend && npm run test:run ; npm run build ; rm -rf dist && git diff --check && git ls-files frontend/dist (must be clean/empty)
+
+ASSESS against these REVV guardrails (rate each finding CRITICAL/HIGH/MED/LOW):
+1. XXE/XML SAFETY: parseBms must parse with external-entity resolution DISABLED, DTD/DOCTYPE rejected or inert, size-limited, malformed XML rejected with 400 and NO crash, no billion-laughs amplification. Confirm the route enforces an upload size cap.
+2. OCR FALLBACK INTACT: insuranceOcr.js routes + contracts unchanged; OCR still works as the degraded fallback.
+3. EXACT parsed CONTRACT: estimateImport /parse-bms returns the SAME parsed shape insuranceOcr /parse returns (insurance_company, claim_number, adjuster_*, customer_*, vehicle/vin/vehicle_*, total_allowed, estimate_totals, line_items[{description,type in labor|parts|sublet|other,quantity,unit_price + enriched operation_code,labor_units,part_type,part_number}]). EstimateImportWizard must still consume it.
+4. TENANCY: every create (RO, customer, vehicle, parts-requests, operations) scoped to req.user.shop_id; operator role validated; parameterized SQL only (no string interpolation); no cross-shop leak.
+5. MILES DATA UNTOUCHED: no seed/reset/mutation of real data; tests mocked-only against the synthetic cieca-sample.xml fixture; no real PII committed.
+
+Output a structured report ending with exactly: QA VERDICT: PASS  (only if 0 CRITICAL and 0 unresolved HIGH) or QA VERDICT: FAIL.

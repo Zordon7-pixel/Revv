@@ -1,0 +1,17 @@
+Build Phase 1 of the REVV Estimate Import (CIECA BMS) feature. First READ docs/SPEC-estimate-import.md sections 3, 4, 5, and 6 (Phase 1) and follow them exactly.
+
+Scope is Phase 1 ONLY. Do NOT create any route, do NOT edit app.js, do NOT touch any frontend file, do NOT read or write any database or Miles table.
+
+Deliverables:
+1. backend/src/lib/bmsParser.js exporting a PURE function parseBms(xmlBuffer) that returns the parsed object defined in spec section 3. No I/O, no DB, no network. Use fast-xml-parser configured XXE-safe: disable DTD processing, disable external entity resolution, do not expand entities. Map CIECA BMS XML to the parsed contract: header fields (insurance_company, claim_number, adjuster_name, adjuster_phone, adjuster_email, customer_name, customer_phone, vehicle, vin, vehicle_year, vehicle_make, vehicle_model, total_allowed, estimate_totals) and line_items each with description, type (one of labor parts sublet other), quantity, unit_price, plus the additive enrichment fields operation_code, labor_units, part_type, part_number.
+   For type classification reuse the SAME operation-code semantics as backend/src/routes/insuranceOcr.js classifyByOperationCodes (RNI, R and I, RPR map to labor). Replicate it faithfully or extract a shared helper, but do NOT change insuranceOcr.js behavior.
+2. Add fast-xml-parser to backend/package.json dependencies and update backend/package-lock.json (run npm install inside backend).
+3. backend/test/fixtures/cieca-sample.xml - a representative synthetic CIECA BMS estimate with header data and several line items: a labor operation, an OEM part with a part_number, a sublet, and a refinish.
+4. backend/test/fixtures/cieca-xxe-attack.xml - a fixture containing a DOCTYPE with an external entity and a billion-laughs style payload, used to PROVE the parser does not expand entities or fetch anything.
+5. backend/test/bmsParser.test.js - unit tests using the existing backend test runner (match the style of other backend/test files). Cover: header field mapping; line_items mapping for labor, parts, sublet, and refinish; operation-to-type classification; all four enrichment fields populated; AND that the XXE fixture parses inert (no entity expansion, nothing fetched, output contains no expanded entity text).
+
+Constraints:
+- Match the parsed object shape EXACTLY to the success.parsed return in backend/src/routes/insuranceOcr.js, plus the additive fields.
+- Follow the existing code style and test conventions in the backend.
+- After writing, run the backend tests for the new file and make sure they pass.
+- Commit your work on the current branch feat/estimate-import-bms when done.

@@ -1,0 +1,54 @@
+All verification complete. Here is the structured QA report.
+
+---
+
+# QA Report — Estimate OCR Tier 1 / Tier 1b
+**Branch:** `feat/estimate-import-bms` | **Commits reviewed:** `e69e695` (Tier 1), `a655348` (Tier 1b) vs `origin/main`
+**Mode:** Review-only (no files modified) | **Reviewer:** Independent QA
+
+## Execution Results (real output)
+
+| Command | Result |
+|---|---|
+| `node --check insuranceOcr.js estimateTotals.test.js` | **CHECK OK** |
+| `node --test backend/test/estimateTotals.test.js` | **1/1 pass** |
+| `node --test backend/test/*.test.js` | **8/8 pass** (bms, estimateImport, totals — no regression) |
+| `node --test backend/src/__tests__/*.test.js` (legacy suite) | **26/26 pass** (no regression) |
+| `frontend npm run test:run` | **15 files, 28/28 pass** |
+| `frontend npm run build` | **PASS** (pre-existing chunk-size warning only) |
+| `rm -rf dist && git diff --check` | **CLEAN** |
+| `git ls-files frontend/dist` | **empty** (no tracked dist) |
+
+## Assessment
+
+### 1. Tier 1 Correctness — PASS
+The fixture test (`ccc-estimate-totals.txt`) asserts the exact real numbers via `assert.deepEqual` AND a per-field `assert.notEqual(null)` loop, all green:
+- parts 2976.73; body 48.2h@50=2410; paint 20.5h@50=1025; mechanical 2.2h@50=110; paint_supplies 20.5h@30=615; subtotal 7136.73; sales_tax basis 7136.73 @8.875% =633.38; total/net 7770.11; revenue 7770.11 ✔
+- **Glued-label root cause fixed correctly.** The old matchers used `/^Body Labor\b/i` — `\b` is a zero-width boundary between two word chars (`r`→`4`) and **fails** on `Body Labor48.2`. The new `startsWithValueLabel(label)` = `^<label>\s*(?=[-$0-9])` uses a lookahead that asserts the next char is a digit/`$`/`-` **without consuming it and without requiring a boundary**, so it matches glued digits. Verified against each fixture line.
+- Supporting widenings are sound: `\/hr` → `\/\s*hr` (tolerates `/ hr`); tax `\$` → `\$?` (tolerates missing `$` on basis). Both are constrained by surrounding structure (`hrs@.../hr`, `@..%`), so no false positives.
+- Label strings are all hardcoded literals (no user input) → no regex-injection surface in the dynamic `RegExp`.
+
+### 2. Contract (additive) — PASS
+- New fields `mechanical_labor_{hours,rate,cost}`, `revenue` added to SYSTEM_PROMPT, `parseEstimateTotalsFromPdfText`, and `normalizeEstimateTotals` field list. `total_cost_of_repairs`/`net_cost_of_repairs` already existed. `revenue` derived as `net_cost_of_repairs ?? total_cost_of_repairs` in both paths — consistent.
+- Consumers read via optional chaining and remain unbroken: `EstimateImportWizard.jsx:46` (`parsed?.estimate_totals?.deductible`), `estimateImport.js:86` (`estimate.estimate_totals?.deductible`). New fields are ignored, not required. No collision with ros.js `revenue_period` (unrelated RO column).
+- `/parse` precedence `textTotals || modelTotals || null` unchanged in behavior; `/analyze` untouched. New `module.exports.parseEstimateTotalsFromPdfText` is test-only export, no route impact.
+
+### 2b. Scanned-PDF path intact — PASS
+Tier 1 edits never touched the fallback flow. `/parse` still: `extractPdfText` → if empty text, `raw` stays `''` → `extractPdfPageImages` → gpt-4o vision (lines 498–531). For scanned PDFs `extractedTextForTotals` is empty → `textTotals` null → vision `modelTotals` wins. No regression.
+
+### 3. Tier 1b (nixpacks) — PASS
+- `poppler_utils` is the **correct nixpkgs attribute** — it provides both `pdftoppm` (used by `extractPdfPageImages`, env `PDFTOPPM_BIN`) and `pdftotext` (used by the `extractPdfText` fallback, env `PDFTOTEXT_BIN`). Notably this also fixes a *latent* gap: both binaries were already referenced in code but were **not** previously in `nixPkgs`, so the scanned-PDF vision path would have failed in production until now. Good catch.
+- `nixpacks.toml` remains valid TOML (single array-element addition).
+- `PDF_IMAGE_PAGE_LIMIT` 6→12 is bounded and only affects how many pages are rasterized for vision OCR; gated by the same `maxPages` slice and the 10 MB upload limit. Safe.
+
+### 4. Safety — PASS
+No secret leakage (sanitizers in `safeInsuranceOcrError`/`logInsuranceOcrError` untouched), no SQL/injection (no new queries; `execFile` args are fixed flags + numeric page limit, not user-controlled), no auth/scope changes (`auth` + `insuranceOcrLimiter` intact, `/analyze` still shop-scoped), no XXE surface (XML/BMS parser is the parked commit set, not in scope and already green).
+
+## Non-blocking Notes
+- **MED (cost awareness):** Doubling the page limit means up to 12 pages × `detail:'high'` per scanned PDF sent to gpt-4o — higher per-call vision cost. Bounded and acceptable per spec; worth monitoring real Miles multi-page scans.
+- **LOW/INFO (UX follow-up):** `EstimateImportWizard` still surfaces only `deductible` from `estimate_totals`. The richer extracted values (revenue, labor/paint rates) are correctly parsed and returned but not yet shown in the wizard UI — the spec's "what each RO brings into the shop" is extraction-correct but not yet user-visible through this path. Spec scopes Tier 1 to extraction only; surfacing is a separate task. Not a blocker.
+
+## Summary
+0 CRITICAL · 0 HIGH · 1 MED (cost note) · 1 LOW (UX follow-up). All tests green, build clean, no dist tracked, no regressions in either backend test dir or frontend.
+
+QA VERDICT: PASS

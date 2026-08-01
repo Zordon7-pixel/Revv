@@ -1,0 +1,24 @@
+You are implementing Phase 2 of the REVV Estimate Import (CIECA BMS) feature on branch feat/estimate-import-bms.
+
+READ FIRST (do not skip):
+- docs/SPEC-estimate-import.md  (the full spec — phases, parsed contract, guardrails, DoD)
+- backend/src/lib/bmsParser.js  (Phase 1, DONE — exports parseBms(xmlBuffer) -> parsed; XXE-safe already)
+- backend/src/routes/insuranceOcr.js  (the OCR path — STUDY how /parse returns the `parsed` contract AND how /analyze (router.post('/analyze'...) at ~line 610) creates RO + customer + vehicle + parts-requests + operations. REUSE those EXACT creation paths/helpers. Do not invent new DB writes.)
+- backend/src/app.js  (route mounting — OCR is mounted at app.use('/api/insurance-ocr', ...))
+
+PHASE 2 SCOPE (backend only — do NOT touch the frontend wizard, that is Phase 3):
+1. Create backend/src/routes/estimateImport.js exposing POST /api/estimate-import/parse-bms:
+   - auth middleware + the same rate-limiter pattern as insuranceOcr.
+   - multer single-file upload; enforce a size limit (~5MB); reject non-XML / oversized with 400.
+   - call parseBms(buffer) inside try/catch; on parse failure return 400 with a safe error (never crash). Malformed/XXE must be rejected safely (Phase 1 parser already neutralizes entities).
+   - return { success:true, parsed } EXACTLY matching the insuranceOcr /parse contract shape, including the enriched line_item fields (operation_code, labor_units, part_type, part_number).
+2. Add a creation endpoint (or extend) that takes the confirmed parsed payload and creates RO + customer + vehicle + parts-requests + operations by REUSING the existing creation code path the OCR /analyze route uses. ALL creates MUST be scoped to req.user.shop_id and validate operator role exactly like the OCR route. No raw SQL string interpolation — parameterized only.
+3. Mount the new router in backend/src/app.js next to insurance-ocr: app.use('/api/estimate-import', require('./routes/estimateImport')).
+4. Do NOT modify, weaken, or remove the insuranceOcr routes — OCR stays as the working fallback. Do not change its contracts.
+5. Add backend/test/estimateImport.test.js (node:test) that mocks the DB layer and asserts: synthetic cieca-sample.xml -> expected RO/customer/vehicle/parts/operations creation calls (incl. enriched fields), AND that a malformed/XXE upload is rejected safely with no crash and no DB writes. Do NOT touch or seed any real/Miles data.
+
+CONSTRAINTS:
+- Max ~10 files. Backend only this phase.
+- node --check must pass on every touched backend file.
+- All four REVV guardrails in the spec apply (XXE off, OCR intact, shop_id scoping + role, Miles data untouched).
+- Commit your work at the end: git add the new/changed backend files and commit with message 'feat(estimate-import): Phase 2 — parse-bms route + shop_id-scoped creation wiring (reuse OCR creation paths) + mocked integration test'. Do not push.

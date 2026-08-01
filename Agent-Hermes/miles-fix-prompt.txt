@@ -1,0 +1,16 @@
+Finish a small, precise live-prod regression fix in the Revv backend. Two files max: backend/src/routes/ros.js and a NEW backend/src/__tests__/ros.roleVisibility.test.js.
+
+Context: in ros.js GET / handler (~line 777) the self-only RO filter (assignedFilter = req.user.id) is currently forced for EVERY caller below admin rank, which hides the whole shop RO board from employee and staff (rank 2). It should only restrict literal floor technicians.
+
+Apply EXACTLY this logic for assignedFilter (keep ro.shop_id = $1 scoping unchanged):
+  const isTechnicianOnly = actorRole === (quote)technician(quote);
+  const canFilterAssignedTo = getRoleRank(actorRole) >= ROLE_RANK.admin || actorRole === (quote)superadmin(quote);
+  const assignedFilter = isTechnicianOnly ? req.user.id : canFilterAssignedTo ? (normalizedTechId || normalizedAssignedTo) : (empty string);
+
+This means: technician -> forced to own id; admin/owner/assistant (assistant is rank 3 == admin) / superadmin -> optional assigned_to/tech_id query filter, UNCHANGED; employee/staff (rank 2, non-technician) -> NO assignment filter (full shop board). Use the rank helper exactly as above so assistant stays in the can-filter bucket (do NOT hardcode a role list that omits assistant).
+
+CRITICAL: the existing test backend/src/__tests__/ros.assignedToScope.test.js MUST stay green - it asserts an assistant caller filtering by assigned_to=tech-2 produces ro.assigned_to = $2 with params [shop-1, tech-2], and a technician caller is forced to their own id. Do not break it. Do not edit that file.
+
+Add backend/src/__tests__/ros.roleVisibility.test.js (mirror the mock-module + runGetRos harness style from ros.assignedToScope.test.js) asserting: technician forces ro.assigned_to = self; employee and staff get NO ro.assigned_to filter (only ro.shop_id = $1) and thus the full board; assistant, admin, owner do NOT get a forced self filter; ro.shop_id = $1 scoping present for every role.
+
+Run: cd backend then node --test src/__tests__/ros.assignedToScope.test.js src/__tests__/ros.roleVisibility.test.js and confirm all green. Edit ONLY those 2 files. Do NOT touch ROLE_RANK, middleware/roles.js, the POST/create gate, frontend, schema, or migrations.

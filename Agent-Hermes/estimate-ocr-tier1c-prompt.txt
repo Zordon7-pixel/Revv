@@ -1,0 +1,19 @@
+Implement Tier 1c of the REVV Estimate OCR work on branch feat/estimate-import-bms. FRONTEND ONLY. Max ~5 files.
+
+READ FIRST: docs/SPEC-estimate-ocr-tier1c-ui.md (full spec), frontend/src/components/EstimateImportWizard.jsx (306 lines, the wizard to extend), frontend/src/components/__tests__/EstimateImportWizard.test.jsx (existing test to extend).
+
+BACKGROUND: The backend already extracts and returns parsed.estimate_totals with revenue, body/paint/mechanical labor hours+rate+cost, paint_supplies, parts, subtotal, sales_tax, total/net cost (shipped to prod). The wizard currently does NOT display them (only reads deductible). This task makes the money VISIBLE.
+
+DELIVERABLES:
+1. In EstimateImportWizard.jsx, add a compact read-only "Job Financials" summary, rendered ONLY when parsed?.estimate_totals is present (and has at least a revenue or subtotal value):
+   - Headline using estimate_totals.revenue: e.g. "This job brings in $7,770.11".
+   - Breakdown rows, each rendered ONLY if its value is non-null/defined: Body Labor (hours x rate = cost), Paint Labor, Mechanical Labor, Paint Supplies, Parts, Subtotal, Sales Tax, Net. Show the rate explicitly, e.g. "48.2 hrs @ $50.00/hr = $2,410.00". Labor/paint RATES must be visible.
+   - Use the wizard's existing styling conventions (Tailwind classes already in the file). Keep it compact, read-only, non-editable.
+2. There is NO existing currency formatter in frontend/src/utils or /lib. Add a tiny helper formatUSD(n) (e.g. Intl.NumberFormat('en-US',{style:'currency',currency:'USD'})) either inline in the component or a small util; guard null/undefined/NaN -> render nothing for that row, never 'NaN' or '$null'.
+3. Do NOT change the import/create flow, the parsed contract, line-item handling, or any backend. Presentational only. Keep all existing wizard behavior intact.
+
+TESTS: Extend frontend/src/components/__tests__/EstimateImportWizard.test.jsx (vitest + testing-library, matching the existing test style) with cases asserting: (a) given a mocked parsed.estimate_totals (revenue 7770.11, body 48.2h@50=2410, paint 20.5h@50=1025), the wizard renders the revenue headline AND the body+paint labor rate rows; (b) when parsed.estimate_totals is absent/empty, the financials card does NOT render.
+
+VERIFY before finishing: cd frontend && npm run test:run (all pass) ; npm run build (clean). Confirm rm -rf dist leaves git clean.
+
+COMMIT (do NOT push): git add the changed frontend files (component + test + any util) and commit -m "feat(estimate-ocr): Tier 1c - surface per-RO revenue and labor/paint rates in EstimateImportWizard Job Financials card". If the sandbox cannot write .git (index.lock Operation not permitted), print the exact git add + commit command and STOP.

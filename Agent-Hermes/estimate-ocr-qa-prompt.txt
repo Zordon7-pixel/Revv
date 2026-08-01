@@ -1,0 +1,20 @@
+You are the INDEPENDENT QA reviewer for the REVV Estimate OCR extraction fix on branch feat/estimate-import-bms. Review the two NEW commits e69e695 (Tier 1) and a655348 (Tier 1b) vs origin/main. Review-only — do not modify files. (Note: earlier commits 38fe9ce/a1e1576 are a parked BMS XML parser already QA-green; you may skip deep review of those and focus on the OCR commits.)
+
+CONTEXT: Miles uploads insurance estimate PDFs. Two real-world modes: (1) DIGITAL PDF with a text layer (CCC ONE) and (2) SCANNED image PDF with no text layer. Tier 1 fixes text-layer totals extraction; Tier 1b fixes the scanned-PDF path for production.
+
+READ: backend/src/routes/insuranceOcr.js, backend/test/estimateTotals.test.js, backend/test/fixtures/ccc-estimate-totals.txt, nixpacks.toml, docs/SPEC-estimate-ocr-tier1.md.
+
+EXECUTE and report real output:
+- node --check backend/src/routes/insuranceOcr.js backend/test/estimateTotals.test.js
+- node --test backend/test/estimateTotals.test.js
+- node --test backend/test/*.test.js  (confirm no regression across the whole backend test dir)
+- cd frontend && npm run test:run ; npm run build ; rm -rf dist && git diff --check ; git ls-files frontend/dist
+
+ASSESS (rate findings CRITICAL/HIGH/MED/LOW):
+1. TIER 1 CORRECTNESS: parseEstimateTotalsFromPdfText now extracts the real CCC totals where the label is GLUED to the value (e.g. line 'Body Labor48.2 hrs@$ 50.00 /hr2,410.00'). Confirm the fixture test asserts the real numbers (parts 2976.73; body 48.2h@50=2410; paint 20.5h@50=1025; mechanical 2.2h@50=110; paint_supplies 20.5h@30=615; subtotal 7136.73; sales_tax basis 7136.73 @8.875% =633.38; net 7770.11; revenue 7770.11) and that they are NOT null. Confirm the label matchers no longer rely on a word boundary that fails on glued digits.
+2. CONTRACT: new fields (mechanical_labor_*, total_cost_of_repairs, net_cost_of_repairs, revenue) are ADDITIVE; the existing parsed.estimate_totals / OCR /parse contract is otherwise unchanged; the EstimateImportWizard still consumes it. OCR /parse and /analyze routes still work (no behavioral regression).
+2b. Confirm the scanned-PDF path is intact: when pdf-parse yields empty text the route still falls through to extractPdfPageImages -> gpt-4o vision (no regression from Tier 1 edits).
+3. TIER 1b: nixpacks.toml adds poppler_utils to nixPkgs (provides pdftoppm used by extractPdfPageImages, env PDFTOPPM_BIN). Confirm the toml is still valid and the package name is the correct nixpkgs attribute for poppler/pdftoppm. Confirm PDF_IMAGE_PAGE_LIMIT raised 6->12 is safe (only affects how many pages are rasterized for vision OCR; bounded; cost note acceptable).
+4. SAFETY: no secret leakage, no new injection/SQL, no auth/scope changes, no XXE surface introduced.
+
+Output a structured report ending with exactly: QA VERDICT: PASS (only if 0 CRITICAL and 0 unresolved HIGH) or QA VERDICT: FAIL.

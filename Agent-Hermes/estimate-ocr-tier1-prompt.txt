@@ -1,0 +1,27 @@
+Implement Tier 1 of the REVV Estimate OCR extraction fix on branch feat/estimate-import-bms. Backend only. Max ~6 files.
+
+BACKGROUND (root-caused against a real Miles CCC ONE estimate PDF):
+Miles uploads insurance estimate PDFs (CCC ONE format). The existing function parseEstimateTotalsFromPdfText in backend/src/routes/insuranceOcr.js (around line 182) SILENTLY RETURNS NULLS on real CCC estimates. Reason: pdf-parse extracts each totals row with the LABEL GLUED to the value, no separating space, e.g. the real line is:
+  Body Labor48.2 hrs@$ 50.00 /hr2,410.00
+The label finder uses anchors like /^Body Labor\b/i. The \b word-boundary cannot match between "Labor" and "4" (both word chars), so .find() returns nothing and hours/rate/cost come back null. Same failure for Paint Labor, Paint Supplies, Sales Tax, Parts, Subtotal, Net.
+
+DELIVERABLES:
+1. Harden parseEstimateTotalsFromPdfText so label matchers tolerate the label glued directly to the first digit/sign. Replace the /^Label\b/ anchors with patterns like /^Body Labor\s*(?=[-$0-9])/i (label, optional space, lookahead at a digit/$/-). Make the inner hour/rate regex and the tax regex tolerant of zero-space joins: e.g. "48.2 hrs@$ 50.00 /hr2,410.00" and "$ 7,136.73@8.8750 %633.38". Keep the existing takeTrailingMoney fallback.
+2. ADD these categories to the totals object AND the parsed.estimate_totals contract (additive only): mechanical_labor_hours/rate/cost (CCC line: "Mechanical Labor2.2 hrs@$ 50.00 /hr110.00"), total_cost_of_repairs ("Total Cost of Repairs7,770.11"), net_cost_of_repairs ("Net Cost of Repairs7,770.11").
+3. Expose a per-RO revenue value = net_cost_of_repairs, falling back to total_cost_of_repairs when net is absent. Surface it in the parsed contract (e.g. parsed.estimate_totals.revenue or a top-level parsed.revenue) so the RO/wizard can show "this job brings in $X".
+4. Export parseEstimateTotalsFromPdfText (or a thin tested wrapper) from insuranceOcr.js so it is unit-testable. Do NOT change the OCR route contract beyond ADDITIVE fields. Do NOT touch upload/multer/validation logic. Do NOT remove or weaken existing OCR behavior.
+
+TESTS:
+Add backend/test/estimateTotals.test.js using node:test. Load backend/test/fixtures/ccc-estimate-totals.txt (already committed, a real PII-free CCC totals block) and assert parseEstimateTotalsFromPdfText returns EXACTLY:
+  parts=2976.73; body_labor_hours=48.2, body_labor_rate=50, body_labor_cost=2410.00; paint_labor_hours=20.5, paint_labor_rate=50, paint_labor_cost=1025.00; mechanical_labor_hours=2.2, mechanical_labor_rate=50, mechanical_labor_cost=110.00; paint_supplies_hours=20.5, paint_supplies_rate=30, paint_supplies_cost=615.00; subtotal=7136.73; sales_tax_basis=7136.73, sales_tax_rate=8.875, sales_tax_cost=633.38; total_cost_of_repairs=7770.11; net_cost_of_repairs=7770.11; revenue=7770.11.
+Assert zero nulls for every category present in the fixture.
+
+VERIFY before finishing:
+- node --check on every touched backend file.
+- node --test backend/test/estimateTotals.test.js  (must pass).
+- Run the existing backend tests you can (node --test backend/test/*.test.js) to confirm no regression.
+
+COMMIT (do NOT push):
+  git add backend/src/routes/insuranceOcr.js backend/test/estimateTotals.test.js backend/test/fixtures/ccc-estimate-totals.txt
+  git commit -m "feat(estimate-ocr): Tier 1 — fix CCC totals extraction (label-glued-to-value), add mechanical labor + net revenue, real-format fixture test"
+If the sandbox cannot write .git (index.lock Operation not permitted), print the exact git add + git commit command and STOP — do not retry.

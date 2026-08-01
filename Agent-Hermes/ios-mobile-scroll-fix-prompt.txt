@@ -1,0 +1,19 @@
+TASK: REVV — fix iPhone Safari scroll/zoom on mobile. CSS-ONLY, mobile breakpoint only. Low-risk, reversible.
+
+PROBLEM: On iPhone Safari, inside the app (notably the RO detail page) the view drifts / will not stay centered and pinch-zoom does not work. Root cause: the app shell traps scrolling in a fixed-height inner scroller. The shell already correctly uses 100dvh, overscroll-behavior: contain, and -webkit-overflow-scrolling: touch — those standard guards are NOT the issue. The issue is that locking the viewport height + inner-only scroll prevents iOS Safari from panning a pinch-zoomed page, so zoom feels broken and the content drifts.
+
+READ FIRST: frontend/src/index.css (find the .app-shell and .app-main-scroll rules and the --app-viewport-height variable, ~lines 6-118), frontend/src/components/Layout.jsx (the shell uses .app-shell wrapper + <main class=app-main-scroll ... h-full overflow-auto>).
+
+SCOPE — index.css ONLY (do not touch Layout.jsx or any JS):
+Add a mobile media query (max-width: 767px) that lets the document scroll naturally instead of the inner shell:
+- Under @media (max-width: 767px): set .app-shell { height: auto; min-height: var(--app-viewport-height); overflow: visible; } and .app-main-scroll { overflow: visible; height: auto; -webkit-overflow-scrolling: auto; } so the page scrolls on the body/document and iOS can pan a zoomed page.
+- Do NOT change desktop (>=768px) behavior at all — the fixed-height inner-scroll shell must stay intact on desktop.
+- Keep horizontal overflow protection (html, body { overflow-x: hidden }) untouched.
+- If the mobile sidebar/header rely on the shell being fixed, ensure they still render correctly with natural scroll (they are position:fixed already, so they should be fine — verify the rule order does not regress them).
+
+CONSTRAINTS:
+- index.css only. No JS changes. No new dependencies.
+- The change must be a clean additive mobile media query, easy to revert.
+- Do not alter the viewport meta tag.
+
+When done: print the exact CSS added and confirm desktop rules are unchanged. Do not git commit (mounted-volume lock).

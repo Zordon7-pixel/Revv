@@ -1,0 +1,3625 @@
+Reading additional input from stdin...
+OpenAI Codex v0.125.0 (research preview)
+--------
+workdir: /Volumes/Zordon Storage /openclaw-workspace/Revv
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR, /Users/zordon/.codex/memories]
+reasoning effort: medium
+reasoning summaries: none
+session id: 019ece88-e28d-7fe3-a30a-e679d7d31a7a
+--------
+user
+Implement Tier 1 of the REVV Estimate OCR extraction fix on branch feat/estimate-import-bms. Backend only. Max ~6 files.
+
+BACKGROUND (root-caused against a real Miles CCC ONE estimate PDF):
+Miles uploads insurance estimate PDFs (CCC ONE format). The existing function parseEstimateTotalsFromPdfText in backend/src/routes/insuranceOcr.js (around line 182) SILENTLY RETURNS NULLS on real CCC estimates. Reason: pdf-parse extracts each totals row with the LABEL GLUED to the value, no separating space, e.g. the real line is:
+  Body Labor48.2 hrs@$ 50.00 /hr2,410.00
+The label finder uses anchors like /^Body Labor\b/i. The \b word-boundary cannot match between "Labor" and "4" (both word chars), so .find() returns nothing and hours/rate/cost come back null. Same failure for Paint Labor, Paint Supplies, Sales Tax, Parts, Subtotal, Net.
+
+DELIVERABLES:
+1. Harden parseEstimateTotalsFromPdfText so label matchers tolerate the label glued directly to the first digit/sign. Replace the /^Label\b/ anchors with patterns like /^Body Labor\s*(?=[-$0-9])/i (label, optional space, lookahead at a digit/$/-). Make the inner hour/rate regex and the tax regex tolerant of zero-space joins: e.g. "48.2 hrs@$ 50.00 /hr2,410.00" and "$ 7,136.73@8.8750 %633.38". Keep the existing takeTrailingMoney fallback.
+2. ADD these categories to the totals object AND the parsed.estimate_totals contract (additive only): mechanical_labor_hours/rate/cost (CCC line: "Mechanical Labor2.2 hrs@$ 50.00 /hr110.00"), total_cost_of_repairs ("Total Cost of Repairs7,770.11"), net_cost_of_repairs ("Net Cost of Repairs7,770.11").
+3. Expose a per-RO revenue value = net_cost_of_repairs, falling back to total_cost_of_repairs when net is absent. Surface it in the parsed contract (e.g. parsed.estimate_totals.revenue or a top-level parsed.revenue) so the RO/wizard can show "this job brings in $X".
+4. Export parseEstimateTotalsFromPdfText (or a thin tested wrapper) from insuranceOcr.js so it is unit-testable. Do NOT change the OCR route contract beyond ADDITIVE fields. Do NOT touch upload/multer/validation logic. Do NOT remove or weaken existing OCR behavior.
+
+TESTS:
+Add backend/test/estimateTotals.test.js using node:test. Load backend/test/fixtures/ccc-estimate-totals.txt (already committed, a real PII-free CCC totals block) and assert parseEstimateTotalsFromPdfText returns EXACTLY:
+  parts=2976.73; body_labor_hours=48.2, body_labor_rate=50, body_labor_cost=2410.00; paint_labor_hours=20.5, paint_labor_rate=50, paint_labor_cost=1025.00; mechanical_labor_hours=2.2, mechanical_labor_rate=50, mechanical_labor_cost=110.00; paint_supplies_hours=20.5, paint_supplies_rate=30, paint_supplies_cost=615.00; subtotal=7136.73; sales_tax_basis=7136.73, sales_tax_rate=8.875, sales_tax_cost=633.38; total_cost_of_repairs=7770.11; net_cost_of_repairs=7770.11; revenue=7770.11.
+Assert zero nulls for every category present in the fixture.
+
+VERIFY before finishing:
+- node --check on every touched backend file.
+- node --test backend/test/estimateTotals.test.js  (must pass).
+- Run the existing backend tests you can (node --test backend/test/*.test.js) to confirm no regression.
+
+COMMIT (do NOT push):
+  git add backend/src/routes/insuranceOcr.js backend/test/estimateTotals.test.js backend/test/fixtures/ccc-estimate-totals.txt
+  git commit -m "feat(estimate-ocr): Tier 1 — fix CCC totals extraction (label-glued-to-value), add mechanical labor + net revenue, real-format fixture test"
+If the sandbox cannot write .git (index.lock Operation not permitted), print the exact git add + git commit command and STOP — do not retry.
+codex
+I’ll inspect the existing OCR parser and test layout first, then make the smallest backend-only patch and verify it with the requested commands.
+exec
+/bin/zsh -lc 'rg --files backend/test backend/src/routes | sort' in /Volumes/Zordon Storage /openclaw-workspace/Revv
+ succeeded in 0ms:
+backend/src/routes/accounting.js
+backend/src/routes/adas.js
+backend/src/routes/apiV1.js
+backend/src/routes/appointments.js
+backend/src/routes/approval.js
+backend/src/routes/auth.js
+backend/src/routes/catalog.js
+backend/src/routes/claimLinks.js
+backend/src/routes/claimTracker.js
+backend/src/routes/comms.js
+backend/src/routes/customers.js
+backend/src/routes/dashboard.js
+backend/src/routes/diagnostics.js
+backend/src/routes/estimateAssistant.js
+backend/src/routes/estimateImport.js
+backend/src/routes/estimateLineItems.js
+backend/src/routes/estimateRequests.js
+backend/src/routes/export.js
+backend/src/routes/feedback.js
+backend/src/routes/goals.js
+backend/src/routes/inspections.js
+backend/src/routes/insuranceOcr.js
+backend/src/routes/inventory.js
+backend/src/routes/invoice.js
+backend/src/routes/leads.js
+backend/src/routes/market.js
+backend/src/routes/notifications.js
+backend/src/routes/parts.js
+backend/src/routes/partsRequests.js
+backend/src/routes/payments.js
+backend/src/routes/performance.js
+backend/src/routes/photos.js
+backend/src/routes/portal.js
+backend/src/routes/public.js
+backend/src/routes/reports.js
+backend/src/routes/reviews.js
+backend/src/routes/roOperations.js
+backend/src/routes/ros.js
+backend/src/routes/schedule.js
+backend/src/routes/settings.js
+backend/src/routes/sms.js
+backend/src/routes/storage.js
+backend/src/routes/subscriptions.js
+backend/src/routes/superadmin.js
+backend/src/routes/supplements.js
+backend/src/routes/timeclock.js
+backend/src/routes/tracking.js
+backend/src/routes/users.js
+backend/src/routes/vehicleDiagnostics.js
+backend/src/routes/vehicles.js
+backend/src/routes/waitlist.js
+backend/test/bmsParser.test.js
+backend/test/estimateImport.test.js
+backend/test/fixtures/ccc-estimate-totals.txt
+backend/test/fixtures/cieca-sample.xml
+backend/test/fixtures/cieca-xxe-attack.xml
+
+exec
+/bin/zsh -lc 'git status --short --branch && rg -n "parseEstimateTotalsFromPdfText|estimate_totals|insuranceOcr" backend/src backend/test' in /Volumes/Zordon Storage /openclaw-workspace/Revv
+ succeeded in 0ms:
+## feat/estimate-import-bms
+ M DAILY-OPS.md
+?? Agent-Hermes/
+?? SPEC-estimate-true-profit.md
+?? SPEC-miles-employee-ro-visibility.md
+?? backend/test/fixtures/ccc-estimate-totals.txt
+?? docs/SPEC-estimate-ocr-tier1.md
+backend/test/bmsParser.test.js:29:    'estimate_totals',
+backend/test/bmsParser.test.js:45:  assert.equal(parsed.estimate_totals.parts, 435.25);
+backend/test/bmsParser.test.js:46:  assert.equal(parsed.estimate_totals.body_labor_hours, 2.5);
+backend/test/bmsParser.test.js:47:  assert.equal(parsed.estimate_totals.net_cost_of_repairs, 423.99);
+backend/test/estimateImport.test.js:29:      || key.includes(`${path.sep}backend${path.sep}src${path.sep}routes${path.sep}insuranceOcr.js`)
+backend/src/app.js:100:app.use('/api/insurance-ocr', require('./routes/insuranceOcr'));
+backend/src/__tests__/ros.assignedToScope.test.js:39:mockModule('../routes/insuranceOcr', { insuranceOcrLimiter: (req, res, next) => next() });
+backend/src/lib/bmsParser.js:302:    estimate_totals: parseEstimateTotals(doc),
+backend/src/__tests__/insuranceOcr.notifyOps.test.js:7:  const source = fs.readFileSync(path.join(__dirname, '../routes/insuranceOcr.js'), 'utf8');
+backend/src/__tests__/insuranceOcr.notifyOps.test.js:20:  const source = fs.readFileSync(path.join(__dirname, '../routes/insuranceOcr.js'), 'utf8');
+backend/src/__tests__/insuranceOcr.notifyOps.test.js:23:  assert.match(source, /const insuranceOcrLimiter = rateLimit\(/);
+backend/src/__tests__/insuranceOcr.notifyOps.test.js:26:  assert.match(source, /keyGenerator: insuranceOcrLimiterKeyGenerator/);
+backend/src/__tests__/insuranceOcr.notifyOps.test.js:29:  assert.match(source, /router\.post\('\/parse', auth, insuranceOcrLimiter, upload\.single\('estimate_image'\)/);
+backend/src/__tests__/insuranceOcr.notifyOps.test.js:30:  assert.match(source, /router\.post\('\/analyze', auth, insuranceOcrLimiter/);
+backend/src/__tests__/insuranceOcr.notifyOps.test.js:38:  const { insuranceOcrLimiterKeyGenerator } = require('../routes/insuranceOcr');
+backend/src/__tests__/insuranceOcr.notifyOps.test.js:41:    insuranceOcrLimiterKeyGenerator({ user: { shop_id: 1, id: 2 }, ip: '9.9.9.9' }),
+backend/src/__tests__/insuranceOcr.notifyOps.test.js:45:    insuranceOcrLimiterKeyGenerator({ user: {}, ip: '9.9.9.9' }),
+backend/src/__tests__/insuranceOcr.notifyOps.test.js:49:    insuranceOcrLimiterKeyGenerator({ user: {}, ip: '2001:db8::1' }),
+backend/src/routes/estimateImport.js:8:const { insuranceOcrLimiter } = require('./insuranceOcr');
+backend/src/routes/estimateImport.js:86:      deductible: estimate.estimate_totals?.deductible ?? null,
+backend/src/routes/estimateImport.js:93:router.post('/parse-bms', auth, insuranceOcrLimiter, uploadBms, (req, res) => {
+backend/src/routes/estimateImport.js:109:router.post('/create', auth, requireTechnician, insuranceOcrLimiter, roLimitGuard, async (req, res) => {
+backend/src/routes/insuranceOcr.js:32:function insuranceOcrLimiterKeyGenerator(req) {
+backend/src/routes/insuranceOcr.js:38:const insuranceOcrLimiter = rateLimit({
+backend/src/routes/insuranceOcr.js:43:  keyGenerator: insuranceOcrLimiterKeyGenerator,
+backend/src/routes/insuranceOcr.js:66:  "estimate_totals": {
+backend/src/routes/insuranceOcr.js:182:function parseEstimateTotalsFromPdfText(text) {
+backend/src/routes/insuranceOcr.js:443:router.post('/parse', auth, insuranceOcrLimiter, upload.single('estimate_image'), async (req, res) => {
+backend/src/routes/insuranceOcr.js:567:    const modelTotals = normalizeEstimateTotals(parsed.estimate_totals);
+backend/src/routes/insuranceOcr.js:568:    const textTotals = extractedTextForTotals ? parseEstimateTotalsFromPdfText(extractedTextForTotals) : null;
+backend/src/routes/insuranceOcr.js:587:        estimate_totals: estimateTotals,
+backend/src/routes/insuranceOcr.js:610:router.post('/analyze', auth, insuranceOcrLimiter, async (req, res) => {
+backend/src/routes/insuranceOcr.js:732:module.exports.insuranceOcrLimiter = insuranceOcrLimiter;
+backend/src/routes/insuranceOcr.js:733:module.exports.insuranceOcrLimiterKeyGenerator = insuranceOcrLimiterKeyGenerator;
+backend/src/__tests__/ros.roleVisibility.test.js:39:mockModule('../routes/insuranceOcr', { insuranceOcrLimiter: (req, res, next) => next() });
+backend/src/routes/ros.js:22:const { insuranceOcrLimiter } = require('./insuranceOcr');
+backend/src/routes/ros.js:2045:router.post('/import-estimate', auth, requireTechnician, insuranceOcrLimiter, roLimitGuard, importEstimateHandler);
+
+codex
+The branch is already correct and there are unrelated/untracked files in the worktree; I’ll leave those alone. The CCC totals fixture is present but untracked, so I’ll include it only in the requested commit.
+exec
+/bin/zsh -lc "sed -n '1,260p' backend/src/routes/insuranceOcr.js" in /Volumes/Zordon Storage /openclaw-workspace/Revv
+ succeeded in 0ms:
+const router = require('express').Router();
+const multer = require('multer');
+const OpenAI = require('openai');
+const rateLimit = require('express-rate-limit');
+const { ipKeyGenerator } = rateLimit;
+const pdfParse = require('pdf-parse');
+const fs = require('fs/promises');
+const os = require('os');
+const path = require('path');
+const crypto = require('crypto');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
+const auth = require('../middleware/auth');
+const { dbGet } = require('../db');
+const { notifyOps } = require('../services/notifyOps');
+
+const allowedEstimateMimeTypes = new Set(['application/pdf']);
+function isAllowedEstimateFile(file) {
+  const mimeType = String(file?.mimetype || '').toLowerCase();
+  const filename = String(file?.originalname || '').toLowerCase();
+  return mimeType.startsWith('image/') || allowedEstimateMimeTypes.has(mimeType) || filename.endsWith('.pdf');
+}
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (isAllowedEstimateFile(file)) return cb(null, true);
+    return cb(new Error('Unsupported estimate file type. Upload a PDF or image.'));
+  },
+});
+function insuranceOcrLimiterKeyGenerator(req) {
+  return req.user?.shop_id && req.user?.id
+    ? `${req.user.shop_id}:${req.user.id}`
+    : ipKeyGenerator(req.ip || 'unknown');
+}
+
+const insuranceOcrLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 15,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: insuranceOcrLimiterKeyGenerator,
+  message: { error: 'Too many requests. Try again in 10 minutes.' },
+});
+const execFileAsync = promisify(execFile);
+const PDF_TEXT_CHAR_LIMIT = 120000;
+const PDF_IMAGE_PAGE_LIMIT = 6;
+const AI_CONFIG_ERROR = 'AI estimate extraction is not configured correctly. Please contact support.';
+
+const SYSTEM_PROMPT = `You are an insurance estimate parser for auto body shops. Extract all line items from this insurance estimate document.
+Return ONLY valid JSON in this exact format:
+{
+  "insurance_company": "string or null",
+  "claim_number": "string or null",
+  "adjuster_name": "string or null",
+  "adjuster_phone": "string or null",
+  "adjuster_email": "string or null",
+  "customer_name": "string or null",
+  "customer_phone": "string or null",
+  "vehicle": "string or null",
+  "vin": "string or null",
+  "vehicle_year": "string or null",
+  "vehicle_make": "string or null",
+  "vehicle_model": "string or null",
+  "estimate_totals": {
+    "parts": 0,
+    "body_labor_hours": 0,
+    "body_labor_rate": 0,
+    "body_labor_cost": 0,
+    "paint_labor_hours": 0,
+    "paint_labor_rate": 0,
+    "paint_labor_cost": 0,
+    "paint_supplies_hours": 0,
+    "paint_supplies_rate": 0,
+    "paint_supplies_cost": 0,
+    "miscellaneous": 0,
+    "other_charges": 0,
+    "subtotal": 0,
+    "sales_tax_basis": 0,
+    "sales_tax_rate": 0,
+    "sales_tax_cost": 0,
+    "county_tax_basis": 0,
+    "county_tax_rate": 0,
+    "county_tax_cost": 0,
+    "other_tax_1_basis": 0,
+    "other_tax_1_rate": 0,
+    "other_tax_1_cost": 0,
+    "total_cost_of_repairs": 0,
+    "deductible": 0,
+    "total_adjustments": 0,
+    "net_cost_of_repairs": 0
+  },
+  "line_items": [
+    {
+      "type": "labor|parts|sublet|other",
+      "description": "string",
+      "quantity": 1,
+      "unit_price": 0.00
+    }
+  ],
+  "total_allowed": null
+}
+Classify each item: labor operations = "labor", parts/materials = "parts", sublet work = "sublet", everything else = "other".
+Important operation code mapping:
+- RNI / R&I / Remove and Install = labor operation (do NOT treat as parts replacement)
+- RPR = labor repair operation (do NOT treat as parts replacement)
+- REPL / R&R / Replace = parts replacement (order/replace part)
+Include all numbered estimate rows (exclude section headers) and include the estimate totals block.
+Return only the JSON object, no markdown fences, no extra text.`;
+
+function normalizeItemType(type) {
+  const next = String(type || '').trim().toLowerCase();
+  return ['labor', 'parts', 'sublet', 'other'].includes(next) ? next : 'other';
+}
+
+function isAiProviderConfigError(err) {
+  const status = Number(err?.status || err?.response?.status || err?.code);
+  const code = String(err?.code || err?.error?.code || err?.type || '').toLowerCase();
+  const message = String(err?.message || '').toLowerCase();
+  return (
+    status === 401 ||
+    code.includes('invalid_api_key') ||
+    message.includes('incorrect api key') ||
+    message.includes('invalid api key') ||
+    /platform\.[a-z]+\.com\/account\/api-keys/i.test(message)
+  );
+}
+
+function safeInsuranceOcrError(err) {
+  if (isAiProviderConfigError(err)) return AI_CONFIG_ERROR;
+  const message = String(err?.message || '').trim();
+  if (!message) return 'Could not parse estimate file. Try again or upload a clearer file.';
+  if (/sk-(?:proj-)?[A-Za-z0-9_-]+/.test(message) || /openai|api key|platform\.[a-z]+\.com/i.test(message)) {
+    return AI_CONFIG_ERROR;
+  }
+  return message.replace(/sk-(?:proj-)?[A-Za-z0-9_-]+/g, '[redacted]');
+}
+
+function logInsuranceOcrError(err) {
+  console.error('[InsuranceOCR] Error:', {
+    status: err?.status || err?.response?.status || null,
+    code: err?.code || err?.error?.code || null,
+    type: err?.type || err?.error?.type || null,
+    request_id: err?.request_id || err?.headers?.['x-request-id'] || null,
+  });
+}
+
+function classifyAiProviderError(err) {
+  const status = Number(err?.status || err?.response?.status || err?.code);
+  if (status === 401 || status === 403) return 'invalid_api_key';
+  if (status === 429) return 'rate_limit_exceeded';
+  if (status >= 500 && status <= 599) return 'provider_5xx';
+  return null;
+}
+
+function classifyByOperationCodes(description, currentType) {
+  const text = String(description || '').toLowerCase();
+
+  // Replace codes mean a part needs to be replaced/ordered.
+  const hasReplaceCode = /\b(repl|replace|r\s*&\s*r|r\/r|r\s+and\s+r|remove\s*(?:and|&|\/)?\s*replace)\b/.test(text);
+  if (hasReplaceCode) return 'parts';
+
+  // RNI / R&I / remove-install are labor operations.
+  const hasRemoveInstallCode = /\b(rni|r\s*&\s*i|r\/i|r\s+and\s+i|remove\s*(?:and|&|\/)?\s*install)\b/.test(text);
+  if (hasRemoveInstallCode) return 'labor';
+
+  // RPR / repair indicates labor repair operation.
+  const hasRepairCode = /\b(rpr|repair)\b/.test(text);
+  if (hasRepairCode) return 'labor';
+
+  return currentType;
+}
+
+function toNumberOrNull(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const normalized = String(value).replace(/[$,]/g, '').trim();
+  const num = Number(normalized);
+  return Number.isFinite(num) ? num : null;
+}
+
+function parseEstimateTotalsFromPdfText(text) {
+  const lines = String(text || '').split(/\r?\n/);
+  const startIdx = lines.findIndex((line) => /ESTIMATE\s+TOTALS/i.test(line));
+  if (startIdx < 0) return null;
+
+  const endIdx = lines.findIndex((line, idx) => idx > startIdx && /This is not an authorization to repair\./i.test(line));
+  const totalLines = lines
+    .slice(startIdx, endIdx > startIdx ? endIdx : startIdx + 80)
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+
+  const takeTrailingMoney = (line) => {
+    const m = line.match(/(-?\$?\s*[0-9,]+\.[0-9]{2})\s*$/);
+    return m ? toNumberOrNull(m[1]) : null;
+  };
+
+  const parseHourRateLine = (labelRegex) => {
+    const line = totalLines.find((row) => labelRegex.test(row));
+    if (!line) return { hours: null, rate: null, cost: null };
+    const m = line.match(/([0-9]+(?:\.[0-9]+)?)\s*hrs\s*@\s*\$?\s*([0-9,]+(?:\.[0-9]+)?)\s*\/hr\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
+    if (!m) return { hours: null, rate: null, cost: takeTrailingMoney(line) };
+    return {
+      hours: toNumberOrNull(m[1]),
+      rate: toNumberOrNull(m[2]),
+      cost: toNumberOrNull(m[3]),
+    };
+  };
+
+  const parseTaxLine = (labelRegex) => {
+    const line = totalLines.find((row) => labelRegex.test(row));
+    if (!line) return { basis: null, rate: null, cost: null };
+    const m = line.match(/\$\s*([0-9,]+(?:\.[0-9]+)?)\s*@\s*([0-9]+(?:\.[0-9]+)?)\s*%\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
+    if (!m) return { basis: null, rate: null, cost: takeTrailingMoney(line) };
+    return {
+      basis: toNumberOrNull(m[1]),
+      rate: toNumberOrNull(m[2]),
+      cost: toNumberOrNull(m[3]),
+    };
+  };
+
+  const bodyLabor = parseHourRateLine(/^Body Labor\b/i);
+  const paintLabor = parseHourRateLine(/^Paint Labor\b/i);
+  const paintSupplies = parseHourRateLine(/^Paint Supplies\b/i);
+  const salesTax = parseTaxLine(/^Sales Tax\b/i);
+  const countyTax = parseTaxLine(/^County Tax\b/i);
+  const otherTax1 = parseTaxLine(/^Other Tax 1\b/i);
+
+  const byLabelMoney = (labelRegex) => {
+    const line = totalLines.find((row) => labelRegex.test(row));
+    return line ? takeTrailingMoney(line) : null;
+  };
+
+  const totals = {
+    parts: byLabelMoney(/^Parts\b/i),
+    body_labor_hours: bodyLabor.hours,
+    body_labor_rate: bodyLabor.rate,
+    body_labor_cost: bodyLabor.cost,
+    paint_labor_hours: paintLabor.hours,
+    paint_labor_rate: paintLabor.rate,
+    paint_labor_cost: paintLabor.cost,
+    paint_supplies_hours: paintSupplies.hours,
+    paint_supplies_rate: paintSupplies.rate,
+    paint_supplies_cost: paintSupplies.cost,
+    miscellaneous: byLabelMoney(/^Miscellaneous\b/i),
+    other_charges: byLabelMoney(/^Other Charges\b/i),
+    subtotal: byLabelMoney(/^Subtotal\b/i),
+    sales_tax_basis: salesTax.basis,
+    sales_tax_rate: salesTax.rate,
+    sales_tax_cost: salesTax.cost,
+    county_tax_basis: countyTax.basis,
+    county_tax_rate: countyTax.rate,
+    county_tax_cost: countyTax.cost,
+    other_tax_1_basis: otherTax1.basis,
+    other_tax_1_rate: otherTax1.rate,
+    other_tax_1_cost: otherTax1.cost,
+    total_cost_of_repairs: byLabelMoney(/^Total Cost of Repairs\b/i),
+    deductible: byLabelMoney(/^Deductible\b/i),
+    total_adjustments: byLabelMoney(/^Total Adjustments\b/i),
+    net_cost_of_repairs: byLabelMoney(/^Net Cost of Repairs\b/i),
+
+exec
+/bin/zsh -lc "sed -n '520,620p' backend/src/routes/insuranceOcr.js && sed -n '700,745p' backend/src/routes/insuranceOcr.js" in /Volumes/Zordon Storage /openclaw-workspace/Revv
+ succeeded in 0ms:
+        max_tokens: 4096,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: SYSTEM_PROMPT },
+              {
+                type: 'image_url',
+                image_url: { url: `data:${mimeType};base64,${base64}`, detail: 'high' },
+              },
+            ],
+          },
+        ],
+      });
+      raw = response.choices?.[0]?.message?.content || '';
+    }
+
+    let parsed;
+    try {
+      // Strip markdown fences if present
+      let cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/```\s*$/i, '').trim();
+      // If still not parseable, try to find the first {...} block in the response
+      try {
+        parsed = JSON.parse(cleaned);
+      } catch {
+        const match = cleaned.match(/\{[\s\S]*\}/);
+        if (match) {
+          parsed = JSON.parse(match[0]);
+        } else {
+          throw new Error('no JSON object found');
+        }
+      }
+    } catch {
+      console.error('[InsuranceOCR] Failed to parse OpenAI response. raw length:', raw?.length, '| preview:', raw?.slice(0, 300));
+      return res.status(422).json({ success: false, error: 'Could not extract estimate data from file. Try a clearer upload.' });
+    }
+
+    const items = (parsed.line_items || []).map((item) => ({
+      description: String(item.description || '').trim(),
+      type: classifyByOperationCodes(
+        String(item.description || '').trim(),
+        normalizeItemType(item.type)
+      ),
+      quantity: Number.isFinite(Number(item.quantity)) ? Number(item.quantity) : 1,
+      unit_price: Number.isFinite(Number(item.unit_price)) ? Number(item.unit_price) : 0,
+    }));
+
+    const modelTotals = normalizeEstimateTotals(parsed.estimate_totals);
+    const textTotals = extractedTextForTotals ? parseEstimateTotalsFromPdfText(extractedTextForTotals) : null;
+    const estimateTotals = textTotals || modelTotals || null;
+
+    return res.json({
+      success: true,
+      parsed: {
+        insurance_company: parsed.insurance_company || null,
+        claim_number: parsed.claim_number || null,
+        adjuster_name: parsed.adjuster_name || null,
+        adjuster_phone: parsed.adjuster_phone || null,
+        adjuster_email: parsed.adjuster_email || null,
+        customer_name: parsed.customer_name || null,
+        customer_phone: parsed.customer_phone || null,
+        vehicle: parsed.vehicle || null,
+        vin: parsed.vin || null,
+        vehicle_year: parsed.vehicle_year || null,
+        vehicle_make: parsed.vehicle_make || null,
+        vehicle_model: parsed.vehicle_model || null,
+        total_allowed: parsed.total_allowed || null,
+        estimate_totals: estimateTotals,
+        line_items: items,
+      },
+    });
+  } catch (err) {
+    logInsuranceOcrError(err);
+    const providerCode = classifyAiProviderError(err);
+    if (providerCode) {
+      await notifyOps('high', providerCode, {
+        shop_id: req.user.shop_id,
+        ro_id: req.body?.ro_id || req.body?.roId || 'n/a',
+      });
+      return res.status(503).json({ success: false, error: AI_CONFIG_ERROR });
+    }
+    const status = isAiProviderConfigError(err) ? 503 : 500;
+    return res.status(status).json({ success: false, error: safeInsuranceOcrError(err) });
+  }
+});
+
+// ── Phase 2: Rate analysis ───────────────────────────────────────────────────
+// POST /api/insurance-ocr/analyze
+// Body: { line_items: [...] }  (same shape as /parse output)
+// Returns: { flags: [...], summary: { ... } }
+router.post('/analyze', auth, insuranceOcrLimiter, async (req, res) => {
+  try {
+    // FIX: guard against shop not found — return error instead of silently zeroing rates
+    const shop = await dbGet(
+      'SELECT labor_rate, paint_rate, parts_markup FROM shops WHERE id = $1',
+      [req.user.shop_id]
+    );
+    if (!shop) {
+      return res.status(404).json({ success: false, error: 'Shop not found. Configure your shop rates first.' });
+    }
+
+        supplement_opportunity: null,
+        message: null,
+      });
+    }
+
+    const totalGap = totalShopValue - totalInsurance;
+
+    return res.json({
+      success: true,
+      shop_rates: {
+        labor_rate: shopLaborRate,
+        paint_rate: shopPaintRate,
+        parts_markup: shopPartsMarkup,
+      },
+      flags,
+      summary: {
+        total_insurance_allowed: totalInsurance,
+        total_shop_value: totalShopValue,
+        total_supplement_opportunity: supplementTotal,
+        total_gap: totalGap,
+        undervalue_count: flags.filter((f) => f.type === 'undervalue').length,
+        review_count: flags.filter((f) => f.type === 'review').length,
+        ok_count: flags.filter((f) => f.type === 'ok').length,
+      },
+    });
+  } catch (err) {
+    console.error('[InsuranceOCR/analyze] Error:', err);
+    return res.status(500).json({ success: false, error: safeInsuranceOcrError(err) });
+  }
+});
+
+module.exports = router;
+module.exports.insuranceOcrLimiter = insuranceOcrLimiter;
+module.exports.insuranceOcrLimiterKeyGenerator = insuranceOcrLimiterKeyGenerator;
+
+exec
+/bin/zsh -lc "sed -n '1,200p' backend/test/bmsParser.test.js && sed -n '1,220p' backend/test/estimateImport.test.js && sed -n '1,120p' backend/test/fixtures/ccc-estimate-totals.txt" in /Volumes/Zordon Storage /openclaw-workspace/Revv
+ succeeded in 0ms:
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const test = require('node:test');
+
+const { parseBms } = require('../src/lib/bmsParser');
+
+function fixture(name) {
+  return fs.readFileSync(path.join(__dirname, 'fixtures', name));
+}
+
+test('parseBms maps CIECA BMS headers to the parsed contract', () => {
+  const parsed = parseBms(fixture('cieca-sample.xml'));
+
+  assert.deepEqual(Object.keys(parsed), [
+    'insurance_company',
+    'claim_number',
+    'adjuster_name',
+    'adjuster_phone',
+    'adjuster_email',
+    'customer_name',
+    'customer_phone',
+    'vehicle',
+    'vin',
+    'vehicle_year',
+    'vehicle_make',
+    'vehicle_model',
+    'total_allowed',
+    'estimate_totals',
+    'line_items',
+  ]);
+  assert.equal(parsed.insurance_company, 'Acme Mutual Insurance');
+  assert.equal(parsed.claim_number, 'CLM-2026-00042');
+  assert.equal(parsed.adjuster_name, 'Jordan Lee');
+  assert.equal(parsed.adjuster_phone, '555-0101');
+  assert.equal(parsed.adjuster_email, 'jordan.lee@example.test');
+  assert.equal(parsed.customer_name, 'Casey Rivera');
+  assert.equal(parsed.customer_phone, '555-0199');
+  assert.equal(parsed.vehicle, '2024 Toyota Camry XSE');
+  assert.equal(parsed.vin, '4T1K61AK0RU123456');
+  assert.equal(parsed.vehicle_year, '2024');
+  assert.equal(parsed.vehicle_make, 'Toyota');
+  assert.equal(parsed.vehicle_model, 'Camry XSE');
+  assert.equal(parsed.total_allowed, 923.99);
+  assert.equal(parsed.estimate_totals.parts, 435.25);
+  assert.equal(parsed.estimate_totals.body_labor_hours, 2.5);
+  assert.equal(parsed.estimate_totals.net_cost_of_repairs, 423.99);
+});
+
+test('parseBms maps labor, parts, sublet, and refinish line items with enrichment fields', () => {
+  const parsed = parseBms(fixture('cieca-sample.xml'));
+
+  assert.equal(parsed.line_items.length, 5);
+  assert.deepEqual(parsed.line_items[0], {
+    description: 'RPR left quarter panel',
+    type: 'labor',
+    quantity: 2.5,
+    unit_price: 65,
+    operation_code: 'RPR',
+    labor_units: 2.5,
+    part_type: null,
+    part_number: null,
+  });
+  assert.deepEqual(parsed.line_items[1], {
+    description: 'REPL rear bumper cover',
+    type: 'parts',
+    quantity: 1,
+    unit_price: 435.25,
+    operation_code: 'REPL',
+    labor_units: null,
+    part_type: 'OEM',
+    part_number: '52159-06999',
+  });
+  assert.deepEqual(parsed.line_items[2], {
+    description: 'Sublet wheel alignment',
+    type: 'sublet',
+    quantity: 1,
+    unit_price: 200,
+    operation_code: 'SUBL',
+    labor_units: null,
+    part_type: null,
+    part_number: null,
+  });
+  assert.deepEqual(parsed.line_items[3], {
+    description: 'REFN rear bumper cover',
+    type: 'labor',
+    quantity: 1.4,
+    unit_price: 68,
+    operation_code: 'REFN',
+    labor_units: 1.4,
+    part_type: null,
+    part_number: null,
+  });
+});
+
+test('parseBms reuses OCR operation-code classification semantics for RNI and RPR', () => {
+  const parsed = parseBms(fixture('cieca-sample.xml'));
+  const rni = parsed.line_items.find((item) => item.operation_code === 'RNI');
+  const rpr = parsed.line_items.find((item) => item.operation_code === 'RPR');
+  const repl = parsed.line_items.find((item) => item.operation_code === 'REPL');
+
+  assert.equal(rni.type, 'labor');
+  assert.equal(rpr.type, 'labor');
+  assert.equal(repl.type, 'parts');
+});
+
+test('parseBms parses XXE and billion-laughs payloads inertly', () => {
+  const parsed = parseBms(fixture('cieca-xxe-attack.xml'));
+  const serialized = JSON.stringify(parsed);
+
+  assert.equal(parsed.insurance_company, '&xxe;');
+  assert.equal(parsed.customer_name, '&lol3;');
+  assert.equal(parsed.line_items[0].description, 'RPR inert entity &xxe;');
+  assert.doesNotMatch(serialized, /root:|daemon:|bin:|nobody:/);
+  assert.doesNotMatch(serialized, /lollollollollollollollollollol/);
+  assert.ok(serialized.length < 2000);
+});
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const { Readable, Writable } = require('node:stream');
+const test = require('node:test');
+const express = require('express');
+const jwt = require('jsonwebtoken');
+
+process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret';
+
+function fixture(name) {
+  return fs.readFileSync(path.join(__dirname, 'fixtures', name));
+}
+
+function installMock(resolvedPath, exportsValue) {
+  require.cache[resolvedPath] = {
+    id: resolvedPath,
+    filename: resolvedPath,
+    loaded: true,
+    exports: exportsValue,
+  };
+}
+
+function clearRouteCache() {
+  for (const key of Object.keys(require.cache)) {
+    if (
+      key.includes(`${path.sep}backend${path.sep}src${path.sep}routes${path.sep}estimateImport.js`)
+      || key.includes(`${path.sep}backend${path.sep}src${path.sep}routes${path.sep}ros.js`)
+      || key.includes(`${path.sep}backend${path.sep}src${path.sep}routes${path.sep}insuranceOcr.js`)
+    ) {
+      delete require.cache[key];
+    }
+  }
+}
+
+function createDbMock() {
+  const calls = [];
+  let roId = null;
+  let roNumber = null;
+  const client = {
+    async query(sql, params = []) {
+      calls.push({ source: 'client', sql: String(sql), params });
+      if (/INSERT INTO repair_orders/i.test(sql)) {
+        roId = params[0];
+        roNumber = params[2];
+      }
+      if (/SELECT \* FROM repair_orders WHERE id = \$1 AND shop_id = \$2/i.test(sql)) {
+        return {
+          rows: [{
+            id: roId,
+            shop_id: params[1],
+            ro_number: roNumber,
+            customer_id: params[2] || null,
+            vehicle_id: null,
+            deductible_waived: 0,
+            referral_fee: 0,
+            goodwill_repair_cost: 0,
+          }],
+        };
+      }
+      if (/SELECT id, deductible_waived, referral_fee, goodwill_repair_cost/i.test(sql)) {
+        return {
+          rows: [{
+            id: params[0],
+            deductible_waived: 0,
+            referral_fee: 0,
+            goodwill_repair_cost: 0,
+          }],
+        };
+      }
+      if (/COALESCE\(SUM\(total\)/i.test(sql)) {
+        return {
+          rows: [{
+            subtotal: 892.95,
+            labor_total: 276.7,
+            parts_total: 435.25,
+            sublet_total: 200,
+            taxable_subtotal: 435.25,
+            line_count: 5,
+          }],
+        };
+      }
+      if (/SELECT COALESCE\(tax_rate/i.test(sql)) {
+        return { rows: [{ tax_rate: 0 }] };
+      }
+      return { rows: [] };
+    },
+    release() {
+      calls.push({ source: 'client', sql: 'release', params: [] });
+    },
+  };
+
+  const db = {
+    calls,
+    pool: {
+      async connect() {
+        calls.push({ source: 'pool', sql: 'connect', params: [] });
+        return client;
+      },
+    },
+    async dbGet(sql, params = []) {
+      calls.push({ source: 'dbGet', sql: String(sql), params });
+      if (/revoked_tokens/i.test(sql)) return null;
+      if (/revoke_all_before/i.test(sql)) return null;
+      if (/SELECT plan, trial_ends_at FROM shops/i.test(sql)) return { plan: 'paid', trial_ends_at: null };
+      if (/SELECT id FROM shops WHERE id = \$1/i.test(sql)) return { id: params[0] };
+      if (/MAX\(/i.test(sql) && /FROM repair_orders/i.test(sql)) return { n: 0 };
+      if (/row_to_json\(v\)/i.test(sql)) {
+        return {
+          vehicle: { id: 'vehicle-1' },
+          customer: { id: 'customer-1' },
+          log: [],
+          parts: [],
+          assigned_tech: null,
+          has_portal_access: false,
+        };
+      }
+      return null;
+    },
+    async dbAll(sql, params = []) {
+      calls.push({ source: 'dbAll', sql: String(sql), params });
+      return [];
+    },
+    async dbRun(sql, params = []) {
+      calls.push({ source: 'dbRun', sql: String(sql), params });
+      return { rowCount: 1 };
+    },
+  };
+  return db;
+}
+
+function multipartBody(fieldName, filename, contentType, buffer) {
+  const boundary = `----revv-test-${Date.now()}`;
+  const head = Buffer.from(
+    `--${boundary}\r\n`
+    + `Content-Disposition: form-data; name="${fieldName}"; filename="${filename}"\r\n`
+    + `Content-Type: ${contentType}\r\n\r\n`
+  );
+  const tail = Buffer.from(`\r\n--${boundary}--\r\n`);
+  return {
+    body: Buffer.concat([head, Buffer.from(buffer), tail]),
+    contentType: `multipart/form-data; boundary=${boundary}`,
+  };
+}
+
+function inject(app, { method, url, headers = {}, body = Buffer.alloc(0) }) {
+  return new Promise((resolve, reject) => {
+    const req = Readable.from(body.length ? [body] : []);
+    req.method = method;
+    req.url = url;
+    req.headers = {
+      host: '127.0.0.1',
+      'content-length': String(body.length),
+      ...headers,
+    };
+    req.connection = { remoteAddress: '127.0.0.1' };
+    req.socket = req.connection;
+
+    const chunks = [];
+    const res = new Writable({
+      write(chunk, _encoding, callback) {
+        chunks.push(Buffer.from(chunk));
+        callback();
+      },
+    });
+    res.statusCode = 200;
+    res.headers = {};
+    res.setHeader = (name, value) => {
+      res.headers[String(name).toLowerCase()] = value;
+    };
+    res.getHeader = (name) => res.headers[String(name).toLowerCase()];
+    res.removeHeader = (name) => {
+      delete res.headers[String(name).toLowerCase()];
+    };
+    res.writeHead = (statusCode, headersToSet = {}) => {
+      res.statusCode = statusCode;
+      for (const [name, value] of Object.entries(headersToSet)) res.setHeader(name, value);
+    };
+    res.end = (chunk) => {
+      if (chunk) chunks.push(Buffer.from(chunk));
+      Writable.prototype.end.call(res);
+    };
+    res.on('finish', () => {
+      const text = Buffer.concat(chunks).toString('utf8');
+      resolve({
+        status: res.statusCode,
+        headers: res.headers,
+        text,
+        json: text ? JSON.parse(text) : null,
+      });
+    });
+    res.on('error', reject);
+    app.handle(req, res, reject);
+  });
+}
+
+async function withTestApp(dbMock, fn) {
+  clearRouteCache();
+  installMock(require.resolve('../src/db'), dbMock);
+  installMock(require.resolve('../src/services/notifications'), {
+    createNotification: async () => {},
+  });
+  installMock(require.resolve('../src/services/customerOptInConfirmation'), {
+    sendCustomerOptInConfirmation: async () => {},
+  });
+
+  const app = express();
+  app.use(express.json({ limit: '1mb' }));
+  app.use('/api/estimate-import', require('../src/routes/estimateImport'));
+  return fn(app);
+}
+
+function authHeader(role = 'technician') {
+  const token = jwt.sign({ id: 'user-1', shop_id: 'shop-1', role }, process.env.JWT_SECRET);
+  return { authorization: `Bearer ${token}` };
+}
+
+test('parse-bms returns OCR-compatible parsed contract with BMS enrichment fields', async () => {
+  const dbMock = createDbMock();
+  await withTestApp(dbMock, async (app) => {
+ESTIMATE TOTALS
+CategoryBasisRateCost $
+Parts2,976.73
+Body Labor48.2 hrs@$ 50.00 /hr2,410.00
+Paint Labor20.5 hrs@$ 50.00 /hr1,025.00
+Mechanical Labor2.2 hrs@$ 50.00 /hr110.00
+Paint Supplies20.5 hrs@$ 30.00 /hr615.00
+Subtotal7,136.73
+Sales Tax$ 7,136.73@8.8750 %633.38
+Total Cost of Repairs7,770.11
+Total Adjustments0.00
+Net Cost of Repairs7,770.11
+
+exec
+/bin/zsh -lc "sed -n '260,380p' backend/src/routes/insuranceOcr.js" in /Volumes/Zordon Storage /openclaw-workspace/Revv
+ succeeded in 0ms:
+    net_cost_of_repairs: byLabelMoney(/^Net Cost of Repairs\b/i),
+  };
+
+  const hasAnyValue = Object.values(totals).some((value) => value !== null);
+  return hasAnyValue ? totals : null;
+}
+
+function normalizeEstimateTotals(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const fields = [
+    'parts',
+    'body_labor_hours',
+    'body_labor_rate',
+    'body_labor_cost',
+    'paint_labor_hours',
+    'paint_labor_rate',
+    'paint_labor_cost',
+    'paint_supplies_hours',
+    'paint_supplies_rate',
+    'paint_supplies_cost',
+    'miscellaneous',
+    'other_charges',
+    'subtotal',
+    'sales_tax_basis',
+    'sales_tax_rate',
+    'sales_tax_cost',
+    'county_tax_basis',
+    'county_tax_rate',
+    'county_tax_cost',
+    'other_tax_1_basis',
+    'other_tax_1_rate',
+    'other_tax_1_cost',
+    'total_cost_of_repairs',
+    'deductible',
+    'total_adjustments',
+    'net_cost_of_repairs',
+  ];
+
+  const normalized = {};
+  for (const key of fields) {
+    normalized[key] = toNumberOrNull(raw[key]);
+  }
+  const hasAny = Object.values(normalized).some((value) => value !== null);
+  return hasAny ? normalized : null;
+}
+
+function isOpenAiJsonBodyParseError(err) {
+  const msg = String(err?.message || '').toLowerCase();
+  return msg.includes('could not parse the json body');
+}
+
+function sanitizeTextForOpenAI(input, { aggressive = false } = {}) {
+  const str = String(input || '');
+  const out = [];
+
+  for (let i = 0; i < str.length; i++) {
+    const code = str.charCodeAt(i);
+
+    // Preserve valid surrogate pairs, drop orphan surrogates.
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = str.charCodeAt(i + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        out.push(str[i], str[i + 1]);
+        i += 1;
+      }
+      continue;
+    }
+    if (code >= 0xdc00 && code <= 0xdfff) continue;
+
+    // Remove unsafe control characters.
+    if (code <= 0x1f && code !== 0x09 && code !== 0x0a && code !== 0x0d) {
+      out.push(' ');
+      continue;
+    }
+
+    out.push(str[i]);
+  }
+
+  let cleaned = out.join('').replace(/\u0000/g, '').trim();
+  if (aggressive) {
+    cleaned = cleaned.replace(/[^\x09\x0A\x0D\x20-\x7E]/g, ' ');
+  }
+  return cleaned;
+}
+
+async function parseEstimateTextWithOpenAI(openai, extractedText) {
+  const callParser = async (cleanedText) => {
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      max_tokens: 4096,
+      messages: [
+        {
+          role: 'user',
+          content: `${SYSTEM_PROMPT}\n\nEstimate document text:\n${cleanedText.slice(0, PDF_TEXT_CHAR_LIMIT)}`,
+        },
+      ],
+    });
+    return response.choices?.[0]?.message?.content || '';
+  };
+
+  const cleaned = sanitizeTextForOpenAI(extractedText);
+  if (!cleaned) return '';
+
+  try {
+    return await callParser(cleaned);
+  } catch (err) {
+    if (!isOpenAiJsonBodyParseError(err)) throw err;
+    // Some PDFs contain invalid Unicode bytes that can break strict JSON parsing.
+    const aggressive = sanitizeTextForOpenAI(extractedText, { aggressive: true });
+    if (!aggressive) throw err;
+    return callParser(aggressive);
+  }
+}
+
+async function extractPdfText(buffer) {
+  // Primary parser for hosted environments (Railway) where poppler binaries
+  // may not be present.
+  try {
+    const parsed = await pdfParse(buffer);
+    const text = String(parsed?.text || '').replace(/\u0000/g, '').trim();
+    if (text) return text;
+
+codex
+I found the parser’s totals logic is narrowly contained in `insuranceOcr.js`. I’m going to add a small label helper, extend the totals shape, and add one focused `node:test` file against the committed CCC text fixture.
+exec
+/bin/zsh -lc "nl -ba backend/src/routes/insuranceOcr.js | sed -n '55,115p;182,300p;560,595p;728,736p'" in /Volumes/Zordon Storage /openclaw-workspace/Revv
+ succeeded in 0ms:
+    55	  "claim_number": "string or null",
+    56	  "adjuster_name": "string or null",
+    57	  "adjuster_phone": "string or null",
+    58	  "adjuster_email": "string or null",
+    59	  "customer_name": "string or null",
+    60	  "customer_phone": "string or null",
+    61	  "vehicle": "string or null",
+    62	  "vin": "string or null",
+    63	  "vehicle_year": "string or null",
+    64	  "vehicle_make": "string or null",
+    65	  "vehicle_model": "string or null",
+    66	  "estimate_totals": {
+    67	    "parts": 0,
+    68	    "body_labor_hours": 0,
+    69	    "body_labor_rate": 0,
+    70	    "body_labor_cost": 0,
+    71	    "paint_labor_hours": 0,
+    72	    "paint_labor_rate": 0,
+    73	    "paint_labor_cost": 0,
+    74	    "paint_supplies_hours": 0,
+    75	    "paint_supplies_rate": 0,
+    76	    "paint_supplies_cost": 0,
+    77	    "miscellaneous": 0,
+    78	    "other_charges": 0,
+    79	    "subtotal": 0,
+    80	    "sales_tax_basis": 0,
+    81	    "sales_tax_rate": 0,
+    82	    "sales_tax_cost": 0,
+    83	    "county_tax_basis": 0,
+    84	    "county_tax_rate": 0,
+    85	    "county_tax_cost": 0,
+    86	    "other_tax_1_basis": 0,
+    87	    "other_tax_1_rate": 0,
+    88	    "other_tax_1_cost": 0,
+    89	    "total_cost_of_repairs": 0,
+    90	    "deductible": 0,
+    91	    "total_adjustments": 0,
+    92	    "net_cost_of_repairs": 0
+    93	  },
+    94	  "line_items": [
+    95	    {
+    96	      "type": "labor|parts|sublet|other",
+    97	      "description": "string",
+    98	      "quantity": 1,
+    99	      "unit_price": 0.00
+   100	    }
+   101	  ],
+   102	  "total_allowed": null
+   103	}
+   104	Classify each item: labor operations = "labor", parts/materials = "parts", sublet work = "sublet", everything else = "other".
+   105	Important operation code mapping:
+   106	- RNI / R&I / Remove and Install = labor operation (do NOT treat as parts replacement)
+   107	- RPR = labor repair operation (do NOT treat as parts replacement)
+   108	- REPL / R&R / Replace = parts replacement (order/replace part)
+   109	Include all numbered estimate rows (exclude section headers) and include the estimate totals block.
+   110	Return only the JSON object, no markdown fences, no extra text.`;
+   111	
+   112	function normalizeItemType(type) {
+   113	  const next = String(type || '').trim().toLowerCase();
+   114	  return ['labor', 'parts', 'sublet', 'other'].includes(next) ? next : 'other';
+   115	}
+   182	function parseEstimateTotalsFromPdfText(text) {
+   183	  const lines = String(text || '').split(/\r?\n/);
+   184	  const startIdx = lines.findIndex((line) => /ESTIMATE\s+TOTALS/i.test(line));
+   185	  if (startIdx < 0) return null;
+   186	
+   187	  const endIdx = lines.findIndex((line, idx) => idx > startIdx && /This is not an authorization to repair\./i.test(line));
+   188	  const totalLines = lines
+   189	    .slice(startIdx, endIdx > startIdx ? endIdx : startIdx + 80)
+   190	    .map((line) => line.replace(/\s+/g, ' ').trim())
+   191	    .filter(Boolean);
+   192	
+   193	  const takeTrailingMoney = (line) => {
+   194	    const m = line.match(/(-?\$?\s*[0-9,]+\.[0-9]{2})\s*$/);
+   195	    return m ? toNumberOrNull(m[1]) : null;
+   196	  };
+   197	
+   198	  const parseHourRateLine = (labelRegex) => {
+   199	    const line = totalLines.find((row) => labelRegex.test(row));
+   200	    if (!line) return { hours: null, rate: null, cost: null };
+   201	    const m = line.match(/([0-9]+(?:\.[0-9]+)?)\s*hrs\s*@\s*\$?\s*([0-9,]+(?:\.[0-9]+)?)\s*\/hr\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
+   202	    if (!m) return { hours: null, rate: null, cost: takeTrailingMoney(line) };
+   203	    return {
+   204	      hours: toNumberOrNull(m[1]),
+   205	      rate: toNumberOrNull(m[2]),
+   206	      cost: toNumberOrNull(m[3]),
+   207	    };
+   208	  };
+   209	
+   210	  const parseTaxLine = (labelRegex) => {
+   211	    const line = totalLines.find((row) => labelRegex.test(row));
+   212	    if (!line) return { basis: null, rate: null, cost: null };
+   213	    const m = line.match(/\$\s*([0-9,]+(?:\.[0-9]+)?)\s*@\s*([0-9]+(?:\.[0-9]+)?)\s*%\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
+   214	    if (!m) return { basis: null, rate: null, cost: takeTrailingMoney(line) };
+   215	    return {
+   216	      basis: toNumberOrNull(m[1]),
+   217	      rate: toNumberOrNull(m[2]),
+   218	      cost: toNumberOrNull(m[3]),
+   219	    };
+   220	  };
+   221	
+   222	  const bodyLabor = parseHourRateLine(/^Body Labor\b/i);
+   223	  const paintLabor = parseHourRateLine(/^Paint Labor\b/i);
+   224	  const paintSupplies = parseHourRateLine(/^Paint Supplies\b/i);
+   225	  const salesTax = parseTaxLine(/^Sales Tax\b/i);
+   226	  const countyTax = parseTaxLine(/^County Tax\b/i);
+   227	  const otherTax1 = parseTaxLine(/^Other Tax 1\b/i);
+   228	
+   229	  const byLabelMoney = (labelRegex) => {
+   230	    const line = totalLines.find((row) => labelRegex.test(row));
+   231	    return line ? takeTrailingMoney(line) : null;
+   232	  };
+   233	
+   234	  const totals = {
+   235	    parts: byLabelMoney(/^Parts\b/i),
+   236	    body_labor_hours: bodyLabor.hours,
+   237	    body_labor_rate: bodyLabor.rate,
+   238	    body_labor_cost: bodyLabor.cost,
+   239	    paint_labor_hours: paintLabor.hours,
+   240	    paint_labor_rate: paintLabor.rate,
+   241	    paint_labor_cost: paintLabor.cost,
+   242	    paint_supplies_hours: paintSupplies.hours,
+   243	    paint_supplies_rate: paintSupplies.rate,
+   244	    paint_supplies_cost: paintSupplies.cost,
+   245	    miscellaneous: byLabelMoney(/^Miscellaneous\b/i),
+   246	    other_charges: byLabelMoney(/^Other Charges\b/i),
+   247	    subtotal: byLabelMoney(/^Subtotal\b/i),
+   248	    sales_tax_basis: salesTax.basis,
+   249	    sales_tax_rate: salesTax.rate,
+   250	    sales_tax_cost: salesTax.cost,
+   251	    county_tax_basis: countyTax.basis,
+   252	    county_tax_rate: countyTax.rate,
+   253	    county_tax_cost: countyTax.cost,
+   254	    other_tax_1_basis: otherTax1.basis,
+   255	    other_tax_1_rate: otherTax1.rate,
+   256	    other_tax_1_cost: otherTax1.cost,
+   257	    total_cost_of_repairs: byLabelMoney(/^Total Cost of Repairs\b/i),
+   258	    deductible: byLabelMoney(/^Deductible\b/i),
+   259	    total_adjustments: byLabelMoney(/^Total Adjustments\b/i),
+   260	    net_cost_of_repairs: byLabelMoney(/^Net Cost of Repairs\b/i),
+   261	  };
+   262	
+   263	  const hasAnyValue = Object.values(totals).some((value) => value !== null);
+   264	  return hasAnyValue ? totals : null;
+   265	}
+   266	
+   267	function normalizeEstimateTotals(raw) {
+   268	  if (!raw || typeof raw !== 'object') return null;
+   269	  const fields = [
+   270	    'parts',
+   271	    'body_labor_hours',
+   272	    'body_labor_rate',
+   273	    'body_labor_cost',
+   274	    'paint_labor_hours',
+   275	    'paint_labor_rate',
+   276	    'paint_labor_cost',
+   277	    'paint_supplies_hours',
+   278	    'paint_supplies_rate',
+   279	    'paint_supplies_cost',
+   280	    'miscellaneous',
+   281	    'other_charges',
+   282	    'subtotal',
+   283	    'sales_tax_basis',
+   284	    'sales_tax_rate',
+   285	    'sales_tax_cost',
+   286	    'county_tax_basis',
+   287	    'county_tax_rate',
+   288	    'county_tax_cost',
+   289	    'other_tax_1_basis',
+   290	    'other_tax_1_rate',
+   291	    'other_tax_1_cost',
+   292	    'total_cost_of_repairs',
+   293	    'deductible',
+   294	    'total_adjustments',
+   295	    'net_cost_of_repairs',
+   296	  ];
+   297	
+   298	  const normalized = {};
+   299	  for (const key of fields) {
+   300	    normalized[key] = toNumberOrNull(raw[key]);
+   560	        String(item.description || '').trim(),
+   561	        normalizeItemType(item.type)
+   562	      ),
+   563	      quantity: Number.isFinite(Number(item.quantity)) ? Number(item.quantity) : 1,
+   564	      unit_price: Number.isFinite(Number(item.unit_price)) ? Number(item.unit_price) : 0,
+   565	    }));
+   566	
+   567	    const modelTotals = normalizeEstimateTotals(parsed.estimate_totals);
+   568	    const textTotals = extractedTextForTotals ? parseEstimateTotalsFromPdfText(extractedTextForTotals) : null;
+   569	    const estimateTotals = textTotals || modelTotals || null;
+   570	
+   571	    return res.json({
+   572	      success: true,
+   573	      parsed: {
+   574	        insurance_company: parsed.insurance_company || null,
+   575	        claim_number: parsed.claim_number || null,
+   576	        adjuster_name: parsed.adjuster_name || null,
+   577	        adjuster_phone: parsed.adjuster_phone || null,
+   578	        adjuster_email: parsed.adjuster_email || null,
+   579	        customer_name: parsed.customer_name || null,
+   580	        customer_phone: parsed.customer_phone || null,
+   581	        vehicle: parsed.vehicle || null,
+   582	        vin: parsed.vin || null,
+   583	        vehicle_year: parsed.vehicle_year || null,
+   584	        vehicle_make: parsed.vehicle_make || null,
+   585	        vehicle_model: parsed.vehicle_model || null,
+   586	        total_allowed: parsed.total_allowed || null,
+   587	        estimate_totals: estimateTotals,
+   588	        line_items: items,
+   589	      },
+   590	    });
+   591	  } catch (err) {
+   592	    logInsuranceOcrError(err);
+   593	    const providerCode = classifyAiProviderError(err);
+   594	    if (providerCode) {
+   595	      await notifyOps('high', providerCode, {
+   728	  }
+   729	});
+   730	
+   731	module.exports = router;
+   732	module.exports.insuranceOcrLimiter = insuranceOcrLimiter;
+   733	module.exports.insuranceOcrLimiterKeyGenerator = insuranceOcrLimiterKeyGenerator;
+
+codex
+I’m editing only `backend/src/routes/insuranceOcr.js` and a new backend test. The parser change keeps the existing trailing-money fallback and broadens label matching only for totals rows that start with a known label followed by a money/number sign.
+apply patch
+patch: completed
+/Volumes/Zordon Storage /openclaw-workspace/Revv/backend/src/routes/insuranceOcr.js
+diff --git a/backend/src/routes/insuranceOcr.js b/backend/src/routes/insuranceOcr.js
+index 2fa29db6f24f3a13e6c64280dde2ec76b5474a11..e72cff3cfbc2a899eadea98ea3580378ae619c29
+--- a/backend/src/routes/insuranceOcr.js
++++ b/backend/src/routes/insuranceOcr.js
+@@ -71,6 +71,9 @@
+     "paint_labor_hours": 0,
+     "paint_labor_rate": 0,
+     "paint_labor_cost": 0,
++    "mechanical_labor_hours": 0,
++    "mechanical_labor_rate": 0,
++    "mechanical_labor_cost": 0,
+     "paint_supplies_hours": 0,
+     "paint_supplies_rate": 0,
+     "paint_supplies_cost": 0,
+@@ -89,7 +92,8 @@
+     "total_cost_of_repairs": 0,
+     "deductible": 0,
+     "total_adjustments": 0,
+-    "net_cost_of_repairs": 0
++    "net_cost_of_repairs": 0,
++    "revenue": 0
+   },
+   "line_items": [
+     {
+@@ -195,10 +199,12 @@
+     return m ? toNumberOrNull(m[1]) : null;
+   };
+ 
++  const startsWithValueLabel = (label) => new RegExp(`^${label}\\s*(?=[-$0-9])`, 'i');
++
+   const parseHourRateLine = (labelRegex) => {
+     const line = totalLines.find((row) => labelRegex.test(row));
+     if (!line) return { hours: null, rate: null, cost: null };
+-    const m = line.match(/([0-9]+(?:\.[0-9]+)?)\s*hrs\s*@\s*\$?\s*([0-9,]+(?:\.[0-9]+)?)\s*\/hr\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
++    const m = line.match(/([0-9]+(?:\.[0-9]+)?)\s*hrs\s*@\s*\$?\s*([0-9,]+(?:\.[0-9]+)?)\s*\/\s*hr\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
+     if (!m) return { hours: null, rate: null, cost: takeTrailingMoney(line) };
+     return {
+       hours: toNumberOrNull(m[1]),
+@@ -210,7 +216,7 @@
+   const parseTaxLine = (labelRegex) => {
+     const line = totalLines.find((row) => labelRegex.test(row));
+     if (!line) return { basis: null, rate: null, cost: null };
+-    const m = line.match(/\$\s*([0-9,]+(?:\.[0-9]+)?)\s*@\s*([0-9]+(?:\.[0-9]+)?)\s*%\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
++    const m = line.match(/\$?\s*([0-9,]+(?:\.[0-9]+)?)\s*@\s*([0-9]+(?:\.[0-9]+)?)\s*%\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
+     if (!m) return { basis: null, rate: null, cost: takeTrailingMoney(line) };
+     return {
+       basis: toNumberOrNull(m[1]),
+@@ -219,12 +225,13 @@
+     };
+   };
+ 
+-  const bodyLabor = parseHourRateLine(/^Body Labor\b/i);
+-  const paintLabor = parseHourRateLine(/^Paint Labor\b/i);
+-  const paintSupplies = parseHourRateLine(/^Paint Supplies\b/i);
+-  const salesTax = parseTaxLine(/^Sales Tax\b/i);
+-  const countyTax = parseTaxLine(/^County Tax\b/i);
+-  const otherTax1 = parseTaxLine(/^Other Tax 1\b/i);
++  const bodyLabor = parseHourRateLine(startsWithValueLabel('Body Labor'));
++  const paintLabor = parseHourRateLine(startsWithValueLabel('Paint Labor'));
++  const mechanicalLabor = parseHourRateLine(startsWithValueLabel('Mechanical Labor'));
++  const paintSupplies = parseHourRateLine(startsWithValueLabel('Paint Supplies'));
++  const salesTax = parseTaxLine(startsWithValueLabel('Sales Tax'));
++  const countyTax = parseTaxLine(startsWithValueLabel('County Tax'));
++  const otherTax1 = parseTaxLine(startsWithValueLabel('Other Tax 1'));
+ 
+   const byLabelMoney = (labelRegex) => {
+     const line = totalLines.find((row) => labelRegex.test(row));
+@@ -232,19 +239,22 @@
+   };
+ 
+   const totals = {
+-    parts: byLabelMoney(/^Parts\b/i),
++    parts: byLabelMoney(startsWithValueLabel('Parts')),
+     body_labor_hours: bodyLabor.hours,
+     body_labor_rate: bodyLabor.rate,
+     body_labor_cost: bodyLabor.cost,
+     paint_labor_hours: paintLabor.hours,
+     paint_labor_rate: paintLabor.rate,
+     paint_labor_cost: paintLabor.cost,
++    mechanical_labor_hours: mechanicalLabor.hours,
++    mechanical_labor_rate: mechanicalLabor.rate,
++    mechanical_labor_cost: mechanicalLabor.cost,
+     paint_supplies_hours: paintSupplies.hours,
+     paint_supplies_rate: paintSupplies.rate,
+     paint_supplies_cost: paintSupplies.cost,
+-    miscellaneous: byLabelMoney(/^Miscellaneous\b/i),
+-    other_charges: byLabelMoney(/^Other Charges\b/i),
+-    subtotal: byLabelMoney(/^Subtotal\b/i),
++    miscellaneous: byLabelMoney(startsWithValueLabel('Miscellaneous')),
++    other_charges: byLabelMoney(startsWithValueLabel('Other Charges')),
++    subtotal: byLabelMoney(startsWithValueLabel('Subtotal')),
+     sales_tax_basis: salesTax.basis,
+     sales_tax_rate: salesTax.rate,
+     sales_tax_cost: salesTax.cost,
+@@ -254,11 +264,12 @@
+     other_tax_1_basis: otherTax1.basis,
+     other_tax_1_rate: otherTax1.rate,
+     other_tax_1_cost: otherTax1.cost,
+-    total_cost_of_repairs: byLabelMoney(/^Total Cost of Repairs\b/i),
+-    deductible: byLabelMoney(/^Deductible\b/i),
+-    total_adjustments: byLabelMoney(/^Total Adjustments\b/i),
+-    net_cost_of_repairs: byLabelMoney(/^Net Cost of Repairs\b/i),
++    total_cost_of_repairs: byLabelMoney(startsWithValueLabel('Total Cost of Repairs')),
++    deductible: byLabelMoney(startsWithValueLabel('Deductible')),
++    total_adjustments: byLabelMoney(startsWithValueLabel('Total Adjustments')),
++    net_cost_of_repairs: byLabelMoney(startsWithValueLabel('Net Cost of Repairs')),
+   };
++  totals.revenue = totals.net_cost_of_repairs ?? totals.total_cost_of_repairs;
+ 
+   const hasAnyValue = Object.values(totals).some((value) => value !== null);
+   return hasAnyValue ? totals : null;
+@@ -274,6 +285,9 @@
+     'paint_labor_hours',
+     'paint_labor_rate',
+     'paint_labor_cost',
++    'mechanical_labor_hours',
++    'mechanical_labor_rate',
++    'mechanical_labor_cost',
+     'paint_supplies_hours',
+     'paint_supplies_rate',
+     'paint_supplies_cost',
+@@ -293,12 +307,14 @@
+     'deductible',
+     'total_adjustments',
+     'net_cost_of_repairs',
++    'revenue',
+   ];
+ 
+   const normalized = {};
+   for (const key of fields) {
+     normalized[key] = toNumberOrNull(raw[key]);
+   }
++  normalized.revenue = normalized.revenue ?? normalized.net_cost_of_repairs ?? normalized.total_cost_of_repairs;
+   const hasAny = Object.values(normalized).some((value) => value !== null);
+   return hasAny ? normalized : null;
+ }
+@@ -731,3 +747,4 @@
+ module.exports = router;
+ module.exports.insuranceOcrLimiter = insuranceOcrLimiter;
+ module.exports.insuranceOcrLimiterKeyGenerator = insuranceOcrLimiterKeyGenerator;
++module.exports.parseEstimateTotalsFromPdfText = parseEstimateTotalsFromPdfText;
+
+diff --git a/backend/src/routes/insuranceOcr.js b/backend/src/routes/insuranceOcr.js
+index 2fa29db6f24f3a13e6c64280dde2ec76b5474a11..e72cff3cfbc2a899eadea98ea3580378ae619c29
+--- a/backend/src/routes/insuranceOcr.js
++++ b/backend/src/routes/insuranceOcr.js
+@@ -71,6 +71,9 @@
+     "paint_labor_hours": 0,
+     "paint_labor_rate": 0,
+     "paint_labor_cost": 0,
++    "mechanical_labor_hours": 0,
++    "mechanical_labor_rate": 0,
++    "mechanical_labor_cost": 0,
+     "paint_supplies_hours": 0,
+     "paint_supplies_rate": 0,
+     "paint_supplies_cost": 0,
+@@ -89,7 +92,8 @@
+     "total_cost_of_repairs": 0,
+     "deductible": 0,
+     "total_adjustments": 0,
+-    "net_cost_of_repairs": 0
++    "net_cost_of_repairs": 0,
++    "revenue": 0
+   },
+   "line_items": [
+     {
+@@ -195,10 +199,12 @@
+     return m ? toNumberOrNull(m[1]) : null;
+   };
+ 
++  const startsWithValueLabel = (label) => new RegExp(`^${label}\\s*(?=[-$0-9])`, 'i');
++
+   const parseHourRateLine = (labelRegex) => {
+     const line = totalLines.find((row) => labelRegex.test(row));
+     if (!line) return { hours: null, rate: null, cost: null };
+-    const m = line.match(/([0-9]+(?:\.[0-9]+)?)\s*hrs\s*@\s*\$?\s*([0-9,]+(?:\.[0-9]+)?)\s*\/hr\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
++    const m = line.match(/([0-9]+(?:\.[0-9]+)?)\s*hrs\s*@\s*\$?\s*([0-9,]+(?:\.[0-9]+)?)\s*\/\s*hr\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
+     if (!m) return { hours: null, rate: null, cost: takeTrailingMoney(line) };
+     return {
+       hours: toNumberOrNull(m[1]),
+@@ -210,7 +216,7 @@
+   const parseTaxLine = (labelRegex) => {
+     const line = totalLines.find((row) => labelRegex.test(row));
+     if (!line) return { basis: null, rate: null, cost: null };
+-    const m = line.match(/\$\s*([0-9,]+(?:\.[0-9]+)?)\s*@\s*([0-9]+(?:\.[0-9]+)?)\s*%\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
++    const m = line.match(/\$?\s*([0-9,]+(?:\.[0-9]+)?)\s*@\s*([0-9]+(?:\.[0-9]+)?)\s*%\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
+     if (!m) return { basis: null, rate: null, cost: takeTrailingMoney(line) };
+     return {
+       basis: toNumberOrNull(m[1]),
+@@ -219,12 +225,13 @@
+     };
+   };
+ 
+-  const bodyLabor = parseHourRateLine(/^Body Labor\b/i);
+-  const paintLabor = parseHourRateLine(/^Paint Labor\b/i);
+-  const paintSupplies = parseHourRateLine(/^Paint Supplies\b/i);
+-  const salesTax = parseTaxLine(/^Sales Tax\b/i);
+-  const countyTax = parseTaxLine(/^County Tax\b/i);
+-  const otherTax1 = parseTaxLine(/^Other Tax 1\b/i);
++  const bodyLabor = parseHourRateLine(startsWithValueLabel('Body Labor'));
++  const paintLabor = parseHourRateLine(startsWithValueLabel('Paint Labor'));
++  const mechanicalLabor = parseHourRateLine(startsWithValueLabel('Mechanical Labor'));
++  const paintSupplies = parseHourRateLine(startsWithValueLabel('Paint Supplies'));
++  const salesTax = parseTaxLine(startsWithValueLabel('Sales Tax'));
++  const countyTax = parseTaxLine(startsWithValueLabel('County Tax'));
++  const otherTax1 = parseTaxLine(startsWithValueLabel('Other Tax 1'));
+ 
+   const byLabelMoney = (labelRegex) => {
+     const line = totalLines.find((row) => labelRegex.test(row));
+@@ -232,19 +239,22 @@
+   };
+ 
+   const totals = {
+-    parts: byLabelMoney(/^Parts\b/i),
++    parts: byLabelMoney(startsWithValueLabel('Parts')),
+     body_labor_hours: bodyLabor.hours,
+     body_labor_rate: bodyLabor.rate,
+     body_labor_cost: bodyLabor.cost,
+     paint_labor_hours: paintLabor.hours,
+     paint_labor_rate: paintLabor.rate,
+     paint_labor_cost: paintLabor.cost,
++    mechanical_labor_hours: mechanicalLabor.hours,
++    mechanical_labor_rate: mechanicalLabor.rate,
++    mechanical_labor_cost: mechanicalLabor.cost,
+     paint_supplies_hours: paintSupplies.hours,
+     paint_supplies_rate: paintSupplies.rate,
+     paint_supplies_cost: paintSupplies.cost,
+-    miscellaneous: byLabelMoney(/^Miscellaneous\b/i),
+-    other_charges: byLabelMoney(/^Other Charges\b/i),
+-    subtotal: byLabelMoney(/^Subtotal\b/i),
++    miscellaneous: byLabelMoney(startsWithValueLabel('Miscellaneous')),
++    other_charges: byLabelMoney(startsWithValueLabel('Other Charges')),
++    subtotal: byLabelMoney(startsWithValueLabel('Subtotal')),
+     sales_tax_basis: salesTax.basis,
+     sales_tax_rate: salesTax.rate,
+     sales_tax_cost: salesTax.cost,
+@@ -254,11 +264,12 @@
+     other_tax_1_basis: otherTax1.basis,
+     other_tax_1_rate: otherTax1.rate,
+     other_tax_1_cost: otherTax1.cost,
+-    total_cost_of_repairs: byLabelMoney(/^Total Cost of Repairs\b/i),
+-    deductible: byLabelMoney(/^Deductible\b/i),
+-    total_adjustments: byLabelMoney(/^Total Adjustments\b/i),
+-    net_cost_of_repairs: byLabelMoney(/^Net Cost of Repairs\b/i),
++    total_cost_of_repairs: byLabelMoney(startsWithValueLabel('Total Cost of Repairs')),
++    deductible: byLabelMoney(startsWithValueLabel('Deductible')),
++    total_adjustments: byLabelMoney(startsWithValueLabel('Total Adjustments')),
++    net_cost_of_repairs: byLabelMoney(startsWithValueLabel('Net Cost of Repairs')),
+   };
++  totals.revenue = totals.net_cost_of_repairs ?? totals.total_cost_of_repairs;
+ 
+   const hasAnyValue = Object.values(totals).some((value) => value !== null);
+   return hasAnyValue ? totals : null;
+@@ -274,6 +285,9 @@
+     'paint_labor_hours',
+     'paint_labor_rate',
+     'paint_labor_cost',
++    'mechanical_labor_hours',
++    'mechanical_labor_rate',
++    'mechanical_labor_cost',
+     'paint_supplies_hours',
+     'paint_supplies_rate',
+     'paint_supplies_cost',
+@@ -293,12 +307,14 @@
+     'deductible',
+     'total_adjustments',
+     'net_cost_of_repairs',
++    'revenue',
+   ];
+ 
+   const normalized = {};
+   for (const key of fields) {
+     normalized[key] = toNumberOrNull(raw[key]);
+   }
++  normalized.revenue = normalized.revenue ?? normalized.net_cost_of_repairs ?? normalized.total_cost_of_repairs;
+   const hasAny = Object.values(normalized).some((value) => value !== null);
+   return hasAny ? normalized : null;
+ }
+@@ -731,3 +747,4 @@
+ module.exports = router;
+ module.exports.insuranceOcrLimiter = insuranceOcrLimiter;
+ module.exports.insuranceOcrLimiterKeyGenerator = insuranceOcrLimiterKeyGenerator;
++module.exports.parseEstimateTotalsFromPdfText = parseEstimateTotalsFromPdfText;
+
+codex
+The route prompt and normalizer now understand the additive fields too, so model-extracted totals and direct PDF-text totals keep the same shape. I’m adding the fixture-driven regression test next.
+apply patch
+patch: completed
+/Volumes/Zordon Storage /openclaw-workspace/Revv/backend/test/estimateTotals.test.js
+diff --git a/backend/src/routes/insuranceOcr.js b/backend/src/routes/insuranceOcr.js
+index 2fa29db6f24f3a13e6c64280dde2ec76b5474a11..e72cff3cfbc2a899eadea98ea3580378ae619c29
+--- a/backend/src/routes/insuranceOcr.js
++++ b/backend/src/routes/insuranceOcr.js
+@@ -71,6 +71,9 @@
+     "paint_labor_hours": 0,
+     "paint_labor_rate": 0,
+     "paint_labor_cost": 0,
++    "mechanical_labor_hours": 0,
++    "mechanical_labor_rate": 0,
++    "mechanical_labor_cost": 0,
+     "paint_supplies_hours": 0,
+     "paint_supplies_rate": 0,
+     "paint_supplies_cost": 0,
+@@ -89,7 +92,8 @@
+     "total_cost_of_repairs": 0,
+     "deductible": 0,
+     "total_adjustments": 0,
+-    "net_cost_of_repairs": 0
++    "net_cost_of_repairs": 0,
++    "revenue": 0
+   },
+   "line_items": [
+     {
+@@ -195,10 +199,12 @@
+     return m ? toNumberOrNull(m[1]) : null;
+   };
+ 
++  const startsWithValueLabel = (label) => new RegExp(`^${label}\\s*(?=[-$0-9])`, 'i');
++
+   const parseHourRateLine = (labelRegex) => {
+     const line = totalLines.find((row) => labelRegex.test(row));
+     if (!line) return { hours: null, rate: null, cost: null };
+-    const m = line.match(/([0-9]+(?:\.[0-9]+)?)\s*hrs\s*@\s*\$?\s*([0-9,]+(?:\.[0-9]+)?)\s*\/hr\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
++    const m = line.match(/([0-9]+(?:\.[0-9]+)?)\s*hrs\s*@\s*\$?\s*([0-9,]+(?:\.[0-9]+)?)\s*\/\s*hr\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
+     if (!m) return { hours: null, rate: null, cost: takeTrailingMoney(line) };
+     return {
+       hours: toNumberOrNull(m[1]),
+@@ -210,7 +216,7 @@
+   const parseTaxLine = (labelRegex) => {
+     const line = totalLines.find((row) => labelRegex.test(row));
+     if (!line) return { basis: null, rate: null, cost: null };
+-    const m = line.match(/\$\s*([0-9,]+(?:\.[0-9]+)?)\s*@\s*([0-9]+(?:\.[0-9]+)?)\s*%\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
++    const m = line.match(/\$?\s*([0-9,]+(?:\.[0-9]+)?)\s*@\s*([0-9]+(?:\.[0-9]+)?)\s*%\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
+     if (!m) return { basis: null, rate: null, cost: takeTrailingMoney(line) };
+     return {
+       basis: toNumberOrNull(m[1]),
+@@ -219,12 +225,13 @@
+     };
+   };
+ 
+-  const bodyLabor = parseHourRateLine(/^Body Labor\b/i);
+-  const paintLabor = parseHourRateLine(/^Paint Labor\b/i);
+-  const paintSupplies = parseHourRateLine(/^Paint Supplies\b/i);
+-  const salesTax = parseTaxLine(/^Sales Tax\b/i);
+-  const countyTax = parseTaxLine(/^County Tax\b/i);
+-  const otherTax1 = parseTaxLine(/^Other Tax 1\b/i);
++  const bodyLabor = parseHourRateLine(startsWithValueLabel('Body Labor'));
++  const paintLabor = parseHourRateLine(startsWithValueLabel('Paint Labor'));
++  const mechanicalLabor = parseHourRateLine(startsWithValueLabel('Mechanical Labor'));
++  const paintSupplies = parseHourRateLine(startsWithValueLabel('Paint Supplies'));
++  const salesTax = parseTaxLine(startsWithValueLabel('Sales Tax'));
++  const countyTax = parseTaxLine(startsWithValueLabel('County Tax'));
++  const otherTax1 = parseTaxLine(startsWithValueLabel('Other Tax 1'));
+ 
+   const byLabelMoney = (labelRegex) => {
+     const line = totalLines.find((row) => labelRegex.test(row));
+@@ -232,19 +239,22 @@
+   };
+ 
+   const totals = {
+-    parts: byLabelMoney(/^Parts\b/i),
++    parts: byLabelMoney(startsWithValueLabel('Parts')),
+     body_labor_hours: bodyLabor.hours,
+     body_labor_rate: bodyLabor.rate,
+     body_labor_cost: bodyLabor.cost,
+     paint_labor_hours: paintLabor.hours,
+     paint_labor_rate: paintLabor.rate,
+     paint_labor_cost: paintLabor.cost,
++    mechanical_labor_hours: mechanicalLabor.hours,
++    mechanical_labor_rate: mechanicalLabor.rate,
++    mechanical_labor_cost: mechanicalLabor.cost,
+     paint_supplies_hours: paintSupplies.hours,
+     paint_supplies_rate: paintSupplies.rate,
+     paint_supplies_cost: paintSupplies.cost,
+-    miscellaneous: byLabelMoney(/^Miscellaneous\b/i),
+-    other_charges: byLabelMoney(/^Other Charges\b/i),
+-    subtotal: byLabelMoney(/^Subtotal\b/i),
++    miscellaneous: byLabelMoney(startsWithValueLabel('Miscellaneous')),
++    other_charges: byLabelMoney(startsWithValueLabel('Other Charges')),
++    subtotal: byLabelMoney(startsWithValueLabel('Subtotal')),
+     sales_tax_basis: salesTax.basis,
+     sales_tax_rate: salesTax.rate,
+     sales_tax_cost: salesTax.cost,
+@@ -254,11 +264,12 @@
+     other_tax_1_basis: otherTax1.basis,
+     other_tax_1_rate: otherTax1.rate,
+     other_tax_1_cost: otherTax1.cost,
+-    total_cost_of_repairs: byLabelMoney(/^Total Cost of Repairs\b/i),
+-    deductible: byLabelMoney(/^Deductible\b/i),
+-    total_adjustments: byLabelMoney(/^Total Adjustments\b/i),
+-    net_cost_of_repairs: byLabelMoney(/^Net Cost of Repairs\b/i),
++    total_cost_of_repairs: byLabelMoney(startsWithValueLabel('Total Cost of Repairs')),
++    deductible: byLabelMoney(startsWithValueLabel('Deductible')),
++    total_adjustments: byLabelMoney(startsWithValueLabel('Total Adjustments')),
++    net_cost_of_repairs: byLabelMoney(startsWithValueLabel('Net Cost of Repairs')),
+   };
++  totals.revenue = totals.net_cost_of_repairs ?? totals.total_cost_of_repairs;
+ 
+   const hasAnyValue = Object.values(totals).some((value) => value !== null);
+   return hasAnyValue ? totals : null;
+@@ -274,6 +285,9 @@
+     'paint_labor_hours',
+     'paint_labor_rate',
+     'paint_labor_cost',
++    'mechanical_labor_hours',
++    'mechanical_labor_rate',
++    'mechanical_labor_cost',
+     'paint_supplies_hours',
+     'paint_supplies_rate',
+     'paint_supplies_cost',
+@@ -293,12 +307,14 @@
+     'deductible',
+     'total_adjustments',
+     'net_cost_of_repairs',
++    'revenue',
+   ];
+ 
+   const normalized = {};
+   for (const key of fields) {
+     normalized[key] = toNumberOrNull(raw[key]);
+   }
++  normalized.revenue = normalized.revenue ?? normalized.net_cost_of_repairs ?? normalized.total_cost_of_repairs;
+   const hasAny = Object.values(normalized).some((value) => value !== null);
+   return hasAny ? normalized : null;
+ }
+@@ -731,3 +747,4 @@
+ module.exports = router;
+ module.exports.insuranceOcrLimiter = insuranceOcrLimiter;
+ module.exports.insuranceOcrLimiterKeyGenerator = insuranceOcrLimiterKeyGenerator;
++module.exports.parseEstimateTotalsFromPdfText = parseEstimateTotalsFromPdfText;
+diff --git a/backend/test/estimateTotals.test.js b/backend/test/estimateTotals.test.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..83ff957aa381e3305b2e4cc47339c337f5f1c20d
+--- /dev/null
++++ b/backend/test/estimateTotals.test.js
+@@ -0,0 +1,73 @@
++const assert = require('node:assert/strict');
++const fs = require('node:fs');
++const path = require('node:path');
++const test = require('node:test');
++
++const { parseEstimateTotalsFromPdfText } = require('../src/routes/insuranceOcr');
++
++function fixture(name) {
++  return fs.readFileSync(path.join(__dirname, 'fixtures', name), 'utf8');
++}
++
++test('parseEstimateTotalsFromPdfText parses CCC totals with labels glued to values', () => {
++  const totals = parseEstimateTotalsFromPdfText(fixture('ccc-estimate-totals.txt'));
++
++  assert.deepEqual(totals, {
++    parts: 2976.73,
++    body_labor_hours: 48.2,
++    body_labor_rate: 50,
++    body_labor_cost: 2410,
++    paint_labor_hours: 20.5,
++    paint_labor_rate: 50,
++    paint_labor_cost: 1025,
++    mechanical_labor_hours: 2.2,
++    mechanical_labor_rate: 50,
++    mechanical_labor_cost: 110,
++    paint_supplies_hours: 20.5,
++    paint_supplies_rate: 30,
++    paint_supplies_cost: 615,
++    miscellaneous: null,
++    other_charges: null,
++    subtotal: 7136.73,
++    sales_tax_basis: 7136.73,
++    sales_tax_rate: 8.875,
++    sales_tax_cost: 633.38,
++    county_tax_basis: null,
++    county_tax_rate: null,
++    county_tax_cost: null,
++    other_tax_1_basis: null,
++    other_tax_1_rate: null,
++    other_tax_1_cost: null,
++    total_cost_of_repairs: 7770.11,
++    deductible: null,
++    total_adjustments: 0,
++    net_cost_of_repairs: 7770.11,
++    revenue: 7770.11,
++  });
++
++  for (const key of [
++    'parts',
++    'body_labor_hours',
++    'body_labor_rate',
++    'body_labor_cost',
++    'paint_labor_hours',
++    'paint_labor_rate',
++    'paint_labor_cost',
++    'mechanical_labor_hours',
++    'mechanical_labor_rate',
++    'mechanical_labor_cost',
++    'paint_supplies_hours',
++    'paint_supplies_rate',
++    'paint_supplies_cost',
++    'subtotal',
++    'sales_tax_basis',
++    'sales_tax_rate',
++    'sales_tax_cost',
++    'total_cost_of_repairs',
++    'total_adjustments',
++    'net_cost_of_repairs',
++    'revenue',
++  ]) {
++    assert.notEqual(totals[key], null, `${key} should not be null`);
++  }
++});
+
+diff --git a/backend/src/routes/insuranceOcr.js b/backend/src/routes/insuranceOcr.js
+index 2fa29db6f24f3a13e6c64280dde2ec76b5474a11..e72cff3cfbc2a899eadea98ea3580378ae619c29
+--- a/backend/src/routes/insuranceOcr.js
++++ b/backend/src/routes/insuranceOcr.js
+@@ -71,6 +71,9 @@
+     "paint_labor_hours": 0,
+     "paint_labor_rate": 0,
+     "paint_labor_cost": 0,
++    "mechanical_labor_hours": 0,
++    "mechanical_labor_rate": 0,
++    "mechanical_labor_cost": 0,
+     "paint_supplies_hours": 0,
+     "paint_supplies_rate": 0,
+     "paint_supplies_cost": 0,
+@@ -89,7 +92,8 @@
+     "total_cost_of_repairs": 0,
+     "deductible": 0,
+     "total_adjustments": 0,
+-    "net_cost_of_repairs": 0
++    "net_cost_of_repairs": 0,
++    "revenue": 0
+   },
+   "line_items": [
+     {
+@@ -195,10 +199,12 @@
+     return m ? toNumberOrNull(m[1]) : null;
+   };
+ 
++  const startsWithValueLabel = (label) => new RegExp(`^${label}\\s*(?=[-$0-9])`, 'i');
++
+   const parseHourRateLine = (labelRegex) => {
+     const line = totalLines.find((row) => labelRegex.test(row));
+     if (!line) return { hours: null, rate: null, cost: null };
+-    const m = line.match(/([0-9]+(?:\.[0-9]+)?)\s*hrs\s*@\s*\$?\s*([0-9,]+(?:\.[0-9]+)?)\s*\/hr\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
++    const m = line.match(/([0-9]+(?:\.[0-9]+)?)\s*hrs\s*@\s*\$?\s*([0-9,]+(?:\.[0-9]+)?)\s*\/\s*hr\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
+     if (!m) return { hours: null, rate: null, cost: takeTrailingMoney(line) };
+     return {
+       hours: toNumberOrNull(m[1]),
+@@ -210,7 +216,7 @@
+   const parseTaxLine = (labelRegex) => {
+     const line = totalLines.find((row) => labelRegex.test(row));
+     if (!line) return { basis: null, rate: null, cost: null };
+-    const m = line.match(/\$\s*([0-9,]+(?:\.[0-9]+)?)\s*@\s*([0-9]+(?:\.[0-9]+)?)\s*%\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
++    const m = line.match(/\$?\s*([0-9,]+(?:\.[0-9]+)?)\s*@\s*([0-9]+(?:\.[0-9]+)?)\s*%\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
+     if (!m) return { basis: null, rate: null, cost: takeTrailingMoney(line) };
+     return {
+       basis: toNumberOrNull(m[1]),
+@@ -219,12 +225,13 @@
+     };
+   };
+ 
+-  const bodyLabor = parseHourRateLine(/^Body Labor\b/i);
+-  const paintLabor = parseHourRateLine(/^Paint Labor\b/i);
+-  const paintSupplies = parseHourRateLine(/^Paint Supplies\b/i);
+-  const salesTax = parseTaxLine(/^Sales Tax\b/i);
+-  const countyTax = parseTaxLine(/^County Tax\b/i);
+-  const otherTax1 = parseTaxLine(/^Other Tax 1\b/i);
++  const bodyLabor = parseHourRateLine(startsWithValueLabel('Body Labor'));
++  const paintLabor = parseHourRateLine(startsWithValueLabel('Paint Labor'));
++  const mechanicalLabor = parseHourRateLine(startsWithValueLabel('Mechanical Labor'));
++  const paintSupplies = parseHourRateLine(startsWithValueLabel('Paint Supplies'));
++  const salesTax = parseTaxLine(startsWithValueLabel('Sales Tax'));
++  const countyTax = parseTaxLine(startsWithValueLabel('County Tax'));
++  const otherTax1 = parseTaxLine(startsWithValueLabel('Other Tax 1'));
+ 
+   const byLabelMoney = (labelRegex) => {
+     const line = totalLines.find((row) => labelRegex.test(row));
+@@ -232,19 +239,22 @@
+   };
+ 
+   const totals = {
+-    parts: byLabelMoney(/^Parts\b/i),
++    parts: byLabelMoney(startsWithValueLabel('Parts')),
+     body_labor_hours: bodyLabor.hours,
+     body_labor_rate: bodyLabor.rate,
+     body_labor_cost: bodyLabor.cost,
+     paint_labor_hours: paintLabor.hours,
+     paint_labor_rate: paintLabor.rate,
+     paint_labor_cost: paintLabor.cost,
++    mechanical_labor_hours: mechanicalLabor.hours,
++    mechanical_labor_rate: mechanicalLabor.rate,
++    mechanical_labor_cost: mechanicalLabor.cost,
+     paint_supplies_hours: paintSupplies.hours,
+     paint_supplies_rate: paintSupplies.rate,
+     paint_supplies_cost: paintSupplies.cost,
+-    miscellaneous: byLabelMoney(/^Miscellaneous\b/i),
+-    other_charges: byLabelMoney(/^Other Charges\b/i),
+-    subtotal: byLabelMoney(/^Subtotal\b/i),
++    miscellaneous: byLabelMoney(startsWithValueLabel('Miscellaneous')),
++    other_charges: byLabelMoney(startsWithValueLabel('Other Charges')),
++    subtotal: byLabelMoney(startsWithValueLabel('Subtotal')),
+     sales_tax_basis: salesTax.basis,
+     sales_tax_rate: salesTax.rate,
+     sales_tax_cost: salesTax.cost,
+@@ -254,11 +264,12 @@
+     other_tax_1_basis: otherTax1.basis,
+     other_tax_1_rate: otherTax1.rate,
+     other_tax_1_cost: otherTax1.cost,
+-    total_cost_of_repairs: byLabelMoney(/^Total Cost of Repairs\b/i),
+-    deductible: byLabelMoney(/^Deductible\b/i),
+-    total_adjustments: byLabelMoney(/^Total Adjustments\b/i),
+-    net_cost_of_repairs: byLabelMoney(/^Net Cost of Repairs\b/i),
++    total_cost_of_repairs: byLabelMoney(startsWithValueLabel('Total Cost of Repairs')),
++    deductible: byLabelMoney(startsWithValueLabel('Deductible')),
++    total_adjustments: byLabelMoney(startsWithValueLabel('Total Adjustments')),
++    net_cost_of_repairs: byLabelMoney(startsWithValueLabel('Net Cost of Repairs')),
+   };
++  totals.revenue = totals.net_cost_of_repairs ?? totals.total_cost_of_repairs;
+ 
+   const hasAnyValue = Object.values(totals).some((value) => value !== null);
+   return hasAnyValue ? totals : null;
+@@ -274,6 +285,9 @@
+     'paint_labor_hours',
+     'paint_labor_rate',
+     'paint_labor_cost',
++    'mechanical_labor_hours',
++    'mechanical_labor_rate',
++    'mechanical_labor_cost',
+     'paint_supplies_hours',
+     'paint_supplies_rate',
+     'paint_supplies_cost',
+@@ -293,12 +307,14 @@
+     'deductible',
+     'total_adjustments',
+     'net_cost_of_repairs',
++    'revenue',
+   ];
+ 
+   const normalized = {};
+   for (const key of fields) {
+     normalized[key] = toNumberOrNull(raw[key]);
+   }
++  normalized.revenue = normalized.revenue ?? normalized.net_cost_of_repairs ?? normalized.total_cost_of_repairs;
+   const hasAny = Object.values(normalized).some((value) => value !== null);
+   return hasAny ? normalized : null;
+ }
+@@ -731,3 +747,4 @@
+ module.exports = router;
+ module.exports.insuranceOcrLimiter = insuranceOcrLimiter;
+ module.exports.insuranceOcrLimiterKeyGenerator = insuranceOcrLimiterKeyGenerator;
++module.exports.parseEstimateTotalsFromPdfText = parseEstimateTotalsFromPdfText;
+diff --git a/backend/test/estimateTotals.test.js b/backend/test/estimateTotals.test.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..83ff957aa381e3305b2e4cc47339c337f5f1c20d
+--- /dev/null
++++ b/backend/test/estimateTotals.test.js
+@@ -0,0 +1,73 @@
++const assert = require('node:assert/strict');
++const fs = require('node:fs');
++const path = require('node:path');
++const test = require('node:test');
++
++const { parseEstimateTotalsFromPdfText } = require('../src/routes/insuranceOcr');
++
++function fixture(name) {
++  return fs.readFileSync(path.join(__dirname, 'fixtures', name), 'utf8');
++}
++
++test('parseEstimateTotalsFromPdfText parses CCC totals with labels glued to values', () => {
++  const totals = parseEstimateTotalsFromPdfText(fixture('ccc-estimate-totals.txt'));
++
++  assert.deepEqual(totals, {
++    parts: 2976.73,
++    body_labor_hours: 48.2,
++    body_labor_rate: 50,
++    body_labor_cost: 2410,
++    paint_labor_hours: 20.5,
++    paint_labor_rate: 50,
++    paint_labor_cost: 1025,
++    mechanical_labor_hours: 2.2,
++    mechanical_labor_rate: 50,
++    mechanical_labor_cost: 110,
++    paint_supplies_hours: 20.5,
++    paint_supplies_rate: 30,
++    paint_supplies_cost: 615,
++    miscellaneous: null,
++    other_charges: null,
++    subtotal: 7136.73,
++    sales_tax_basis: 7136.73,
++    sales_tax_rate: 8.875,
++    sales_tax_cost: 633.38,
++    county_tax_basis: null,
++    county_tax_rate: null,
++    county_tax_cost: null,
++    other_tax_1_basis: null,
++    other_tax_1_rate: null,
++    other_tax_1_cost: null,
++    total_cost_of_repairs: 7770.11,
++    deductible: null,
++    total_adjustments: 0,
++    net_cost_of_repairs: 7770.11,
++    revenue: 7770.11,
++  });
++
++  for (const key of [
++    'parts',
++    'body_labor_hours',
++    'body_labor_rate',
++    'body_labor_cost',
++    'paint_labor_hours',
++    'paint_labor_rate',
++    'paint_labor_cost',
++    'mechanical_labor_hours',
++    'mechanical_labor_rate',
++    'mechanical_labor_cost',
++    'paint_supplies_hours',
++    'paint_supplies_rate',
++    'paint_supplies_cost',
++    'subtotal',
++    'sales_tax_basis',
++    'sales_tax_rate',
++    'sales_tax_cost',
++    'total_cost_of_repairs',
++    'total_adjustments',
++    'net_cost_of_repairs',
++    'revenue',
++  ]) {
++    assert.notEqual(totals[key], null, `${key} should not be null`);
++  }
++});
+
+codex
+The implementation and focused test are in place. I’ll run syntax checks first, then the targeted test, then the broader backend test glob the user requested.
+exec
+/bin/zsh -lc 'node --check backend/test/estimateTotals.test.js' in /Volumes/Zordon Storage /openclaw-workspace/Revv
+ succeeded in 0ms:
+exec
+/bin/zsh -lc 'node --check backend/src/routes/insuranceOcr.js' in /Volumes/Zordon Storage /openclaw-workspace/Revv
+ succeeded in 0ms:
+diff --git a/backend/src/routes/insuranceOcr.js b/backend/src/routes/insuranceOcr.js
+index 2fa29db6f24f3a13e6c64280dde2ec76b5474a11..e72cff3cfbc2a899eadea98ea3580378ae619c29
+--- a/backend/src/routes/insuranceOcr.js
++++ b/backend/src/routes/insuranceOcr.js
+@@ -71,6 +71,9 @@
+     "paint_labor_hours": 0,
+     "paint_labor_rate": 0,
+     "paint_labor_cost": 0,
++    "mechanical_labor_hours": 0,
++    "mechanical_labor_rate": 0,
++    "mechanical_labor_cost": 0,
+     "paint_supplies_hours": 0,
+     "paint_supplies_rate": 0,
+     "paint_supplies_cost": 0,
+@@ -89,7 +92,8 @@
+     "total_cost_of_repairs": 0,
+     "deductible": 0,
+     "total_adjustments": 0,
+-    "net_cost_of_repairs": 0
++    "net_cost_of_repairs": 0,
++    "revenue": 0
+   },
+   "line_items": [
+     {
+@@ -195,10 +199,12 @@
+     return m ? toNumberOrNull(m[1]) : null;
+   };
+ 
++  const startsWithValueLabel = (label) => new RegExp(`^${label}\\s*(?=[-$0-9])`, 'i');
++
+   const parseHourRateLine = (labelRegex) => {
+     const line = totalLines.find((row) => labelRegex.test(row));
+     if (!line) return { hours: null, rate: null, cost: null };
+-    const m = line.match(/([0-9]+(?:\.[0-9]+)?)\s*hrs\s*@\s*\$?\s*([0-9,]+(?:\.[0-9]+)?)\s*\/hr\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
++    const m = line.match(/([0-9]+(?:\.[0-9]+)?)\s*hrs\s*@\s*\$?\s*([0-9,]+(?:\.[0-9]+)?)\s*\/\s*hr\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
+     if (!m) return { hours: null, rate: null, cost: takeTrailingMoney(line) };
+     return {
+       hours: toNumberOrNull(m[1]),
+@@ -210,7 +216,7 @@
+   const parseTaxLine = (labelRegex) => {
+     const line = totalLines.find((row) => labelRegex.test(row));
+     if (!line) return { basis: null, rate: null, cost: null };
+-    const m = line.match(/\$\s*([0-9,]+(?:\.[0-9]+)?)\s*@\s*([0-9]+(?:\.[0-9]+)?)\s*%\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
++    const m = line.match(/\$?\s*([0-9,]+(?:\.[0-9]+)?)\s*@\s*([0-9]+(?:\.[0-9]+)?)\s*%\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
+     if (!m) return { basis: null, rate: null, cost: takeTrailingMoney(line) };
+     return {
+       basis: toNumberOrNull(m[1]),
+@@ -219,12 +225,13 @@
+     };
+   };
+ 
+-  const bodyLabor = parseHourRateLine(/^Body Labor\b/i);
+-  const paintLabor = parseHourRateLine(/^Paint Labor\b/i);
+-  const paintSupplies = parseHourRateLine(/^Paint Supplies\b/i);
+-  const salesTax = parseTaxLine(/^Sales Tax\b/i);
+-  const countyTax = parseTaxLine(/^County Tax\b/i);
+-  const otherTax1 = parseTaxLine(/^Other Tax 1\b/i);
++  const bodyLabor = parseHourRateLine(startsWithValueLabel('Body Labor'));
++  const paintLabor = parseHourRateLine(startsWithValueLabel('Paint Labor'));
++  const mechanicalLabor = parseHourRateLine(startsWithValueLabel('Mechanical Labor'));
++  const paintSupplies = parseHourRateLine(startsWithValueLabel('Paint Supplies'));
++  const salesTax = parseTaxLine(startsWithValueLabel('Sales Tax'));
++  const countyTax = parseTaxLine(startsWithValueLabel('County Tax'));
++  const otherTax1 = parseTaxLine(startsWithValueLabel('Other Tax 1'));
+ 
+   const byLabelMoney = (labelRegex) => {
+     const line = totalLines.find((row) => labelRegex.test(row));
+@@ -232,19 +239,22 @@
+   };
+ 
+   const totals = {
+-    parts: byLabelMoney(/^Parts\b/i),
++    parts: byLabelMoney(startsWithValueLabel('Parts')),
+     body_labor_hours: bodyLabor.hours,
+     body_labor_rate: bodyLabor.rate,
+     body_labor_cost: bodyLabor.cost,
+     paint_labor_hours: paintLabor.hours,
+     paint_labor_rate: paintLabor.rate,
+     paint_labor_cost: paintLabor.cost,
++    mechanical_labor_hours: mechanicalLabor.hours,
++    mechanical_labor_rate: mechanicalLabor.rate,
++    mechanical_labor_cost: mechanicalLabor.cost,
+     paint_supplies_hours: paintSupplies.hours,
+     paint_supplies_rate: paintSupplies.rate,
+     paint_supplies_cost: paintSupplies.cost,
+-    miscellaneous: byLabelMoney(/^Miscellaneous\b/i),
+-    other_charges: byLabelMoney(/^Other Charges\b/i),
+-    subtotal: byLabelMoney(/^Subtotal\b/i),
++    miscellaneous: byLabelMoney(startsWithValueLabel('Miscellaneous')),
++    other_charges: byLabelMoney(startsWithValueLabel('Other Charges')),
++    subtotal: byLabelMoney(startsWithValueLabel('Subtotal')),
+     sales_tax_basis: salesTax.basis,
+     sales_tax_rate: salesTax.rate,
+     sales_tax_cost: salesTax.cost,
+@@ -254,11 +264,12 @@
+     other_tax_1_basis: otherTax1.basis,
+     other_tax_1_rate: otherTax1.rate,
+     other_tax_1_cost: otherTax1.cost,
+-    total_cost_of_repairs: byLabelMoney(/^Total Cost of Repairs\b/i),
+-    deductible: byLabelMoney(/^Deductible\b/i),
+-    total_adjustments: byLabelMoney(/^Total Adjustments\b/i),
+-    net_cost_of_repairs: byLabelMoney(/^Net Cost of Repairs\b/i),
++    total_cost_of_repairs: byLabelMoney(startsWithValueLabel('Total Cost of Repairs')),
++    deductible: byLabelMoney(startsWithValueLabel('Deductible')),
++    total_adjustments: byLabelMoney(startsWithValueLabel('Total Adjustments')),
++    net_cost_of_repairs: byLabelMoney(startsWithValueLabel('Net Cost of Repairs')),
+   };
++  totals.revenue = totals.net_cost_of_repairs ?? totals.total_cost_of_repairs;
+ 
+   const hasAnyValue = Object.values(totals).some((value) => value !== null);
+   return hasAnyValue ? totals : null;
+@@ -274,6 +285,9 @@
+     'paint_labor_hours',
+     'paint_labor_rate',
+     'paint_labor_cost',
++    'mechanical_labor_hours',
++    'mechanical_labor_rate',
++    'mechanical_labor_cost',
+     'paint_supplies_hours',
+     'paint_supplies_rate',
+     'paint_supplies_cost',
+@@ -293,12 +307,14 @@
+     'deductible',
+     'total_adjustments',
+     'net_cost_of_repairs',
++    'revenue',
+   ];
+ 
+   const normalized = {};
+   for (const key of fields) {
+     normalized[key] = toNumberOrNull(raw[key]);
+   }
++  normalized.revenue = normalized.revenue ?? normalized.net_cost_of_repairs ?? normalized.total_cost_of_repairs;
+   const hasAny = Object.values(normalized).some((value) => value !== null);
+   return hasAny ? normalized : null;
+ }
+@@ -731,3 +747,4 @@
+ module.exports = router;
+ module.exports.insuranceOcrLimiter = insuranceOcrLimiter;
+ module.exports.insuranceOcrLimiterKeyGenerator = insuranceOcrLimiterKeyGenerator;
++module.exports.parseEstimateTotalsFromPdfText = parseEstimateTotalsFromPdfText;
+diff --git a/backend/test/estimateTotals.test.js b/backend/test/estimateTotals.test.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..83ff957aa381e3305b2e4cc47339c337f5f1c20d
+--- /dev/null
++++ b/backend/test/estimateTotals.test.js
+@@ -0,0 +1,73 @@
++const assert = require('node:assert/strict');
++const fs = require('node:fs');
++const path = require('node:path');
++const test = require('node:test');
++
++const { parseEstimateTotalsFromPdfText } = require('../src/routes/insuranceOcr');
++
++function fixture(name) {
++  return fs.readFileSync(path.join(__dirname, 'fixtures', name), 'utf8');
++}
++
++test('parseEstimateTotalsFromPdfText parses CCC totals with labels glued to values', () => {
++  const totals = parseEstimateTotalsFromPdfText(fixture('ccc-estimate-totals.txt'));
++
++  assert.deepEqual(totals, {
++    parts: 2976.73,
++    body_labor_hours: 48.2,
++    body_labor_rate: 50,
++    body_labor_cost: 2410,
++    paint_labor_hours: 20.5,
++    paint_labor_rate: 50,
++    paint_labor_cost: 1025,
++    mechanical_labor_hours: 2.2,
++    mechanical_labor_rate: 50,
++    mechanical_labor_cost: 110,
++    paint_supplies_hours: 20.5,
++    paint_supplies_rate: 30,
++    paint_supplies_cost: 615,
++    miscellaneous: null,
++    other_charges: null,
++    subtotal: 7136.73,
++    sales_tax_basis: 7136.73,
++    sales_tax_rate: 8.875,
++    sales_tax_cost: 633.38,
++    county_tax_basis: null,
++    county_tax_rate: null,
++    county_tax_cost: null,
++    other_tax_1_basis: null,
++    other_tax_1_rate: null,
++    other_tax_1_cost: null,
++    total_cost_of_repairs: 7770.11,
++    deductible: null,
++    total_adjustments: 0,
++    net_cost_of_repairs: 7770.11,
++    revenue: 7770.11,
++  });
++
++  for (const key of [
++    'parts',
++    'body_labor_hours',
++    'body_labor_rate',
++    'body_labor_cost',
++    'paint_labor_hours',
++    'paint_labor_rate',
++    'paint_labor_cost',
++    'mechanical_labor_hours',
++    'mechanical_labor_rate',
++    'mechanical_labor_cost',
++    'paint_supplies_hours',
++    'paint_supplies_rate',
++    'paint_supplies_cost',
++    'subtotal',
++    'sales_tax_basis',
++    'sales_tax_rate',
++    'sales_tax_cost',
++    'total_cost_of_repairs',
++    'total_adjustments',
++    'net_cost_of_repairs',
++    'revenue',
++  ]) {
++    assert.notEqual(totals[key], null, `${key} should not be null`);
++  }
++});
+
+codex
+Syntax checks passed for the two touched JavaScript files. Now I’m running the focused CCC totals test.
+exec
+/bin/zsh -lc 'node --test backend/test/estimateTotals.test.js' in /Volumes/Zordon Storage /openclaw-workspace/Revv
+diff --git a/backend/src/routes/insuranceOcr.js b/backend/src/routes/insuranceOcr.js
+index 2fa29db6f24f3a13e6c64280dde2ec76b5474a11..e72cff3cfbc2a899eadea98ea3580378ae619c29
+--- a/backend/src/routes/insuranceOcr.js
++++ b/backend/src/routes/insuranceOcr.js
+@@ -71,6 +71,9 @@
+     "paint_labor_hours": 0,
+     "paint_labor_rate": 0,
+     "paint_labor_cost": 0,
++    "mechanical_labor_hours": 0,
++    "mechanical_labor_rate": 0,
++    "mechanical_labor_cost": 0,
+     "paint_supplies_hours": 0,
+     "paint_supplies_rate": 0,
+     "paint_supplies_cost": 0,
+@@ -89,7 +92,8 @@
+     "total_cost_of_repairs": 0,
+     "deductible": 0,
+     "total_adjustments": 0,
+-    "net_cost_of_repairs": 0
++    "net_cost_of_repairs": 0,
++    "revenue": 0
+   },
+   "line_items": [
+     {
+@@ -195,10 +199,12 @@
+     return m ? toNumberOrNull(m[1]) : null;
+   };
+ 
++  const startsWithValueLabel = (label) => new RegExp(`^${label}\\s*(?=[-$0-9])`, 'i');
++
+   const parseHourRateLine = (labelRegex) => {
+     const line = totalLines.find((row) => labelRegex.test(row));
+     if (!line) return { hours: null, rate: null, cost: null };
+-    const m = line.match(/([0-9]+(?:\.[0-9]+)?)\s*hrs\s*@\s*\$?\s*([0-9,]+(?:\.[0-9]+)?)\s*\/hr\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
++    const m = line.match(/([0-9]+(?:\.[0-9]+)?)\s*hrs\s*@\s*\$?\s*([0-9,]+(?:\.[0-9]+)?)\s*\/\s*hr\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
+     if (!m) return { hours: null, rate: null, cost: takeTrailingMoney(line) };
+     return {
+       hours: toNumberOrNull(m[1]),
+@@ -210,7 +216,7 @@
+   const parseTaxLine = (labelRegex) => {
+     const line = totalLines.find((row) => labelRegex.test(row));
+     if (!line) return { basis: null, rate: null, cost: null };
+-    const m = line.match(/\$\s*([0-9,]+(?:\.[0-9]+)?)\s*@\s*([0-9]+(?:\.[0-9]+)?)\s*%\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
++    const m = line.match(/\$?\s*([0-9,]+(?:\.[0-9]+)?)\s*@\s*([0-9]+(?:\.[0-9]+)?)\s*%\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
+     if (!m) return { basis: null, rate: null, cost: takeTrailingMoney(line) };
+     return {
+       basis: toNumberOrNull(m[1]),
+@@ -219,12 +225,13 @@
+     };
+   };
+ 
+-  const bodyLabor = parseHourRateLine(/^Body Labor\b/i);
+-  const paintLabor = parseHourRateLine(/^Paint Labor\b/i);
+-  const paintSupplies = parseHourRateLine(/^Paint Supplies\b/i);
+-  const salesTax = parseTaxLine(/^Sales Tax\b/i);
+-  const countyTax = parseTaxLine(/^County Tax\b/i);
+-  const otherTax1 = parseTaxLine(/^Other Tax 1\b/i);
++  const bodyLabor = parseHourRateLine(startsWithValueLabel('Body Labor'));
++  const paintLabor = parseHourRateLine(startsWithValueLabel('Paint Labor'));
++  const mechanicalLabor = parseHourRateLine(startsWithValueLabel('Mechanical Labor'));
++  const paintSupplies = parseHourRateLine(startsWithValueLabel('Paint Supplies'));
++  const salesTax = parseTaxLine(startsWithValueLabel('Sales Tax'));
++  const countyTax = parseTaxLine(startsWithValueLabel('County Tax'));
++  const otherTax1 = parseTaxLine(startsWithValueLabel('Other Tax 1'));
+ 
+   const byLabelMoney = (labelRegex) => {
+     const line = totalLines.find((row) => labelRegex.test(row));
+@@ -232,19 +239,22 @@
+   };
+ 
+   const totals = {
+-    parts: byLabelMoney(/^Parts\b/i),
++    parts: byLabelMoney(startsWithValueLabel('Parts')),
+     body_labor_hours: bodyLabor.hours,
+     body_labor_rate: bodyLabor.rate,
+     body_labor_cost: bodyLabor.cost,
+     paint_labor_hours: paintLabor.hours,
+     paint_labor_rate: paintLabor.rate,
+     paint_labor_cost: paintLabor.cost,
++    mechanical_labor_hours: mechanicalLabor.hours,
++    mechanical_labor_rate: mechanicalLabor.rate,
++    mechanical_labor_cost: mechanicalLabor.cost,
+     paint_supplies_hours: paintSupplies.hours,
+     paint_supplies_rate: paintSupplies.rate,
+     paint_supplies_cost: paintSupplies.cost,
+-    miscellaneous: byLabelMoney(/^Miscellaneous\b/i),
+-    other_charges: byLabelMoney(/^Other Charges\b/i),
+-    subtotal: byLabelMoney(/^Subtotal\b/i),
++    miscellaneous: byLabelMoney(startsWithValueLabel('Miscellaneous')),
++    other_charges: byLabelMoney(startsWithValueLabel('Other Charges')),
++    subtotal: byLabelMoney(startsWithValueLabel('Subtotal')),
+     sales_tax_basis: salesTax.basis,
+     sales_tax_rate: salesTax.rate,
+     sales_tax_cost: salesTax.cost,
+@@ -254,11 +264,12 @@
+     other_tax_1_basis: otherTax1.basis,
+     other_tax_1_rate: otherTax1.rate,
+     other_tax_1_cost: otherTax1.cost,
+-    total_cost_of_repairs: byLabelMoney(/^Total Cost of Repairs\b/i),
+-    deductible: byLabelMoney(/^Deductible\b/i),
+-    total_adjustments: byLabelMoney(/^Total Adjustments\b/i),
+-    net_cost_of_repairs: byLabelMoney(/^Net Cost of Repairs\b/i),
++    total_cost_of_repairs: byLabelMoney(startsWithValueLabel('Total Cost of Repairs')),
++    deductible: byLabelMoney(startsWithValueLabel('Deductible')),
++    total_adjustments: byLabelMoney(startsWithValueLabel('Total Adjustments')),
++    net_cost_of_repairs: byLabelMoney(startsWithValueLabel('Net Cost of Repairs')),
+   };
++  totals.revenue = totals.net_cost_of_repairs ?? totals.total_cost_of_repairs;
+ 
+   const hasAnyValue = Object.values(totals).some((value) => value !== null);
+   return hasAnyValue ? totals : null;
+@@ -274,6 +285,9 @@
+     'paint_labor_hours',
+     'paint_labor_rate',
+     'paint_labor_cost',
++    'mechanical_labor_hours',
++    'mechanical_labor_rate',
++    'mechanical_labor_cost',
+     'paint_supplies_hours',
+     'paint_supplies_rate',
+     'paint_supplies_cost',
+@@ -293,12 +307,14 @@
+     'deductible',
+     'total_adjustments',
+     'net_cost_of_repairs',
++    'revenue',
+   ];
+ 
+   const normalized = {};
+   for (const key of fields) {
+     normalized[key] = toNumberOrNull(raw[key]);
+   }
++  normalized.revenue = normalized.revenue ?? normalized.net_cost_of_repairs ?? normalized.total_cost_of_repairs;
+   const hasAny = Object.values(normalized).some((value) => value !== null);
+   return hasAny ? normalized : null;
+ }
+@@ -731,3 +747,4 @@
+ module.exports = router;
+ module.exports.insuranceOcrLimiter = insuranceOcrLimiter;
+ module.exports.insuranceOcrLimiterKeyGenerator = insuranceOcrLimiterKeyGenerator;
++module.exports.parseEstimateTotalsFromPdfText = parseEstimateTotalsFromPdfText;
+diff --git a/backend/test/estimateTotals.test.js b/backend/test/estimateTotals.test.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..83ff957aa381e3305b2e4cc47339c337f5f1c20d
+--- /dev/null
++++ b/backend/test/estimateTotals.test.js
+@@ -0,0 +1,73 @@
++const assert = require('node:assert/strict');
++const fs = require('node:fs');
++const path = require('node:path');
++const test = require('node:test');
++
++const { parseEstimateTotalsFromPdfText } = require('../src/routes/insuranceOcr');
++
++function fixture(name) {
++  return fs.readFileSync(path.join(__dirname, 'fixtures', name), 'utf8');
++}
++
++test('parseEstimateTotalsFromPdfText parses CCC totals with labels glued to values', () => {
++  const totals = parseEstimateTotalsFromPdfText(fixture('ccc-estimate-totals.txt'));
++
++  assert.deepEqual(totals, {
++    parts: 2976.73,
++    body_labor_hours: 48.2,
++    body_labor_rate: 50,
++    body_labor_cost: 2410,
++    paint_labor_hours: 20.5,
++    paint_labor_rate: 50,
++    paint_labor_cost: 1025,
++    mechanical_labor_hours: 2.2,
++    mechanical_labor_rate: 50,
++    mechanical_labor_cost: 110,
++    paint_supplies_hours: 20.5,
++    paint_supplies_rate: 30,
++    paint_supplies_cost: 615,
++    miscellaneous: null,
++    other_charges: null,
++    subtotal: 7136.73,
++    sales_tax_basis: 7136.73,
++    sales_tax_rate: 8.875,
++    sales_tax_cost: 633.38,
++    county_tax_basis: null,
++    county_tax_rate: null,
++    county_tax_cost: null,
++    other_tax_1_basis: null,
++    other_tax_1_rate: null,
++    other_tax_1_cost: null,
++    total_cost_of_repairs: 7770.11,
++    deductible: null,
++    total_adjustments: 0,
++    net_cost_of_repairs: 7770.11,
++    revenue: 7770.11,
++  });
++
++  for (const key of [
++    'parts',
++    'body_labor_hours',
++    'body_labor_rate',
++    'body_labor_cost',
++    'paint_labor_hours',
++    'paint_labor_rate',
++    'paint_labor_cost',
++    'mechanical_labor_hours',
++    'mechanical_labor_rate',
++    'mechanical_labor_cost',
++    'paint_supplies_hours',
++    'paint_supplies_rate',
++    'paint_supplies_cost',
++    'subtotal',
++    'sales_tax_basis',
++    'sales_tax_rate',
++    'sales_tax_cost',
++    'total_cost_of_repairs',
++    'total_adjustments',
++    'net_cost_of_repairs',
++    'revenue',
++  ]) {
++    assert.notEqual(totals[key], null, `${key} should not be null`);
++  }
++});
+
+ succeeded in 278ms:
+# Subtest: parseEstimateTotalsFromPdfText parses CCC totals with labels glued to values
+ok 1 - parseEstimateTotalsFromPdfText parses CCC totals with labels glued to values
+  ---
+  duration_ms: 2.069042
+  type: 'test'
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 1
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 233.94325
+
+codex
+The CCC regression test passes. I’m running the existing backend `node:test` files now to catch integration regressions before committing.
+exec
+/bin/zsh -lc 'node --test backend/test/*.test.js' in /Volumes/Zordon Storage /openclaw-workspace/Revv
+diff --git a/backend/src/routes/insuranceOcr.js b/backend/src/routes/insuranceOcr.js
+index 2fa29db6f24f3a13e6c64280dde2ec76b5474a11..e72cff3cfbc2a899eadea98ea3580378ae619c29
+--- a/backend/src/routes/insuranceOcr.js
++++ b/backend/src/routes/insuranceOcr.js
+@@ -71,6 +71,9 @@
+     "paint_labor_hours": 0,
+     "paint_labor_rate": 0,
+     "paint_labor_cost": 0,
++    "mechanical_labor_hours": 0,
++    "mechanical_labor_rate": 0,
++    "mechanical_labor_cost": 0,
+     "paint_supplies_hours": 0,
+     "paint_supplies_rate": 0,
+     "paint_supplies_cost": 0,
+@@ -89,7 +92,8 @@
+     "total_cost_of_repairs": 0,
+     "deductible": 0,
+     "total_adjustments": 0,
+-    "net_cost_of_repairs": 0
++    "net_cost_of_repairs": 0,
++    "revenue": 0
+   },
+   "line_items": [
+     {
+@@ -195,10 +199,12 @@
+     return m ? toNumberOrNull(m[1]) : null;
+   };
+ 
++  const startsWithValueLabel = (label) => new RegExp(`^${label}\\s*(?=[-$0-9])`, 'i');
++
+   const parseHourRateLine = (labelRegex) => {
+     const line = totalLines.find((row) => labelRegex.test(row));
+     if (!line) return { hours: null, rate: null, cost: null };
+-    const m = line.match(/([0-9]+(?:\.[0-9]+)?)\s*hrs\s*@\s*\$?\s*([0-9,]+(?:\.[0-9]+)?)\s*\/hr\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
++    const m = line.match(/([0-9]+(?:\.[0-9]+)?)\s*hrs\s*@\s*\$?\s*([0-9,]+(?:\.[0-9]+)?)\s*\/\s*hr\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
+     if (!m) return { hours: null, rate: null, cost: takeTrailingMoney(line) };
+     return {
+       hours: toNumberOrNull(m[1]),
+@@ -210,7 +216,7 @@
+   const parseTaxLine = (labelRegex) => {
+     const line = totalLines.find((row) => labelRegex.test(row));
+     if (!line) return { basis: null, rate: null, cost: null };
+-    const m = line.match(/\$\s*([0-9,]+(?:\.[0-9]+)?)\s*@\s*([0-9]+(?:\.[0-9]+)?)\s*%\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
++    const m = line.match(/\$?\s*([0-9,]+(?:\.[0-9]+)?)\s*@\s*([0-9]+(?:\.[0-9]+)?)\s*%\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
+     if (!m) return { basis: null, rate: null, cost: takeTrailingMoney(line) };
+     return {
+       basis: toNumberOrNull(m[1]),
+@@ -219,12 +225,13 @@
+     };
+   };
+ 
+-  const bodyLabor = parseHourRateLine(/^Body Labor\b/i);
+-  const paintLabor = parseHourRateLine(/^Paint Labor\b/i);
+-  const paintSupplies = parseHourRateLine(/^Paint Supplies\b/i);
+-  const salesTax = parseTaxLine(/^Sales Tax\b/i);
+-  const countyTax = parseTaxLine(/^County Tax\b/i);
+-  const otherTax1 = parseTaxLine(/^Other Tax 1\b/i);
++  const bodyLabor = parseHourRateLine(startsWithValueLabel('Body Labor'));
++  const paintLabor = parseHourRateLine(startsWithValueLabel('Paint Labor'));
++  const mechanicalLabor = parseHourRateLine(startsWithValueLabel('Mechanical Labor'));
++  const paintSupplies = parseHourRateLine(startsWithValueLabel('Paint Supplies'));
++  const salesTax = parseTaxLine(startsWithValueLabel('Sales Tax'));
++  const countyTax = parseTaxLine(startsWithValueLabel('County Tax'));
++  const otherTax1 = parseTaxLine(startsWithValueLabel('Other Tax 1'));
+ 
+   const byLabelMoney = (labelRegex) => {
+     const line = totalLines.find((row) => labelRegex.test(row));
+@@ -232,19 +239,22 @@
+   };
+ 
+   const totals = {
+-    parts: byLabelMoney(/^Parts\b/i),
++    parts: byLabelMoney(startsWithValueLabel('Parts')),
+     body_labor_hours: bodyLabor.hours,
+     body_labor_rate: bodyLabor.rate,
+     body_labor_cost: bodyLabor.cost,
+     paint_labor_hours: paintLabor.hours,
+     paint_labor_rate: paintLabor.rate,
+     paint_labor_cost: paintLabor.cost,
++    mechanical_labor_hours: mechanicalLabor.hours,
++    mechanical_labor_rate: mechanicalLabor.rate,
++    mechanical_labor_cost: mechanicalLabor.cost,
+     paint_supplies_hours: paintSupplies.hours,
+     paint_supplies_rate: paintSupplies.rate,
+     paint_supplies_cost: paintSupplies.cost,
+-    miscellaneous: byLabelMoney(/^Miscellaneous\b/i),
+-    other_charges: byLabelMoney(/^Other Charges\b/i),
+-    subtotal: byLabelMoney(/^Subtotal\b/i),
++    miscellaneous: byLabelMoney(startsWithValueLabel('Miscellaneous')),
++    other_charges: byLabelMoney(startsWithValueLabel('Other Charges')),
++    subtotal: byLabelMoney(startsWithValueLabel('Subtotal')),
+     sales_tax_basis: salesTax.basis,
+     sales_tax_rate: salesTax.rate,
+     sales_tax_cost: salesTax.cost,
+@@ -254,11 +264,12 @@
+     other_tax_1_basis: otherTax1.basis,
+     other_tax_1_rate: otherTax1.rate,
+     other_tax_1_cost: otherTax1.cost,
+-    total_cost_of_repairs: byLabelMoney(/^Total Cost of Repairs\b/i),
+-    deductible: byLabelMoney(/^Deductible\b/i),
+-    total_adjustments: byLabelMoney(/^Total Adjustments\b/i),
+-    net_cost_of_repairs: byLabelMoney(/^Net Cost of Repairs\b/i),
++    total_cost_of_repairs: byLabelMoney(startsWithValueLabel('Total Cost of Repairs')),
++    deductible: byLabelMoney(startsWithValueLabel('Deductible')),
++    total_adjustments: byLabelMoney(startsWithValueLabel('Total Adjustments')),
++    net_cost_of_repairs: byLabelMoney(startsWithValueLabel('Net Cost of Repairs')),
+   };
++  totals.revenue = totals.net_cost_of_repairs ?? totals.total_cost_of_repairs;
+ 
+   const hasAnyValue = Object.values(totals).some((value) => value !== null);
+   return hasAnyValue ? totals : null;
+@@ -274,6 +285,9 @@
+     'paint_labor_hours',
+     'paint_labor_rate',
+     'paint_labor_cost',
++    'mechanical_labor_hours',
++    'mechanical_labor_rate',
++    'mechanical_labor_cost',
+     'paint_supplies_hours',
+     'paint_supplies_rate',
+     'paint_supplies_cost',
+@@ -293,12 +307,14 @@
+     'deductible',
+     'total_adjustments',
+     'net_cost_of_repairs',
++    'revenue',
+   ];
+ 
+   const normalized = {};
+   for (const key of fields) {
+     normalized[key] = toNumberOrNull(raw[key]);
+   }
++  normalized.revenue = normalized.revenue ?? normalized.net_cost_of_repairs ?? normalized.total_cost_of_repairs;
+   const hasAny = Object.values(normalized).some((value) => value !== null);
+   return hasAny ? normalized : null;
+ }
+@@ -731,3 +747,4 @@
+ module.exports = router;
+ module.exports.insuranceOcrLimiter = insuranceOcrLimiter;
+ module.exports.insuranceOcrLimiterKeyGenerator = insuranceOcrLimiterKeyGenerator;
++module.exports.parseEstimateTotalsFromPdfText = parseEstimateTotalsFromPdfText;
+diff --git a/backend/test/estimateTotals.test.js b/backend/test/estimateTotals.test.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..83ff957aa381e3305b2e4cc47339c337f5f1c20d
+--- /dev/null
++++ b/backend/test/estimateTotals.test.js
+@@ -0,0 +1,73 @@
++const assert = require('node:assert/strict');
++const fs = require('node:fs');
++const path = require('node:path');
++const test = require('node:test');
++
++const { parseEstimateTotalsFromPdfText } = require('../src/routes/insuranceOcr');
++
++function fixture(name) {
++  return fs.readFileSync(path.join(__dirname, 'fixtures', name), 'utf8');
++}
++
++test('parseEstimateTotalsFromPdfText parses CCC totals with labels glued to values', () => {
++  const totals = parseEstimateTotalsFromPdfText(fixture('ccc-estimate-totals.txt'));
++
++  assert.deepEqual(totals, {
++    parts: 2976.73,
++    body_labor_hours: 48.2,
++    body_labor_rate: 50,
++    body_labor_cost: 2410,
++    paint_labor_hours: 20.5,
++    paint_labor_rate: 50,
++    paint_labor_cost: 1025,
++    mechanical_labor_hours: 2.2,
++    mechanical_labor_rate: 50,
++    mechanical_labor_cost: 110,
++    paint_supplies_hours: 20.5,
++    paint_supplies_rate: 30,
++    paint_supplies_cost: 615,
++    miscellaneous: null,
++    other_charges: null,
++    subtotal: 7136.73,
++    sales_tax_basis: 7136.73,
++    sales_tax_rate: 8.875,
++    sales_tax_cost: 633.38,
++    county_tax_basis: null,
++    county_tax_rate: null,
++    county_tax_cost: null,
++    other_tax_1_basis: null,
++    other_tax_1_rate: null,
++    other_tax_1_cost: null,
++    total_cost_of_repairs: 7770.11,
++    deductible: null,
++    total_adjustments: 0,
++    net_cost_of_repairs: 7770.11,
++    revenue: 7770.11,
++  });
++
++  for (const key of [
++    'parts',
++    'body_labor_hours',
++    'body_labor_rate',
++    'body_labor_cost',
++    'paint_labor_hours',
++    'paint_labor_rate',
++    'paint_labor_cost',
++    'mechanical_labor_hours',
++    'mechanical_labor_rate',
++    'mechanical_labor_cost',
++    'paint_supplies_hours',
++    'paint_supplies_rate',
++    'paint_supplies_cost',
++    'subtotal',
++    'sales_tax_basis',
++    'sales_tax_rate',
++    'sales_tax_cost',
++    'total_cost_of_repairs',
++    'total_adjustments',
++    'net_cost_of_repairs',
++    'revenue',
++  ]) {
++    assert.notEqual(totals[key], null, `${key} should not be null`);
++  }
++});
+
+ succeeded in 278ms:
+# Subtest: parseBms maps CIECA BMS headers to the parsed contract
+ok 1 - parseBms maps CIECA BMS headers to the parsed contract
+  ---
+  duration_ms: 4.85625
+  type: 'test'
+  ...
+# Subtest: parseBms maps labor, parts, sublet, and refinish line items with enrichment fields
+ok 2 - parseBms maps labor, parts, sublet, and refinish line items with enrichment fields
+  ---
+  duration_ms: 1.144708
+  type: 'test'
+  ...
+# Subtest: parseBms reuses OCR operation-code classification semantics for RNI and RPR
+ok 3 - parseBms reuses OCR operation-code classification semantics for RNI and RPR
+  ---
+  duration_ms: 1.230375
+  type: 'test'
+  ...
+# Subtest: parseBms parses XXE and billion-laughs payloads inertly
+ok 4 - parseBms parses XXE and billion-laughs payloads inertly
+  ---
+  duration_ms: 0.71875
+  type: 'test'
+  ...
+# [Mailer] RESEND_API_KEY not set — email notifications disabled
+# Subtest: parse-bms returns OCR-compatible parsed contract with BMS enrichment fields
+ok 5 - parse-bms returns OCR-compatible parsed contract with BMS enrichment fields
+  ---
+  duration_ms: 130.359667
+  type: 'test'
+  ...
+# Subtest: create reuses import-estimate path and writes shop-scoped RO, customer, vehicle, parts requests, and operations
+ok 6 - create reuses import-estimate path and writes shop-scoped RO, customer, vehicle, parts requests, and operations
+  ---
+  duration_ms: 10.733791
+  type: 'test'
+  ...
+# Subtest: malformed or XXE upload is rejected safely and performs no DB writes
+ok 7 - malformed or XXE upload is rejected safely and performs no DB writes
+  ---
+  duration_ms: 1.940708
+  type: 'test'
+  ...
+# Subtest: parseEstimateTotalsFromPdfText parses CCC totals with labels glued to values
+ok 8 - parseEstimateTotalsFromPdfText parses CCC totals with labels glued to values
+  ---
+  duration_ms: 1.784458
+  type: 'test'
+  ...
+1..8
+# tests 8
+# suites 0
+# pass 8
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 241.067167
+
+codex
+All requested checks pass. I’m reviewing the diff once, then I’ll stage only the three requested paths and commit without touching the unrelated worktree files.
+exec
+/bin/zsh -lc 'git diff -- backend/src/routes/insuranceOcr.js backend/test/estimateTotals.test.js backend/test/fixtures/ccc-estimate-totals.txt' in /Volumes/Zordon Storage /openclaw-workspace/Revv
+ succeeded in 0ms:
+diff --git a/backend/src/routes/insuranceOcr.js b/backend/src/routes/insuranceOcr.js
+index 2fa29db..e72cff3 100644
+--- a/backend/src/routes/insuranceOcr.js
++++ b/backend/src/routes/insuranceOcr.js
+@@ -71,6 +71,9 @@ Return ONLY valid JSON in this exact format:
+     "paint_labor_hours": 0,
+     "paint_labor_rate": 0,
+     "paint_labor_cost": 0,
++    "mechanical_labor_hours": 0,
++    "mechanical_labor_rate": 0,
++    "mechanical_labor_cost": 0,
+     "paint_supplies_hours": 0,
+     "paint_supplies_rate": 0,
+     "paint_supplies_cost": 0,
+@@ -89,7 +92,8 @@ Return ONLY valid JSON in this exact format:
+     "total_cost_of_repairs": 0,
+     "deductible": 0,
+     "total_adjustments": 0,
+-    "net_cost_of_repairs": 0
++    "net_cost_of_repairs": 0,
++    "revenue": 0
+   },
+   "line_items": [
+     {
+@@ -195,10 +199,12 @@ function parseEstimateTotalsFromPdfText(text) {
+     return m ? toNumberOrNull(m[1]) : null;
+   };
+ 
++  const startsWithValueLabel = (label) => new RegExp(`^${label}\\s*(?=[-$0-9])`, 'i');
++
+   const parseHourRateLine = (labelRegex) => {
+     const line = totalLines.find((row) => labelRegex.test(row));
+     if (!line) return { hours: null, rate: null, cost: null };
+-    const m = line.match(/([0-9]+(?:\.[0-9]+)?)\s*hrs\s*@\s*\$?\s*([0-9,]+(?:\.[0-9]+)?)\s*\/hr\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
++    const m = line.match(/([0-9]+(?:\.[0-9]+)?)\s*hrs\s*@\s*\$?\s*([0-9,]+(?:\.[0-9]+)?)\s*\/\s*hr\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
+     if (!m) return { hours: null, rate: null, cost: takeTrailingMoney(line) };
+     return {
+       hours: toNumberOrNull(m[1]),
+@@ -210,7 +216,7 @@ function parseEstimateTotalsFromPdfText(text) {
+   const parseTaxLine = (labelRegex) => {
+     const line = totalLines.find((row) => labelRegex.test(row));
+     if (!line) return { basis: null, rate: null, cost: null };
+-    const m = line.match(/\$\s*([0-9,]+(?:\.[0-9]+)?)\s*@\s*([0-9]+(?:\.[0-9]+)?)\s*%\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
++    const m = line.match(/\$?\s*([0-9,]+(?:\.[0-9]+)?)\s*@\s*([0-9]+(?:\.[0-9]+)?)\s*%\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
+     if (!m) return { basis: null, rate: null, cost: takeTrailingMoney(line) };
+     return {
+       basis: toNumberOrNull(m[1]),
+@@ -219,12 +225,13 @@ function parseEstimateTotalsFromPdfText(text) {
+     };
+   };
+ 
+-  const bodyLabor = parseHourRateLine(/^Body Labor\b/i);
+-  const paintLabor = parseHourRateLine(/^Paint Labor\b/i);
+-  const paintSupplies = parseHourRateLine(/^Paint Supplies\b/i);
+-  const salesTax = parseTaxLine(/^Sales Tax\b/i);
+-  const countyTax = parseTaxLine(/^County Tax\b/i);
+-  const otherTax1 = parseTaxLine(/^Other Tax 1\b/i);
++  const bodyLabor = parseHourRateLine(startsWithValueLabel('Body Labor'));
++  const paintLabor = parseHourRateLine(startsWithValueLabel('Paint Labor'));
++  const mechanicalLabor = parseHourRateLine(startsWithValueLabel('Mechanical Labor'));
++  const paintSupplies = parseHourRateLine(startsWithValueLabel('Paint Supplies'));
++  const salesTax = parseTaxLine(startsWithValueLabel('Sales Tax'));
++  const countyTax = parseTaxLine(startsWithValueLabel('County Tax'));
++  const otherTax1 = parseTaxLine(startsWithValueLabel('Other Tax 1'));
+ 
+   const byLabelMoney = (labelRegex) => {
+     const line = totalLines.find((row) => labelRegex.test(row));
+@@ -232,19 +239,22 @@ function parseEstimateTotalsFromPdfText(text) {
+   };
+ 
+   const totals = {
+-    parts: byLabelMoney(/^Parts\b/i),
++    parts: byLabelMoney(startsWithValueLabel('Parts')),
+     body_labor_hours: bodyLabor.hours,
+     body_labor_rate: bodyLabor.rate,
+     body_labor_cost: bodyLabor.cost,
+     paint_labor_hours: paintLabor.hours,
+     paint_labor_rate: paintLabor.rate,
+     paint_labor_cost: paintLabor.cost,
++    mechanical_labor_hours: mechanicalLabor.hours,
++    mechanical_labor_rate: mechanicalLabor.rate,
++    mechanical_labor_cost: mechanicalLabor.cost,
+     paint_supplies_hours: paintSupplies.hours,
+     paint_supplies_rate: paintSupplies.rate,
+     paint_supplies_cost: paintSupplies.cost,
+-    miscellaneous: byLabelMoney(/^Miscellaneous\b/i),
+-    other_charges: byLabelMoney(/^Other Charges\b/i),
+-    subtotal: byLabelMoney(/^Subtotal\b/i),
++    miscellaneous: byLabelMoney(startsWithValueLabel('Miscellaneous')),
++    other_charges: byLabelMoney(startsWithValueLabel('Other Charges')),
++    subtotal: byLabelMoney(startsWithValueLabel('Subtotal')),
+     sales_tax_basis: salesTax.basis,
+     sales_tax_rate: salesTax.rate,
+     sales_tax_cost: salesTax.cost,
+@@ -254,11 +264,12 @@ function parseEstimateTotalsFromPdfText(text) {
+     other_tax_1_basis: otherTax1.basis,
+     other_tax_1_rate: otherTax1.rate,
+     other_tax_1_cost: otherTax1.cost,
+-    total_cost_of_repairs: byLabelMoney(/^Total Cost of Repairs\b/i),
+-    deductible: byLabelMoney(/^Deductible\b/i),
+-    total_adjustments: byLabelMoney(/^Total Adjustments\b/i),
+-    net_cost_of_repairs: byLabelMoney(/^Net Cost of Repairs\b/i),
++    total_cost_of_repairs: byLabelMoney(startsWithValueLabel('Total Cost of Repairs')),
++    deductible: byLabelMoney(startsWithValueLabel('Deductible')),
++    total_adjustments: byLabelMoney(startsWithValueLabel('Total Adjustments')),
++    net_cost_of_repairs: byLabelMoney(startsWithValueLabel('Net Cost of Repairs')),
+   };
++  totals.revenue = totals.net_cost_of_repairs ?? totals.total_cost_of_repairs;
+ 
+   const hasAnyValue = Object.values(totals).some((value) => value !== null);
+   return hasAnyValue ? totals : null;
+@@ -274,6 +285,9 @@ function normalizeEstimateTotals(raw) {
+     'paint_labor_hours',
+     'paint_labor_rate',
+     'paint_labor_cost',
++    'mechanical_labor_hours',
++    'mechanical_labor_rate',
++    'mechanical_labor_cost',
+     'paint_supplies_hours',
+     'paint_supplies_rate',
+     'paint_supplies_cost',
+@@ -293,12 +307,14 @@ function normalizeEstimateTotals(raw) {
+     'deductible',
+     'total_adjustments',
+     'net_cost_of_repairs',
++    'revenue',
+   ];
+ 
+   const normalized = {};
+   for (const key of fields) {
+     normalized[key] = toNumberOrNull(raw[key]);
+   }
++  normalized.revenue = normalized.revenue ?? normalized.net_cost_of_repairs ?? normalized.total_cost_of_repairs;
+   const hasAny = Object.values(normalized).some((value) => value !== null);
+   return hasAny ? normalized : null;
+ }
+@@ -731,3 +747,4 @@ router.post('/analyze', auth, insuranceOcrLimiter, async (req, res) => {
+ module.exports = router;
+ module.exports.insuranceOcrLimiter = insuranceOcrLimiter;
+ module.exports.insuranceOcrLimiterKeyGenerator = insuranceOcrLimiterKeyGenerator;
++module.exports.parseEstimateTotalsFromPdfText = parseEstimateTotalsFromPdfText;
+
+exec
+/bin/zsh -lc 'git status --short' in /Volumes/Zordon Storage /openclaw-workspace/Revv
+ succeeded in 0ms:
+ M DAILY-OPS.md
+ M backend/src/routes/insuranceOcr.js
+?? Agent-Hermes/
+?? SPEC-estimate-true-profit.md
+?? SPEC-miles-employee-ro-visibility.md
+?? backend/test/estimateTotals.test.js
+?? backend/test/fixtures/ccc-estimate-totals.txt
+?? docs/SPEC-estimate-ocr-tier1.md
+
+diff --git a/backend/src/routes/insuranceOcr.js b/backend/src/routes/insuranceOcr.js
+index 2fa29db6f24f3a13e6c64280dde2ec76b5474a11..e72cff3cfbc2a899eadea98ea3580378ae619c29
+--- a/backend/src/routes/insuranceOcr.js
++++ b/backend/src/routes/insuranceOcr.js
+@@ -71,6 +71,9 @@
+     "paint_labor_hours": 0,
+     "paint_labor_rate": 0,
+     "paint_labor_cost": 0,
++    "mechanical_labor_hours": 0,
++    "mechanical_labor_rate": 0,
++    "mechanical_labor_cost": 0,
+     "paint_supplies_hours": 0,
+     "paint_supplies_rate": 0,
+     "paint_supplies_cost": 0,
+@@ -89,7 +92,8 @@
+     "total_cost_of_repairs": 0,
+     "deductible": 0,
+     "total_adjustments": 0,
+-    "net_cost_of_repairs": 0
++    "net_cost_of_repairs": 0,
++    "revenue": 0
+   },
+   "line_items": [
+     {
+@@ -195,10 +199,12 @@
+     return m ? toNumberOrNull(m[1]) : null;
+   };
+ 
++  const startsWithValueLabel = (label) => new RegExp(`^${label}\\s*(?=[-$0-9])`, 'i');
++
+   const parseHourRateLine = (labelRegex) => {
+     const line = totalLines.find((row) => labelRegex.test(row));
+     if (!line) return { hours: null, rate: null, cost: null };
+-    const m = line.match(/([0-9]+(?:\.[0-9]+)?)\s*hrs\s*@\s*\$?\s*([0-9,]+(?:\.[0-9]+)?)\s*\/hr\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
++    const m = line.match(/([0-9]+(?:\.[0-9]+)?)\s*hrs\s*@\s*\$?\s*([0-9,]+(?:\.[0-9]+)?)\s*\/\s*hr\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
+     if (!m) return { hours: null, rate: null, cost: takeTrailingMoney(line) };
+     return {
+       hours: toNumberOrNull(m[1]),
+@@ -210,7 +216,7 @@
+   const parseTaxLine = (labelRegex) => {
+     const line = totalLines.find((row) => labelRegex.test(row));
+     if (!line) return { basis: null, rate: null, cost: null };
+-    const m = line.match(/\$\s*([0-9,]+(?:\.[0-9]+)?)\s*@\s*([0-9]+(?:\.[0-9]+)?)\s*%\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
++    const m = line.match(/\$?\s*([0-9,]+(?:\.[0-9]+)?)\s*@\s*([0-9]+(?:\.[0-9]+)?)\s*%\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
+     if (!m) return { basis: null, rate: null, cost: takeTrailingMoney(line) };
+     return {
+       basis: toNumberOrNull(m[1]),
+@@ -219,12 +225,13 @@
+     };
+   };
+ 
+-  const bodyLabor = parseHourRateLine(/^Body Labor\b/i);
+-  const paintLabor = parseHourRateLine(/^Paint Labor\b/i);
+-  const paintSupplies = parseHourRateLine(/^Paint Supplies\b/i);
+-  const salesTax = parseTaxLine(/^Sales Tax\b/i);
+-  const countyTax = parseTaxLine(/^County Tax\b/i);
+-  const otherTax1 = parseTaxLine(/^Other Tax 1\b/i);
++  const bodyLabor = parseHourRateLine(startsWithValueLabel('Body Labor'));
++  const paintLabor = parseHourRateLine(startsWithValueLabel('Paint Labor'));
++  const mechanicalLabor = parseHourRateLine(startsWithValueLabel('Mechanical Labor'));
++  const paintSupplies = parseHourRateLine(startsWithValueLabel('Paint Supplies'));
++  const salesTax = parseTaxLine(startsWithValueLabel('Sales Tax'));
++  const countyTax = parseTaxLine(startsWithValueLabel('County Tax'));
++  const otherTax1 = parseTaxLine(startsWithValueLabel('Other Tax 1'));
+ 
+   const byLabelMoney = (labelRegex) => {
+     const line = totalLines.find((row) => labelRegex.test(row));
+@@ -232,19 +239,22 @@
+   };
+ 
+   const totals = {
+-    parts: byLabelMoney(/^Parts\b/i),
++    parts: byLabelMoney(startsWithValueLabel('Parts')),
+     body_labor_hours: bodyLabor.hours,
+     body_labor_rate: bodyLabor.rate,
+     body_labor_cost: bodyLabor.cost,
+     paint_labor_hours: paintLabor.hours,
+     paint_labor_rate: paintLabor.rate,
+     paint_labor_cost: paintLabor.cost,
++    mechanical_labor_hours: mechanicalLabor.hours,
++    mechanical_labor_rate: mechanicalLabor.rate,
++    mechanical_labor_cost: mechanicalLabor.cost,
+     paint_supplies_hours: paintSupplies.hours,
+     paint_supplies_rate: paintSupplies.rate,
+     paint_supplies_cost: paintSupplies.cost,
+-    miscellaneous: byLabelMoney(/^Miscellaneous\b/i),
+-    other_charges: byLabelMoney(/^Other Charges\b/i),
+-    subtotal: byLabelMoney(/^Subtotal\b/i),
++    miscellaneous: byLabelMoney(startsWithValueLabel('Miscellaneous')),
++    other_charges: byLabelMoney(startsWithValueLabel('Other Charges')),
++    subtotal: byLabelMoney(startsWithValueLabel('Subtotal')),
+     sales_tax_basis: salesTax.basis,
+     sales_tax_rate: salesTax.rate,
+     sales_tax_cost: salesTax.cost,
+@@ -254,11 +264,12 @@
+     other_tax_1_basis: otherTax1.basis,
+     other_tax_1_rate: otherTax1.rate,
+     other_tax_1_cost: otherTax1.cost,
+-    total_cost_of_repairs: byLabelMoney(/^Total Cost of Repairs\b/i),
+-    deductible: byLabelMoney(/^Deductible\b/i),
+-    total_adjustments: byLabelMoney(/^Total Adjustments\b/i),
+-    net_cost_of_repairs: byLabelMoney(/^Net Cost of Repairs\b/i),
++    total_cost_of_repairs: byLabelMoney(startsWithValueLabel('Total Cost of Repairs')),
++    deductible: byLabelMoney(startsWithValueLabel('Deductible')),
++    total_adjustments: byLabelMoney(startsWithValueLabel('Total Adjustments')),
++    net_cost_of_repairs: byLabelMoney(startsWithValueLabel('Net Cost of Repairs')),
+   };
++  totals.revenue = totals.net_cost_of_repairs ?? totals.total_cost_of_repairs;
+ 
+   const hasAnyValue = Object.values(totals).some((value) => value !== null);
+   return hasAnyValue ? totals : null;
+@@ -274,6 +285,9 @@
+     'paint_labor_hours',
+     'paint_labor_rate',
+     'paint_labor_cost',
++    'mechanical_labor_hours',
++    'mechanical_labor_rate',
++    'mechanical_labor_cost',
+     'paint_supplies_hours',
+     'paint_supplies_rate',
+     'paint_supplies_cost',
+@@ -293,12 +307,14 @@
+     'deductible',
+     'total_adjustments',
+     'net_cost_of_repairs',
++    'revenue',
+   ];
+ 
+   const normalized = {};
+   for (const key of fields) {
+     normalized[key] = toNumberOrNull(raw[key]);
+   }
++  normalized.revenue = normalized.revenue ?? normalized.net_cost_of_repairs ?? normalized.total_cost_of_repairs;
+   const hasAny = Object.values(normalized).some((value) => value !== null);
+   return hasAny ? normalized : null;
+ }
+@@ -731,3 +747,4 @@
+ module.exports = router;
+ module.exports.insuranceOcrLimiter = insuranceOcrLimiter;
+ module.exports.insuranceOcrLimiterKeyGenerator = insuranceOcrLimiterKeyGenerator;
++module.exports.parseEstimateTotalsFromPdfText = parseEstimateTotalsFromPdfText;
+diff --git a/backend/test/estimateTotals.test.js b/backend/test/estimateTotals.test.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..83ff957aa381e3305b2e4cc47339c337f5f1c20d
+--- /dev/null
++++ b/backend/test/estimateTotals.test.js
+@@ -0,0 +1,73 @@
++const assert = require('node:assert/strict');
++const fs = require('node:fs');
++const path = require('node:path');
++const test = require('node:test');
++
++const { parseEstimateTotalsFromPdfText } = require('../src/routes/insuranceOcr');
++
++function fixture(name) {
++  return fs.readFileSync(path.join(__dirname, 'fixtures', name), 'utf8');
++}
++
++test('parseEstimateTotalsFromPdfText parses CCC totals with labels glued to values', () => {
++  const totals = parseEstimateTotalsFromPdfText(fixture('ccc-estimate-totals.txt'));
++
++  assert.deepEqual(totals, {
++    parts: 2976.73,
++    body_labor_hours: 48.2,
++    body_labor_rate: 50,
++    body_labor_cost: 2410,
++    paint_labor_hours: 20.5,
++    paint_labor_rate: 50,
++    paint_labor_cost: 1025,
++    mechanical_labor_hours: 2.2,
++    mechanical_labor_rate: 50,
++    mechanical_labor_cost: 110,
++    paint_supplies_hours: 20.5,
++    paint_supplies_rate: 30,
++    paint_supplies_cost: 615,
++    miscellaneous: null,
++    other_charges: null,
++    subtotal: 7136.73,
++    sales_tax_basis: 7136.73,
++    sales_tax_rate: 8.875,
++    sales_tax_cost: 633.38,
++    county_tax_basis: null,
++    county_tax_rate: null,
++    county_tax_cost: null,
++    other_tax_1_basis: null,
++    other_tax_1_rate: null,
++    other_tax_1_cost: null,
++    total_cost_of_repairs: 7770.11,
++    deductible: null,
++    total_adjustments: 0,
++    net_cost_of_repairs: 7770.11,
++    revenue: 7770.11,
++  });
++
++  for (const key of [
++    'parts',
++    'body_labor_hours',
++    'body_labor_rate',
++    'body_labor_cost',
++    'paint_labor_hours',
++    'paint_labor_rate',
++    'paint_labor_cost',
++    'mechanical_labor_hours',
++    'mechanical_labor_rate',
++    'mechanical_labor_cost',
++    'paint_supplies_hours',
++    'paint_supplies_rate',
++    'paint_supplies_cost',
++    'subtotal',
++    'sales_tax_basis',
++    'sales_tax_rate',
++    'sales_tax_cost',
++    'total_cost_of_repairs',
++    'total_adjustments',
++    'net_cost_of_repairs',
++    'revenue',
++  ]) {
++    assert.notEqual(totals[key], null, `${key} should not be null`);
++  }
++});
+
+codex
+The diff is scoped to the OCR route plus the new test; no unrelated files are being staged. I’m committing the requested paths now.
+diff --git a/backend/src/routes/insuranceOcr.js b/backend/src/routes/insuranceOcr.js
+index 2fa29db6f24f3a13e6c64280dde2ec76b5474a11..e72cff3cfbc2a899eadea98ea3580378ae619c29
+--- a/backend/src/routes/insuranceOcr.js
++++ b/backend/src/routes/insuranceOcr.js
+@@ -71,6 +71,9 @@
+     "paint_labor_hours": 0,
+     "paint_labor_rate": 0,
+     "paint_labor_cost": 0,
++    "mechanical_labor_hours": 0,
++    "mechanical_labor_rate": 0,
++    "mechanical_labor_cost": 0,
+     "paint_supplies_hours": 0,
+     "paint_supplies_rate": 0,
+     "paint_supplies_cost": 0,
+@@ -89,7 +92,8 @@
+     "total_cost_of_repairs": 0,
+     "deductible": 0,
+     "total_adjustments": 0,
+-    "net_cost_of_repairs": 0
++    "net_cost_of_repairs": 0,
++    "revenue": 0
+   },
+   "line_items": [
+     {
+@@ -195,10 +199,12 @@
+     return m ? toNumberOrNull(m[1]) : null;
+   };
+ 
++  const startsWithValueLabel = (label) => new RegExp(`^${label}\\s*(?=[-$0-9])`, 'i');
++
+   const parseHourRateLine = (labelRegex) => {
+     const line = totalLines.find((row) => labelRegex.test(row));
+     if (!line) return { hours: null, rate: null, cost: null };
+-    const m = line.match(/([0-9]+(?:\.[0-9]+)?)\s*hrs\s*@\s*\$?\s*([0-9,]+(?:\.[0-9]+)?)\s*\/hr\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
++    const m = line.match(/([0-9]+(?:\.[0-9]+)?)\s*hrs\s*@\s*\$?\s*([0-9,]+(?:\.[0-9]+)?)\s*\/\s*hr\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
+     if (!m) return { hours: null, rate: null, cost: takeTrailingMoney(line) };
+     return {
+       hours: toNumberOrNull(m[1]),
+@@ -210,7 +216,7 @@
+   const parseTaxLine = (labelRegex) => {
+     const line = totalLines.find((row) => labelRegex.test(row));
+     if (!line) return { basis: null, rate: null, cost: null };
+-    const m = line.match(/\$\s*([0-9,]+(?:\.[0-9]+)?)\s*@\s*([0-9]+(?:\.[0-9]+)?)\s*%\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
++    const m = line.match(/\$?\s*([0-9,]+(?:\.[0-9]+)?)\s*@\s*([0-9]+(?:\.[0-9]+)?)\s*%\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
+     if (!m) return { basis: null, rate: null, cost: takeTrailingMoney(line) };
+     return {
+       basis: toNumberOrNull(m[1]),
+@@ -219,12 +225,13 @@
+     };
+   };
+ 
+-  const bodyLabor = parseHourRateLine(/^Body Labor\b/i);
+-  const paintLabor = parseHourRateLine(/^Paint Labor\b/i);
+-  const paintSupplies = parseHourRateLine(/^Paint Supplies\b/i);
+-  const salesTax = parseTaxLine(/^Sales Tax\b/i);
+-  const countyTax = parseTaxLine(/^County Tax\b/i);
+-  const otherTax1 = parseTaxLine(/^Other Tax 1\b/i);
++  const bodyLabor = parseHourRateLine(startsWithValueLabel('Body Labor'));
++  const paintLabor = parseHourRateLine(startsWithValueLabel('Paint Labor'));
++  const mechanicalLabor = parseHourRateLine(startsWithValueLabel('Mechanical Labor'));
++  const paintSupplies = parseHourRateLine(startsWithValueLabel('Paint Supplies'));
++  const salesTax = parseTaxLine(startsWithValueLabel('Sales Tax'));
++  const countyTax = parseTaxLine(startsWithValueLabel('County Tax'));
++  const otherTax1 = parseTaxLine(startsWithValueLabel('Other Tax 1'));
+ 
+   const byLabelMoney = (labelRegex) => {
+     const line = totalLines.find((row) => labelRegex.test(row));
+@@ -232,19 +239,22 @@
+   };
+ 
+   const totals = {
+-    parts: byLabelMoney(/^Parts\b/i),
++    parts: byLabelMoney(startsWithValueLabel('Parts')),
+     body_labor_hours: bodyLabor.hours,
+     body_labor_rate: bodyLabor.rate,
+     body_labor_cost: bodyLabor.cost,
+     paint_labor_hours: paintLabor.hours,
+     paint_labor_rate: paintLabor.rate,
+     paint_labor_cost: paintLabor.cost,
++    mechanical_labor_hours: mechanicalLabor.hours,
++    mechanical_labor_rate: mechanicalLabor.rate,
++    mechanical_labor_cost: mechanicalLabor.cost,
+     paint_supplies_hours: paintSupplies.hours,
+     paint_supplies_rate: paintSupplies.rate,
+     paint_supplies_cost: paintSupplies.cost,
+-    miscellaneous: byLabelMoney(/^Miscellaneous\b/i),
+-    other_charges: byLabelMoney(/^Other Charges\b/i),
+-    subtotal: byLabelMoney(/^Subtotal\b/i),
++    miscellaneous: byLabelMoney(startsWithValueLabel('Miscellaneous')),
++    other_charges: byLabelMoney(startsWithValueLabel('Other Charges')),
++    subtotal: byLabelMoney(startsWithValueLabel('Subtotal')),
+     sales_tax_basis: salesTax.basis,
+     sales_tax_rate: salesTax.rate,
+     sales_tax_cost: salesTax.cost,
+@@ -254,11 +264,12 @@
+     other_tax_1_basis: otherTax1.basis,
+     other_tax_1_rate: otherTax1.rate,
+     other_tax_1_cost: otherTax1.cost,
+-    total_cost_of_repairs: byLabelMoney(/^Total Cost of Repairs\b/i),
+-    deductible: byLabelMoney(/^Deductible\b/i),
+-    total_adjustments: byLabelMoney(/^Total Adjustments\b/i),
+-    net_cost_of_repairs: byLabelMoney(/^Net Cost of Repairs\b/i),
++    total_cost_of_repairs: byLabelMoney(startsWithValueLabel('Total Cost of Repairs')),
++    deductible: byLabelMoney(startsWithValueLabel('Deductible')),
++    total_adjustments: byLabelMoney(startsWithValueLabel('Total Adjustments')),
++    net_cost_of_repairs: byLabelMoney(startsWithValueLabel('Net Cost of Repairs')),
+   };
++  totals.revenue = totals.net_cost_of_repairs ?? totals.total_cost_of_repairs;
+ 
+   const hasAnyValue = Object.values(totals).some((value) => value !== null);
+   return hasAnyValue ? totals : null;
+@@ -274,6 +285,9 @@
+     'paint_labor_hours',
+     'paint_labor_rate',
+     'paint_labor_cost',
++    'mechanical_labor_hours',
++    'mechanical_labor_rate',
++    'mechanical_labor_cost',
+     'paint_supplies_hours',
+     'paint_supplies_rate',
+     'paint_supplies_cost',
+@@ -293,12 +307,14 @@
+     'deductible',
+     'total_adjustments',
+     'net_cost_of_repairs',
++    'revenue',
+   ];
+ 
+   const normalized = {};
+   for (const key of fields) {
+     normalized[key] = toNumberOrNull(raw[key]);
+   }
++  normalized.revenue = normalized.revenue ?? normalized.net_cost_of_repairs ?? normalized.total_cost_of_repairs;
+   const hasAny = Object.values(normalized).some((value) => value !== null);
+   return hasAny ? normalized : null;
+ }
+@@ -731,3 +747,4 @@
+ module.exports = router;
+ module.exports.insuranceOcrLimiter = insuranceOcrLimiter;
+ module.exports.insuranceOcrLimiterKeyGenerator = insuranceOcrLimiterKeyGenerator;
++module.exports.parseEstimateTotalsFromPdfText = parseEstimateTotalsFromPdfText;
+diff --git a/backend/test/estimateTotals.test.js b/backend/test/estimateTotals.test.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..83ff957aa381e3305b2e4cc47339c337f5f1c20d
+--- /dev/null
++++ b/backend/test/estimateTotals.test.js
+@@ -0,0 +1,73 @@
++const assert = require('node:assert/strict');
++const fs = require('node:fs');
++const path = require('node:path');
++const test = require('node:test');
++
++const { parseEstimateTotalsFromPdfText } = require('../src/routes/insuranceOcr');
++
++function fixture(name) {
++  return fs.readFileSync(path.join(__dirname, 'fixtures', name), 'utf8');
++}
++
++test('parseEstimateTotalsFromPdfText parses CCC totals with labels glued to values', () => {
++  const totals = parseEstimateTotalsFromPdfText(fixture('ccc-estimate-totals.txt'));
++
++  assert.deepEqual(totals, {
++    parts: 2976.73,
++    body_labor_hours: 48.2,
++    body_labor_rate: 50,
++    body_labor_cost: 2410,
++    paint_labor_hours: 20.5,
++    paint_labor_rate: 50,
++    paint_labor_cost: 1025,
++    mechanical_labor_hours: 2.2,
++    mechanical_labor_rate: 50,
++    mechanical_labor_cost: 110,
++    paint_supplies_hours: 20.5,
++    paint_supplies_rate: 30,
++    paint_supplies_cost: 615,
++    miscellaneous: null,
++    other_charges: null,
++    subtotal: 7136.73,
++    sales_tax_basis: 7136.73,
++    sales_tax_rate: 8.875,
++    sales_tax_cost: 633.38,
++    county_tax_basis: null,
++    county_tax_rate: null,
++    county_tax_cost: null,
++    other_tax_1_basis: null,
++    other_tax_1_rate: null,
++    other_tax_1_cost: null,
++    total_cost_of_repairs: 7770.11,
++    deductible: null,
++    total_adjustments: 0,
++    net_cost_of_repairs: 7770.11,
++    revenue: 7770.11,
++  });
++
++  for (const key of [
++    'parts',
++    'body_labor_hours',
++    'body_labor_rate',
++    'body_labor_cost',
++    'paint_labor_hours',
++    'paint_labor_rate',
++    'paint_labor_cost',
++    'mechanical_labor_hours',
++    'mechanical_labor_rate',
++    'mechanical_labor_cost',
++    'paint_supplies_hours',
++    'paint_supplies_rate',
++    'paint_supplies_cost',
++    'subtotal',
++    'sales_tax_basis',
++    'sales_tax_rate',
++    'sales_tax_cost',
++    'total_cost_of_repairs',
++    'total_adjustments',
++    'net_cost_of_repairs',
++    'revenue',
++  ]) {
++    assert.notEqual(totals[key], null, `${key} should not be null`);
++  }
++});
+
+codex
+Implemented Tier 1 backend changes, but commit was blocked by `.git/index.lock` permission:
+
+```bash
+fatal: Unable to create '/Users/zordon/.openclaw/workspace/Revv/.git/index.lock': Operation not permitted
+```
+
+Per instruction, I did not retry. Run this exact command when `.git` is writable:
+
+```bash
+git add backend/src/routes/insuranceOcr.js backend/test/estimateTotals.test.js backend/test/fixtures/ccc-estimate-totals.txt && git commit -m "feat(estimate-ocr): Tier 1 — fix CCC totals extraction (label-glued-to-value), add mechanical labor + net revenue, real-format fixture test"
+```
+
+Verification passed:
+
+```bash
+node --check backend/src/routes/insuranceOcr.js
+node --check backend/test/estimateTotals.test.js
+node --test backend/test/estimateTotals.test.js
+node --test backend/test/*.test.js
+```
+
+Changes are left unstaged due the git lock failure.
+diff --git a/backend/src/routes/insuranceOcr.js b/backend/src/routes/insuranceOcr.js
+index 2fa29db6f24f3a13e6c64280dde2ec76b5474a11..e72cff3cfbc2a899eadea98ea3580378ae619c29
+--- a/backend/src/routes/insuranceOcr.js
++++ b/backend/src/routes/insuranceOcr.js
+@@ -71,6 +71,9 @@
+     "paint_labor_hours": 0,
+     "paint_labor_rate": 0,
+     "paint_labor_cost": 0,
++    "mechanical_labor_hours": 0,
++    "mechanical_labor_rate": 0,
++    "mechanical_labor_cost": 0,
+     "paint_supplies_hours": 0,
+     "paint_supplies_rate": 0,
+     "paint_supplies_cost": 0,
+@@ -89,7 +92,8 @@
+     "total_cost_of_repairs": 0,
+     "deductible": 0,
+     "total_adjustments": 0,
+-    "net_cost_of_repairs": 0
++    "net_cost_of_repairs": 0,
++    "revenue": 0
+   },
+   "line_items": [
+     {
+@@ -195,10 +199,12 @@
+     return m ? toNumberOrNull(m[1]) : null;
+   };
+ 
++  const startsWithValueLabel = (label) => new RegExp(`^${label}\\s*(?=[-$0-9])`, 'i');
++
+   const parseHourRateLine = (labelRegex) => {
+     const line = totalLines.find((row) => labelRegex.test(row));
+     if (!line) return { hours: null, rate: null, cost: null };
+-    const m = line.match(/([0-9]+(?:\.[0-9]+)?)\s*hrs\s*@\s*\$?\s*([0-9,]+(?:\.[0-9]+)?)\s*\/hr\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
++    const m = line.match(/([0-9]+(?:\.[0-9]+)?)\s*hrs\s*@\s*\$?\s*([0-9,]+(?:\.[0-9]+)?)\s*\/\s*hr\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
+     if (!m) return { hours: null, rate: null, cost: takeTrailingMoney(line) };
+     return {
+       hours: toNumberOrNull(m[1]),
+@@ -210,7 +216,7 @@
+   const parseTaxLine = (labelRegex) => {
+     const line = totalLines.find((row) => labelRegex.test(row));
+     if (!line) return { basis: null, rate: null, cost: null };
+-    const m = line.match(/\$\s*([0-9,]+(?:\.[0-9]+)?)\s*@\s*([0-9]+(?:\.[0-9]+)?)\s*%\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
++    const m = line.match(/\$?\s*([0-9,]+(?:\.[0-9]+)?)\s*@\s*([0-9]+(?:\.[0-9]+)?)\s*%\s*(-?\$?\s*[0-9,]+\.[0-9]{2})/i);
+     if (!m) return { basis: null, rate: null, cost: takeTrailingMoney(line) };
+     return {
+       basis: toNumberOrNull(m[1]),
+@@ -219,12 +225,13 @@
+     };
+   };
+ 
+-  const bodyLabor = parseHourRateLine(/^Body Labor\b/i);
+-  const paintLabor = parseHourRateLine(/^Paint Labor\b/i);
+-  const paintSupplies = parseHourRateLine(/^Paint Supplies\b/i);
+-  const salesTax = parseTaxLine(/^Sales Tax\b/i);
+-  const countyTax = parseTaxLine(/^County Tax\b/i);
+-  const otherTax1 = parseTaxLine(/^Other Tax 1\b/i);
++  const bodyLabor = parseHourRateLine(startsWithValueLabel('Body Labor'));
++  const paintLabor = parseHourRateLine(startsWithValueLabel('Paint Labor'));
++  const mechanicalLabor = parseHourRateLine(startsWithValueLabel('Mechanical Labor'));
++  const paintSupplies = parseHourRateLine(startsWithValueLabel('Paint Supplies'));
++  const salesTax = parseTaxLine(startsWithValueLabel('Sales Tax'));
++  const countyTax = parseTaxLine(startsWithValueLabel('County Tax'));
++  const otherTax1 = parseTaxLine(startsWithValueLabel('Other Tax 1'));
+ 
+   const byLabelMoney = (labelRegex) => {
+     const line = totalLines.find((row) => labelRegex.test(row));
+@@ -232,19 +239,22 @@
+   };
+ 
+   const totals = {
+-    parts: byLabelMoney(/^Parts\b/i),
++    parts: byLabelMoney(startsWithValueLabel('Parts')),
+     body_labor_hours: bodyLabor.hours,
+     body_labor_rate: bodyLabor.rate,
+     body_labor_cost: bodyLabor.cost,
+     paint_labor_hours: paintLabor.hours,
+     paint_labor_rate: paintLabor.rate,
+     paint_labor_cost: paintLabor.cost,
++    mechanical_labor_hours: mechanicalLabor.hours,
++    mechanical_labor_rate: mechanicalLabor.rate,
++    mechanical_labor_cost: mechanicalLabor.cost,
+     paint_supplies_hours: paintSupplies.hours,
+     paint_supplies_rate: paintSupplies.rate,
+     paint_supplies_cost: paintSupplies.cost,
+-    miscellaneous: byLabelMoney(/^Miscellaneous\b/i),
+-    other_charges: byLabelMoney(/^Other Charges\b/i),
+-    subtotal: byLabelMoney(/^Subtotal\b/i),
++    miscellaneous: byLabelMoney(startsWithValueLabel('Miscellaneous')),
++    other_charges: byLabelMoney(startsWithValueLabel('Other Charges')),
++    subtotal: byLabelMoney(startsWithValueLabel('Subtotal')),
+     sales_tax_basis: salesTax.basis,
+     sales_tax_rate: salesTax.rate,
+     sales_tax_cost: salesTax.cost,
+@@ -254,11 +264,12 @@
+     other_tax_1_basis: otherTax1.basis,
+     other_tax_1_rate: otherTax1.rate,
+     other_tax_1_cost: otherTax1.cost,
+-    total_cost_of_repairs: byLabelMoney(/^Total Cost of Repairs\b/i),
+-    deductible: byLabelMoney(/^Deductible\b/i),
+-    total_adjustments: byLabelMoney(/^Total Adjustments\b/i),
+-    net_cost_of_repairs: byLabelMoney(/^Net Cost of Repairs\b/i),
++    total_cost_of_repairs: byLabelMoney(startsWithValueLabel('Total Cost of Repairs')),
++    deductible: byLabelMoney(startsWithValueLabel('Deductible')),
++    total_adjustments: byLabelMoney(startsWithValueLabel('Total Adjustments')),
++    net_cost_of_repairs: byLabelMoney(startsWithValueLabel('Net Cost of Repairs')),
+   };
++  totals.revenue = totals.net_cost_of_repairs ?? totals.total_cost_of_repairs;
+ 
+   const hasAnyValue = Object.values(totals).some((value) => value !== null);
+   return hasAnyValue ? totals : null;
+@@ -274,6 +285,9 @@
+     'paint_labor_hours',
+     'paint_labor_rate',
+     'paint_labor_cost',
++    'mechanical_labor_hours',
++    'mechanical_labor_rate',
++    'mechanical_labor_cost',
+     'paint_supplies_hours',
+     'paint_supplies_rate',
+     'paint_supplies_cost',
+@@ -293,12 +307,14 @@
+     'deductible',
+     'total_adjustments',
+     'net_cost_of_repairs',
++    'revenue',
+   ];
+ 
+   const normalized = {};
+   for (const key of fields) {
+     normalized[key] = toNumberOrNull(raw[key]);
+   }
++  normalized.revenue = normalized.revenue ?? normalized.net_cost_of_repairs ?? normalized.total_cost_of_repairs;
+   const hasAny = Object.values(normalized).some((value) => value !== null);
+   return hasAny ? normalized : null;
+ }
+@@ -731,3 +747,4 @@
+ module.exports = router;
+ module.exports.insuranceOcrLimiter = insuranceOcrLimiter;
+ module.exports.insuranceOcrLimiterKeyGenerator = insuranceOcrLimiterKeyGenerator;
++module.exports.parseEstimateTotalsFromPdfText = parseEstimateTotalsFromPdfText;
+diff --git a/backend/test/estimateTotals.test.js b/backend/test/estimateTotals.test.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..83ff957aa381e3305b2e4cc47339c337f5f1c20d
+--- /dev/null
++++ b/backend/test/estimateTotals.test.js
+@@ -0,0 +1,73 @@
++const assert = require('node:assert/strict');
++const fs = require('node:fs');
++const path = require('node:path');
++const test = require('node:test');
++
++const { parseEstimateTotalsFromPdfText } = require('../src/routes/insuranceOcr');
++
++function fixture(name) {
++  return fs.readFileSync(path.join(__dirname, 'fixtures', name), 'utf8');
++}
++
++test('parseEstimateTotalsFromPdfText parses CCC totals with labels glued to values', () => {
++  const totals = parseEstimateTotalsFromPdfText(fixture('ccc-estimate-totals.txt'));
++
++  assert.deepEqual(totals, {
++    parts: 2976.73,
++    body_labor_hours: 48.2,
++    body_labor_rate: 50,
++    body_labor_cost: 2410,
++    paint_labor_hours: 20.5,
++    paint_labor_rate: 50,
++    paint_labor_cost: 1025,
++    mechanical_labor_hours: 2.2,
++    mechanical_labor_rate: 50,
++    mechanical_labor_cost: 110,
++    paint_supplies_hours: 20.5,
++    paint_supplies_rate: 30,
++    paint_supplies_cost: 615,
++    miscellaneous: null,
++    other_charges: null,
++    subtotal: 7136.73,
++    sales_tax_basis: 7136.73,
++    sales_tax_rate: 8.875,
++    sales_tax_cost: 633.38,
++    county_tax_basis: null,
++    county_tax_rate: null,
++    county_tax_cost: null,
++    other_tax_1_basis: null,
++    other_tax_1_rate: null,
++    other_tax_1_cost: null,
++    total_cost_of_repairs: 7770.11,
++    deductible: null,
++    total_adjustments: 0,
++    net_cost_of_repairs: 7770.11,
++    revenue: 7770.11,
++  });
++
++  for (const key of [
++    'parts',
++    'body_labor_hours',
++    'body_labor_rate',
++    'body_labor_cost',
++    'paint_labor_hours',
++    'paint_labor_rate',
++    'paint_labor_cost',
++    'mechanical_labor_hours',
++    'mechanical_labor_rate',
++    'mechanical_labor_cost',
++    'paint_supplies_hours',
++    'paint_supplies_rate',
++    'paint_supplies_cost',
++    'subtotal',
++    'sales_tax_basis',
++    'sales_tax_rate',
++    'sales_tax_cost',
++    'total_cost_of_repairs',
++    'total_adjustments',
++    'net_cost_of_repairs',
++    'revenue',
++  ]) {
++    assert.notEqual(totals[key], null, `${key} should not be null`);
++  }
++});
+
+2026-06-16T03:47:13.214249Z ERROR codex_core::session: failed to record rollout items: thread 019ece88-e28d-7fe3-a30a-e679d7d31a7a not found
+tokens used
+87,672
+Implemented Tier 1 backend changes, but commit was blocked by `.git/index.lock` permission:
+
+```bash
+fatal: Unable to create '/Users/zordon/.openclaw/workspace/Revv/.git/index.lock': Operation not permitted
+```
+
+Per instruction, I did not retry. Run this exact command when `.git` is writable:
+
+```bash
+git add backend/src/routes/insuranceOcr.js backend/test/estimateTotals.test.js backend/test/fixtures/ccc-estimate-totals.txt && git commit -m "feat(estimate-ocr): Tier 1 — fix CCC totals extraction (label-glued-to-value), add mechanical labor + net revenue, real-format fixture test"
+```
+
+Verification passed:
+
+```bash
+node --check backend/src/routes/insuranceOcr.js
+node --check backend/test/estimateTotals.test.js
+node --test backend/test/estimateTotals.test.js
+node --test backend/test/*.test.js
+```
+
+Changes are left unstaged due the git lock failure.

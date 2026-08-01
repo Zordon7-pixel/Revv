@@ -1,0 +1,16 @@
+You are the INDEPENDENT QA reviewer for REVV Estimate OCR Tier 1c on branch feat/estimate-import-bms. Review commit 54be2b4 vs origin/main. Review-only — do not modify files. This is a FRONTEND display-only change: surface the already-extracted parsed.estimate_totals (revenue, labor/paint rates, category costs) in EstimateImportWizard via a read-only Job Financials card.
+
+READ: frontend/src/components/EstimateImportWizard.jsx, frontend/src/components/__tests__/EstimateImportWizard.test.jsx, docs/SPEC-estimate-ocr-tier1c-ui.md.
+
+EXECUTE and report real output:
+- cd frontend && npm run test:run
+- npm run build
+- rm -rf dist && cd .. && git diff --check && git ls-files frontend/dist
+
+ASSESS (rate findings CRITICAL/HIGH/MED/LOW):
+1. Financials card renders ONLY when parsed.estimate_totals is present; renders nothing (no empty card, no NaN, no $null) when absent or when individual fields are null. Confirm the new tests actually assert (a) revenue headline + body/paint labor RATE rows present with a populated estimate_totals, and (b) card absent when estimate_totals missing.
+2. formatUSD guards null/undefined/NaN. Labor/paint rows show hours x rate = cost with the RATE visible (Bryan's core ask). Revenue headline uses revenue (net_cost_of_repairs fallback total_cost_of_repairs).
+3. NO regression to the wizard's existing import/confirm/create flow, line-item handling, or the parsed contract. Change is presentational only; no backend touched. deductible handling preserved.
+4. Safety: no secret/PII rendering beyond the estimate financials already in scope; no console of sensitive data; no new network calls.
+
+Output a structured report ending with exactly: QA VERDICT: PASS (only if 0 CRITICAL and 0 unresolved HIGH) or QA VERDICT: FAIL.

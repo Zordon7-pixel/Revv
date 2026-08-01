@@ -1,0 +1,24 @@
+TASK: REVV — Phase 1 of estimate→true-profit (Shop Cost Profile). Backend + frontend. Owner-only.
+
+READ FIRST: SPEC-estimate-true-profit.md (repo root), backend/src/db/index.js (migration idiom + shops table), backend/src/db/schema.pg.sql, frontend/src/pages/Settings.jsx, backend/src/middleware/roles.js (role gating).
+
+CONTEXT (already exists — do NOT duplicate):
+- shops table already has labor_rate (NUMERIC DEFAULT 62 = the BILLED labor rate) and parts_markup (the parts markup the shop adds).
+- Migration idiom is sequential ALTER TABLE shops ADD COLUMN IF NOT EXISTS in backend/src/db/index.js (see lines ~405-408). Use that EXACT idiom. Also add matching defaults to the CREATE TABLE shops block in BOTH backend/src/db/index.js AND backend/src/db/schema.pg.sql so fresh and existing DBs converge.
+
+SCOPE (Phase 1 ONLY — do not build the profit engine or estimate parsing; those are later phases):
+1. Add THREE new shops columns (idempotent ALTER + CREATE-block defaults in both db files):
+   - labor_cost_per_hr NUMERIC(10,2) DEFAULT 40   (the shops actual tech wage cost per hour; distinct from labor_rate which is billed)
+   - materials_margin_pct NUMERIC(5,4) DEFAULT 0.45  (gross margin on paint/materials, 0..1)
+   - sublet_margin_pct NUMERIC(5,4) DEFAULT 0.05     (margin on sublet, 0..1)
+   Do NOT add parts margin — reuse existing parts_markup. Do NOT touch labor_rate.
+2. Backend: find the EXISTING shop-update endpoint (grep routes for the PUT/PATCH that saves shop/settings fields like labor_rate or parts_markup). Extend it to accept + persist the 3 new fields. Validate: margins are numbers in [0,1]; labor_cost_per_hr is a number >= 0. Reject invalid with 400. Owner/admin gate must match how labor_rate edits are already gated (use the existing roles helper; do not invent a new gate).
+3. Frontend Settings.jsx: add a Profit / Cost Profile section (owner-only, same gating as existing sensitive settings) with inputs for: labor_cost_per_hr, materials_margin_pct (show as %), sublet_margin_pct (show as %). Show existing labor_rate + parts_markup READ-ONLY context next to them so the owner understands billed-vs-cost. Save through the extended endpoint. Match existing Settings styling.
+
+CONSTRAINTS:
+- Keep it to Phase 1. Max ~8 files.
+- Do NOT change profit.js or any profit calculation in this phase.
+- Follow existing code style, error handling (no silent catches), and parameterized SQL.
+- Add/extend a unit test for the new validation if the repo has a settings/shop test; otherwise add a small test mirroring existing patterns.
+
+When done: print a summary of files changed and the new columns added. Do not git commit (mounted-volume lock); leave changes in the working tree.
