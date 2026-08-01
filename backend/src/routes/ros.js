@@ -2,7 +2,7 @@ const router = require('express').Router();
 const { pool, dbGet, dbAll, dbRun } = require('../db');
 const auth = require('../middleware/auth');
 const { ROLE_RANK, getRoleRank, requireAdmin, requireTechnician } = require('../middleware/roles');
-const { calculateProfit } = require('../services/profit');
+const { calculateProfit, calculateTrueProfit } = require('../services/profit');
 const { getRoMoneySummary, isPaidStatus, roundToIntCents } = require('../services/roMoney');
 const { sendSMS, isConfiguredForShop } = require('../services/sms');
 const { sendMail } = require('../services/mailer');
@@ -1322,7 +1322,40 @@ router.get('/:id', auth, async (req, res) => {
   try {
     const ro = await dbGet('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
     if (!ro) return res.status(404).json({ error: 'Not found' });
-    res.json(await enrichRO(ro));
+    const payload = await enrichRO(ro);
+    const actorRole = String(req.user.role || '').toLowerCase();
+
+    if (['owner', 'admin'].includes(actorRole)) {
+      try {
+        const [costProfile, laborHoursRow] = await Promise.all([
+          dbGet(
+            `SELECT parts_margin_pct, materials_margin_pct, sublet_margin_pct,
+                    blended_labor_cost_per_hr, labor_rate
+             FROM shops
+             WHERE id = $1`,
+            [req.user.shop_id]
+          ),
+          dbGet(
+            `SELECT SUM(quantity) AS labor_hours
+             FROM estimate_line_items
+             WHERE ro_id = $1 AND shop_id = $2 AND type = 'labor'`,
+            [req.params.id, req.user.shop_id]
+          ),
+        ]);
+        const opts = { laborRate: costProfile?.labor_rate };
+        if (laborHoursRow?.labor_hours != null) {
+          opts.laborHours = Number(laborHoursRow.labor_hours);
+        }
+        const profitBreakdown = calculateTrueProfit(ro, costProfile, opts);
+        payload.profit_breakdown = profitBreakdown.costProfileApplied === false
+          ? { ...profitBreakdown, costProfileApplied: false }
+          : profitBreakdown;
+      } catch (profitError) {
+        console.error('[RO Profit Breakdown] failed:', profitError);
+      }
+    }
+
+    res.json(payload);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
