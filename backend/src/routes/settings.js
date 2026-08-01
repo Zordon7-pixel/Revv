@@ -4,6 +4,15 @@ const auth = require('../middleware/auth');
 const { requireAdmin, requireTechnician, disallowAssistant } = require('../middleware/roles');
 
 const SECTIONS = new Set(['ros', 'customers', 'vehicles', 'timeclock', 'all']);
+const COST_PROFILE_PERCENT_FIELDS = [
+  'parts_margin_pct',
+  'materials_margin_pct',
+  'sublet_margin_pct',
+];
+
+function isOwnerOrAdmin(user) {
+  return ['owner', 'admin'].includes(user?.role);
+}
 
 async function resetRos(shopId) {
   await dbRun(
@@ -49,10 +58,17 @@ async function resetTimeclock(shopId) {
 
 router.get('/', auth, requireTechnician, async (req, res) => {
   try {
+    const costProfileColumns = isOwnerOrAdmin(req.user)
+      ? `,
+         parts_margin_pct,
+         materials_margin_pct,
+         sublet_margin_pct,
+         blended_labor_cost_per_hr`
+      : '';
     const settings = await dbGet(
       `SELECT
          COALESCE(sms_notifications_enabled, TRUE) AS sms_notifications_enabled,
-         COALESCE(email_notifications_enabled, TRUE) AS email_notifications_enabled
+         COALESCE(email_notifications_enabled, TRUE) AS email_notifications_enabled${costProfileColumns}
        FROM shops
        WHERE id = $1`,
       [req.user.shop_id]
@@ -66,7 +82,7 @@ router.get('/', auth, requireTechnician, async (req, res) => {
 
 router.patch('/', auth, requireTechnician, async (req, res) => {
   try {
-    if (!['owner', 'admin'].includes(req.user.role)) {
+    if (!isOwnerOrAdmin(req.user)) {
       return res.status(403).json({ error: 'Admin access required' });
     }
 
@@ -76,6 +92,22 @@ router.patch('/', auth, requireTechnician, async (req, res) => {
     }
     if (req.body && Object.prototype.hasOwnProperty.call(req.body, 'email_notifications_enabled')) {
       updates.email_notifications_enabled = !!req.body.email_notifications_enabled;
+    }
+    for (const field of COST_PROFILE_PERCENT_FIELDS) {
+      if (!req.body || !Object.prototype.hasOwnProperty.call(req.body, field)) continue;
+      const value = req.body[field];
+      if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1) {
+        return res.status(400).json({ error: `${field} must be a number between 0 and 1` });
+      }
+      updates[field] = value;
+    }
+    if (req.body && Object.prototype.hasOwnProperty.call(req.body, 'blended_labor_cost_per_hr')) {
+      const value = req.body.blended_labor_cost_per_hr;
+      const clearsProfile = value === null || (typeof value === 'string' && value.trim() === '');
+      if (!clearsProfile && (typeof value !== 'number' || !Number.isFinite(value) || value <= 0)) {
+        return res.status(400).json({ error: 'blended_labor_cost_per_hr must be null/empty or a number greater than 0' });
+      }
+      updates.blended_labor_cost_per_hr = clearsProfile ? null : value;
     }
     if (Object.keys(updates).length === 0) {
       return res.status(400).json({ error: 'No valid settings provided' });
@@ -91,13 +123,26 @@ router.patch('/', auth, requireTechnician, async (req, res) => {
       values.push(updates.email_notifications_enabled);
       setClauses.push(`email_notifications_enabled = $${values.length}`);
     }
+    for (const field of COST_PROFILE_PERCENT_FIELDS) {
+      if (!Object.prototype.hasOwnProperty.call(updates, field)) continue;
+      values.push(updates[field]);
+      setClauses.push(`${field} = $${values.length}`);
+    }
+    if (Object.prototype.hasOwnProperty.call(updates, 'blended_labor_cost_per_hr')) {
+      values.push(updates.blended_labor_cost_per_hr);
+      setClauses.push(`blended_labor_cost_per_hr = $${values.length}`);
+    }
     values.push(req.user.shop_id);
     await dbRun(`UPDATE shops SET ${setClauses.join(', ')} WHERE id = $${values.length}`, values);
 
     const updated = await dbGet(
       `SELECT
          COALESCE(sms_notifications_enabled, TRUE) AS sms_notifications_enabled,
-         COALESCE(email_notifications_enabled, TRUE) AS email_notifications_enabled
+         COALESCE(email_notifications_enabled, TRUE) AS email_notifications_enabled,
+         parts_margin_pct,
+         materials_margin_pct,
+         sublet_margin_pct,
+         blended_labor_cost_per_hr
        FROM shops
        WHERE id = $1`,
       [req.user.shop_id]

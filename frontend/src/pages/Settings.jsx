@@ -15,6 +15,11 @@ const TIER_COLORS = {
 }
 const TIER_LABELS = { 1:'Major Metro', 2:'Large City', 3:'Mid-Size Market', 4:'Small Market' }
 
+function marginPercent(value, fallback) {
+  const fraction = Number(value)
+  return Number.isFinite(fraction) ? String(Number((fraction * 100).toFixed(4))) : fallback
+}
+
 export default function Settings() {
   const currentYearMonth = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
   const [shop,   setShop]   = useState(null)
@@ -32,6 +37,13 @@ export default function Settings() {
   const [smsLoading, setSmsLoading] = useState(true)
   const [smsNotificationsEnabled, setSmsNotificationsEnabled] = useState(true)
   const [emailNotificationsEnabled, setEmailNotificationsEnabled] = useState(true)
+  const [costProfile, setCostProfile] = useState({
+    parts_margin_pct: '25',
+    materials_margin_pct: '45',
+    sublet_margin_pct: '5',
+    blended_labor_cost_per_hr: '',
+  })
+  const [costProfileLoaded, setCostProfileLoaded] = useState(false)
   const [ownerActivityPrefs, setOwnerActivityPrefs] = useState({
     owner_activity_digest_enabled: true,
     owner_activity_immediate_alerts_enabled: true,
@@ -142,6 +154,15 @@ export default function Settings() {
       .then(r => {
         setSmsNotificationsEnabled(r?.data?.sms_notifications_enabled !== false)
         setEmailNotificationsEnabled(r?.data?.email_notifications_enabled !== false)
+        setCostProfile({
+          parts_margin_pct: marginPercent(r?.data?.parts_margin_pct, '25'),
+          materials_margin_pct: marginPercent(r?.data?.materials_margin_pct, '45'),
+          sublet_margin_pct: marginPercent(r?.data?.sublet_margin_pct, '5'),
+          blended_labor_cost_per_hr: r?.data?.blended_labor_cost_per_hr == null
+            ? ''
+            : String(r.data.blended_labor_cost_per_hr),
+        })
+        setCostProfileLoaded(true)
       })
       .catch(() => {
         setSmsNotificationsEnabled(true)
@@ -272,6 +293,26 @@ export default function Settings() {
     e.preventDefault()
     setSaving(true)
     setSaveError('')
+    if (userIsAdmin && !costProfileLoaded) {
+      setSaveError('Shop cost profile is still loading. Please wait and try again.')
+      setSaving(false)
+      return
+    }
+    const laborCostInput = String(costProfile.blended_labor_cost_per_hr ?? '').trim()
+    const costProfilePayload = {
+      parts_margin_pct: Number(costProfile.parts_margin_pct) / 100,
+      materials_margin_pct: Number(costProfile.materials_margin_pct) / 100,
+      sublet_margin_pct: Number(costProfile.sublet_margin_pct) / 100,
+      blended_labor_cost_per_hr: laborCostInput === '' ? null : Number(laborCostInput),
+    }
+    const marginsAreValid = ['parts_margin_pct', 'materials_margin_pct', 'sublet_margin_pct']
+      .every(field => Number.isFinite(costProfilePayload[field]) && costProfilePayload[field] >= 0 && costProfilePayload[field] <= 1)
+    if (!marginsAreValid || (costProfilePayload.blended_labor_cost_per_hr !== null
+      && (!Number.isFinite(costProfilePayload.blended_labor_cost_per_hr) || costProfilePayload.blended_labor_cost_per_hr <= 0))) {
+      setSaveError('Margins must be between 0% and 100%, and labor cost must be greater than $0 or left blank.')
+      setSaving(false)
+      return
+    }
     try {
       const shopFields = { ...form }
       delete shopFields.logo_url
@@ -291,9 +332,10 @@ export default function Settings() {
         twilio_api_secret:        (form.twilio_api_secret || '').trim() || undefined,
         monthly_revenue_target:   parseInt(form.monthly_revenue_target, 10) || 85000,
       })
-      await api.patch('/settings', {
+      const { data: updatedSettings } = await api.patch('/settings', {
         sms_notifications_enabled: !!smsNotificationsEnabled,
         email_notifications_enabled: !!emailNotificationsEnabled,
+        ...costProfilePayload,
       })
       await api.put('/owner-activity/preferences', ownerActivityPrefs)
       setShop(data)
@@ -315,6 +357,14 @@ export default function Settings() {
         twilio_api_key: '',
         twilio_api_secret: '',
       }))
+      setCostProfile({
+        parts_margin_pct: marginPercent(updatedSettings?.parts_margin_pct, costProfile.parts_margin_pct),
+        materials_margin_pct: marginPercent(updatedSettings?.materials_margin_pct, costProfile.materials_margin_pct),
+        sublet_margin_pct: marginPercent(updatedSettings?.sublet_margin_pct, costProfile.sublet_margin_pct),
+        blended_labor_cost_per_hr: updatedSettings?.blended_labor_cost_per_hr == null
+          ? ''
+          : String(updatedSettings.blended_labor_cost_per_hr),
+      })
       setSaved(true)
       setTimeout(() => setSaved(false), 2500)
       setSaveError('')
@@ -854,6 +904,51 @@ export default function Settings() {
               )}
             </div>
           </div>
+
+          {userIsAdmin && (
+            <div className="bg-void rounded-xl border border-line p-4 space-y-3">
+              <div>
+                <h3 className="text-sm font-semibold text-ink">Shop Cost Profile</h3>
+                <p className="text-[10px] text-faint mt-1">
+                  Record your internal cost assumptions. Leave labor cost blank to keep the profile inactive.
+                </p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                <div>
+                  <label className={lbl}>Parts Margin (%)</label>
+                  <div className="relative">
+                    <input className={`${inp} pr-6`} type="number" step="0.1" min="0" max="100" required disabled={!costProfileLoaded}
+                      value={costProfile.parts_margin_pct} onChange={e => setCostProfile(p => ({ ...p, parts_margin_pct: e.target.value }))} />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-faint text-sm">%</span>
+                  </div>
+                </div>
+                <div>
+                  <label className={lbl}>Materials Margin (%)</label>
+                  <div className="relative">
+                    <input className={`${inp} pr-6`} type="number" step="0.1" min="0" max="100" required disabled={!costProfileLoaded}
+                      value={costProfile.materials_margin_pct} onChange={e => setCostProfile(p => ({ ...p, materials_margin_pct: e.target.value }))} />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-faint text-sm">%</span>
+                  </div>
+                </div>
+                <div>
+                  <label className={lbl}>Sublet Margin (%)</label>
+                  <div className="relative">
+                    <input className={`${inp} pr-6`} type="number" step="0.1" min="0" max="100" required disabled={!costProfileLoaded}
+                      value={costProfile.sublet_margin_pct} onChange={e => setCostProfile(p => ({ ...p, sublet_margin_pct: e.target.value }))} />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-faint text-sm">%</span>
+                  </div>
+                </div>
+                <div>
+                  <label className={lbl}>Blended Labor Cost ($/hr)</label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-faint text-sm">$</span>
+                    <input className={`${inp} pl-6`} type="number" step="0.01" min="0.01" placeholder="Not set" disabled={!costProfileLoaded}
+                      value={costProfile.blended_labor_cost_per_hr} onChange={e => setCostProfile(p => ({ ...p, blended_labor_cost_per_hr: e.target.value }))} />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Monthly Revenue Target */}
           <div>

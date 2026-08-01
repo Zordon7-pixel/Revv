@@ -23,6 +23,10 @@ async function initDb() {
       market_tier INTEGER DEFAULT 3,
       labor_rate REAL DEFAULT 62,
       paint_rate REAL DEFAULT 62,
+      parts_margin_pct REAL DEFAULT 0.25,
+      materials_margin_pct REAL DEFAULT 0.45,
+      sublet_margin_pct REAL DEFAULT 0.05,
+      blended_labor_cost_per_hr REAL,
       parts_markup REAL DEFAULT 0.30,
       tax_rate REAL DEFAULT 0.0700,
       lat REAL,
@@ -467,6 +471,10 @@ async function initDb() {
   await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS onboarded BOOLEAN DEFAULT FALSE`);
   await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS logo_url TEXT`);
   await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS paint_rate REAL DEFAULT 62`);
+  await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS parts_margin_pct REAL DEFAULT 0.25`);
+  await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS materials_margin_pct REAL DEFAULT 0.45`);
+  await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS sublet_margin_pct REAL DEFAULT 0.05`);
+  await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS blended_labor_cost_per_hr REAL`);
   await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS quickbooks_company_id TEXT`);
   await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS quickbooks_realm_id TEXT`);
   await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS quickbooks_access_token TEXT`);
