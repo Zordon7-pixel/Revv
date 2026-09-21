@@ -6,6 +6,7 @@ import { isAdmin } from '../lib/auth'
 import { resolveUploadedMediaUrl } from '../lib/mediaUrls'
 import AppOverlay from '../components/AppOverlay'
 import { PageHeader } from '../components/ui'
+import ThemeSettingsCard from '../components/ThemeSettingsCard'
 
 const TIER_COLORS = {
   1: 'border-brand/40 bg-brand/10 text-brand',
@@ -777,6 +778,9 @@ export default function Settings() {
               </button>
               {profileError && <p className="text-xs text-crit">{profileError}</p>}
             </div>
+
+
+            <ThemeSettingsCard />
 
             {/* Shop Info */}
             <div className="bg-panel rounded-2xl p-5 border border-line space-y-4">
