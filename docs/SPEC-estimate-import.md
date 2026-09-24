@@ -87,3 +87,24 @@ existing `classifyByOperationCodes` semantics (RNI/R&I/RPR = labor, not parts).
 - 0 CRITICAL and 0 unresolved HIGH; MED/LOW go to backlog Phase Nb in DAILY-OPS.
 - XXE-safe proven by test; OCR fallback intact; Miles tables provably untouched.
 - Ship of Phase 3 is blocked until one real Miles BMS export validates manually.
+
+## 2026-09-24 PDF/image import repair
+
+The shop reported failed estimate uploads and missing individual rows. Local inspection found that
+the CCC/Mitchell fast path returned as soon as any row parsed, even when other numbered rows were
+flagged unreadable. Multiple uploaded files could also be ignored: deterministic parsing stopped at
+the first totals block, and the image branch omitted extracted PDF text.
+
+The local patch retries partial grids, sends all PDF text alongside uploaded images, reserves the
+deterministic fast path for a single file, preserves known rows when recovery fails or returns fewer
+readable rows, and returns actionable JSON errors for rejected uploads. Review warnings remain visible.
+No production deployment or real shop estimate verification has been performed. Provider calls and
+PDF extraction are mocked in route regression tests; real-file verification remains required.
+Existing text, rendered-page, and model-output limits still need coverage with an affected estimate.
+
+The requested liability-agreement upload and e-sign flow is feasible but is not implemented by this
+patch. Proposed scope: shop-owned PDF templates, a fixed agreement version for each signing request,
+customer document review and explicit signing action, signer/date/audit record, and a downloadable
+signed copy linked to the repair order. The actual shop agreement is needed to establish fields and
+signer requirements. Existing tracking/portal code provides an integration point; it does not currently
+implement contract signing. No agreements or customer messages were sent.

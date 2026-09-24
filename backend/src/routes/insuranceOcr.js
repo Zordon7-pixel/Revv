@@ -594,7 +594,9 @@ function mergeEstimateTotals(...sources) {
 }
 
 function shouldReturnDeterministicParse(parsed) {
-  return Array.isArray(parsed?.line_items) && parsed.line_items.length > 0;
+  const reasons = Array.isArray(parsed?.review_reasons) ? parsed.review_reasons : [];
+  return Array.isArray(parsed?.line_items) && parsed.line_items.length > 0
+    && !reasons.some((reason) => /^low_confidence_line_|_line_grid_missing$|_line_items_missing$/.test(reason));
 }
 
 function reviewReasonsAfterRecovery(reviewReasons, hasItems) {
@@ -617,14 +619,19 @@ function mergeRecoveredParsed(deterministicParsed, recoveredParsed) {
       merged[field] = deterministicParsed[field] ?? null;
     }
   }
-  const recoveredItems = Array.isArray(recovered.line_items) ? recovered.line_items : [];
-  merged.line_items = recoveredItems.length ? recoveredItems : (deterministicParsed.line_items || []);
+  const recoveredItems = normalizeLineItems(recovered.line_items);
+  const knownItems = Array.isArray(deterministicParsed.line_items) ? deterministicParsed.line_items : [];
+  const recoveryIncomplete = recoveredItems.length < knownItems.length;
+  merged.line_items = recoveredItems.length && !recoveryIncomplete ? recoveredItems : knownItems;
   merged.estimate_totals = mergeEstimateTotals(
     recovered.estimate_totals,
     deterministicParsed.estimate_totals
   );
   merged.review_reasons = reviewReasonsAfterRecovery(
-    [...(deterministicParsed.review_reasons || []), ...(recovered.review_reasons || [])],
+    [
+      ...(deterministicParsed.review_reasons || []), ...(recovered.review_reasons || []),
+      ...(recoveryIncomplete ? ['line_item_recovery_incomplete'] : []),
+    ],
     merged.line_items.length > 0
   );
   merged.needs_review = Boolean(merged.review_reasons.length || recovered.needs_review);
@@ -633,6 +640,11 @@ function mergeRecoveredParsed(deterministicParsed, recoveredParsed) {
 
 function buildDeterministicSummaryFallback(parsed, detectedFormat) {
   if (!parsed) return null;
+  // If recovery is unavailable, keep the readable details and their warnings.
+  // Replacing them with totals would discard rows the parser already recovered.
+  if (Array.isArray(parsed.line_items) && parsed.line_items.length) {
+    return { ...parsed, needs_review: true };
+  }
   const estimateTotals = normalizeEstimateTotals(parsed.estimate_totals);
   const lineItems = buildLineItemsFromTotals(estimateTotals);
   if (!lineItems.length) return null;
@@ -917,10 +929,24 @@ async function extractPdfPageImages(buffer, maxPages = PDF_IMAGE_PAGE_LIMIT) {
 }
 
 // ── Phase 1: OCR parse ───────────────────────────────────────────────────────
-router.post('/parse', auth, insuranceOcrLimiter, upload.fields([
+const estimateUploadFields = upload.fields([
   { name: 'estimate_image', maxCount: MAX_ESTIMATE_UPLOAD_FILES },
   { name: 'estimate_images', maxCount: MAX_ESTIMATE_UPLOAD_FILES },
-]), async (req, res) => {
+]);
+
+function uploadEstimateFiles(req, res, next) {
+  estimateUploadFields(req, res, (err) => {
+    if (!err) return next();
+    let error = 'Could not upload estimate. Upload a PDF or image.';
+    if (err.code === 'LIMIT_FILE_SIZE') error = 'Estimate file is too large. Upload files under 10MB each.';
+    else if (err.code === 'LIMIT_FILE_COUNT' || err.code === 'LIMIT_UNEXPECTED_FILE') {
+      error = 'Upload up to 12 estimate files using the estimate upload field.';
+    } else if (err.message === 'Unsupported estimate file type. Upload a PDF or image.') error = err.message;
+    return res.status(400).json({ success: false, error });
+  });
+}
+
+router.post('/parse', auth, insuranceOcrLimiter, uploadEstimateFiles, async (req, res) => {
   let deterministicSummaryFallback = null;
   try {
     const files = collectEstimateUploadFiles(req);
@@ -972,7 +998,7 @@ router.post('/parse', auth, insuranceOcrLimiter, upload.fields([
     };
 
     let deterministicParsed = null;
-    if (extractedTextForTotals && formatDetection.format === FORMATS.CCC) {
+    if (files.length === 1 && extractedTextForTotals && formatDetection.format === FORMATS.CCC) {
       const parsed = parseCccEstimate(extractedTextForTotals);
       if (intakeMode) {
         return res.json({ success: true, parsed: normalizeIntakeParsed(parsed, formatDetection.format) });
@@ -984,7 +1010,7 @@ router.post('/parse', auth, insuranceOcrLimiter, upload.fields([
       deterministicSummaryFallback = buildDeterministicSummaryFallback(parsed, formatDetection.format);
     }
 
-    if (extractedTextForTotals && formatDetection.format === FORMATS.MITCHELL) {
+    if (files.length === 1 && extractedTextForTotals && formatDetection.format === FORMATS.MITCHELL) {
       const parsed = parseMitchellEstimate(extractedTextForTotals);
       if (intakeMode) {
         return res.json({ success: true, parsed: normalizeIntakeParsed(parsed, formatDetection.format) });
@@ -1007,8 +1033,11 @@ router.post('/parse', auth, insuranceOcrLimiter, upload.fields([
     const openai = apiKey ? new OpenAI({ apiKey }) : null;
 
     if (imageDataUrls.length) {
-      if (!intakeMode) retryWithRelaxedPrompt = () => parseEstimateImageUrlsWithFallback(openai, imageDataUrls, RELAXED_LINE_ITEM_PROMPT);
-      raw = await parseEstimateImageUrlsWithFallback(openai, imageDataUrls, parsePrompt);
+      const textContext = extractedTextForTotals
+        ? `\n\nAlso include the uploaded PDF text when extracting the estimate:\n${sanitizeTextForOpenAI(extractedTextForTotals).slice(0, PDF_TEXT_CHAR_LIMIT)}`
+        : '';
+      if (!intakeMode) retryWithRelaxedPrompt = () => parseEstimateImageUrlsWithFallback(openai, imageDataUrls, RELAXED_LINE_ITEM_PROMPT + textContext);
+      raw = await parseEstimateImageUrlsWithFallback(openai, imageDataUrls, parsePrompt + textContext);
     } else if (extractedTextForTotals) {
       if (!intakeMode) retryWithRelaxedPrompt = () => parseEstimateTextWithFallback(openai, extractedTextForTotals, RELAXED_LINE_ITEM_PROMPT);
       try {
@@ -1035,6 +1064,9 @@ router.post('/parse', auth, insuranceOcrLimiter, upload.fields([
         }
 
         if (!imageDataUrls.length) {
+          if (deterministicSummaryFallback) {
+            return res.json(buildDeterministicParseResponse(deterministicSummaryFallback, formatDetection.format));
+          }
           return res.status(422).json({
             success: false,
             error: 'Could not read pages from this PDF. Please upload a clearer PDF or a photo/screenshot.',

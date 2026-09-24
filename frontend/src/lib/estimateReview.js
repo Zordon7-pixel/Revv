@@ -1,4 +1,5 @@
 const REVIEW_REASON_MESSAGES = {
+  line_item_recovery_incomplete: 'The second reading returned fewer rows. REVV kept the previously readable rows; compare them with the original estimate for missing items.',
   ccc_line_grid_missing: 'The detailed CCC line-item grid was not fully detected.',
   mitchell_line_grid_missing: 'The detailed Mitchell line-item grid was not fully detected.',
   ccc_totals_missing: 'The CCC estimate totals section was not detected.',
