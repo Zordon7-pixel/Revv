@@ -2,30 +2,11 @@ const router = require('express').Router();
 const { dbGet, dbAll, dbRun } = require('../db');
 const auth   = require('../middleware/auth');
 
-function detectCarrier(num) {
-  const n = num.trim().replace(/[\s-]/g, '').toUpperCase();
-  if (/^1Z[A-Z0-9]{16}$/.test(n))                           return 'ups';
-  if (/^T\d{10}$/.test(n))                                   return 'ups';
-  if (/^(96|98|77|61|02|03|62|88)\d{18,20}/.test(n))        return 'fedex';
-  if (/^\d{12}$/.test(n) || /^\d{15}$/.test(n))             return 'fedex';
-  if (/^(94|93|92|9400|9205|9206|9407|9208|9300|9261|9274|9275|9276|9278|9279|9202|9261)\d+/.test(n)) return 'usps';
-  if (/^(70|71|73|77|80|81|83|85|86|87|88|89|91|92|93|94|95|96|97|98|99)\d{18}$/.test(n)) return 'usps';
-  if (/^\d{10}$/.test(n) && n.startsWith('0'))               return 'usps';
-  if (/^[0-9]{10}JD/.test(n) || /^JD\d{18}$/.test(n))      return 'dhl';
-  if (/^\d{10,11}$/.test(n))                                  return 'dhl';
-  return null;
-}
-
-function trackingUrl(carrier, num) {
-  const n = num.trim().replace(/\s/g, '');
-  switch (carrier) {
-    case 'ups':   return `https://www.ups.com/track?tracknum=${n}&requester=WT/trackdetails`;
-    case 'fedex': return `https://www.fedex.com/fedextrack/?trknbr=${n}`;
-    case 'usps':  return `https://tools.usps.com/go/TrackConfirmAction?tLabels=${n}`;
-    case 'dhl':   return `https://www.dhl.com/en/express/tracking.html?AWB=${n}&brand=DHL`;
-    default:      return `https://www.google.com/search?q=track+package+${n}`;
-  }
-}
+const { detectCarrier, trackingUrl } = require('../services/trackingCarrier');
+const { applyCarrier } = require('../services/partsDelivery');
+const { pool } = require('../db');
+const { requireTechnician } = require('../middleware/roles');
+router.use(auth, requireTechnician);
 
 const CARRIER_LABELS = { ups:'UPS', fedex:'FedEx', usps:'USPS', dhl:'DHL' };
 
@@ -37,6 +18,7 @@ async function fetchTrackingFrom17track(apiKey, trackingNumber, carrier) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', '17token': apiKey },
     body,
+    signal: AbortSignal.timeout(12000),
   });
   if (!resp.ok) throw new Error(`17track API error: ${resp.status}`);
   const data = await resp.json();
@@ -45,6 +27,7 @@ async function fetchTrackingFrom17track(apiKey, trackingNumber, carrier) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', '17token': apiKey },
       body,
+      signal: AbortSignal.timeout(12000),
     });
     return null;
   }
@@ -66,31 +49,14 @@ function parseTrackingResult(item) {
     'OutForDelivery':    { status: 'out_for_delivery', detail: 'Out for delivery today' },
   };
   const rawStatus  = info.latest_status?.status || 'NotFound';
-  const mapped     = statusMap[rawStatus] || { status: 'in_transit', detail: null };
+  const mapped     = statusMap[rawStatus] || { status: 'pending', detail: 'Carrier status unavailable' };
   const latestEvent = info.tracking?.providers?.[0]?.events?.[0];
   const detail = latestEvent?.description || mapped.detail || rawStatus;
   return { tracking_status: mapped.status, tracking_detail: detail };
 }
 
-async function applyTrackingResult(partId, result) {
-  if (!result) return;
-  const now = new Date().toISOString();
-  await dbRun(`
-    UPDATE parts_orders
-    SET tracking_status = $1, tracking_detail = $2, tracking_updated_at = $3, updated_at = $4
-    WHERE id = $5
-  `, [result.tracking_status, result.tracking_detail, now, now, partId]);
-
-  if (result.tracking_status === 'delivered') {
-    const part = await dbGet('SELECT status FROM parts_orders WHERE id = $1', [partId]);
-    if (part && part.status !== 'received') {
-      await dbRun(`UPDATE parts_orders SET status = 'received', received_date = $1, updated_at = $2 WHERE id = $3`, [now.slice(0, 10), now, partId]);
-    }
-  }
-}
-
 router.get('/detect', auth, (req, res) => {
-  const num = req.query.num || '';
+  const num = typeof req.query.num === 'string' ? req.query.num : '';
   if (!num.trim()) return res.status(400).json({ error: 'num required' });
   const carrier = detectCarrier(num);
   res.json({
@@ -113,11 +79,11 @@ router.post('/check/:partId', auth, async (req, res) => {
     }
 
     const result = await fetchTrackingFrom17track(shop.tracking_api_key, part.tracking_number, part.carrier);
-    await applyTrackingResult(part.id, result);
-    const updated = await dbGet('SELECT * FROM parts_orders WHERE id = $1', [part.id]);
+    await applyCarrier(pool, part, result);
+    const updated = await dbGet('SELECT * FROM parts_orders WHERE id = $1 AND shop_id = $2', [part.id, req.user.shop_id]);
     res.json({ part: updated, tracking_url: trackingUrl(updated.carrier, updated.tracking_number) });
   } catch (err) {
-    res.status(500).json({ error: `Tracking check failed: ${err.message}` });
+    res.status(500).json({ error: 'Tracking check failed. Try again later.' });
   }
 });
 
@@ -139,21 +105,21 @@ router.post('/poll-shop', auth, async (req, res) => {
     for (const part of openParts) {
       try {
         const result = await fetchTrackingFrom17track(shop.tracking_api_key, part.tracking_number, part.carrier);
-        await applyTrackingResult(part.id, result);
+        await applyCarrier(pool, part, result);
         results.push({ id: part.id, part_name: part.part_name, result });
       } catch (e) {
-        results.push({ id: part.id, part_name: part.part_name, error: e.message });
+        results.push({ id: part.id, part_name: part.part_name, error: 'Carrier check unavailable' });
       }
     }
     res.json({ polled: results.length, results });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Tracking check failed. Try again later.' });
   }
 });
 
 router.get('/url', auth, (req, res) => {
   const { carrier, num } = req.query;
-  if (!num) return res.status(400).json({ error: 'num required' });
+  if (typeof num !== 'string' || !num.trim()) return res.status(400).json({ error: 'num required' });
   const c = carrier || detectCarrier(num) || 'unknown';
   res.json({ url: trackingUrl(c, num), carrier: c, carrier_label: CARRIER_LABELS[c] || 'Carrier' });
 });

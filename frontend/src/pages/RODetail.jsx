@@ -12,6 +12,7 @@ import LibraryAutocomplete from '../components/LibraryAutocomplete'
 import ROPhotos from '../components/ROPhotos'
 import TurnaroundEstimator from '../components/TurnaroundEstimator'
 import PartsSearch from '../components/PartsSearch'
+import PartDeliveryEditor from '../components/PartDeliveryEditor'
 import { searchInsurers } from '../data/insurers'
 import { searchVendors } from '../data/vendors'
 import { getTokenPayload, isAdmin, isAssistant, isEmployee } from '../lib/auth'
@@ -29,6 +30,8 @@ import PhotoLightbox from '../components/PhotoLightbox'
 import AppOverlay from '../components/AppOverlay'
 
 const PART_STATUS_META = {
+  shipped: { label: 'Shipped', cls: 'border-brand/40 bg-brand/10 text-brand', icon: Truck },
+  partially_received: { label: 'Partially received', cls: 'border-brand/40 bg-brand/10 text-brand', icon: Package },
   ordered:     { label: 'Ordered',     cls: 'border-brand/40 bg-brand/10 text-brand', icon: Clock },
   backordered: { label: 'Backordered', cls: 'border-crit/40 bg-crit/10 text-crit', icon: AlertCircle },
   received:    { label: 'Received',    cls: 'border-good/40 bg-good/10 text-good', icon: CheckCircle },
@@ -116,6 +119,7 @@ export default function RODetail() {
     setFeedback({ type, text })
   }
 
+  const [deliveryPart, setDeliveryPart] = useState(null)
   const [parts, setParts]     = useState([])
   const [showAddPart, setShowAddPart] = useState(false)
   const [showCatalogSearch, setShowCatalogSearch] = useState(false)
@@ -2898,7 +2902,7 @@ export default function RODetail() {
               <div className="sm:col-span-2">
                 <label className="text-[10px] text-faint block mb-1">Tracking Number (optional — UPS / FedEx / USPS / DHL)</label>
                 <input className={inp} value={partForm.tracking_number} onChange={e=>setPartForm(f=>({...f,tracking_number:e.target.value}))} placeholder="1Z999AA10123456784 or 94001116990045349715" />
-                <p className="text-[9px] text-faint mt-0.5">Carrier is auto-detected. Status updates automatically when you have a tracking API key in Settings.</p>
+                <p className="text-[9px] text-faint mt-0.5">Carrier is auto-detected. Refresh tracking with a configured tracking provider; the shop confirms receipt separately.</p>
               </div>
             </div>
             <div className="flex gap-2">
@@ -2923,7 +2927,7 @@ export default function RODetail() {
                 <tr>
                   <th className="px-3 py-2 text-left font-semibold">Part #</th>
                   <th className="px-3 py-2 text-left font-semibold">Description</th>
-                  <th className="px-3 py-2 text-left font-semibold">Brand</th>
+                  <th className="px-3 py-2 text-left font-semibold">Supplier</th>
                   <th className="px-3 py-2 text-right font-semibold">Qty</th>
                   <th className="px-3 py-2 text-right font-semibold">Unit Cost</th>
                   <th className="px-3 py-2 text-right font-semibold">Total</th>
@@ -2943,6 +2947,8 @@ export default function RODetail() {
                       <td className="px-3 py-2 text-ink font-mono">{p.part_number || '—'}</td>
                       <td className="px-3 py-2 text-ink">
                         <div className="font-medium">{p.part_name || '—'}</div>
+                        <p className="mt-1 text-muted">ETA: {p.expected_date || 'Awaiting confirmation'} · {p.received_quantity ?? 0}/{p.quantity} received</p>
+                        {p.supplier_order_ref && <p className="text-faint">Order: {p.supplier_order_ref}</p>}
                         {p.tracking_number && (
                           <div className="mt-1 flex items-center gap-2 text-[10px] text-faint flex-wrap">
                             <Truck size={10} className="text-faint" />
@@ -2983,15 +2989,7 @@ export default function RODetail() {
                       </td>
                       <td className="px-3 py-2">
                         <div className="flex items-center justify-end gap-1">
-                          {p.status === 'ordered' && (
-                            <>
-                              <button onClick={()=>updatePartStatus(p.id,'backordered')} className="text-[10px] bg-crit/10 text-crit border border-crit/40 px-2 py-1 rounded-lg hover:bg-crit/20 transition-colors">Backorder</button>
-                              <button onClick={()=>updatePartStatus(p.id,'received')} className="text-[10px] bg-good/10 text-good border border-good/40 px-2 py-1 rounded-lg hover:bg-good/20 transition-colors">Received</button>
-                            </>
-                          )}
-                          {p.status === 'backordered' && (
-                            <button onClick={()=>updatePartStatus(p.id,'received')} className="text-[10px] bg-good/10 text-good border border-good/40 px-2 py-1 rounded-lg hover:bg-good/20 transition-colors inline-flex items-center gap-1">Received <CheckCircle size={10} /></button>
-                          )}
+                          <button type="button" onClick={()=>setDeliveryPart(p)} className="revv-btn revv-btn-secondary text-xs">Update delivery</button>
                           <button onClick={()=>deletePart(p.id)} className="text-faint hover:text-crit transition-colors ml-1">
                             <X size={13}/>
                           </button>
@@ -3051,6 +3049,7 @@ export default function RODetail() {
         </AppOverlay>
       )}
 
+      {deliveryPart && <PartDeliveryEditor key={deliveryPart.id} part={deliveryPart} onClose={()=>setDeliveryPart(null)} onSaved={()=>{setDeliveryPart(null);load()}} />}
       {showCatalogSearch && (
         <PartsSearch
           roId={id}
