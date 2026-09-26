@@ -3635,3 +3635,16 @@ inspection photo URL audit  # total=0, REVV-managed=0; no uncovered inspections 
 ```
 
 Historical boundary remains unchanged: the 48 photo references and one claim-evidence reference whose bytes were already absent were not deleted, altered, or fabricated. No Miles Automotive customer, shop, RO, photo, or evidence row was mutated by this release.
+
+## 2026-09-26 — Agreement e-signature build
+
+Codex built a separate worktree from c46aa0d: `codex/revv-esignatures-20260926`.
+New Settings PDF templates and archive, RO Agreements tab, private customer/tablet signing page,
+optional initials/countersign, original + completed PDF downloads, signing audit and tenant/expiry/replay protection.
+Details and limitations: `docs/SPEC-esignatures.md`. Inventory label-capture proposal and current mock-catalog
+findings: `docs/SPEC-stock-label-capture.md`. Actual shop contract has not been supplied; no production deployment
+or customer messages occurred. Original canonical checkout and its unrelated local changes were preserved.
+Independent QA reviewed source and real disposable-PostgreSQL tests; browser/PDF visual QA performed locally.
+Signing telemetry excluded/scrubbed. Settings agreement forms sit outside the shop settings form. RO profit
+palette uses existing semantic good tokens so the broader workspace token-conformance check passes.
+<!-- 2026-09-26 follow-up: Agreement templates now explicitly offer Customer only or Customer and shop representative as radio choices, retaining the existing optional countersignature behavior and both remote/tablet access. -->

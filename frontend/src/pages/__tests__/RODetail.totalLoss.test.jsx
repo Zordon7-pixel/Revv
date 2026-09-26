@@ -308,7 +308,7 @@ describe('RODetail total loss action', () => {
     expect(screen.getByTestId('supplement-finder')).toHaveAttribute('data-variant', 'hero')
 
     const tabs = screen.getAllByRole('tab')
-    expect(tabs.map((tab) => tab.textContent)).toEqual(['Overview', 'Insurance', 'Parts', 'Customer', 'Comms', 'Photos'])
+    expect(tabs.map((tab) => tab.textContent)).toEqual(['Overview', 'Insurance', 'Parts', 'Customer', 'Comms', 'Photos', 'Agreements'])
 
     await user.click(screen.getByRole('tab', { name: 'Insurance' }))
     expect(await screen.findByText('Insurance workspace')).toBeInTheDocument()
