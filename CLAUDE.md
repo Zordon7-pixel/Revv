@@ -3647,3 +3647,4 @@ or customer messages occurred. Original canonical checkout and its unrelated loc
 Independent QA reviewed source and real disposable-PostgreSQL tests; browser/PDF visual QA performed locally.
 Signing telemetry excluded/scrubbed. Settings agreement forms sit outside the shop settings form. RO profit
 palette uses existing semantic good tokens so the broader workspace token-conformance check passes.
+<!-- 2026-09-26 follow-up: Agreement templates now explicitly offer Customer only or Customer and shop representative as radio choices, retaining the existing optional countersignature behavior and both remote/tablet access. -->

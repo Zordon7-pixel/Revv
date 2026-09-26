@@ -42,7 +42,12 @@ export default function AgreementTemplates() {
       <label className="block text-sm text-muted">Agreement title<input required maxLength={160} className={agreementInput} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Shop liability agreement" /></label>
       <label className="block text-sm text-muted">Agreement PDF<input type="file" required accept="application/pdf,.pdf" onChange={(e) => setFile(e.target.files?.[0] || null)} className="mt-1 block w-full text-sm" /></label>
       <p className="text-xs text-faint">Up to 10MB and 50 pages. Use a PDF without fillable fields or existing digital signatures.</p>
-      <label className="flex items-center gap-2 text-sm text-ink"><input type="checkbox" checked={shopSignature} onChange={(e) => setShopSignature(e.target.checked)} />Require a shop representative’s signature after the customer signs</label>
+      <fieldset className="space-y-2">
+        <legend className="mb-2 text-sm text-muted">Who signs this agreement?</legend>
+        <label className="flex items-center gap-2 text-sm text-ink"><input type="radio" name="agreement-signers" checked={!shopSignature} onChange={() => setShopSignature(false)} />Customer only</label>
+        <label className="flex items-center gap-2 text-sm text-ink"><input type="radio" name="agreement-signers" checked={shopSignature} onChange={() => setShopSignature(true)} />Customer and shop representative</label>
+        <p className="text-xs text-faint">Choose separately for each agreement template. When both signatures are required, the shop signs after the customer.</p>
+      </fieldset>
       <label className="block text-sm text-muted">Sections requiring customer initials (optional)
         <textarea className={agreementInput} rows={3} value={sections} onChange={(e) => setSections(e.target.value)} placeholder="Page 2 - Storage charges&#10;Page 3 - Repair authorization" />
       </label>

@@ -6,6 +6,7 @@ Built from production base c46aa0d on codex/revv-esignatures-20260926. This feat
 
 - Owners/admins upload reusable static PDF templates in Settings → Core (10MB, 1–50 pages). Each upload creates a new immutable document version. Archiving a template prevents new requests without changing existing requests.
 - Templates optionally require up to 12 named customer-initial sections and an owner/admin shop countersignature.
+- The upload form explicitly offers Customer only or Customer and shop representative for each template; customer-only is the default. Both remote and shop-tablet signing remain available.
 - Repair orders have an Agreements tab. Staff prepare a request using a fixed template and customer/RO/shop snapshot, then copy a private link or open it for signing on a shop tablet. The application does not automatically send SMS or email.
 - Customer page renders the PDF with a locally hosted PDF.js worker, fonts and CMaps; supports page navigation, zoom and original download. Typed name, required initials and explicit electronic-signature consent are recorded.
 - A signature record is appended to copies of the original pages. Signatures/initials are not overlaid at arbitrary positions in the uploaded PDF. This is a typed electronic-signature workflow, not a certificate-based PDF digital signature or independent identity-verification service.
