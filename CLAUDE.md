@@ -3671,3 +3671,23 @@ deployment and no customer messages.
 Final migration validation: 48 targeted/integration checks and 7 parser checks passed;
 independent final review passed with25 tests. Local/provider-generated errors are distinguished
 so upstream messages cannot expose credential details; trusted truncation/refusal returns422.
+
+## Dispatch Log — 2026-09-26 Parts delivery and customer visibility
+
+Status: BUILT + VERIFIED ON FEATURE BRANCH — NOT DEPLOYED. Isolated branch
+codex/revv-parts-delivery-20260926 on PR16 head84cd02e. Built supplier references,
+ETA source/date, partial receipt tracking, revision-protected staff edits and change
+history. Carrier delivered no longer auto-receives parts; stale shipment responses
+are discarded. RO/pending board editor and customer portal show checked quantities,
+ETA and separate customer notes. Dashboard counts include new pending states.
+Additive migration supports TEXT/UUID IDs and preserves legacy received quantities.
+No AI needed; OpenAI-only policy unchanged. Parts payloads scrubbed in telemetry.
+
+Files: partsDelivery/trackingCarrier services; parts/tracking/portal/dashboard routes;
+db startup; PartDeliveryEditor/CustomerPartsStatus components; RODetail/PartsOnOrder/
+TrackPortal pages; shared labels; Sentry filters; backend/frontend lifecycle tests;
+docs/SPEC-parts-delivery.md. Verification: 23 backend lifecycle/privacy checks,
+153 backend regressions, 134 frontend checks and production build passed; independent
+QA and desktop/mobile real-database synthetic browser flow verified. No production
+writes, provider calls, customer messages or deployment. Supplier sync/SMS automation
+remain future integrations; e-signature PR15 is unchanged and awaits shop template.

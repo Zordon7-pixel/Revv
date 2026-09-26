@@ -1,116 +1,43 @@
 const router = require('express').Router();
-const { dbGet, dbAll, dbRun } = require('../db');
-const auth   = require('../middleware/auth');
-const { assertRoOwnership } = require('../middleware/roOwnership');
+const { pool, dbGet, dbAll, dbRun } = require('../db');
+const auth = require('../middleware/auth');
 const { requireTechnician } = require('../middleware/roles');
-const { v4: uuidv4 } = require('uuid');
-
-const STATUSES = ['ordered', 'backordered', 'received', 'cancelled'];
-const { detectCarrier } = require('./tracking');
-
-router.get('/ro/:roId', auth, async (req, res) => {
+const { ensureDelivery, savePart, PENDING, fail } = require('../services/partsDelivery');
+router.use(auth, requireTechnician);
+router.use(async (req,res,next) => { try { await ensureDelivery(pool); next(); } catch {res.status(503).json({error:'Parts tracking is temporarily unavailable.'});} });
+function error(res,e) { return res.status(e.publicMessage ? e.status : 500).json({error:e.publicMessage?e.message:'Could not save or load parts.'}); }
+router.get('/ro/:roId', async (req,res) => {
   try {
-    const ro = await assertRoOwnership(req.params.roId, req.user.shop_id);
-    if (!ro) return res.status(404).json({ error: 'RO not found' });
-    const parts = await dbAll('SELECT * FROM parts_orders WHERE ro_id = $1 AND shop_id = $2 ORDER BY created_at ASC', [req.params.roId, req.user.shop_id]);
-    res.json({ parts });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+    if (!await dbGet('SELECT id FROM repair_orders WHERE id=$1 AND shop_id=$2',[req.params.roId,req.user.shop_id])) throw fail('RO not found.',404);
+    res.json({parts:await dbAll('SELECT * FROM parts_orders WHERE ro_id=$1 AND shop_id=$2 ORDER BY created_at ASC',[req.params.roId,req.user.shop_id])});
+  } catch(e) {error(res,e);}
 });
-
-router.get('/all-pending', auth, requireTechnician, async (req, res) => {
+router.get('/all-pending', async (req,res) => {
   try {
-    const parts = await dbAll(`
-      SELECT
-        p.*,
-        r.id as ro_id,
-        r.ro_number,
-        c.name as customer_name,
-        v.year,
-        v.make,
-        v.model
-      FROM parts_orders p
-      JOIN repair_orders r ON p.ro_id = r.id
-      JOIN customers c ON r.customer_id = c.id
-      LEFT JOIN vehicles v ON r.vehicle_id = v.id
-      WHERE p.shop_id = $1 AND p.status IN ('ordered', 'backordered')
-      ORDER BY p.expected_date ASC NULLS LAST, p.created_at ASC
-    `, [req.user.shop_id]);
-    res.json({ parts });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+    res.json({parts:await dbAll(`SELECT p.*,r.ro_number,c.name AS customer_name,v.year,v.make,v.model
+      FROM parts_orders p JOIN repair_orders r ON p.ro_id=r.id AND p.shop_id=r.shop_id
+      LEFT JOIN customers c ON r.customer_id=c.id AND c.shop_id=r.shop_id
+      LEFT JOIN vehicles v ON r.vehicle_id=v.id AND v.shop_id=r.shop_id
+      WHERE p.shop_id=$1 AND p.status=ANY($2::text[]) AND COALESCE(NULLIF(LOWER(TRIM(r.status)), ''), 'intake') NOT IN ('closed','completed','total_loss')
+      ORDER BY p.expected_date ASC NULLS LAST,p.created_at ASC`,[req.user.shop_id,PENDING])});
+  } catch(e) {error(res,e);}
 });
-
-router.post('/ro/:roId', auth, async (req, res) => {
+router.get('/:id/delivery-history', async (req,res) => {
   try {
-    const ro = await dbGet('SELECT id FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.roId, req.user.shop_id]);
-    if (!ro) return res.status(404).json({ error: 'RO not found' });
-
-    const { part_name, part_number, vendor, quantity, unit_cost, expected_date, notes, tracking_number } = req.body;
-    if (!part_name?.trim()) return res.status(400).json({ error: 'Part name required' });
-
-    const carrier = tracking_number ? (detectCarrier(tracking_number) || 'unknown') : null;
-    const id = uuidv4();
-    const today = new Date().toISOString().split('T')[0];
-    await dbRun(`
-      INSERT INTO parts_orders (id, shop_id, ro_id, part_name, part_number, vendor, quantity, unit_cost, status, ordered_date, expected_date, notes, tracking_number, carrier)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'ordered', $9, $10, $11, $12, $13)
-    `, [id, req.user.shop_id, req.params.roId, part_name.trim(), part_number||null, vendor||null,
-        parseInt(quantity)||1, parseFloat(unit_cost)||0, today, expected_date||null, notes||null,
-        tracking_number||null, carrier]);
-
-    res.status(201).json(await dbGet('SELECT * FROM parts_orders WHERE id = $1 AND shop_id = $2', [id, req.user.shop_id]));
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+    if(!await dbGet('SELECT id FROM parts_orders WHERE id=$1 AND shop_id=$2',[req.params.id,req.user.shop_id])) throw fail('Part not found.',404);
+    res.json({events:await dbAll('SELECT revision,source,before_state,after_state,created_at FROM parts_delivery_events WHERE part_id=$1 AND shop_id=$2 ORDER BY revision DESC LIMIT 50',[req.params.id,String(req.user.shop_id)])});
+  } catch(e) {error(res,e);}
 });
-
-router.put('/:id', auth, async (req, res) => {
-  try {
-    const part = await dbGet('SELECT * FROM parts_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
-    if (!part) return res.status(404).json({ error: 'Not found' });
-
-    if (req.body.tracking_number !== undefined && req.body.tracking_number) {
-      req.body.carrier = detectCarrier(req.body.tracking_number) || 'unknown';
-      req.body.tracking_status = null;
-      req.body.tracking_detail = null;
-      req.body.tracking_updated_at = null;
-    }
-
-    const ALLOWED_PARTS_FIELDS = ['status','carrier','tracking_number','expected_date','received_date','notes','name','part_number','cost','quantity','part_name','vendor','unit_cost','tracking_status','tracking_detail','tracking_updated_at'];
-    const updates = Object.fromEntries(Object.entries(req.body || {}).filter(([k]) => ALLOWED_PARTS_FIELDS.includes(k)));
-    if (updates.name !== undefined && updates.part_name === undefined) updates.part_name = updates.name;
-    if (updates.cost !== undefined && updates.unit_cost === undefined) updates.unit_cost = updates.cost;
-    delete updates.name;
-    delete updates.cost;
-
-    if (req.body.status === 'received' && !part.received_date && !req.body.received_date) {
-      updates.received_date = new Date().toISOString().split('T')[0];
-    }
-
-    if (!Object.keys(updates).length) return res.status(400).json({ error: 'Nothing to update' });
-    updates.updated_at = new Date().toISOString();
-
-    const updateKeys = Object.keys(updates);
-    const updateVals = Object.values(updates);
-    const setClauses = updateKeys.map((k, i) => `${k} = $${i + 1}`).join(', ');
-    await dbRun(`UPDATE parts_orders SET ${setClauses} WHERE id = $${updateKeys.length + 1}`, [...updateVals, req.params.id]);
-
-    res.json(await dbGet('SELECT * FROM parts_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]));
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+router.post('/ro/:roId', async (req,res) => {
+  try {res.status(201).json(await savePart(pool,req.user.shop_id,req.user.id,req.body,{roId:req.params.roId}));} catch(e) {error(res,e);}
 });
-
-router.delete('/:id', auth, async (req, res) => {
-  try {
-    await dbRun('DELETE FROM parts_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+router.put('/:id', async (req,res) => {
+  try {res.json(await savePart(pool,req.user.shop_id,req.user.id,req.body,{id:req.params.id}));} catch(e) {error(res,e);}
 });
-
-module.exports = router;
+router.put('/:id/delivery', async (req,res) => {
+  try {res.json(await savePart(pool,req.user.shop_id,req.user.id,req.body,{id:req.params.id,requireRevision:true}));} catch(e) {error(res,e);}
+});
+router.delete('/:id', async (req,res) => {
+  try {await dbRun('DELETE FROM parts_orders WHERE id=$1 AND shop_id=$2',[req.params.id,req.user.shop_id]);res.json({ok:true});} catch(e) {error(res,e);}
+});
+module.exports=router;

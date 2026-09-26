@@ -2,6 +2,7 @@ const Sentry = require('@sentry/node');
 
 const PII_PATH_PREFIXES = [
   '/api/part-capture',
+  '/api/parts',
   '/api/inventory',
   '/api/customers',
   '/api/ros',

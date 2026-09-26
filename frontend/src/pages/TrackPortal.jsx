@@ -1,3 +1,4 @@
+import CustomerPartsStatus from '../components/CustomerPartsStatus'
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { Check, ImageOff, Loader2, MessageSquare, Phone, Star, X } from 'lucide-react'
@@ -44,6 +45,7 @@ function PortalPhoto({ photo, className = '' }) {
 export default function TrackPortal() {
   const { t } = useLanguage()
   const { token } = useParams()
+  const [refreshVersion, setRefreshVersion] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [actionError, setActionError] = useState('')
@@ -71,7 +73,7 @@ export default function TrackPortal() {
       }
     }
     loadData()
-  }, [token])
+  }, [token, refreshVersion])
 
   useEffect(() => {
     if (!lightboxPhoto) return undefined
@@ -234,17 +236,8 @@ export default function TrackPortal() {
 
         {parts.length > 0 && (
           <Panel title={t('ro.parts')}>
-            <ul className="divide-y divide-line px-4 sm:px-5">
-              {parts.map((part, index) => {
-                const tone = part.status === 'received' ? 'good' : part.status === 'backordered' ? 'crit' : 'brand'
-                return (
-                  <li key={part.id || `${part.part_name}-${index}`} className="flex items-center justify-between gap-3 py-3 text-sm">
-                    <span className="min-w-0 truncate text-ink">{part.part_name}</span>
-                    <span className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-medium ${tone === 'good' ? 'border-good/30 bg-good/10 text-good' : tone === 'crit' ? 'border-crit/30 bg-crit/10 text-crit' : 'border-brand/30 bg-brand/10 text-brand'}`}>{part.status}</span>
-                  </li>
-                )
-              })}
-            </ul>
+            <CustomerPartsStatus parts={parts} summary={data.parts_summary} />
+            <div className="px-4 pb-4 sm:px-5"><button type="button" className="revv-btn revv-btn-secondary" onClick={()=>setRefreshVersion(v=>v+1)}>Refresh updates</button></div>
           </Panel>
         )}
 

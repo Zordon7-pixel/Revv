@@ -1,3 +1,4 @@
+import PartDeliveryEditor from '../components/PartDeliveryEditor'
 import { useEffect, useState } from 'react'
 import { ExternalLink, Package, Truck } from 'lucide-react'
 import api from '../lib/api'
@@ -7,6 +8,8 @@ const STATUS_TONES = {
   ordered: 'var(--brand)',
   backordered: 'var(--crit)',
   received: 'var(--good)',
+  shipped: 'var(--brand)',
+  partially_received: 'var(--brand)',
 }
 
 function PartStatus({ status }) {
@@ -20,7 +23,7 @@ function PartStatus({ status }) {
         backgroundColor: `color-mix(in srgb, ${color} 10%, transparent)`,
       }}
     >
-      {status || 'unknown'}
+      {(status || 'unknown').replaceAll('_', ' ')}
     </span>
   )
 }
@@ -30,6 +33,7 @@ function vehicleLabel(part) {
 }
 
 export default function PartsOnOrder() {
+  const [editing, setEditing] = useState(null)
   const [parts, setParts] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -102,6 +106,7 @@ export default function PartsOnOrder() {
                     </dd>
                   </div>
                 </dl>
+                <button type="button" onClick={()=>setEditing(part)} className="revv-btn revv-btn-secondary mt-3 w-full">Update delivery</button>
               </article>
             ))}
           </div>
@@ -111,7 +116,7 @@ export default function PartsOnOrder() {
               <table className="w-full min-w-[980px] text-sm">
                 <thead className="bg-panel-2 text-xs uppercase tracking-[0.08em] text-muted">
                   <tr>
-                    {['RO #', 'Customer', 'Vehicle', 'Part', 'Part #', 'Vendor', 'Status', 'Expected', 'Tracking'].map((label) => (
+                    {['RO #', 'Customer', 'Vehicle', 'Part', 'Part #', 'Vendor', 'Status', 'Expected', 'Tracking', 'Update'].map((label) => (
                       <th key={label} className="px-3 py-3 text-left font-semibold">{label}</th>
                     ))}
                   </tr>
@@ -134,6 +139,7 @@ export default function PartsOnOrder() {
                           </button>
                         ) : <span className="text-xs text-faint">—</span>}
                       </td>
+                      <td className="px-3 py-3"><button type="button" onClick={()=>setEditing(part)} className="revv-btn revv-btn-secondary">Update delivery</button></td>
                     </tr>
                   ))}
                 </tbody>
@@ -143,6 +149,7 @@ export default function PartsOnOrder() {
         </>
       )}
 
+      {editing && <PartDeliveryEditor key={editing.id} part={editing} onClose={()=>setEditing(null)} onSaved={updated=>{setParts(rows=>rows.map(p=>p.id===updated.id?{...p,...updated}:p).filter(p=>!['received','cancelled'].includes(p.status)));setEditing(null)}} />}
       {!loading && parts.length > 0 && (
         <div className="flex items-center gap-2 text-xs text-faint"><Truck size={13} /> Tracking opens with the carrier in a new tab.</div>
       )}
