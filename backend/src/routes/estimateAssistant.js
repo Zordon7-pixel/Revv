@@ -5,7 +5,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
-const Anthropic = require('@anthropic-ai/sdk');
+const { analyzeDamage } = require('../services/openai');
 const { dbGet, dbAll } = require('../db');
 
 // ── Multer setup for scan-photo endpoint ──────────────────────────────────────
@@ -27,36 +27,11 @@ const scanUpload = multer({
   },
 });
 
-// ── Claude Haiku Vision: analyse damage photo (cheapest effective option) ─────
+// ── OpenAI vision: analyze visible damage ─────
 async function analyzeDamagePhoto(filePath) {
-  if (!process.env.ANTHROPIC_API_KEY) return null;
-  const client = new Anthropic();
-  const imageData = fs.readFileSync(filePath);
-  const base64 = imageData.toString('base64');
-  const ext = path.extname(filePath).toLowerCase().replace('.', '');
-  const mediaType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
-
-  const response = await client.messages.create({
-    model: 'claude-haiku-4-5',
-    max_tokens: 256,
-    messages: [{
-      role: 'user',
-      content: [
-        {
-          type: 'image',
-          source: { type: 'base64', media_type: mediaType, data: base64 },
-        },
-        {
-          type: 'text',
-          text: 'You are an auto body damage assessor. Analyze this vehicle damage photo. Respond with JSON only, no markdown: {"severity":"minor|moderate|severe","zones":["list of affected body parts, e.g. front bumper, hood, left front fender"],"description":"one sentence summary of the damage"}',
-        },
-      ],
-    }],
-  });
-
-  const text = (response.content[0]?.text || '').trim();
-  const clean = text.replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
-  return JSON.parse(clean);
+  const ext = path.extname(filePath).toLowerCase();
+  const mediaType = ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg';
+  return analyzeDamage(fs.readFileSync(filePath), mediaType);
 }
 
 // ── Zone → damage type + panel id mapping ─────────────────────────────────────
@@ -507,14 +482,14 @@ router.get('/gap-review/:roId', auth, async (req, res) => {
 });
 
 // ── POST /estimate-assistant/scan-photo ───────────────────────────────────────
-// Upload a damage photo → GPT-4o Vision infers damage type + panels → returns
+// Upload a damage photo → OpenAI vision infers damage type + panels → returns
 // AI assessment + estimate suggestions. No DB writes (scan-only).
 router.post('/scan-photo', auth, scanUpload.single('photo'), async (req, res) => {
   const tmpPath = req.file?.path;
   try {
     if (!req.file) return res.status(400).json({ error: 'No photo uploaded' });
 
-    if (!process.env.ANTHROPIC_API_KEY) {
+    if (!process.env.OPENAI_API_KEY) {
       return res.status(503).json({ error: 'AI scan not available' });
     }
 
@@ -522,7 +497,7 @@ router.post('/scan-photo', auth, scanUpload.single('photo'), async (req, res) =>
     try {
       ai = await analyzeDamagePhoto(tmpPath);
     } catch (err) {
-      console.error('[EstimateAssistant] GPT-4o vision error:', err.message);
+      console.error('[EstimateAssistant] OpenAI vision error:', err.status || 'provider_error');
       return res.status(502).json({ error: 'AI scan failed — select damage manually' });
     }
 

@@ -16,12 +16,12 @@ function createPartCaptureRouter({ database = pool, extract = extractLabel, look
     next();
   });
   router.use(rateLimit({ windowMs: 15 * 60 * 1000, limit: 60, keyGenerator: (req) => `${req.user.shop_id}:${req.user.id}`, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many lookups. Please try again in a few minutes.' } }));
-  router.get('/capabilities', (req, res) => res.json({ photo_reading: !!env.ANTHROPIC_API_KEY, external_catalog: !!(env.EBAY_CLIENT_ID && env.EBAY_CLIENT_SECRET) }));
+  router.get('/capabilities', (req, res) => res.json({ photo_reading: !!env.OPENAI_API_KEY, external_catalog: !!(env.EBAY_CLIENT_ID && env.EBAY_CLIENT_SECRET) }));
   router.post('/extract', (req, res) => upload(req, res, async (err) => {
     if (err) return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'Choose a photo under 4MB.' : 'Upload one JPEG, PNG or WebP photo.' });
     if (!req.file) return res.status(400).json({ error: 'Choose a label photo.' });
     try { return res.json(await extract(req.file.buffer)); }
-    catch (error) { const expected = [400, 422, 503].includes(error.status); return res.status(expected ? error.status : 502).json({ error: expected ? error.message : 'Photo reading is temporarily unavailable. Enter the number or try again.' }); }
+    catch (error) { const expected = error.publicMessage === true && [400, 422, 503].includes(error.status); return res.status(expected ? error.status : 502).json({ error: expected ? error.message : 'Photo reading is temporarily unavailable. Enter the number or try again.' }); }
   }));
   router.get('/lookup', async (req, res) => {
     try {

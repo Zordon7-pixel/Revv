@@ -1,7 +1,6 @@
 const router = require('express').Router();
 const multer = require('multer');
-const OpenAI = require('openai');
-const Anthropic = require('@anthropic-ai/sdk');
+const { getOpenAI, aiModel, completionText } = require('../services/openai');
 const rateLimit = require('express-rate-limit');
 const { ipKeyGenerator } = rateLimit;
 const pdfParse = require('pdf-parse');
@@ -52,7 +51,6 @@ const execFileAsync = promisify(execFile);
 const PDF_TEXT_CHAR_LIMIT = 120000;
 const PDF_IMAGE_PAGE_LIMIT = 12;
 const AI_CONFIG_ERROR = 'AI estimate extraction is not configured correctly. Please contact support.';
-const ANTHROPIC_ESTIMATE_MODEL = process.env.ANTHROPIC_ESTIMATE_MODEL || process.env.ANTHROPIC_MODEL || 'claude-haiku-4-5';
 
 function buildDeterministicParseResponse(parsed, detectedFormat) {
   const reviewReasons = Array.isArray(parsed?.review_reasons) ? parsed.review_reasons : [];
@@ -427,43 +425,6 @@ function isOpenAiJsonBodyParseError(err) {
   return msg.includes('could not parse the json body');
 }
 
-function getAnthropicClient() {
-  if (!process.env.ANTHROPIC_API_KEY) return null;
-  return new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-}
-
-function getAnthropicText(response) {
-  return (response?.content || [])
-    .filter((part) => part?.type === 'text' && part.text)
-    .map((part) => part.text)
-    .join('\n')
-    .trim();
-}
-
-function isAnthropicProviderConfigError(err) {
-  const status = Number(err?.status || err?.response?.status || err?.code);
-  const type = String(err?.error?.type || err?.type || err?.code || '').toLowerCase();
-  const message = String(err?.message || err?.error?.message || '').toLowerCase();
-  return (
-    status === 401 ||
-    status === 403 ||
-    type.includes('authentication') ||
-    type.includes('permission') ||
-    message.includes('api key') ||
-    message.includes('x-api-key')
-  );
-}
-
-function toAnthropicImageSource(dataUrl) {
-  const match = String(dataUrl || '').match(/^data:([^;,]+);base64,(.+)$/);
-  if (!match) return null;
-  return {
-    type: 'base64',
-    media_type: match[1],
-    data: match[2],
-  };
-}
-
 function mediaTypeForUpload(mimeType, filename = '') {
   const normalized = String(mimeType || '').toLowerCase();
   if (normalized.startsWith('image/')) return normalized;
@@ -699,8 +660,10 @@ function sanitizeTextForOpenAI(input, { aggressive = false } = {}) {
 async function parseEstimateTextWithOpenAI(openai, extractedText, prompt = SYSTEM_PROMPT) {
   const callParser = async (cleanedText) => {
     const response = await openai.chat.completions.create({
-      model: 'gpt-4o',
-      max_tokens: 4096,
+      model: aiModel('estimate'),
+      max_completion_tokens: 4096,
+      store: false,
+      response_format: { type: 'json_object' },
       messages: [
         {
           role: 'user',
@@ -708,7 +671,7 @@ async function parseEstimateTextWithOpenAI(openai, extractedText, prompt = SYSTE
         },
       ],
     });
-    return response.choices?.[0]?.message?.content || '';
+    return completionText(response);
   };
 
   const cleaned = sanitizeTextForOpenAI(extractedText);
@@ -725,75 +688,12 @@ async function parseEstimateTextWithOpenAI(openai, extractedText, prompt = SYSTE
   }
 }
 
-async function parseEstimateTextWithAnthropic(extractedText, prompt = SYSTEM_PROMPT) {
-  const client = getAnthropicClient();
-  if (!client) return '';
-
-  const cleaned = sanitizeTextForOpenAI(extractedText);
-  if (!cleaned) return '';
-
-  const response = await client.messages.create({
-    model: ANTHROPIC_ESTIMATE_MODEL,
-    max_tokens: 4096,
-    messages: [{
-      role: 'user',
-      content: `${prompt}\n\nEstimate document text:\n${cleaned.slice(0, PDF_TEXT_CHAR_LIMIT)}`,
-    }],
-  });
-  return getAnthropicText(response);
-}
-
-async function parseEstimateImagesWithAnthropic(imageDataUrls, prompt = SYSTEM_PROMPT) {
-  const client = getAnthropicClient();
-  if (!client) return '';
-
-  const imageBlocks = imageDataUrls
-    .map(toAnthropicImageSource)
-    .filter(Boolean)
-    .map((source) => ({ type: 'image', source }));
-
-  if (!imageBlocks.length) return '';
-
-  const response = await client.messages.create({
-    model: ANTHROPIC_ESTIMATE_MODEL,
-    max_tokens: 4096,
-    messages: [{
-      role: 'user',
-      content: [
-        ...imageBlocks,
-        { type: 'text', text: prompt },
-      ],
-    }],
-  });
-  return getAnthropicText(response);
-}
-
-async function parseEstimateUploadImageWithAnthropic(file, mimeType, prompt = SYSTEM_PROMPT) {
-  const mediaType = mediaTypeForUpload(mimeType, file?.originalname);
-  const dataUrl = `data:${mediaType};base64,${file.buffer.toString('base64')}`;
-  return parseEstimateImagesWithAnthropic([dataUrl], prompt);
-}
-
-async function parseEstimateTextWithFallback(openai, extractedText, prompt = SYSTEM_PROMPT) {
-  if (!openai) return parseEstimateTextWithAnthropic(extractedText, prompt);
-  try {
-    return await parseEstimateTextWithOpenAI(openai, extractedText, prompt);
-  } catch (err) {
-    if (!isAiProviderConfigError(err)) throw err;
-    console.warn('[InsuranceOCR] OpenAI estimate text parse unavailable; falling back to Anthropic.');
-    try {
-      return await parseEstimateTextWithAnthropic(extractedText, prompt);
-    } catch (fallbackErr) {
-      if (isAnthropicProviderConfigError(fallbackErr)) throw err;
-      throw fallbackErr;
-    }
-  }
-}
-
 async function parseEstimateImageUrlsWithOpenAI(openai, imageDataUrls, prompt = SYSTEM_PROMPT) {
   const response = await openai.chat.completions.create({
-    model: 'gpt-4o',
-    max_tokens: 4096,
+    model: aiModel('estimate'),
+    max_completion_tokens: 4096,
+      store: false,
+      response_format: { type: 'json_object' },
     messages: [
       {
         role: 'user',
@@ -804,30 +704,16 @@ async function parseEstimateImageUrlsWithOpenAI(openai, imageDataUrls, prompt = 
       },
     ],
   });
-  return response.choices?.[0]?.message?.content || '';
-}
-
-async function parseEstimateImageUrlsWithFallback(openai, imageDataUrls, prompt = SYSTEM_PROMPT) {
-  if (!openai) return parseEstimateImagesWithAnthropic(imageDataUrls, prompt);
-  try {
-    return await parseEstimateImageUrlsWithOpenAI(openai, imageDataUrls, prompt);
-  } catch (err) {
-    if (!isAiProviderConfigError(err)) throw err;
-    console.warn('[InsuranceOCR] OpenAI estimate image parse unavailable; falling back to Anthropic.');
-    try {
-      return await parseEstimateImagesWithAnthropic(imageDataUrls, prompt);
-    } catch (fallbackErr) {
-      if (isAnthropicProviderConfigError(fallbackErr)) throw err;
-      throw fallbackErr;
-    }
-  }
+  return completionText(response);
 }
 
 async function parseEstimateUploadImageWithOpenAI(openai, file, mimeType, prompt = SYSTEM_PROMPT) {
   const base64 = file.buffer.toString('base64');
   const response = await openai.chat.completions.create({
-    model: 'gpt-4o',
-    max_tokens: 4096,
+    model: aiModel('estimate'),
+    max_completion_tokens: 4096,
+      store: false,
+      response_format: { type: 'json_object' },
     messages: [
       {
         role: 'user',
@@ -841,23 +727,7 @@ async function parseEstimateUploadImageWithOpenAI(openai, file, mimeType, prompt
       },
     ],
   });
-  return response.choices?.[0]?.message?.content || '';
-}
-
-async function parseEstimateUploadImageWithFallback(openai, file, mimeType, prompt = SYSTEM_PROMPT) {
-  if (!openai) return parseEstimateUploadImageWithAnthropic(file, mimeType, prompt);
-  try {
-    return await parseEstimateUploadImageWithOpenAI(openai, file, mimeType, prompt);
-  } catch (err) {
-    if (!isAiProviderConfigError(err)) throw err;
-    console.warn('[InsuranceOCR] OpenAI estimate upload image parse unavailable; falling back to Anthropic.');
-    try {
-      return await parseEstimateUploadImageWithAnthropic(file, mimeType, prompt);
-    } catch (fallbackErr) {
-      if (isAnthropicProviderConfigError(fallbackErr)) throw err;
-      throw fallbackErr;
-    }
-  }
+  return completionText(response);
 }
 
 async function extractPdfText(buffer) {
@@ -1023,25 +893,25 @@ router.post('/parse', auth, insuranceOcrLimiter, uploadEstimateFiles, async (req
     }
 
     const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey && !process.env.ANTHROPIC_API_KEY) {
+    if (!apiKey) {
       if (deterministicSummaryFallback) {
         return res.json(buildDeterministicParseResponse(deterministicSummaryFallback, formatDetection.format));
       }
       return res.status(503).json({ success: false, error: AI_CONFIG_ERROR });
     }
 
-    const openai = apiKey ? new OpenAI({ apiKey }) : null;
+    const openai = getOpenAI();
 
     if (imageDataUrls.length) {
       const textContext = extractedTextForTotals
         ? `\n\nAlso include the uploaded PDF text when extracting the estimate:\n${sanitizeTextForOpenAI(extractedTextForTotals).slice(0, PDF_TEXT_CHAR_LIMIT)}`
         : '';
-      if (!intakeMode) retryWithRelaxedPrompt = () => parseEstimateImageUrlsWithFallback(openai, imageDataUrls, RELAXED_LINE_ITEM_PROMPT + textContext);
-      raw = await parseEstimateImageUrlsWithFallback(openai, imageDataUrls, parsePrompt + textContext);
+      if (!intakeMode) retryWithRelaxedPrompt = () => parseEstimateImageUrlsWithOpenAI(openai, imageDataUrls, RELAXED_LINE_ITEM_PROMPT + textContext);
+      raw = await parseEstimateImageUrlsWithOpenAI(openai, imageDataUrls, parsePrompt + textContext);
     } else if (extractedTextForTotals) {
-      if (!intakeMode) retryWithRelaxedPrompt = () => parseEstimateTextWithFallback(openai, extractedTextForTotals, RELAXED_LINE_ITEM_PROMPT);
+      if (!intakeMode) retryWithRelaxedPrompt = () => parseEstimateTextWithOpenAI(openai, extractedTextForTotals, RELAXED_LINE_ITEM_PROMPT);
       try {
-        raw = await parseEstimateTextWithFallback(openai, extractedTextForTotals, parsePrompt);
+        raw = await parseEstimateTextWithOpenAI(openai, extractedTextForTotals, parsePrompt);
       } catch (parseErr) {
         if (isOpenAiJsonBodyParseError(parseErr)) {
           console.warn('[InsuranceOCR] OpenAI rejected PDF-text payload; falling back to PDF image OCR.');
@@ -1073,8 +943,8 @@ router.post('/parse', auth, insuranceOcrLimiter, uploadEstimateFiles, async (req
           });
         }
 
-        if (!intakeMode) retryWithRelaxedPrompt = () => parseEstimateImageUrlsWithFallback(openai, imageDataUrls, RELAXED_LINE_ITEM_PROMPT);
-        raw = await parseEstimateImageUrlsWithFallback(openai, imageDataUrls, parsePrompt);
+        if (!intakeMode) retryWithRelaxedPrompt = () => parseEstimateImageUrlsWithOpenAI(openai, imageDataUrls, RELAXED_LINE_ITEM_PROMPT);
+        raw = await parseEstimateImageUrlsWithOpenAI(openai, imageDataUrls, parsePrompt);
       }
     } else {
       return res.status(422).json({
@@ -1087,7 +957,7 @@ router.post('/parse', auth, insuranceOcrLimiter, uploadEstimateFiles, async (req
     try {
       parsed = parseModelJson(raw);
     } catch {
-      console.error('[InsuranceOCR] Failed to parse OpenAI response. raw length:', raw?.length, '| preview:', raw?.slice(0, 300));
+      console.error('[InsuranceOCR] Failed to parse OpenAI response. raw length:', raw?.length);
       if (!deterministicParsed) {
         return res.status(422).json({ success: false, error: 'Could not extract estimate data from file. Try a clearer upload.' });
       }
@@ -1138,7 +1008,7 @@ router.post('/parse', auth, insuranceOcrLimiter, uploadEstimateFiles, async (req
       if (imageDataUrls.length) {
         try {
           console.warn('[InsuranceOCR] Text extraction returned zero lines; retrying from rendered PDF pages.');
-          const visualRaw = await parseEstimateImageUrlsWithFallback(openai, imageDataUrls, RELAXED_LINE_ITEM_PROMPT);
+          const visualRaw = await parseEstimateImageUrlsWithOpenAI(openai, imageDataUrls, RELAXED_LINE_ITEM_PROMPT);
           const visualParsed = parseModelJson(visualRaw);
           const visualItems = normalizeLineItems(visualParsed.line_items);
           if (visualItems.length) {
@@ -1218,7 +1088,7 @@ router.post('/parse', auth, insuranceOcrLimiter, uploadEstimateFiles, async (req
         deterministicSummaryFallback.detected_format
       ));
     }
-    const status = isAiProviderConfigError(err) ? 503 : 500;
+    const status = err.publicMessage === true && err.status === 422 ? 422 : isAiProviderConfigError(err) ? 503 : 500;
     return res.status(status).json({ success: false, error: safeInsuranceOcrError(err) });
   }
 });

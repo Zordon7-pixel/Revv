@@ -1,3 +1,11 @@
+## REVV AI provider policy — Bryan, 2026-09-26
+
+Use OpenAI for all current and future REVV AI workloads. Use the shared server-side
+`backend/src/services/openai.js` client and `OPENAI_API_KEY`; do not introduce
+Anthropic/Claude or other AI-provider fallback without Bryan changing this preference.
+Supplier catalog, delivery, payment and messaging APIs remain their purpose-specific
+integrations. ChatGPT/Codex subscriptions are not application API credentials.
+
 # CLAUDE.md — Revv Project Intelligence
 
 > **Read by: CW3 Codex (before building) AND Claude Code (before QA review)**
@@ -3647,3 +3655,19 @@ synthetic data and real disposable PostgreSQL. Independent review passed. Local 
 live QA with 401; eBay credentials absent, so live provider activation remains outstanding. No deployment,
 customer messages, or production inventory mutations. Existing RO profit color classes switched to semantic
 good tokens to satisfy the full frontend token-conformance check, matching the fix already on e-sign PR15.
+
+## 2026-09-26 — OpenAI-only AI migration and eBay setup
+
+Migrated part-label extraction, damage-photo assessment, estimate-assistant scans and
+estimate recovery to the shared OpenAI client. Removed Anthropic SDK/fallbacks, preserved
+deterministic estimate parsing and readable-row recovery, and stopped logging raw model
+output previews. Vision defaults to gpt-4.1-mini, existing estimate default gpt-4o retained;
+per-workload OpenAI model overrides remain server-side. Tests cover request shape, image
+inputs, failure/refusal/truncation handling and estimate regression cases.
+No local OpenAI key was configured; Railway CLI requires renewed authentication, so live
+OpenAI success is not verified. eBay developer registration was opened and handed to Bryan
+for his new password, license acceptance and verification. No account/keyset created, no
+deployment and no customer messages.
+Final migration validation: 48 targeted/integration checks and 7 parser checks passed;
+independent final review passed with25 tests. Local/provider-generated errors are distinguished
+so upstream messages cannot expose credential details; trusted truncation/refusal returns422.

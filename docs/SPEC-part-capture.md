@@ -4,7 +4,7 @@
 
 Shop Inventory → Scan part label → photograph/upload → review number and brand → find shop stock and external candidates → review existing stock or prefill a new item → confirm quantity/location and save. This branch starts from main c46aa0d and is independent of e-signature PR #15. It is not deployed.
 
-A browser resizes JPEG/PNG/WebP photos to at most 1600px and strips original metadata by canvas encoding. Server uploads are memory-only, limited to one 4MB image, with image-signature checks and staff/shop authentication before paid processing. The existing Anthropic integration reads only printed label information. No image is published or retained by REVV; provider processing/retention follows its configured account. Reviewable transcription can be saved as item provenance after confirmation. Unsupported HEIC inputs get an explicit conversion instruction. Barcode decoding without printed text is not implemented.
+A browser resizes JPEG/PNG/WebP photos to at most 1600px and strips original metadata by canvas encoding. Server uploads are memory-only, limited to one 4MB image, with image-signature checks and staff/shop authentication before paid processing. The shared OpenAI integration reads only printed label information. No image is published or retained by REVV; provider processing/retention follows its configured account. Reviewable transcription can be saved as item provenance after confirmation. Unsupported HEIC inputs get an explicit conversion instruction. Barcode decoding without printed text is not implemented.
 
 Shop matching normalizes case and separators, preserving O/0 and I/1. Results show on-hand counts and bin, with brand conflict warnings. Known distinct brands can share a number; same/unknown-brand collisions prevent creation. Creation/editing uses a per-shop PostgreSQL advisory transaction lock, so simultaneous normalized duplicates cannot both succeed through the application. Existing ambiguous records remain editable; no existing inventory rows are deleted or merged. These are on-hand counts, not reservations or guaranteed available-to-promise counts.
 
@@ -26,13 +26,13 @@ Schema migration adds `brand` and `source_details`, preserves legacy cost-only r
 
 ## Configuration and validation
 
-- `ANTHROPIC_API_KEY`: valid server-side image-reading credentials; optional `PART_LABEL_MODEL`.
+- `OPENAI_API_KEY`: valid server-side image-reading credentials; optional `OPENAI_VISION_MODEL` (default `gpt-4.1-mini`). All REVV AI uses OpenAI.
 - `EBAY_CLIENT_ID`, `EBAY_CLIENT_SECRET`: approved production Browse API access; server-side only. No credentials entered in the client.
 - Missing/failed providers return explicit unavailable states while typed-number shop matching remains usable. Tokens are short-lived, cached in memory, and excluded from responses. Provider requests have bounded timeouts; source URLs/images are HTTPS-host allowlisted. Capture/inventory payloads are scrubbed from Sentry events.
 
 Local verification: 129 frontend checks; 20 backend checks including disposable PostgreSQL, UUID/TEXT legacy schema, preserved cost, tenant separation, duplicate/concurrent saves, brand ambiguity and existing mixed-ID guards. Frontend production build passed. Independent reviewer separately ran 16 backend and 6 frontend checks and reported no blockers. Desktop/mobile Chromium verified actual photo resizing/upload, mocked provider results, real database creation and existing-stock review; no page errors or horizontal overflow.
 
-Live extraction was attempted once with a synthetic label and the existing local credential was rejected (401). No production provider success is claimed. External catalog credentials were absent locally, so the OAuth/search/detail integration was tested with fixtures, not a live account. Production activation still requires valid provider access and a real-label acceptance check. No real customer information was used.
+Before the OpenAI migration, live extraction was attempted once with a synthetic label and the former provider credential was rejected (401). The OpenAI migration has no local OpenAI key available, and Railway CLI authentication must be renewed before deployed settings can be checked. No production provider success is claimed. External catalog credentials were absent locally, so the OAuth/search/detail integration was tested with fixtures, not a live account. Production activation still requires valid provider access and a real-label acceptance check. No real customer information was used.
 
 Commands (from repository root unless noted):
 
@@ -47,4 +47,4 @@ The PostgreSQL test suite accepts only a localhost database named `revv_parts_te
 
 This build covers the numbered photo-to-stock sequence. Supplier order synchronization, delivery ETA changes, customer notifications, and inventory reservations remain separate work; no messages were sent and no production stock was changed.
 
-Provider references: https://platform.claude.com/docs/en/build-with-claude/vision ; https://developer.ebay.com/api-docs/buy/api-browse.html ; https://developer.ebay.com/develop/guides/sell/authorization .
+Provider references: https://developers.openai.com/api/docs/guides/images-vision ; https://developer.ebay.com/api-docs/buy/api-browse.html ; https://developer.ebay.com/develop/guides/sell/authorization .

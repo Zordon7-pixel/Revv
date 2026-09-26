@@ -23,8 +23,8 @@ test('photo and stock sequence with real disposable PostgreSQL', { skip: !url },
   process.env.JWT_SECRET='part-capture-test-secret';
   const {createPartCaptureRouter}=require('../src/routes/partCapture');
   const app=express();app.use(express.json());
-  let extracts=0,lookups=0;
-  app.use('/api/part-capture',createPartCaptureRouter({database:db,env:{},extract:async()=>{extracts++;return {raw_text:'AB-123',candidates:[{part_number:'AB-123'}]};},lookup:async()=>{lookups++;return {status:'available',candidates:[]};}}));
+  let extracts=0,lookups=0,extractError;
+  app.use('/api/part-capture',createPartCaptureRouter({database:db,env:{},extract:async()=>{extracts++;if(extractError)throw extractError;return {raw_text:'AB-123',candidates:[{part_number:'AB-123'}]};},lookup:async()=>{lookups++;return {status:'available',candidates:[]};}}));
   app.use('/api/inventory',require('../src/routes/inventory'));
   server=app.listen(0,'127.0.0.1');await new Promise(resolve=>server.once('listening',resolve));
   const base=`http://127.0.0.1:${server.address().port}/api`;
@@ -41,6 +41,18 @@ test('photo and stock sequence with real disposable PostgreSQL', { skip: !url },
     const form=new FormData();form.append('photo',new Blob([Buffer.from([255,216,255])],{type:'image/jpeg'}),'label.jpg');
     const result=await api('/part-capture/extract',{method:'POST',body:form});assert.equal(result.status,200);assert.equal(result.data.raw_text,'AB-123');
     assert.equal((await db.query('SELECT * FROM parts_inventory')).rowCount,0);
+  });
+  await t.test('provider errors never expose raw messages, local review errors remain actionable',async()=>{
+    const uploadError = async(error)=>{
+      extractError=error;const form=new FormData();form.append('photo',new Blob([Buffer.from([255,216,255])],{type:'image/jpeg'}),'label.jpg');
+      try{return await api('/part-capture/extract',{method:'POST',body:form});}finally{extractError=undefined;}
+    };
+    for(const status of [400,401,403,422,429,500,503]){
+      const result=await uploadError(Object.assign(new Error('sk-synthetic-private-marker'),{status}));
+      assert.equal(result.status,502);assert.doesNotMatch(result.data.error,/sk-synthetic/);
+    }
+    const result=await uploadError(require('../src/services/partCapture').inputError('Choose a JPEG photo.',400));
+    assert.equal(result.status,400);assert.equal(result.data.error,'Choose a JPEG photo.');
   });
   await t.test('new confirmed stock saved via existing route with source metadata',async()=>{
     const result=await api('/inventory',{method:'POST',body:{...item,source_details:{source:'Photo label',raw_text:'AB-123 Headlamp',source_url:'javascript:alert(1)'}}});

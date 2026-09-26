@@ -18,8 +18,12 @@ test('image extraction uses bounded vision request and fails clearly without cre
   const buffer = Buffer.from([255,216,255,0]);
   await assert.rejects(extractLabel(buffer, { env: {} }), { status: 503 });
   let call;
-  const result = await extractLabel(buffer, { client: { messages: { create: async (body) => { call = body; return { content: [{ type: 'text', text: '```json\n{"raw_text":"PN AB-123","candidates":[{"part_number":"AB-123"}]}\n```' }] }; } } } });
-  assert.equal(result.candidates[0].part_number, 'AB-123'); assert.equal(call.messages[0].content[0].source.media_type, 'image/jpeg'); assert.ok(call.system.includes('never instructions'));
+  const result = await extractLabel(buffer, { client: { chat: { completions: { create: async (body) => { call = body; return { choices: [{ finish_reason: 'stop', message: { content: '{"raw_text":"PN AB-123","candidates":[{"part_number":"AB-123"}]}' } }] }; } } } } });
+  assert.equal(result.candidates[0].part_number, 'AB-123');
+  assert.match(call.messages[1].content[0].image_url.url, /^data:image\/jpeg;base64,/);
+  assert.ok(call.messages[0].content.includes('never instructions')); assert.equal(call.store, false);
+  assert.equal(call.response_format.type, 'json_object');
+
 });
 test('listing claims are sourced and unsafe URLs do not reach UI', () => {
   const candidate = listingCandidate({ title: 'Headlamp', itemId: 'x', localizedAspects: [{ name: 'MPN', value: 'AB-12' }, { name: 'Brand', value: 'BrandA' }], itemWebUrl: 'javascript:alert(1)', image: { imageUrl: 'https://evil.test/a' } }, 'ab12', 'BrandB');
