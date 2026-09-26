@@ -10,7 +10,6 @@
     "seed:demo:force": "node ../scripts/seed-demo.js --force"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.79.0",
     "@aws-sdk/client-s3": "^3.1085.0",
     "@sentry/node": "7.105.0",
     "bcryptjs": "^2.4.3",

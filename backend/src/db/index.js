@@ -566,27 +566,7 @@ async function initDb() {
   await pool.query(`ALTER TABLE ro_comms ALTER COLUMN channel SET DEFAULT 'call'`).catch(() => {});
   await pool.query(`ALTER TABLE ro_comms ALTER COLUMN summary SET DEFAULT ''`).catch(() => {});
 
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS parts_inventory (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      shop_id TEXT NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
-      part_number TEXT NOT NULL,
-      name TEXT NOT NULL,
-      qty_on_hand INTEGER NOT NULL DEFAULT 0,
-      reorder_point INTEGER NOT NULL DEFAULT 0,
-      cost_cents INTEGER NOT NULL DEFAULT 0,
-      supplier TEXT,
-      location TEXT,
-      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-      updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-    )
-  `);
-  await pool.query(`ALTER TABLE parts_inventory ADD COLUMN IF NOT EXISTS cost_cents INTEGER`).catch(() => {});
-  await pool.query(`UPDATE parts_inventory SET cost_cents = COALESCE(cost_cents, ROUND(cost * 100)::INTEGER, 0)`).catch(() => {});
-  await pool.query(`ALTER TABLE parts_inventory ALTER COLUMN cost_cents SET DEFAULT 0`).catch(() => {});
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_parts_inventory_shop ON parts_inventory(shop_id)`).catch(() => {});
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_parts_inventory_low_stock ON parts_inventory(shop_id, qty_on_hand, reorder_point)`).catch(() => {});
-  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_parts_inventory_shop_part_number ON parts_inventory(shop_id, part_number)`).catch(() => {});
+  await require('../services/stockCapture').ensureStock(pool);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS estimate_approval_links (
