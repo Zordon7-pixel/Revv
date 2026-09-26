@@ -3635,3 +3635,15 @@ inspection photo URL audit  # total=0, REVV-managed=0; no uncovered inspections 
 ```
 
 Historical boundary remains unchanged: the 48 photo references and one claim-evidence reference whose bytes were already absent were not deleted, altered, or fabricated. No Miles Automotive customer, shop, RO, photo, or evidence row was mutated by this release.
+
+## 2026-09-26 — Photo-to-part inventory build
+
+Built on isolated codex/revv-parts-capture-20260927 from main c46aa0d; see docs/SPEC-part-capture.md.
+Added reviewed photo-label extraction, shop-scoped normalized/brand-aware stock matching, optional sourced
+external listing details, and confirmed inventory entry. No generated catalog details are used in this flow.
+Inventory schema/saves now share an idempotent UUID/TEXT-compatible migration and transactional duplicate
+checks; legacy cost values retained. Brand/source provenance added. Mobile and desktop flow verified with
+synthetic data and real disposable PostgreSQL. Independent review passed. Local image credential rejected
+live QA with 401; eBay credentials absent, so live provider activation remains outstanding. No deployment,
+customer messages, or production inventory mutations. Existing RO profit color classes switched to semantic
+good tokens to satisfy the full frontend token-conformance check, matching the fix already on e-sign PR15.

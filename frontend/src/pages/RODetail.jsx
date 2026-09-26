@@ -1908,8 +1908,8 @@ export default function RODetail() {
                   )}
                 </div>
                 {ro.profit_breakdown?.costProfileApplied && (
-                  <div className="mt-3 rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3">
-                    <div className="mb-2 text-[10px] font-bold uppercase tracking-wide text-emerald-300">True Shop Profit Breakdown</div>
+                  <div className="mt-3 rounded-lg border border-good/20 bg-good/5 p-3">
+                    <div className="mb-2 text-[10px] font-bold uppercase tracking-wide text-good">True Shop Profit Breakdown</div>
                     <div className="space-y-1.5">
                       {[
                         ['Labor profit', ro.profit_breakdown.breakdown.labor_profit],
@@ -1923,10 +1923,10 @@ export default function RODetail() {
                         </div>
                       ))}
                     </div>
-                    <div className="mt-2 flex items-end justify-between border-t border-emerald-500/20 pt-2">
-                      <span className="text-xs font-bold text-emerald-300">True Profit</span>
+                    <div className="mt-2 flex items-end justify-between border-t border-good/20 pt-2">
+                      <span className="text-xs font-bold text-good">True Profit</span>
                       <span className="text-right">
-                        <span className="block font-mono text-sm font-bold tabular-nums text-emerald-300">${Number(ro.profit_breakdown.trueProfit || 0).toFixed(2)}</span>
+                        <span className="block font-mono text-sm font-bold tabular-nums text-good">${Number(ro.profit_breakdown.trueProfit || 0).toFixed(2)}</span>
                         <span className="block text-[10px] text-muted">{Number(ro.profit_breakdown.margin || 0)}% margin</span>
                       </span>
                     </div>
