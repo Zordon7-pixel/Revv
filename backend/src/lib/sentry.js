@@ -1,6 +1,7 @@
 const Sentry = require('@sentry/node');
 
 const PII_PATH_PREFIXES = [
+  '/api/agreements',
   '/api/customers',
   '/api/ros',
   '/api/repair-orders',

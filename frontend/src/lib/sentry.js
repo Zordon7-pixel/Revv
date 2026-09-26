@@ -1,6 +1,8 @@
+import { isSigningPage, scrubSigningSecrets } from './signingPrivacy';
 import * as Sentry from '@sentry/react';
 
 const PII_URL_PARTS = [
+  '/api/agreements',
   '/api/customers',
   '/api/ros',
   '/api/repair-orders',
@@ -10,7 +12,9 @@ const PII_URL_PARTS = [
   '/api/payments',
 ];
 
-function beforeSend(event /*, hint */) {
+export function beforeSend(event /*, hint */) {
+  if (isSigningPage()) return null;
+  event = scrubSigningSecrets(event);
   if (event.request) {
     const url = event.request.url || '';
     if (PII_URL_PARTS.some(p => url.includes(p))) {
@@ -55,6 +59,7 @@ export function initSentry() {
     tracesSampleRate: 0,
     initialScope: { tags: { platform: 'web' } },
     beforeSend,
+    beforeBreadcrumb: (breadcrumb) => isSigningPage() ? null : scrubSigningSecrets(breadcrumb),
   });
   console.log('[sentry] initialized — env=%s sampleRate=%s', import.meta.env.VITE_SENTRY_ENVIRONMENT || 'production', sampleRate);
   return true;
