@@ -1,3 +1,11 @@
+## REVV AI provider policy — Bryan, 2026-09-26
+
+Use OpenAI for all current and future REVV AI workloads. Use the shared server-side
+`backend/src/services/openai.js` client and `OPENAI_API_KEY`; do not introduce
+Anthropic/Claude or other AI-provider fallback without Bryan changing this preference.
+Supplier catalog, delivery, payment and messaging APIs remain their purpose-specific
+integrations. ChatGPT/Codex subscriptions are not application API credentials.
+
 # CLAUDE.md — Revv Project Intelligence
 
 > **Read by: CW3 Codex (before building) AND Claude Code (before QA review)**
@@ -3635,3 +3643,73 @@ inspection photo URL audit  # total=0, REVV-managed=0; no uncovered inspections 
 ```
 
 Historical boundary remains unchanged: the 48 photo references and one claim-evidence reference whose bytes were already absent were not deleted, altered, or fabricated. No Miles Automotive customer, shop, RO, photo, or evidence row was mutated by this release.
+
+## 2026-09-26 — Agreement e-signature build
+
+Codex built a separate worktree from c46aa0d: `codex/revv-esignatures-20260926`.
+New Settings PDF templates and archive, RO Agreements tab, private customer/tablet signing page,
+optional initials/countersign, original + completed PDF downloads, signing audit and tenant/expiry/replay protection.
+Details and limitations: `docs/SPEC-esignatures.md`. Inventory label-capture proposal and current mock-catalog
+findings: `docs/SPEC-stock-label-capture.md`. Actual shop contract has not been supplied; no production deployment
+or customer messages occurred. Original canonical checkout and its unrelated local changes were preserved.
+Independent QA reviewed source and real disposable-PostgreSQL tests; browser/PDF visual QA performed locally.
+Signing telemetry excluded/scrubbed. Settings agreement forms sit outside the shop settings form. RO profit
+palette uses existing semantic good tokens so the broader workspace token-conformance check passes.
+<!-- 2026-09-26 follow-up: Agreement templates now explicitly offer Customer only or Customer and shop representative as radio choices, retaining the existing optional countersignature behavior and both remote/tablet access. -->
+## 2026-09-26 — Photo-to-part inventory build
+
+Built on isolated codex/revv-parts-capture-20260927 from main c46aa0d; see docs/SPEC-part-capture.md.
+Added reviewed photo-label extraction, shop-scoped normalized/brand-aware stock matching, optional sourced
+external listing details, and confirmed inventory entry. No generated catalog details are used in this flow.
+Inventory schema/saves now share an idempotent UUID/TEXT-compatible migration and transactional duplicate
+checks; legacy cost values retained. Brand/source provenance added. Mobile and desktop flow verified with
+synthetic data and real disposable PostgreSQL. Independent review passed. Local image credential rejected
+live QA with 401; eBay credentials absent, so live provider activation remains outstanding. No deployment,
+customer messages, or production inventory mutations. Existing RO profit color classes switched to semantic
+good tokens to satisfy the full frontend token-conformance check, matching the fix already on e-sign PR15.
+
+## 2026-09-26 — OpenAI-only AI migration and eBay setup
+
+Migrated part-label extraction, damage-photo assessment, estimate-assistant scans and
+estimate recovery to the shared OpenAI client. Removed Anthropic SDK/fallbacks, preserved
+deterministic estimate parsing and readable-row recovery, and stopped logging raw model
+output previews. Vision defaults to gpt-4.1-mini, existing estimate default gpt-4o retained;
+per-workload OpenAI model overrides remain server-side. Tests cover request shape, image
+inputs, failure/refusal/truncation handling and estimate regression cases.
+No local OpenAI key was configured; Railway CLI requires renewed authentication, so live
+OpenAI success is not verified. eBay developer registration was opened and handed to Bryan
+for his new password, license acceptance and verification. No account/keyset created, no
+deployment and no customer messages.
+Final migration validation: 48 targeted/integration checks and 7 parser checks passed;
+independent final review passed with25 tests. Local/provider-generated errors are distinguished
+so upstream messages cannot expose credential details; trusted truncation/refusal returns422.
+
+## Dispatch Log — 2026-09-26 Parts delivery and customer visibility
+
+Status: BUILT + VERIFIED ON FEATURE BRANCH — NOT DEPLOYED. Isolated branch
+codex/revv-parts-delivery-20260926 on PR16 head84cd02e. Built supplier references,
+ETA source/date, partial receipt tracking, revision-protected staff edits and change
+history. Carrier delivered no longer auto-receives parts; stale shipment responses
+are discarded. RO/pending board editor and customer portal show checked quantities,
+ETA and separate customer notes. Dashboard counts include new pending states.
+Additive migration supports TEXT/UUID IDs and preserves legacy received quantities.
+No AI needed; OpenAI-only policy unchanged. Parts payloads scrubbed in telemetry.
+
+Files: partsDelivery/trackingCarrier services; parts/tracking/portal/dashboard routes;
+db startup; PartDeliveryEditor/CustomerPartsStatus components; RODetail/PartsOnOrder/
+TrackPortal pages; shared labels; Sentry filters; backend/frontend lifecycle tests;
+docs/SPEC-parts-delivery.md. Verification: 23 backend lifecycle/privacy checks,
+153 backend regressions, 134 frontend checks and production build passed; independent
+QA and desktop/mobile real-database synthetic browser flow verified. No production
+writes, provider calls, customer messages or deployment. Supplier sync/SMS automation
+remain future integrations; e-signature PR15 is unchanged and awaits shop template.
+
+## 2026-09-26 23:03 ET / 2026-09-27 03:03 UTC — Integrated release loop
+
+Bryan reaffirmed the existing deployment authorization and corrected the earlier stop at
+reviewed drafts. For this release, completion requires integration QA, main publication,
+automatic Railway deployment and live verification. Expired Railway CLI login does not
+block the configured GitHub-main deployment path; pending eBay/OpenAI setup limits only
+provider-dependent activation. Integrated PR15/16/17 on isolated release worktree, preserving
+both privacy filters and features. Fresh installs, 229 backend +7 parser +143 frontend tests,
+and production frontend/PDF asset build passed. See docs/RELEASE-esign-parts-20260926.md.

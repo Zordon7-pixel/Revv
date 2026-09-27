@@ -28,6 +28,7 @@ import TechWorkload from './pages/TechWorkload'
 import Payments from './pages/Payments'
 import TechView from './pages/TechView'
 import FloorMode from './pages/FloorMode'
+import AgreementSigning from './pages/AgreementSigning'
 import ApprovalPortal from './pages/ApprovalPortal'
 import BookAppointment from './pages/BookAppointment'
 import SuperAdminLogin from './pages/SuperAdminLogin'
@@ -141,6 +142,7 @@ export default function App() {
             <Route path="/shop-register" element={<ShopRegister />} />
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/invoice/:id" element={<Invoice />} />
+            <Route path="/sign" element={<AgreementSigning />} />
             <Route path="/approve/:token" element={<ApprovalPortal />} />
             <Route path="/track/:token" element={<TrackPortal />} />
             <Route path="/shop/:shopId" element={<ShopProfile />} />

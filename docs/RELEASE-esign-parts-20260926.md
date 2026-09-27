@@ -1,0 +1,13 @@
+# E-signature and parts release — 2026-09-26
+
+Integrated release branch: codex/revv-release-20260926. Production baseline and rollback source: c46aa0d68b961ac614b2b107755a14737b1fdba5. Includes reviewed PR15 (agreements), PR16 (photo-to-stock and OpenAI-only AI), and PR17 (delivery and customer portal updates). Canonical checkout's unrelated local changes are excluded.
+
+Only merge conflicts were documentation appends and Sentry request-path allowlists. Both histories and all privacy paths were retained. Signing-page suppression/token scrubbing and parts/inventory payload filtering are present together. Both RO tabs/actions and backend routes remain registered. Fresh lockfile installs succeeded for both packages.
+
+Integrated validation: 229 Node backend checks, 7 parser checks, 143 frontend checks and production build passed. Real PostgreSQL integration uses dedicated disposable localhost databases and covers both TEXT and UUID IDs. The build copies the pinned PDF.js worker, CMaps and fonts into frontend output. There are no separate lint/typecheck scripts; existing bundle-size warnings remain.
+
+Deployment is authorized by Bryan's earlier Deploy it instruction, reiterated by the request to finish the build loop. The release gate includes independent integration review, source publication, main-branch deployment and live verification. Reviewed PRs alone do not complete this task. Railway CLI authentication is expired, but the existing main-branch GitHub integration can deploy; use its commit status and the live health commit to verify the result. Do not conflate pending provider signup with an inability to deploy already tested provider-independent features.
+
+Feature boundaries after deployment: agreements require the shop's approved PDF; shop staff configure customer-only or customer-plus-shop. Built-in signatures are typed with an appended record. Parts delivery updates publish to the customer portal, with explicit shop receipt checks; no new automatic SMS/email or supplier-order synchronization. Photo transcription requires a valid server-side OpenAI key; eBay source lookup requires approved developer credentials. Missing providers expose unavailable states, while manual number/stock lookup remains usable. Production provider configuration and real provider calls must be verified separately; local credentials are absent.
+
+Rollback: prefer a reviewed code rollback retaining new columns, agreement records and delivery history. Do not drop new data or mix old inventory/auto-receive writers during rollout. Reverting to the baseline requires checking compatibility of any stock records created under the new brand-aware rules. No destructive rollback is authorized or performed by this document.

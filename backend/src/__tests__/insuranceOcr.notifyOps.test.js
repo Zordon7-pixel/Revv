@@ -6,7 +6,7 @@ const test = require('node:test');
 test('insurance OCR imports notifyOps and handles provider failure branches', () => {
   const source = fs.readFileSync(path.join(__dirname, '../routes/insuranceOcr.js'), 'utf8');
 
-  assert.match(source, /require\('@anthropic-ai\/sdk'\)/);
+  assert.match(source, /require\('\.\.\/services\/openai'\)/);
   assert.match(source, /require\('\.\.\/services\/notifyOps'\)/);
   assert.match(source, /notifyOps\('high', providerCode/);
   assert.match(source, /status === 401 \|\| status === 403/);
@@ -17,19 +17,14 @@ test('insurance OCR imports notifyOps and handles provider failure branches', ()
   assert.match(source, /provider_5xx/);
 });
 
-test('insurance OCR falls back to Anthropic when OpenAI estimate parsing is misconfigured', () => {
+test('insurance OCR uses only OpenAI and preserves local parsing recovery', () => {
   const source = fs.readFileSync(path.join(__dirname, '../routes/insuranceOcr.js'), 'utf8');
-
-  assert.match(source, /ANTHROPIC_ESTIMATE_MODEL/);
-  assert.match(source, /function getAnthropicClient\(\)/);
-  assert.match(source, /parseEstimateTextWithAnthropic/);
-  assert.match(source, /parseEstimateImagesWithAnthropic/);
-  assert.match(source, /parseEstimateTextWithFallback/);
-  assert.match(source, /parseEstimateImageUrlsWithFallback/);
-  assert.match(source, /parseEstimateUploadImageWithFallback/);
-  assert.match(source, /OpenAI estimate text parse unavailable; falling back to Anthropic/);
-  assert.match(source, /OpenAI estimate image parse unavailable; falling back to Anthropic/);
-  assert.match(source, /!apiKey && !process\.env\.ANTHROPIC_API_KEY/);
+  assert.doesNotMatch(source, /ANTHROPIC|Anthropic|anthropic-ai/);
+  assert.match(source, /parseEstimateTextWithOpenAI/);
+  assert.match(source, /parseEstimateImageUrlsWithOpenAI/);
+  assert.match(source, /if \(!apiKey\)/);
+  assert.match(source, /const openai = getOpenAI\(\)/);
+  assert.match(source, /buildDeterministicParseResponse\(deterministicSummaryFallback/);
 });
 
 test('insurance OCR retries zero-line-item results and can build rows from totals', () => {

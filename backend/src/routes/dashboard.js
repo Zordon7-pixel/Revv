@@ -291,7 +291,7 @@ router.get('/weekly', auth, requireTechnician, async (req, res) => {
        JOIN parts_orders p ON p.ro_id = ro.id
        WHERE ro.shop_id = $1
          AND COALESCE(NULLIF(LOWER(TRIM(ro.status)), ''), 'intake') NOT IN ('closed', 'completed', 'total_loss')
-         AND LOWER(COALESCE(p.status, '')) IN ('ordered', 'awaiting', 'pending', 'backordered')`,
+         AND LOWER(COALESCE(p.status, '')) IN ('ordered', 'awaiting', 'pending', 'backordered', 'shipped', 'partially_received')`,
       [shopId]
     );
 

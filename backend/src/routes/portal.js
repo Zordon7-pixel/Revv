@@ -1,6 +1,8 @@
 const router = require('express').Router();
 const { dbGet, dbAll, dbRun } = require('../db');
 const auth   = require('../middleware/auth');
+const { pool } = require('../db');
+const { ensureDelivery, customerPart, summarize } = require('../services/partsDelivery');
 const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 const fs = require('fs');
@@ -76,17 +78,18 @@ router.get('/my-ros', auth, async (req, res) => {
       ORDER BY ro.created_at DESC
     `, [req.user.customer_id, req.user.shop_id]);
 
+    await ensureDelivery(pool);
     const enriched = await Promise.all(ros.map(async (r) => {
       const pendingParts = await dbAll(`
-        SELECT part_name, status, expected_date, tracking_status, tracking_detail, carrier
-        FROM parts_orders
-        WHERE ro_id = $1 AND status IN ('ordered','backordered')
+        SELECT * FROM parts_orders
+        WHERE ro_id = $1 AND shop_id = $2
         ORDER BY created_at ASC
-      `, [r.id]);
+      `, [r.id, req.user.shop_id]);
       return {
         ...r,
         status_info: STATUS_MESSAGES[r.status] || { label: r.status, msg: 'Your vehicle is being worked on.', emoji: '🔧' },
-        pending_parts: pendingParts,
+        pending_parts: pendingParts.filter(p => !['received','cancelled'].includes(p.status)).map(customerPart),
+        parts: pendingParts.map(customerPart), parts_summary: summarize(pendingParts),
       };
     }));
 
@@ -138,20 +141,20 @@ router.get('/track/:token', async (req, res) => {
       LEFT JOIN vehicles v ON v.id = ro.vehicle_id
       LEFT JOIN customers c ON c.id = ro.customer_id
       LEFT JOIN shops s ON s.id = ro.shop_id
-      WHERE ro.id = $1
-    `, [tokenRecord.ro_id]);
+      WHERE ro.id = $1 AND ro.shop_id = $2
+    `, [tokenRecord.ro_id, tokenRecord.shop_id]);
     
     if (!ro) {
       return res.status(404).json({ error: 'Repair order not found' });
     }
     
+    await ensureDelivery(pool);
     // Get parts
     const parts = await dbAll(`
-      SELECT part_name, part_number, status, expected_date, received_date
-      FROM parts_orders
-      WHERE ro_id = $1
+      SELECT * FROM parts_orders
+      WHERE ro_id = $1 AND shop_id = $2
       ORDER BY created_at ASC
-    `, [ro.id]);
+    `, [ro.id, tokenRecord.shop_id]);
     
     // Get photos
     const photos = await dbAll(`
@@ -210,7 +213,8 @@ router.get('/track/:token', async (req, res) => {
         state: ro.shop_state,
         zip: ro.shop_zip,
       },
-      parts,
+      parts: parts.map(customerPart),
+      parts_summary: summarize(parts),
       photos,
       timeline,
       has_rated: !!existingRating,

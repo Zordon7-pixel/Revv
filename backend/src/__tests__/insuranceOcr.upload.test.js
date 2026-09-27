@@ -12,6 +12,8 @@ function mock(moduleName, value) {
 let aiCalls = [];
 let aiResult;
 let aiRaw;
+let aiError;
+mock('../services/notifyOps', { notifyOps: async () => {} });
 mock('../middleware/auth', (req, _res, next) => {
   req.user = { id: 'test-user', shop_id: 'test-shop' };
   next();
@@ -20,6 +22,7 @@ mock('pdf-parse', async (buffer) => ({ text: buffer.toString('utf8') }));
 mock('openai', class {
   chat = { completions: { create: async (payload) => {
     aiCalls.push(payload);
+    if (aiError) throw aiError;
     return { choices: [{ message: { content: aiRaw ?? JSON.stringify(aiResult) } }] };
   } } };
 });
@@ -65,6 +68,16 @@ test('estimate uploads retain all sources and report actionable upload errors', 
       assert.ok(body.parsed.line_items.some((item) => item.description === 'Refinish front bumper cover'));
       assert.equal(body.needs_review, true);
     });
+  });
+
+  await t.test('OpenAI authentication failure preserves readable rows without another provider', async () => {
+    aiCalls = []; aiError = Object.assign(new Error('synthetic provider failure'), { status: 401 });
+    try {
+      await upload([{ name: 'estimate.pdf', type: 'application/pdf', content: ccc.replace(/^2\s+.+$/m, '2 unreadable estimate row') }], async (res, body) => {
+        assert.equal(res.status, 200); assert.equal(aiCalls.length, 1);
+        assert.equal(body.parsed.line_items.length, 7); assert.equal(body.needs_review, true);
+      });
+    } finally { aiError = undefined; }
   });
 
   await t.test('a shorter recovery response preserves the already readable rows', async () => {
