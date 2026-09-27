@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { X, CheckCircle } from 'lucide-react'
 import api from '../lib/api'
+import ROAgreements from './ROAgreements'
 import AppraisalQuickIntake from './AppraisalQuickIntake'
 import LibraryAutocomplete from './LibraryAutocomplete'
 import VehicleDiagram from './VehicleDiagram'
@@ -67,12 +68,18 @@ function findControlLabel(control, boundary) {
 export default function AddROModal({ onClose, onSaved, presentation = 'modal' }) {
   const { t } = useLanguage()
   const navigate = useNavigate()
+  const [agreementChoices, setAgreementChoices] = useState([])
+  const [agreementChoice, setAgreementChoice] = useState('')
+  const [agreementsError, setAgreementsError] = useState('')
+  const [createdForAgreements, setCreatedForAgreements] = useState(null)
+  const [agreementsLoading, setAgreementsLoading] = useState(true)
   const [customers, setCustomers] = useState([])
   const [customerVehicles, setCustomerVehicles] = useState([])
   const [autoFillLoading, setAutoFillLoading] = useState(false)
   const [step, setStep] = useState(1)
   const [loading, setLoading] = useState(false)
   const [formError, setFormError] = useState('')
+  const [duplicateCreatedRo, setDuplicateCreatedRo] = useState(null)
   const [duplicateWarning, setDuplicateWarning] = useState(null)
   const [newRoCustomerId, setNewRoCustomerId] = useState('')
   const [entryMode, setEntryMode] = useState('manual')
@@ -99,6 +106,18 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
   const compactInputRef = useRef(null)
   const compactOriginalRef = useRef(null)
   const isPage = presentation === 'page'
+
+  async function loadAgreementChoices() {
+    setAgreementsLoading(true); setAgreementsError('')
+    try { const { data } = await api.get('/agreements/templates'); setAgreementChoices(Array.isArray(data.templates) ? data.templates : []) }
+    catch { setAgreementsError('Authorizations could not be loaded. You can retry or add them from the repair order later.') }
+    finally { setAgreementsLoading(false) }
+  }
+  useEffect(() => { loadAgreementChoices() }, [])
+  function finishCreated(ro) {
+    if (agreementChoice) setCreatedForAgreements(ro)
+    else onSaved(ro)
+  }
 
   useEffect(() => { api.get('/customers').then(r => setCustomers(r.data.customers)) }, [])
 
@@ -408,7 +427,7 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
       setFormError(`RO ${createdRoWithPendingDocuments.ro_number || ''} is created and the documents are attached, but the estimate still needs to be staged. Retry setup or open the RO and use Insurance Import.`)
       return
     }
-    onSaved(createdRoWithPendingDocuments)
+    finishCreated(createdRoWithPendingDocuments)
   }
 
   function applyVehicleSelection(vehicleId) {
@@ -447,6 +466,8 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
   }
 
   async function submit() {
+    if (duplicateCreatedRo) { finishCreated(duplicateCreatedRo); return }
+    if (loading) return
     // Validate before hitting the API
     if (autoFillLoading) {
       setFormError('Still loading customer vehicle defaults. Please try again in a moment.')
@@ -534,11 +555,12 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
         return
       }
       if (ro?.duplicate_warning) {
+        setDuplicateCreatedRo(ro)
         setDuplicateWarning(ro.duplicate_warning)
         setNewRoCustomerId(customer_id)
         return
       }
-      onSaved(ro)
+      finishCreated(ro)
     } catch(e) {
       const msg = e?.response?.data?.error || e?.message || 'Unknown error'
       console.error('[AddROModal] create failed')
@@ -560,6 +582,16 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
       }
     }
     return ''
+  }
+
+  if (createdForAgreements) {
+    const customer = customers.find((item) => item.id === form.customer_id)
+    return <div className={isPage ? 'mx-auto max-w-3xl p-4 space-y-4' : 'sheet-modal-overlay fixed inset-0 z-[90] overflow-auto bg-void/90 p-4'}>
+      <div className="mx-auto max-w-3xl space-y-4 rounded-2xl bg-panel p-4">
+        <div className="flex items-center justify-between gap-3"><div><h2 className="font-semibold text-ink">RO {createdForAgreements.ro_number || ''} created</h2><p className="text-sm text-muted">Prepare the authorization for this repair order.</p></div><button type="button" className="rounded-lg border border-line px-3 py-2 text-sm text-ink" onClick={() => onSaved(createdForAgreements)}>Open repair order</button></div>
+        <ROAgreements roId={createdForAgreements.id} initialTemplate={agreementChoice} intakeOnly customerName={form.customer_name || customer?.name || ''} customerEmail={form.customer_email || customer?.email || ''} />
+      </div>
+    </div>
   }
 
   const content = (
@@ -618,7 +650,7 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
                 </button>
                 <button
                   type="button"
-                  onClick={onSaved}
+                  onClick={() => finishCreated(duplicateCreatedRo)}
                   className="w-full rounded-instrument bg-gold px-3 py-2 text-xs font-semibold text-on-gold transition-colors hover:bg-gold-lit sm:w-auto"
                 >
                   Keep New RO
@@ -829,6 +861,14 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
                   <div><label className={lbl}>Deductible ($)</label><input className={inp} type="number" value={form.deductible} onChange={e => set('deductible', e.target.value)} placeholder="500" /></div>
                 </>
               )}
+              <section className="rounded-lg border border-line-2 bg-raised/30 p-3 space-y-2" aria-label="New RO authorizations">
+                <h3 className="font-semibold text-ink">Authorizations</h3>
+                <p className="text-xs text-muted">Choose this shop’s authorization now. After creating the RO, review its details and prepare the customer’s signing link.</p>
+                {agreementsLoading ? <p className="text-sm text-muted">Loading shop authorizations…</p> : agreementsError ? <div><p role="alert" className="text-sm text-warn">{agreementsError}</p><button type="button" className="text-sm text-brand" onClick={loadAgreementChoices}>Retry authorizations</button></div> : <>
+                  <label className="block text-sm text-muted">Authorization for this RO<select className={inp} value={agreementChoice} onChange={(e) => setAgreementChoice(e.target.value)}><option value="">Choose later</option>{agreementChoices.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label>
+                  {!agreementChoices.length && <p className="text-xs text-muted">An owner or admin can add your shop’s authorizations in Settings → Core → Agreements &amp; e-signatures.</p>}
+                </>}
+              </section>
               <TurnaroundEstimator
                 jobType={form.job_type}
                 onAccept={(date) => setForm(f => ({ ...f, estimated_delivery: date }))}
@@ -893,7 +933,7 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
             </>
           ) : createdRoWithPendingDocuments ? (
             <>
-              <button type="button" onClick={() => onSaved(createdRoWithPendingDocuments)} className="text-sm text-muted transition-colors hover:text-ink">Open RO now</button>
+              <button type="button" onClick={() => finishCreated(createdRoWithPendingDocuments)} className="text-sm text-muted transition-colors hover:text-ink">Open RO now</button>
               <span className="text-xs text-good">RO already created</span>
               <button type="button" onClick={retryPendingDocuments} disabled={loading} className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-lit disabled:opacity-50">{loading ? 'Retrying...' : 'Retry Appraisal Setup'}</button>
             </>

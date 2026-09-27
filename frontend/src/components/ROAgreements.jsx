@@ -3,10 +3,10 @@ import api from '../lib/api'
 import { tryCopyToClipboard } from '../lib/clipboard'
 import { agreementStatus, agreementInput, agreementButton, agreementError, downloadAgreement } from '../lib/agreements'
 
-export default function ROAgreements({ roId, customerName = '', customerEmail = '', canCountersign = false, archiveOnly = false }) {
+export default function ROAgreements({ roId, customerName = '', customerEmail = '', canCountersign = false, archiveOnly = false, initialTemplate = '', intakeOnly = false }) {
   const [templates, setTemplates] = useState([])
   const [items, setItems] = useState([])
-  const [template, setTemplate] = useState('')
+  const [template, setTemplate] = useState(initialTemplate)
   const [name, setName] = useState(customerName)
   const [email, setEmail] = useState(customerEmail)
   const [busy, setBusy] = useState(false)
@@ -17,6 +17,11 @@ export default function ROAgreements({ roId, customerName = '', customerEmail = 
   const [signerName, setSignerName] = useState('')
   const [consent, setConsent] = useState(false)
   const [config, setConfig] = useState({})
+  const [preparation, setPreparation] = useState({ stage: 'intake', estimate: '', amount: '', deductible: '', loss_date: '', condition: '', invoice: '', reviewed: false, insurance_denied: false, repairs_complete: false })
+  const selected = templates.find((item) => item.id === template)
+  const preparedKind = selected?.preparation_kind
+  const removal = preparedKind === 'miles_removal_v1'
+  const field = (key, value) => setPreparation((prev) => ({ ...prev, [key]: value, ...(key === 'reviewed' ? {} : { reviewed: false }) }))
   async function load() {
     const [list, choices] = await Promise.all([api.get(`/agreements/ro/${roId}`), api.get('/agreements/templates')])
     setItems(Array.isArray(list.data.agreements) ? list.data.agreements : []); setConfig(list.data); setTemplates(Array.isArray(choices.data.templates) ? choices.data.templates : [])
@@ -30,16 +35,38 @@ export default function ROAgreements({ roId, customerName = '', customerEmail = 
   function saveLink(path) { setLink(new URL(path, window.location.origin).href); setMessage('Link ready. No message has been sent to the customer.') }
   async function create(event) {
     event.preventDefault()
-    await action(async () => { const { data } = await api.post(`/agreements/ro/${roId}`, { template_id: template, recipient_name: name, recipient_email: email }); saveLink(data.signing_path) })
+    await action(async () => { const { data } = await api.post(`/agreements/ro/${roId}`, { template_id: template, recipient_name: name, recipient_email: email, ...(preparedKind ? { preparation: { ...preparation, stage: removal ? 'removal' : preparation.stage } } : {}) }); saveLink(data.signing_path) })
   }
   return <section className="rounded-2xl border border-line bg-panel p-5 space-y-5">
     <div><h2 className="text-lg font-semibold text-ink">Agreements</h2><p className="text-sm text-muted">Prepare a customer agreement, open it on the shop tablet, or copy its private signing link.</p></div>
     {error && <p role="alert" className="text-sm text-crit">{error}</p>}
     {message && <p role="status" className="text-sm text-good">{message}</p>}
     {!archiveOnly && <form onSubmit={create} className="grid gap-3 sm:grid-cols-2">
-      <label className="sm:col-span-2 text-sm text-muted">Shop agreement<select required className={agreementInput} value={template} onChange={(e) => setTemplate(e.target.value)}><option value="">Choose agreement</option>{templates.map((t) => <option key={t.id} value={t.id}>{t.title}</option>)}</select></label>
+      <label className="sm:col-span-2 text-sm text-muted">Shop agreement<select required className={agreementInput} value={template} onChange={(e) => { setTemplate(e.target.value); setPreparation((prev) => ({ ...prev, stage: 'intake', reviewed: false })) }}><option value="">Choose agreement</option>{templates.map((t) => <option key={t.id} value={t.id}>{t.title}</option>)}</select></label>
       <label className="text-sm text-muted">Customer name<input required maxLength={120} className={agreementInput} value={name} onChange={(e) => setName(e.target.value)} /></label>
       <label className="text-sm text-muted">Customer email (optional)<input type="email" maxLength={254} className={agreementInput} value={email} onChange={(e) => setEmail(e.target.value)} /></label>
+      {preparedKind && <fieldset className="sm:col-span-2 space-y-3 rounded-lg border border-line p-3">
+        <legend className="text-sm font-medium text-ink">Authorization details</legend>
+        {!removal && !intakeOnly && <label className="block text-sm text-muted">Signing stage<select className={agreementInput} value={preparation.stage} onChange={(e) => field('stage', e.target.value)}><option value="intake">Intake authorization</option><option value="completion">Completion acknowledgment</option></select></label>}
+        {!removal && preparation.stage === 'intake' && <>
+          <label className="block text-sm text-muted">Estimate reference / version<input required maxLength={100} className={agreementInput} value={preparation.estimate} onChange={(e) => field('estimate', e.target.value)} /></label>
+          <label className="block text-sm text-muted">Authorized total, including tax ($)<input required type="number" min="0" max="99999999.99" step="0.01" className={agreementInput} value={preparation.amount} onChange={(e) => field('amount', e.target.value)} /></label>
+          {preparedKind === 'miles_insurance_v1' && <>
+            <label className="block text-sm text-muted">Deductible ($)<input required type="number" min="0" max="99999999.99" step="0.01" className={agreementInput} value={preparation.deductible} onChange={(e) => field('deductible', e.target.value)} /></label>
+            <label className="block text-sm text-muted">Date of loss<input required type="date" className={agreementInput} value={preparation.loss_date} onChange={(e) => field('loss_date', e.target.value)} /></label>
+          </>}
+          <p className="text-xs text-muted">Customer and vehicle details come from this repair order. The completion acknowledgment is reserved for a separate signature after repairs.</p>
+        </>}
+        {removal && <>
+          <label className="block text-sm text-muted">Unrepaired conditions and transport arrangements<textarea required maxLength={600} className={agreementInput} value={preparation.condition} onChange={(e) => field('condition', e.target.value)} /></label>
+          <label className="flex gap-2 text-sm text-ink"><input required type="checkbox" checked={preparation.insurance_denied} onChange={(e) => field('insurance_denied', e.target.checked)} />The insurance claim was denied and the customer is requesting vehicle removal.</label>
+        </>}
+        {!removal && preparation.stage === 'completion' && <>
+          <label className="block text-sm text-muted">Final invoice reference<input required maxLength={100} className={agreementInput} value={preparation.invoice} onChange={(e) => field('invoice', e.target.value)} /></label>
+          <label className="flex gap-2 text-sm text-ink"><input required type="checkbox" checked={preparation.repairs_complete} onChange={(e) => field('repairs_complete', e.target.checked)} />Repairs are complete. The customer will inspect the vehicle before signing.</label>
+        </>}
+        <label className="flex gap-2 text-sm text-ink"><input required type="checkbox" checked={preparation.reviewed} onChange={(e) => field('reviewed', e.target.checked)} />I checked the customer, vehicle, amounts, and signing stage for this authorization.</label>
+      </fieldset>}
       <div className="sm:col-span-2"><button disabled={busy || !template} className="rounded-lg bg-brand px-4 py-2 text-sm text-on-brand disabled:opacity-50">Prepare signing link</button>
         {!templates.length && <p className="mt-2 text-sm text-muted">An owner or admin can upload the shop’s agreement in Settings → Core.</p>}</div>
     </form>}
@@ -52,11 +79,11 @@ export default function ROAgreements({ roId, customerName = '', customerEmail = 
     <div className="space-y-3">
       {!items.length && <p className="text-sm text-muted">No agreement requests for this repair order yet.</p>}
       {items.map((item) => <article key={item.id} className="rounded-lg border border-line p-4 space-y-3">
-        <div className="flex flex-wrap justify-between gap-2"><div><h3 className="font-medium text-ink">{item.title}</h3><p className="text-sm text-muted">{item.recipient_name}</p></div><span className="text-sm text-brand">{agreementStatus[item.status]}</span></div>
+        <div className="flex flex-wrap justify-between gap-2"><div><h3 className="font-medium text-ink">{item.title}</h3>{item.preparation_details?.stage && <p className="text-xs text-muted">Signing stage: {item.preparation_details.stage}</p>}<p className="text-sm text-muted">{item.recipient_name}</p></div><span className="text-sm text-brand">{agreementStatus[item.status]}</span></div>
         <p className="text-xs text-muted">Created {new Date(item.created_at).toLocaleString()}{item.completed_at && ` · Completed ${new Date(item.completed_at).toLocaleString()}`}</p>
         {item.customer_signed_at && <p className="text-sm text-ink">Customer signed as {item.customer_signed_name} on {new Date(item.customer_signed_at).toLocaleString()}.</p>}
         <div className="flex flex-wrap gap-2">
-          <button className={agreementButton} onClick={() => downloadAgreement(`/agreements/${item.id}/document`, 'agreement-original.pdf').catch((err) => setError(agreementError(err)))}>Original PDF</button>
+          <button className={agreementButton} onClick={() => downloadAgreement(`/agreements/${item.id}/document`, 'agreement-original.pdf').catch((err) => setError(agreementError(err)))}>Review prepared PDF</button>
           {item.status === 'signed' && <button className={agreementButton} onClick={() => downloadAgreement(`/agreements/${item.id}/signed`, 'signed-agreement.pdf').catch((err) => setError(agreementError(err)))}>Download signed PDF</button>}
           <button className={agreementButton} onClick={() => downloadAgreement(`/agreements/${item.id}/audit`, 'agreement-signing-record.json').catch((err) => setError(agreementError(err)))}>Signing record</button>
           {item.status !== 'voided' && <button disabled={busy} className={agreementButton} onClick={() => action(async () => { const { data } = await api.post(`/agreements/${item.id}/link`); saveLink(data.signing_path) })}>Replace sharing link</button>}

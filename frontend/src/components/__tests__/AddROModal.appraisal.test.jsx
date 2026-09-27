@@ -93,4 +93,47 @@ describe('AddROModal appraisal quick intake', () => {
       }),
     })
   })
+  async function openAuthorizationFlow({ duplicate = false, failure = false } = {}) {
+    const get = api.get.getMockImplementation()
+    const post = api.post.getMockImplementation()
+    api.get.mockImplementation((url) => url === '/agreements/templates' ? Promise.resolve({ data: { templates: [{ id: 'shop-agreement', title: 'This shop authorization' }] } }) : get(url))
+    api.post.mockImplementation((url, body) => {
+      if (url === '/ros' && duplicate) return Promise.resolve({ data: { id: 'ro-1', ro_number: 'RO-100', duplicate_warning: { count: 1 } } })
+      if (url === '/agreements/ro/ro-1') return failure ? Promise.reject(new Error('Could not prepare agreement')) : Promise.resolve({ data: { signing_path: '/sign#qa-link' } })
+      return post(url, body)
+    })
+    const user = userEvent.setup(), onSaved = vi.fn()
+    render(<MemoryRouter><AddROModal presentation="page" onClose={vi.fn()} onSaved={onSaved} /></MemoryRouter>)
+    await user.click(await screen.findByRole('tab', { name: 'Appraisal Quick Intake' }))
+    fireEvent.change(screen.getByLabelText('Appraisal files'), { target: { files: [new File(['one'], 'page.jpg', { type: 'image/jpeg' })] } })
+    await user.click(screen.getByRole('button', { name: 'Read Appraisal' }))
+    await screen.findByDisplayValue('Miles Customer')
+    await user.click(screen.getByRole('button', { name: 'Use Details in New RO' }))
+    await user.click(screen.getByRole('button', { name: /Next/ }))
+    await user.click(screen.getByRole('button', { name: /Next/ }))
+    await screen.findByRole('region', { name: 'New RO authorizations' })
+    await user.selectOptions(screen.getByLabelText('Authorization for this RO'), 'shop-agreement')
+    await user.click(screen.getByRole('button', { name: 'Add Repair Order' }))
+    return { user, onSaved }
+  }
+  it('places shop authorizations at creation and hands the saved RO to signing without creating twice', async () => {
+    const { user, onSaved } = await openAuthorizationFlow({ failure: true })
+    expect(await screen.findByText('RO RO-100 created')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add Repair Order' })).not.toBeInTheDocument()
+    expect(onSaved).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'Prepare signing link' }))
+    await screen.findByRole('alert')
+    await user.click(screen.getByRole('button', { name: 'Prepare signing link' }))
+    expect(api.post.mock.calls.filter(([url]) => url === '/ros')).toHaveLength(1)
+    await user.click(screen.getByRole('button', { name: 'Open repair order' }))
+    expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({id:'ro-1'}))
+  })
+  it('keeps the selected authorization after a duplicate warning without recreating the RO', async () => {
+    const { user } = await openAuthorizationFlow({ duplicate: true })
+    await user.click(await screen.findByRole('button', { name: 'Keep New RO' }))
+    expect(await screen.findByText('RO RO-100 created')).toBeInTheDocument()
+    expect(screen.getByLabelText('Shop agreement')).toHaveValue('shop-agreement')
+    expect(api.post.mock.calls.filter(([url]) => url === '/ros')).toHaveLength(1)
+  })
+
 })

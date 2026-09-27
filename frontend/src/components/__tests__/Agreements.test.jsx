@@ -46,4 +46,18 @@ describe('shop agreement controls', () => {
     expect(screen.queryByRole('button', { name: 'Prepare signing link' })).not.toBeInTheDocument()
     expect(api.get).toHaveBeenCalledWith('/agreements/ro/deleted-ro')
   })
+  it('requires deliberate Miles intake details and omits completion selection during New RO', async () => {
+    api.get.mockImplementation((path) => Promise.resolve({ data: path === '/agreements/templates'
+      ? { templates: [{ id: 'miles-cash', title: 'Cash agreement', preparation_kind: 'miles_cash_v1' }] } : { agreements: [] } }))
+    api.post.mockResolvedValue({ data: { signing_path: '/sign#qa' } })
+    render(<ROAgreements roId="new-ro" customerName="Customer" initialTemplate="miles-cash" intakeOnly />)
+    await screen.findByLabelText('Estimate reference / version')
+    expect(screen.queryByLabelText('Signing stage')).not.toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Estimate reference / version'), { target: { value: 'Estimate 1' } })
+    fireEvent.change(screen.getByLabelText('Authorized total, including tax ($)'), { target: { value: '2500' } })
+    fireEvent.click(screen.getByLabelText(/I checked the customer/))
+    fireEvent.submit(screen.getByRole('button', { name: 'Prepare signing link' }).closest('form'))
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/agreements/ro/new-ro', expect.objectContaining({ preparation: expect.objectContaining({stage:'intake',estimate:'Estimate 1',amount:'2500',reviewed:true}) })))
+  })
+
 })

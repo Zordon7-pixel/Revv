@@ -38,6 +38,11 @@ CREATE TABLE IF NOT EXISTS agreement_events (
   details JSONB NOT NULL DEFAULT '{}', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS agreement_events_request ON agreement_events(request_id, created_at);
+ALTER TABLE agreement_templates ADD COLUMN IF NOT EXISTS preparation_kind TEXT;
+ALTER TABLE agreement_templates ADD COLUMN IF NOT EXISTS stage_documents JSONB;
+ALTER TABLE agreement_requests ADD COLUMN IF NOT EXISTS prepared_pdf BYTEA;
+ALTER TABLE agreement_requests ADD COLUMN IF NOT EXISTS preparation_details JSONB;
+ALTER TABLE agreement_requests ADD COLUMN IF NOT EXISTS parent_request_id UUID;
 `;
 function hash(value) { return crypto.createHash('sha256').update(value).digest('hex'); }
 function newToken() { return crypto.randomBytes(32).toString('hex'); }

@@ -175,4 +175,51 @@ test('agreement lifecycle against disposable PostgreSQL', { skip: !connectionStr
     assert.equal((await sign(request)).status, 409);
     assert.equal((await api(`/${request.data.id}/document`)).status, 409);
   });
+  await t.test('Miles profiles are tenant restricted, require details, and freeze staged documents', async () => {
+    const { MILES_SHOP_ID, profiles } = require('../src/services/milesAgreements');
+    const priorHash = profiles.miles_cash_v1.hash;
+    profiles.miles_cash_v1.hash = hash(original); // synthetic source only, isolated test process
+    try {
+      await database.query(`ALTER TABLE customers ADD COLUMN phone TEXT;
+        ALTER TABLE repair_orders ADD COLUMN vehicle_id TEXT;
+        ALTER TABLE repair_orders ADD COLUMN claim_number TEXT;
+        CREATE TABLE vehicles(id TEXT,shop_id TEXT,year INTEGER,make TEXT,model TEXT,vin TEXT);`);
+      await database.query('INSERT INTO shops VALUES ($1,$2)', [MILES_SHOP_ID, 'Miles Automotive']);
+      await database.query('INSERT INTO customers(id,shop_id,name,email) VALUES ($1,$2,$3,$4)', ['miles-customer',MILES_SHOP_ID,'José Rivera','qa@example.test']);
+      await database.query('INSERT INTO vehicles VALUES ($1,$2,2024,$3,$4,$5)', ['miles-vehicle',MILES_SHOP_ID,'Toyota','Camry','1HGBH41JXMN109186']);
+      await database.query('INSERT INTO repair_orders(id,shop_id,customer_id,ro_number,vehicle_id) VALUES ($1,$2,$3,$4,$5)', ['miles-ro',MILES_SHOP_ID,'miles-customer','QA-RO','miles-vehicle']);
+      const miles = jwt.sign({ id:'miles-owner',shop_id:MILES_SHOP_ID,role:'owner' }, process.env.JWT_SECRET);
+      const uploaded = await upload({ token:miles });
+      const staged = { intake:{pdf:original.toString('base64'),sha256:hash(original)},completion:{pdf:original.toString('base64'),sha256:hash(original)} };
+      await database.query('UPDATE agreement_templates SET preparation_kind=$2,stage_documents=$3::jsonb WHERE id=$1', [uploaded.data.id,'miles_cash_v1',JSON.stringify(staged)]);
+      assert.equal((await api('/templates',{token:miles})).data.templates.length,1);
+      assert.equal((await api('/templates',{token:other})).data.templates.some(x=>x.id===uploaded.data.id),false);
+      assert.equal((await api(`/templates/${uploaded.data.id}/document`,{token:other})).status,404);
+      const body={template_id:uploaded.data.id,preparation:{stage:'intake',estimate:'QA-v1',amount:'1234.56',reviewed:true}};
+      const createMiles=(b=body,token=miles)=>api('/ro/miles-ro',{method:'POST',token,body:b});
+      assert.equal((await createMiles(body,other)).status,404);
+      assert.equal((await createMiles({...body,preparation:{...body.preparation,reviewed:false}})).status,400);
+      const completion={...body,preparation:{stage:'completion',invoice:'QA-invoice',repairs_complete:true,reviewed:true}};
+      assert.equal((await createMiles(completion)).status,409);
+      const intake=await createMiles(); assert.equal(intake.status,201);
+      assert.equal((await createMiles()).status,409);
+      const link=intake.data.signing_path.split('#')[1];
+      const meta=(await api('/public/session',{token:link})).data.agreement;
+      assert.equal(meta.preparation_details.stage,'intake');
+      const prepared=await api('/public/session/document',{token:link});assert.equal(prepared.status,200);
+      assert.equal(hash(prepared.data),meta.document_sha256);assert.notEqual(meta.document_sha256,hash(original));
+      assert.equal((await api('/public/session/sign',{method:'POST',token:link,body:{name:'José Rivera',consent:true,consent_version:CONSENT_VERSION,document_sha256:meta.document_sha256}})).status,200);
+      const finish=await createMiles(completion);assert.equal(finish.status,201);
+      const finishMeta=(await api('/public/session',{token:finish.data.signing_path.split('#')[1]})).data.agreement;
+      assert.equal(finishMeta.parent_request_id,intake.data.id);assert.equal(finishMeta.preparation_details.stage,'completion');
+      await database.query("UPDATE vehicles SET vin='CHANGED' WHERE id='miles-vehicle'");
+      assert.deepEqual((await api('/public/session/document',{token:link})).data,prepared.data);
+      await api(`/${finish.data.id}/void`,{method:'POST',token:miles});
+      assert.equal((await createMiles(completion)).status,409);
+      const copied=await upload({token:other});
+      await database.query('UPDATE agreement_templates SET preparation_kind=$2 WHERE id=$1',[copied.data.id,'miles_cash_v1']);
+      assert.equal((await api('/templates',{token:other})).data.templates.some(x=>x.id===copied.data.id),false);
+    } finally { profiles.miles_cash_v1.hash=priorHash; }
+  });
+
 });
