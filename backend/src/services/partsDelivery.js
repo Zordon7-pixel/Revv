@@ -24,6 +24,10 @@ function ensureDelivery(db) {
         before_state JSONB, after_state JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         UNIQUE(part_id, shop_id, revision))`);
       await c.query('CREATE INDEX IF NOT EXISTS parts_delivery_events_ro ON parts_delivery_events(shop_id,ro_id,created_at)');
+      await c.query(`CREATE TABLE IF NOT EXISTS parts_delivery_notifications (
+        shop_id TEXT NOT NULL, part_id TEXT NOT NULL, revision INTEGER NOT NULL,
+        result JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY(shop_id,part_id,revision))`);
       await c.query('COMMIT');
     } catch(e) { await c.query('ROLLBACK'); throw e; } finally { c.release(); }
   })().catch(e => { initialized.delete(db); throw e; }));

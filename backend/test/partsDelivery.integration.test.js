@@ -7,10 +7,10 @@ for(const idType of ['TEXT','UUID']) test(`parts delivery lifecycle and boundari
   const root=new Pool({connectionString:url,ssl:false});const schema=`delivery_${randomUUID().replaceAll('-','')}`;await root.query(`CREATE SCHEMA ${schema}`);
   const db=new Pool({connectionString:url,ssl:false,options:`-c search_path=${schema}`});let server;
   t.after(async()=>{if(server)await new Promise(r=>server.close(r));await db.end();await root.query(`DROP SCHEMA ${schema} CASCADE`);await root.end();});
-  await db.query(`CREATE TABLE shops(id ${idType} PRIMARY KEY,name TEXT,phone TEXT,address TEXT,city TEXT,state TEXT,zip TEXT,tracking_api_key TEXT);
+  await db.query(`CREATE TABLE shops(id ${idType} PRIMARY KEY,name TEXT,phone TEXT,address TEXT,city TEXT,state TEXT,zip TEXT,tracking_api_key TEXT,sms_notifications_enabled BOOLEAN,email_notifications_enabled BOOLEAN);
     CREATE TABLE users(id ${idType},revoke_all_before TIMESTAMPTZ);
     CREATE TABLE revoked_tokens(id TEXT,token_jti TEXT);
-    CREATE TABLE customers(id ${idType},shop_id ${idType},name TEXT,phone TEXT,email TEXT);
+    CREATE TABLE customers(id ${idType},shop_id ${idType},name TEXT,phone TEXT,email TEXT,sms_consent BOOLEAN,email_consent BOOLEAN,preferred_contact_method TEXT);
     CREATE TABLE vehicles(id ${idType},shop_id ${idType},year TEXT,make TEXT,model TEXT,color TEXT,plate TEXT,vin TEXT);
     CREATE TABLE repair_orders(id ${idType} PRIMARY KEY,shop_id ${idType},customer_id ${idType},vehicle_id ${idType},ro_number TEXT,status TEXT,job_type TEXT,intake_date TEXT,estimated_delivery TEXT,actual_delivery TEXT,notes TEXT,parts_cost REAL,labor_cost REAL,total REAL,created_at TIMESTAMPTZ DEFAULT NOW());
     CREATE TABLE parts_orders(id ${idType} PRIMARY KEY,shop_id ${idType},ro_id ${idType},part_name TEXT,part_number TEXT,vendor TEXT,quantity INTEGER,unit_cost REAL,status TEXT,ordered_date TEXT,expected_date TEXT,received_date TEXT,notes TEXT,tracking_number TEXT,carrier TEXT,tracking_status TEXT,tracking_detail TEXT,tracking_updated_at TEXT,created_at TIMESTAMPTZ DEFAULT NOW(),updated_at TIMESTAMPTZ DEFAULT NOW());
@@ -62,6 +62,23 @@ for(const idType of ['TEXT','UUID']) test(`parts delivery lifecycle and boundari
     const result=await api('/portal/track/safe-token',{auth:null});assert.equal(result.status,200);assert.equal(result.data.parts_summary.waiting,true);assert.ok(!JSON.stringify(result.data.parts).includes('PRIVATE'));assert.equal(result.data.parts.find(p=>p.part_name==='Lamp').received_quantity,2);
     assert.equal((await api('/portal/track/wrong-shop',{auth:null})).status,404);
     const mine=await api('/portal/my-ros',{auth:token('customer')});assert.equal(mine.status,200);assert.ok(!JSON.stringify(mine.data).includes('PRIVATE'));
+  });
+  await t.test('explicit notification saves safely with consent suppression; duplicate event claims are atomic',async()=>{
+    const {notifyPartUpdate}=require('../src/services/partsNotifications');
+    const res=await api(`/parts/${part.id}/delivery`,{method:'PUT',body:{delivery_revision:part.delivery_revision,customer_note:'Date confirmation pending',notify_customer:true}});
+    assert.equal(res.status,200);part=res.data;assert.equal(part.notification.status,'complete');assert.ok(part.notification.channels.every(c=>c.reason==='no_consent'));
+    assert.equal((await db.query('SELECT COUNT(*)::int AS n FROM parts_delivery_notifications')).rows[0].n,1);
+    const history=(await api(`/parts/${part.id}/delivery-history`)).data.events;assert.equal(history.find(e=>e.revision===part.delivery_revision).notification.status,'complete');
+    const unchanged=await api(`/parts/${part.id}/delivery`,{method:'PUT',body:{delivery_revision:part.delivery_revision,customer_note:'Date confirmation pending',notify_customer:true}});assert.equal(unchanged.data.notification.reason,'no_customer_change');
+    const privateEdit=await api(`/parts/${part.id}/delivery`,{method:'PUT',body:{delivery_revision:part.delivery_revision,notes:'PRIVATE supplier update',notify_customer:true}});part=privateEdit.data;assert.equal(part.notification.reason,'no_customer_change');
+    assert.equal((await db.query('SELECT COUNT(*)::int AS n FROM parts_delivery_notifications')).rows[0].n,1);
+    await db.query("UPDATE customers SET phone='+15555550101',email='synthetic@example.test',sms_consent=TRUE,email_consent=TRUE,preferred_contact_method='both' WHERE id=$1 AND shop_id=$2",[customer,a]);
+    const prev=part.delivery_revision;part=await savePart(db,a,user,{customer_note:'New estimated date being checked',delivery_revision:prev},{id:part.id,requireRevision:true});
+    let sends=0;const providers={sendSMS:async()=>{sends++;return {ok:true}},sendMail:async()=>{sends++;return {id:'synthetic'}}};
+    const results=await Promise.all([notifyPartUpdate(db,a,part,prev,providers),notifyPartUpdate(db,a,part,prev,providers)]);
+    assert.equal(sends,2);assert.ok(results.some(r=>r.reason==='already_requested'));
+    assert.equal((await notifyPartUpdate(db,b,part,prev,providers)).reason,'no_customer_change');assert.equal(sends,2);
+    const invalid=await api(`/parts/${part.id}/delivery`,{method:'PUT',body:{delivery_revision:part.delivery_revision,notify_customer:'true'}});assert.equal(invalid.status,400);
   });
   await t.test('received and cancelled orders leave pending board; no inventory side effect',async()=>{
     assert.ok((await api('/parts/all-pending')).data.parts.some(p=>p.id===part.id));

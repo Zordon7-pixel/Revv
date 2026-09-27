@@ -3,6 +3,7 @@ const { pool, dbGet, dbAll, dbRun } = require('../db');
 const auth = require('../middleware/auth');
 const { requireTechnician } = require('../middleware/roles');
 const { ensureDelivery, savePart, PENDING, fail } = require('../services/partsDelivery');
+const { notifyPartUpdate, validateNotificationRequest } = require('../services/partsNotifications');
 router.use(auth, requireTechnician);
 router.use(async (req,res,next) => { try { await ensureDelivery(pool); next(); } catch {res.status(503).json({error:'Parts tracking is temporarily unavailable.'});} });
 function error(res,e) { return res.status(e.publicMessage ? e.status : 500).json({error:e.publicMessage?e.message:'Could not save or load parts.'}); }
@@ -25,7 +26,7 @@ router.get('/all-pending', async (req,res) => {
 router.get('/:id/delivery-history', async (req,res) => {
   try {
     if(!await dbGet('SELECT id FROM parts_orders WHERE id=$1 AND shop_id=$2',[req.params.id,req.user.shop_id])) throw fail('Part not found.',404);
-    res.json({events:await dbAll('SELECT revision,source,before_state,after_state,created_at FROM parts_delivery_events WHERE part_id=$1 AND shop_id=$2 ORDER BY revision DESC LIMIT 50',[req.params.id,String(req.user.shop_id)])});
+    res.json({events:await dbAll('SELECT e.revision,e.source,e.before_state,e.after_state,e.created_at,n.result AS notification FROM parts_delivery_events e LEFT JOIN parts_delivery_notifications n ON n.part_id=e.part_id AND n.shop_id=e.shop_id AND n.revision=e.revision WHERE e.part_id=$1 AND e.shop_id=$2 ORDER BY e.revision DESC LIMIT 50',[req.params.id,String(req.user.shop_id)])});
   } catch(e) {error(res,e);}
 });
 router.post('/ro/:roId', async (req,res) => {
@@ -35,7 +36,15 @@ router.put('/:id', async (req,res) => {
   try {res.json(await savePart(pool,req.user.shop_id,req.user.id,req.body,{id:req.params.id}));} catch(e) {error(res,e);}
 });
 router.put('/:id/delivery', async (req,res) => {
-  try {res.json(await savePart(pool,req.user.shop_id,req.user.id,req.body,{id:req.params.id,requireRevision:true}));} catch(e) {error(res,e);}
+  try {
+    validateNotificationRequest(req.body);
+    const part = await savePart(pool,req.user.shop_id,req.user.id,req.body,{id:req.params.id,requireRevision:true});
+    if (req.body.notify_customer === true) {
+      try { part.notification = await notifyPartUpdate(pool,req.user.shop_id,part,req.body.delivery_revision); }
+      catch { part.notification = {status:'unknown',reason:'verify_before_retry',channels:[]}; }
+    }
+    res.json(part);
+  } catch(e) {error(res,e);}
 });
 router.delete('/:id', async (req,res) => {
   try {await dbRun('DELETE FROM parts_orders WHERE id=$1 AND shop_id=$2',[req.params.id,req.user.shop_id]);res.json({ok:true});} catch(e) {error(res,e);}
