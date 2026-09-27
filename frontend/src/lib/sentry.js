@@ -3,6 +3,9 @@ import * as Sentry from '@sentry/react';
 
 const PII_URL_PARTS = [
   '/api/agreements',
+  '/api/part-capture',
+  '/api/parts',
+  '/api/inventory',
   '/api/customers',
   '/api/ros',
   '/api/repair-orders',

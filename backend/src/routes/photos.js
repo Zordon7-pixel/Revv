@@ -5,45 +5,19 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
-const Anthropic = require('@anthropic-ai/sdk');
+const { analyzeDamage } = require('../services/openai');
 const { deleteStoredMedia, discardUploadedMedia, persistUploadedFile } = require('../services/mediaStorage');
 
 const MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024;
 const MAX_UPLOAD_SIZE_MB = Math.round(MAX_UPLOAD_SIZE_BYTES / (1024 * 1024));
 
 async function analyzeDamagePhoto(filePath) {
-  if (!process.env.ANTHROPIC_API_KEY) return null;
   try {
-    const client = new Anthropic();
-    const imageData = fs.readFileSync(filePath);
-    const base64Image = imageData.toString('base64');
-    const ext = path.extname(filePath).toLowerCase().replace('.', '');
-    const mediaType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
-
-    const response = await client.messages.create({
-      model: 'claude-haiku-4-5',
-      max_tokens: 256,
-      messages: [{
-        role: 'user',
-        content: [
-          {
-            type: 'image',
-            source: { type: 'base64', media_type: mediaType, data: base64Image }
-          },
-          {
-            type: 'text',
-            text: 'You are an auto body damage assessor. Analyze this vehicle damage photo. Respond with JSON only, no markdown: {"severity":"minor|moderate|severe","zones":["affected body parts"],"description":"one sentence max"}'
-          }
-        ]
-      }]
-    });
-
-    const text = (response.content[0]?.text || '').trim();
-    // Strip markdown code fences if model wraps response
-    const clean = text.replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
-    return JSON.parse(clean);
+    const ext = path.extname(filePath).toLowerCase();
+    const mediaType = ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg';
+    return await analyzeDamage(fs.readFileSync(filePath), mediaType);
   } catch (err) {
-    console.error('[Photos] AI assessment error:', err.message);
+    console.error('[Photos] AI assessment unavailable:', err.status || 'provider_error');
     return null;
   }
 }
