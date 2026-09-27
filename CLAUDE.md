@@ -3703,3 +3703,13 @@ docs/SPEC-parts-delivery.md. Verification: 23 backend lifecycle/privacy checks,
 QA and desktop/mobile real-database synthetic browser flow verified. No production
 writes, provider calls, customer messages or deployment. Supplier sync/SMS automation
 remain future integrations; e-signature PR15 is unchanged and awaits shop template.
+
+## 2026-09-26 23:03 ET / 2026-09-27 03:03 UTC — Integrated release loop
+
+Bryan reaffirmed the existing deployment authorization and corrected the earlier stop at
+reviewed drafts. For this release, completion requires integration QA, main publication,
+automatic Railway deployment and live verification. Expired Railway CLI login does not
+block the configured GitHub-main deployment path; pending eBay/OpenAI setup limits only
+provider-dependent activation. Integrated PR15/16/17 on isolated release worktree, preserving
+both privacy filters and features. Fresh installs, 229 backend +7 parser +143 frontend tests,
+and production frontend/PDF asset build passed. See docs/RELEASE-esign-parts-20260926.md.
