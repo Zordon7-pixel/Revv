@@ -36,7 +36,7 @@ test('agreement lifecycle against disposable PostgreSQL', { skip: !connectionStr
     pool: database, dbGet: async (sql, params) => (await database.query(sql, params)).rows[0],
   } };
   const { createAgreementsRouter } = require('../src/routes/agreements');
-  const app = express(); app.use(express.json({ limit: '1mb' })); app.use('/api/agreements', createAgreementsRouter(database));
+  const app = express(); app.set('trust proxy', 1); app.use(express.json({ limit: '1mb' })); app.use('/api/agreements', createAgreementsRouter(database));
   server = app.listen(0, '127.0.0.1'); await new Promise((resolve) => server.once('listening', resolve));
   const base = `http://127.0.0.1:${server.address().port}/api/agreements`;
   const admin = jwt.sign({ id: 'admin-a', shop_id: 'shop-a', role: 'admin' }, process.env.JWT_SECRET);
@@ -45,6 +45,8 @@ test('agreement lifecycle against disposable PostgreSQL', { skip: !connectionStr
   const customer = jwt.sign({ id: 'customer-a', shop_id: 'shop-a', role: 'customer' }, process.env.JWT_SECRET);
   async function api(path, { method = 'GET', body, token = admin } = {}) {
     const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    // Separate synthetic clients keep the real per-IP limiter enabled throughout the lifecycle.
+    headers['X-Forwarded-For'] = `192.0.2.${1 + parseInt(hash(jwt.decode(token || '')?.shop_id || 'public').slice(0,4),16) % 250}`;
     if (body && !(body instanceof FormData)) headers['Content-Type'] = 'application/json';
     const response = await fetch(base + path, { method, headers,
       body: body ? body instanceof FormData ? body : JSON.stringify(body) : undefined });
@@ -195,6 +197,21 @@ test('agreement lifecycle against disposable PostgreSQL', { skip: !connectionStr
       assert.equal((await api('/templates',{token:miles})).data.templates.length,1);
       assert.equal((await api('/templates',{token:other})).data.templates.some(x=>x.id===uploaded.data.id),false);
       assert.equal((await api(`/templates/${uploaded.data.id}/document`,{token:other})).status,404);
+      await database.query(`ALTER TABLE repair_orders ADD COLUMN total NUMERIC; ALTER TABLE repair_orders ADD COLUMN deductible NUMERIC; ALTER TABLE repair_orders ADD COLUMN updated_at TIMESTAMPTZ DEFAULT NOW();
+        UPDATE repair_orders SET total=4250.50,deductible=500 WHERE id='miles-ro';`);
+      assert.equal((await api('/ro/miles-ro/preparation',{token:other})).status,404);
+      assert.equal((await api('/ro/miles-ro/preparation',{token:null})).status,401);
+      const context=(await api('/ro/miles-ro/preparation',{token:miles})).data;
+      assert.equal(context.defaults.amount,'4250.50');assert.equal(context.defaults.deductible,'500.00');
+      assert.equal(context.identity.name,'José Rivera');assert.equal(context.identity.vin,'1HGBH41JXMN109186');
+      const previewBody={template_id:uploaded.data.id,source_revision:context.revision,preparation:{stage:'intake',...context.defaults,reviewed:true}};
+      const countBefore=(await database.query('SELECT COUNT(*) FROM agreement_requests')).rows[0].count;
+      const preview=await api('/ro/miles-ro/preview',{method:'POST',token:miles,body:previewBody});
+      assert.equal(preview.status,200);assert.equal((await PDFDocument.load(preview.data)).getPageCount(),2);
+      assert.equal((await database.query('SELECT COUNT(*) FROM agreement_requests')).rows[0].count,countBefore);
+      assert.equal((await api('/ro/miles-ro/preview',{method:'POST',token:other,body:previewBody})).status,404);
+      await database.query("UPDATE repair_orders SET total=4300 WHERE id='miles-ro'");
+      for(const endpoint of ['/ro/miles-ro/preview','/ro/miles-ro']) assert.equal((await api(endpoint,{method:'POST',token:miles,body:previewBody})).status,409);
       const body={template_id:uploaded.data.id,preparation:{stage:'intake',estimate:'QA-v1',amount:'1234.56',reviewed:true}};
       const createMiles=(b=body,token=miles)=>api('/ro/miles-ro',{method:'POST',token,body:b});
       assert.equal((await createMiles(body,other)).status,404);

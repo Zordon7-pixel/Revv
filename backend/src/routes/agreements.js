@@ -10,6 +10,7 @@ const {
 } = require('../services/agreements');
 
 const { canUseProfile, prepareDetails, buildPreparedPdf } = require('../services/milesAgreements');
+const { loadAutofill, checkRevision } = require('../services/agreementAutofill');
 
 // Factory also lets integration tests use a disposable database without touching production.
 function createAgreementsRouter(database = pool) {
@@ -54,9 +55,9 @@ function createAgreementsRouter(database = pool) {
      VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb)`,
     [randomUUID(), requestId, type, req.user?.id || null, String(req.ip || '').slice(0, 100),
       String(req.get('user-agent') || '').slice(0, 500), JSON.stringify(details)]);
-  async function transaction(fn) {
+  async function transaction(fn, snapshot = false) {
     const client = await database.connect();
-    try { await client.query('BEGIN'); const result = await fn(client); await client.query('COMMIT'); return result; }
+    try { await client.query(snapshot ? 'BEGIN ISOLATION LEVEL REPEATABLE READ' : 'BEGIN'); const result = await fn(client); await client.query('COMMIT'); return result; }
     catch (err) { await client.query('ROLLBACK'); throw err; }
     finally { client.release(); }
   }
@@ -173,6 +174,31 @@ function createAgreementsRouter(database = pool) {
       WHERE shop_id=$1 AND ro_id=$2 ORDER BY created_at DESC`, [req.user.shop_id, req.params.roId]);
     res.json({ agreements: rows.rows.map(metadata), consent_version: CONSENT_VERSION, shop_consent_text: SHOP_CONSENT_TEXT });
   }));
+  router.get('/ro/:roId/preparation', handle(async (req, res) => {
+    res.json(await transaction((client) => loadAutofill(client, req.params.roId, req.user.shop_id), true));
+  }));
+  router.post('/ro/:roId/preview', createLimiter, handle(async (req, res) => {
+    const document = await transaction(async (client) => {
+    const context = await loadAutofill(client, req.params.roId, req.user.shop_id);
+    checkRevision(req.body.source_revision, context);
+    const template = (await client.query('SELECT * FROM agreement_templates WHERE id::text=$1 AND shop_id=$2 AND archived=FALSE', [req.body.template_id,req.user.shop_id])).rows[0];
+    if (!template || !canUseProfile(template, req.user.shop_id)) throw inputError('Choose an available prepared shop agreement.');
+    const identity = context.identity;
+    const details = prepareDetails(template, req.user.shop_id, {
+      vehicle_make: identity.vehicle, vin: identity.vin, claim_number: identity.claim,
+      customer_phone: identity.phone, customer_email: String(req.body.recipient_email || identity.email),
+    }, req.body.recipient_name || identity.name, req.body.preparation);
+    let parentId = null;
+    if (details.stage === 'completion') {
+      const parent = (await client.query(`SELECT id,preparation_details FROM agreement_requests WHERE shop_id=$1 AND ro_id=$2 AND template_id=$3
+        AND status='signed' AND preparation_details->>'stage'='intake' ORDER BY completed_at DESC LIMIT 1`, [req.user.shop_id,req.params.roId,template.id])).rows[0];
+      if (!parent || parent.preparation_details.vin !== details.vin || parent.preparation_details.name !== details.name) throw inputError('A matching signed intake is required before completion.', 409);
+      parentId = parent.id;
+    }
+    return buildPreparedPdf(template, details, identity.ro_number, parentId);
+    }, true);
+    pdfResponse(res, document, 'authorization-preview.pdf', true);
+  }));
   router.post('/ro/:roId', createLimiter, handle(async (req, res) => {
     const token = newToken();
     const id = randomUUID();
@@ -182,6 +208,7 @@ function createAgreementsRouter(database = pool) {
         LEFT JOIN customers c ON c.id=ro.customer_id AND c.shop_id=ro.shop_id
         WHERE ro.id::text=$1 AND ro.shop_id::text=$2`, [req.params.roId, req.user.shop_id])).rows[0];
       if (!ro) throw inputError('Repair order not found.', 404);
+      if (req.body.source_revision !== undefined) checkRevision(req.body.source_revision, await loadAutofill(client, req.params.roId, req.user.shop_id));
       const template = (await client.query(`SELECT * FROM agreement_templates
         WHERE id::text=$1 AND shop_id=$2 AND archived=FALSE FOR SHARE`, [req.body.template_id, req.user.shop_id])).rows[0];
       if (!template) throw inputError('Choose an active shop agreement.', 400);
@@ -192,7 +219,7 @@ function createAgreementsRouter(database = pool) {
       if (template.preparation_kind) {
         if (!canUseProfile(template, req.user.shop_id)) throw inputError('This authorization is not available for this shop.', 403);
         const vehicle = (await client.query(`SELECT v.year AS vehicle_year,v.make AS vehicle_make,v.model AS vehicle_model,v.vin,
-          r.claim_number,c.phone AS customer_phone,c.email AS customer_email
+          COALESCE(NULLIF(r.claim_number,''),to_jsonb(r)->>'insurance_claim_number') AS claim_number,c.phone AS customer_phone,c.email AS customer_email
           FROM repair_orders r JOIN vehicles v ON v.id=r.vehicle_id AND v.shop_id=r.shop_id
           LEFT JOIN customers c ON c.id=r.customer_id AND c.shop_id=r.shop_id
           WHERE r.id::text=$1 AND r.shop_id::text=$2`, [req.params.roId, req.user.shop_id])).rows[0];
@@ -214,7 +241,7 @@ function createAgreementsRouter(database = pool) {
       [id, req.user.shop_id, req.params.roId, template.id, template.title, ro.shop_name, String(ro.ro_number),
         name, email || null, hash(token), prepared ? hash(prepared) : template.document_sha256, template.requires_shop_signature, JSON.stringify(template.initial_sections), req.user.id, prepared, details ? JSON.stringify(details) : null, parentId]);
       await event(client, id, 'created', req, { document_sha256: prepared ? hash(prepared) : template.document_sha256, template_sha256: template.document_sha256, stage: details?.stage || null, parent_request_id: parentId });
-    });
+    }, true);
     res.status(201).json({ id, signing_path: `/sign#${token}` });
   }));
   router.post('/:id/link', createLimiter, handle(async (req, res) => {
