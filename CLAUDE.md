@@ -3713,3 +3713,7 @@ block the configured GitHub-main deployment path; pending eBay/OpenAI setup limi
 provider-dependent activation. Integrated PR15/16/17 on isolated release worktree, preserving
 both privacy filters and features. Fresh installs, 229 backend +7 parser +143 frontend tests,
 and production frontend/PDF asset build passed. See docs/RELEASE-esign-parts-20260926.md.
+
+## 2026-09-26 — Miles authorizations at New RO
+
+Added shop-scoped authorization selection to New RO with saved-RO preparation handoff. Miles originals are imported only to the verified Miles tenant through an explicit idempotent operator script, never global assets. Prepared PDF snapshots fill known fields and separate intake/removal/completion; true redaction removes excluded text without changing headers. Signed intake parent and matching customer/VIN required for completion. Duplicate and failed setup paths reuse the saved RO. Independent QA: 17 backend checks, 10 focused frontend checks; full frontend 146 pass and production build passes. See docs/RELEASE-miles-authorizations-20260926.md for rollout/rollback and legal-scope limits. Production deployment and tenant import remain explicit verification gates, not inferred from tests.

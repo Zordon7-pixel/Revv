@@ -1,0 +1,15 @@
+# Miles authorizations in New RO
+
+New RO now lists the authenticated shop's authorizations in Job Details. Choosing one keeps the newly saved RO open for document preparation and signing-link creation. A failed authorization request or duplicate warning reuses the saved RO. Nothing sends a customer message automatically.
+
+The three provided Miles forms are private database templates for verified shop `0cf5d764-af91-4b6f-b70d-23d0fc74edef`. No customer PDF is stored in the repository or public assets. Other shops retain their own Settings uploads and never receive these built-in templates. The operator import requires the exact shop ID, owner email, business name, and address, verifies source hashes, defaults to dry run, and refuses ambiguous/archived records.
+
+For these specific originals, per-request PDFs fill customer/vehicle details and required financial fields before hashing. Intake, denied-claim removal, and completion are different signing scopes. Prepared intake PDFs exclude the completion text using actual content redaction, including accessible text, while retaining the original header. Completion requires a signed intake for the same shop, RO and template, matching customer and VIN, and a deliberate repair-complete confirmation. The original supplied PDFs remain retained unchanged. Proposed legal clause revisions from the separate review are not silently applied. This feature does not certify contract enforceability or satisfy special NYC towing handwriting requirements.
+
+Additive schema: template `preparation_kind` and `stage_documents`; request `prepared_pdf`, `preparation_details`, and `parent_request_id`. Previously issued requests keep the original-source behavior. New prepared bytes are immutable snapshots and verified on download/signing; later template or RO edits do not change them.
+
+Validation before release: 17 backend tests including real disposable PostgreSQL, 146 frontend tests, production build, independent review and PDF.js text checks for all five prepared stage examples. Headers compared pixel-for-pixel to supplied originals; rendered output inspected. Local synthetic browser verifies New RO selection and saved-RO handoff without horizontal overflow. No separate lint/typecheck scripts exist; syntax and diff checks pass. Existing build bundle-size warning remains.
+
+Deployment and the tenant import are separate operations. Verify the deployed commit, then perform the idempotent three-template import and read back shop IDs, original hashes and scoped document hashes. Check no Miles profile exists under another shop. No real customer signing request is needed for this verification.
+
+Rollback: previous main `e9fdbbc33175cd71e7015c731f21f9c3d7a07939`. Do not simply run old agreement code over prepared requests: old code cannot resolve prepared PDFs. Prefer a forward fix. If reverting UI/code, first disable creation of these three templates, retain all originals/signed/prepared documents and restore compatible source resolution; never drop agreement data.

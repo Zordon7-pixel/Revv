@@ -9,6 +9,8 @@ const {
   hash, newToken, inputError, requiredText, parseSections, validatePdf, signatureInput, buildSignedPdf,
 } = require('../services/agreements');
 
+const { canUseProfile, prepareDetails, buildPreparedPdf } = require('../services/milesAgreements');
+
 // Factory also lets integration tests use a disposable database without touching production.
 function createAgreementsRouter(database = pool) {
   const router = express.Router();
@@ -74,12 +76,16 @@ function createAgreementsRouter(database = pool) {
     expires_at: row.expires_at, created_at: row.created_at, completed_at: row.completed_at,
     document_sha256: row.document_sha256, requires_shop_signature: row.requires_shop_signature,
     initial_sections: row.initial_sections, customer_signed_at: row.customer_signature?.signed_at || null, customer_signed_name: row.customer_signature?.name || null,
-    shop_signed_at: row.shop_signature?.signed_at || null, signed_sha256: row.signed_sha256,
+    shop_signed_at: row.shop_signature?.signed_at || null, signed_sha256: row.signed_sha256, preparation_details: row.preparation_details, parent_request_id: row.parent_request_id,
   });
   const pdfResponse = (res, buffer, filename, inline = false) => res.set({
     'Content-Type': 'application/pdf', 'Content-Disposition': `${inline ? 'inline' : 'attachment'}; filename="${filename}"`,
   }).send(buffer);
   async function sourceFor(client, row) {
+    if (row.prepared_pdf) {
+      if (hash(row.prepared_pdf) !== row.document_sha256) throw inputError('Agreement integrity check failed.', 409);
+      return row.prepared_pdf;
+    }
     const template = (await client.query('SELECT original_pdf FROM agreement_templates WHERE id = $1 AND shop_id = $2', [row.template_id, row.shop_id])).rows[0];
     if (!template || hash(template.original_pdf) !== row.document_sha256) throw inputError('Agreement integrity check failed. Contact the shop.', 409);
     return template.original_pdf;
@@ -134,9 +140,9 @@ function createAgreementsRouter(database = pool) {
     res.json({ agreements: rows.rows.slice(0, 50), has_more: rows.rows.length > 50 });
   }));
   router.get('/templates', handle(async (req, res) => {
-    const result = await query(`SELECT id,title,document_sha256,page_count,requires_shop_signature,initial_sections,created_at
+    const result = await query(`SELECT id,title,document_sha256,page_count,requires_shop_signature,initial_sections,created_at,preparation_kind,shop_id
       FROM agreement_templates WHERE shop_id=$1 AND archived=FALSE ORDER BY created_at DESC`, [req.user.shop_id]);
-    res.json({ templates: result.rows });
+    res.json({ templates: result.rows.filter((row) => !row.preparation_kind || canUseProfile(row, req.user.shop_id)).map(({ shop_id, ...row }) => row) });
   }));
   router.post('/templates', manager, createLimiter, uploadPdf, handle(async (req, res) => {
     const title = requiredText(req.body.title, 'Agreement title');
@@ -163,7 +169,7 @@ function createAgreementsRouter(database = pool) {
   router.get('/ro/:roId', handle(async (req, res) => {
     const rows = await query(`SELECT id,title,shop_name,ro_number,recipient_name,recipient_email,status,expires_at,created_at,
       completed_at,document_sha256,requires_shop_signature,initial_sections,
-      customer_signature,shop_signature,signed_sha256 FROM agreement_requests
+      customer_signature,shop_signature,signed_sha256,preparation_details,parent_request_id FROM agreement_requests
       WHERE shop_id=$1 AND ro_id=$2 ORDER BY created_at DESC`, [req.user.shop_id, req.params.roId]);
     res.json({ agreements: rows.rows.map(metadata), consent_version: CONSENT_VERSION, shop_consent_text: SHOP_CONSENT_TEXT });
   }));
@@ -182,12 +188,32 @@ function createAgreementsRouter(database = pool) {
       const name = requiredText(req.body.recipient_name || ro.customer_name, 'Customer name', 120);
       const email = String(req.body.recipient_email || ro.customer_email || '').trim();
       if (email && (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254)) throw inputError('Enter a valid customer email.');
+      let prepared = null; let details = null; let parentId = null;
+      if (template.preparation_kind) {
+        if (!canUseProfile(template, req.user.shop_id)) throw inputError('This authorization is not available for this shop.', 403);
+        const vehicle = (await client.query(`SELECT v.year AS vehicle_year,v.make AS vehicle_make,v.model AS vehicle_model,v.vin,
+          r.claim_number,c.phone AS customer_phone,c.email AS customer_email
+          FROM repair_orders r JOIN vehicles v ON v.id=r.vehicle_id AND v.shop_id=r.shop_id
+          LEFT JOIN customers c ON c.id=r.customer_id AND c.shop_id=r.shop_id
+          WHERE r.id::text=$1 AND r.shop_id::text=$2`, [req.params.roId, req.user.shop_id])).rows[0];
+        if (!vehicle) throw inputError('Complete this repair order’s vehicle details before preparing the authorization.');
+        details = prepareDetails(template, req.user.shop_id, { ...vehicle, customer_email: email }, name, req.body.preparation);
+        if (details.stage === 'completion') {
+          const parent = (await client.query(`SELECT id,preparation_details FROM agreement_requests WHERE shop_id=$1 AND ro_id=$2 AND template_id=$3
+            AND status='signed' AND preparation_details->>'stage'='intake' ORDER BY completed_at DESC LIMIT 1`,
+          [req.user.shop_id, req.params.roId, template.id])).rows[0];
+          if (!parent) throw inputError('Complete the intake signature before preparing the completion acknowledgment.', 409);
+          if (parent.preparation_details.vin !== details.vin || parent.preparation_details.name !== details.name) throw inputError('Customer or VIN differs from the signed intake. Review the repair order before completion.', 409);
+          parentId = parent.id;
+        }
+        prepared = await buildPreparedPdf(template, details, ro.ro_number, parentId);
+      }
       await client.query(`INSERT INTO agreement_requests (id,shop_id,ro_id,template_id,title,shop_name,ro_number,
-        recipient_name,recipient_email,token_hash,expires_at,document_sha256,requires_shop_signature,initial_sections,created_by)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW()+INTERVAL '30 days',$11,$12,$13::jsonb,$14)`,
+        recipient_name,recipient_email,token_hash,expires_at,document_sha256,requires_shop_signature,initial_sections,created_by,prepared_pdf,preparation_details,parent_request_id)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW()+INTERVAL '30 days',$11,$12,$13::jsonb,$14,$15,$16::jsonb,$17)`,
       [id, req.user.shop_id, req.params.roId, template.id, template.title, ro.shop_name, String(ro.ro_number),
-        name, email || null, hash(token), template.document_sha256, template.requires_shop_signature, JSON.stringify(template.initial_sections), req.user.id]);
-      await event(client, id, 'created', req, { document_sha256: template.document_sha256 });
+        name, email || null, hash(token), prepared ? hash(prepared) : template.document_sha256, template.requires_shop_signature, JSON.stringify(template.initial_sections), req.user.id, prepared, details ? JSON.stringify(details) : null, parentId]);
+      await event(client, id, 'created', req, { document_sha256: prepared ? hash(prepared) : template.document_sha256, template_sha256: template.document_sha256, stage: details?.stage || null, parent_request_id: parentId });
     });
     res.status(201).json({ id, signing_path: `/sign#${token}` });
   }));
@@ -240,7 +266,7 @@ function createAgreementsRouter(database = pool) {
     pdfResponse(res, row.signed_pdf, 'signed-agreement.pdf');
   }));
   router.get('/:id/audit', handle(async (req, res) => {
-    const row = await one('SELECT id,document_sha256,signed_sha256,customer_signature,shop_signature FROM agreement_requests WHERE id::text=$1 AND shop_id=$2', [req.params.id, req.user.shop_id]);
+    const row = await one('SELECT id,document_sha256,signed_sha256,customer_signature,shop_signature,preparation_details,parent_request_id FROM agreement_requests WHERE id::text=$1 AND shop_id=$2', [req.params.id, req.user.shop_id]);
     if (!row) throw inputError('Agreement not found.', 404);
     const events = (await query('SELECT event_type,actor_id,ip,user_agent,details,created_at FROM agreement_events WHERE request_id=$1 ORDER BY created_at,id', [row.id])).rows;
     res.set('Content-Disposition', 'attachment; filename="agreement-signing-record.json"').json({ ...row, events });
