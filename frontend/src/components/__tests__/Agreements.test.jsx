@@ -5,6 +5,8 @@ import api from '../../lib/api'
 import AgreementTemplates from '../AgreementTemplates'
 import ROAgreements from '../ROAgreements'
 
+const context = { identity: { name: 'Customer', email: 'qa@example.test', vehicle:'2024 Toyota Camry', vin:'QA-VIN', claim:'CLAIM-1' }, defaults:{ estimate:'RO-QA / estimate v1',amount:'4250.50',deductible:'0.00',loss_date:'2026-09-20',invoice:'Invoice for RO-QA' }, sources:{amount:'Saved RO total, including tax'}, warnings:[],revision:'revision-1' }
+
 beforeEach(() => { cleanup(); api.get.mockReset(); api.post.mockReset() })
 describe('shop agreement controls', () => {
   it('uploads the PDF and configured signature requirements without sending messages', async () => {
@@ -47,17 +49,61 @@ describe('shop agreement controls', () => {
     expect(api.get).toHaveBeenCalledWith('/agreements/ro/deleted-ro')
   })
   it('requires deliberate Miles intake details and omits completion selection during New RO', async () => {
-    api.get.mockImplementation((path) => Promise.resolve({ data: path === '/agreements/templates'
+    api.get.mockImplementation((path) => Promise.resolve({ data: path.endsWith('/preparation') ? context : path === '/agreements/templates'
       ? { templates: [{ id: 'miles-cash', title: 'Cash agreement', preparation_kind: 'miles_cash_v1' }] } : { agreements: [] } }))
     api.post.mockResolvedValue({ data: { signing_path: '/sign#qa' } })
     render(<ROAgreements roId="new-ro" customerName="Customer" initialTemplate="miles-cash" intakeOnly />)
-    await screen.findByLabelText('Estimate reference / version')
+    await screen.findByLabelText(/Estimate reference \/ version/)
+    await waitFor(() => expect(screen.getByLabelText(/Authorized total, including tax/)).toHaveValue(4250.5))
+    expect(screen.getByText('2024 Toyota Camry')).toBeInTheDocument()
+    expect(screen.getByRole('button', {name:'Prepare signing link'})).toBeDisabled()
     expect(screen.queryByLabelText('Signing stage')).not.toBeInTheDocument()
-    fireEvent.change(screen.getByLabelText('Estimate reference / version'), { target: { value: 'Estimate 1' } })
-    fireEvent.change(screen.getByLabelText('Authorized total, including tax ($)'), { target: { value: '2500' } })
+    fireEvent.change(screen.getByLabelText(/Estimate reference \/ version/), { target: { value: 'Estimate 1' } })
+    fireEvent.change(screen.getByLabelText(/Authorized total, including tax/), { target: { value: '2500' } })
     fireEvent.click(screen.getByLabelText(/I checked the customer/))
     fireEvent.submit(screen.getByRole('button', { name: 'Prepare signing link' }).closest('form'))
     await waitFor(() => expect(api.post).toHaveBeenCalledWith('/agreements/ro/new-ro', expect.objectContaining({ preparation: expect.objectContaining({stage:'intake',estimate:'Estimate 1',amount:'2500',reviewed:true}) })))
+  })
+
+  it('resets review after financial edits and blocks preparation when RO details fail', async () => {
+    api.get.mockImplementation((path) => path.endsWith('/preparation') ? Promise.reject({response:{data:{error:'RO details failed'}}}) : Promise.resolve({data:path.endsWith('/templates') ? {templates:[{id:'miles',title:'Miles insurance',preparation_kind:'miles_insurance_v1'}]} : {agreements:[]}}))
+    const view=render(<ROAgreements roId="ro-failed" initialTemplate="miles" />)
+    await screen.findByText('RO details failed')
+    expect(screen.getByRole('button',{name:'Prepare signing link'})).toBeDisabled()
+    api.get.mockImplementation((path) => Promise.resolve({data:path.endsWith('/preparation') ? context : path.endsWith('/templates') ? {templates:[{id:'miles',title:'Miles insurance',preparation_kind:'miles_insurance_v1'}]} : {agreements:[]}}))
+    fireEvent.click(screen.getByRole('button',{name:'Reload RO details'}))
+    await waitFor(()=>expect(screen.getByLabelText(/Deductible/)).toHaveValue(0))
+    fireEvent.click(screen.getByLabelText(/I checked the customer/))
+    expect(screen.getByRole('button',{name:'Prepare signing link'})).toBeEnabled()
+    fireEvent.change(screen.getByLabelText(/Authorized total, including tax/),{target:{value:'4300'}})
+    expect(screen.getByLabelText(/I checked the customer/)).not.toBeChecked()
+    view.unmount()
+  })
+  it('discards an earlier RO response when switching repair orders', async () => {
+    let releaseFirst
+    api.get.mockImplementation((path) => path==='/agreements/ro/first/preparation' ? new Promise(resolve=>{releaseFirst=resolve}) : Promise.resolve({data:path.endsWith('/preparation') ? {...context,identity:{...context.identity,name:'Second customer'}} : path.endsWith('/templates') ? {templates:[{id:'miles',title:'Miles',preparation_kind:'miles_cash_v1'}]} : {agreements:[]}}))
+    const view=render(<ROAgreements roId="first" initialTemplate="miles" />)
+    view.rerender(<ROAgreements roId="second" initialTemplate="miles" />)
+    await waitFor(()=>expect(screen.getByLabelText('Customer name')).toHaveValue('Second customer'))
+    releaseFirst({data:context})
+    await waitFor(()=>expect(screen.getByLabelText('Customer name')).toHaveValue('Second customer'))
+    expect(screen.getByLabelText(/I checked the customer/)).not.toBeChecked()
+  })
+
+  it('never shows a previous RO signing link after an in-flight create resolves', async () => {
+    let finishCreate
+    api.get.mockImplementation((path)=>Promise.resolve({data:path.endsWith('/preparation')?context:path.endsWith('/templates')?{templates:[{id:'miles',title:'Miles',preparation_kind:'miles_cash_v1'}]}:{agreements:[]}}))
+    api.post.mockImplementation(()=>new Promise(resolve=>{finishCreate=resolve}))
+    const view=render(<ROAgreements roId="first" initialTemplate="miles" />)
+    await waitFor(()=>expect(screen.getByLabelText(/Authorized total/)).toHaveValue(4250.5))
+    fireEvent.click(screen.getByLabelText(/I checked the customer/))
+    fireEvent.submit(screen.getByRole('button',{name:'Prepare signing link'}).closest('form'))
+    await waitFor(()=>expect(api.post).toHaveBeenCalledTimes(1))
+    view.rerender(<ROAgreements roId="second" initialTemplate="miles" />)
+    await waitFor(()=>expect(api.get).toHaveBeenCalledWith('/agreements/ro/second/preparation'))
+    finishCreate({data:{signing_path:'/sign#private-first-ro'}})
+    await waitFor(()=>expect(screen.queryByLabelText('Private signing link')).not.toBeInTheDocument())
+    expect(screen.queryByRole('link',{name:'Open for customer'})).not.toBeInTheDocument()
   })
 
 })
