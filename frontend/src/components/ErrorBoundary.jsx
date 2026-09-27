@@ -1,3 +1,4 @@
+import { isSigningPage } from '../lib/signingPrivacy';
 import React from 'react';
 import { AlertTriangle, Wrench } from 'lucide-react';
 import { captureException } from '../lib/sentry';
@@ -11,6 +12,7 @@ export default class ErrorBoundary extends React.Component {
     return { hasError: true, error };
   }
   componentDidCatch(error, info) {
+    if (isSigningPage()) return;
     console.error('[REVV Error]', error, info);
     try {
       captureException(error, { extra: { componentStack: (info?.componentStack || '').slice(0, 600) } });

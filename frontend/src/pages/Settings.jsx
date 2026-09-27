@@ -6,6 +6,8 @@ import { isAdmin } from '../lib/auth'
 import { resolveUploadedMediaUrl } from '../lib/mediaUrls'
 import AppOverlay from '../components/AppOverlay'
 import { PageHeader } from '../components/ui'
+import AgreementArchive from '../components/AgreementArchive'
+import AgreementTemplates from '../components/AgreementTemplates'
 import ThemeSettingsCard from '../components/ThemeSettingsCard'
 
 const TIER_COLORS = {
@@ -1477,6 +1479,8 @@ export default function Settings() {
         )}
 
       </form>
+
+      {activeSettingsTab === 'core' && isAdmin() && <><AgreementTemplates /><AgreementArchive /></>}
 
       {activeSettingsTab === 'danger' && (
         <div className="space-y-3 rounded-instrument border border-crit/30 bg-panel p-5">

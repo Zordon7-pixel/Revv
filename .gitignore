@@ -5,3 +5,6 @@ node_modules/
 .env
 backend/.env
 frontend/dist/
+
+# Generated PDF viewer assets
+frontend/public/pdfjs/

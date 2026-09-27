@@ -1,3 +1,4 @@
+import { isSigningPage, scrubSigningSecrets } from './signingPrivacy';
 /**
  * errorReporter.js
  *
@@ -46,7 +47,7 @@ function buildPayload(message, source, context = {}) {
     expected: 'No error',
     actual: safeMessage,
     context: JSON.stringify({
-      url: window.location.href,
+      url: scrubSigningSecrets(window.location.href),
       userAgent: navigator.userAgent,
       timestamp: new Date().toISOString(),
       source,
@@ -56,6 +57,7 @@ function buildPayload(message, source, context = {}) {
 }
 
 async function report(payload) {
+  if (isSigningPage()) return;
   const key = payload.message.slice(0, 120);
   const now = Date.now();
   if (seen.has(key) && now - seen.get(key) < COOLDOWN_MS) return;
@@ -81,6 +83,7 @@ function describeClickTarget(el) {
 export function initErrorReporter() {
   // Track recent clicks so we can attribute alerts to the button that fired them
   document.addEventListener('click', (event) => {
+    if (isSigningPage()) return;
     const target = event.target instanceof Element
       ? event.target.closest('button, a, [role="button"], input[type="submit"]') || event.target
       : null;
@@ -102,6 +105,7 @@ export function initErrorReporter() {
   if (typeof window.alert === 'function' && !window.alert.__revvPatched) {
     const originalAlert = window.alert.bind(window);
     const patched = (message) => {
+      if (isSigningPage()) return originalAlert(message);
       const text = sanitizeAutoReportMessage(message);
       const lastClick = recentClicks[recentClicks.length - 1] || null;
       Sentry.addBreadcrumb({
