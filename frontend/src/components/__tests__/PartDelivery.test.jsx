@@ -44,3 +44,27 @@ it('customer view shows uncertain ETA, checked quantity and customer note withou
   render(<CustomerPartsStatus parts={[{...part,carrier_delivered:true,eta_source:'supplier',expected_date:'2026-10-01',customer_note:'We are confirming the remaining shipment.',notes:'PRIVATE',vendor:'PRIVATE',unit_cost:999}]} summary={{message:'Waiting on parts.',latest_expected_date:null,disclaimer:'Parts estimates do not confirm repair completion.'}}/>);
   expect(screen.getByText('Waiting on parts.')).toBeInTheDocument();expect(screen.getByText(/2026-10-01 · Supplier estimate/)).toBeInTheDocument();expect(screen.getByText('0 of 4 received by the shop')).toBeInTheDocument();expect(screen.getByText(/awaiting the shop’s receipt check/)).toBeInTheDocument();expect(screen.queryByText(/PRIVATE/)).not.toBeInTheDocument();
 })
+
+it('notification opt-in starts unchecked and accepted results remain visible until Done',async()=>{
+  const saved=vi.fn();api.put.mockResolvedValue({data:{...part,delivery_revision:4,notification:{status:'complete',channels:[{channel:'email',status:'accepted'},{channel:'sms',status:'skipped',reason:'no_consent'}]}}});
+  render(<PartDeliveryEditor part={part} onClose={()=>{}} onSaved={saved}/>);
+  const checkbox=screen.getByRole('checkbox',{name:/Notify customer/});expect(checkbox).not.toBeChecked();
+  fireEvent.click(checkbox);fireEvent.click(screen.getByRole('button',{name:'Save delivery update'}));
+  expect(await screen.findByRole('status')).toHaveTextContent('Accepted by the messaging provider. Delivery is not yet confirmed.');
+  expect(screen.getByRole('status')).toHaveTextContent('Customer has not opted in.');expect(saved).not.toHaveBeenCalled();
+  expect(api.put).toHaveBeenCalledWith('/parts/p1/delivery',expect.objectContaining({notify_customer:true}));
+  fireEvent.click(screen.getByRole('button',{name:'Done'}));expect(saved).toHaveBeenCalledTimes(1);
+});
+it('saved update survives an unknown notification result without offering a duplicate send',async()=>{
+  api.put.mockResolvedValue({data:{...part,notification:{status:'unknown',reason:'verify_before_retry',channels:[]}}});
+  render(<PartDeliveryEditor part={part} onClose={()=>{}} onSaved={()=>{}}/>);
+  fireEvent.click(screen.getByRole('checkbox',{name:/Notify customer/}));fireEvent.click(screen.getByRole('button',{name:'Save delivery update'}));
+  expect(await screen.findByRole('status')).toHaveTextContent('Check messaging records before sending another update.');
+  expect(screen.queryByRole('button',{name:'Save delivery update'})).not.toBeInTheDocument();
+});
+it('delivery history shows durable channel results and provider reference',async()=>{
+  api.get.mockResolvedValue({data:{events:[{revision:3,source:'staff',created_at:'2026-09-27T12:00:00Z',after_state:part,notification:{status:'complete',channels:[{channel:'email',status:'accepted',provider_reference:'synthetic-provider-id'},{channel:'sms',status:'skipped',reason:'no_consent'}]}}]}});
+  render(<PartDeliveryEditor part={part} onClose={()=>{}} onSaved={()=>{}}/>);
+  expect(await screen.findByText('Provider reference: synthetic-provider-id')).toBeInTheDocument();
+  expect(screen.getByText(/Email: Accepted by provider; delivery unconfirmed/)).toBeInTheDocument();
+});
