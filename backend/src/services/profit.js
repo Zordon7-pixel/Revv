@@ -76,4 +76,6 @@ function calculateTrueProfit(ro, costProfile, opts = {}) {
   };
 }
 
-module.exports = { calculateProfit, calculateTrueProfit };
+// Versioned explicit-cost path; legacy functions and serialized shapes stay unchanged.
+const { calculateEstimate } = require('./panelEstimator');
+module.exports = { calculateProfit, calculateTrueProfit, calculateEstimateProfit: calculateEstimate };
