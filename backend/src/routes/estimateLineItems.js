@@ -5,6 +5,8 @@ const { v4: uuidv4 } = require('uuid');
 const { calculateProfit } = require('../services/profit');
 const { centsToDollars, dollarsToCents } = require('../services/roMoney');
 
+router.use(require('./panelEstimator').createPanelEstimatorRouter());
+
 const ALLOWED_TYPES = new Set(['labor', 'parts', 'sublet', 'other']);
 
 function normalizeType(type) {

@@ -65,9 +65,10 @@ for (const type of ['TEXT', 'UUID', 'VARCHAR(36)']) {
         await ensurePanelEstimator(pool);
         const rows = (await pool.query(`SELECT c.relname, a.attname, format_type(a.atttypid, a.atttypmod) AS type
           FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid
-          WHERE c.relnamespace = $1::regnamespace AND c.relname IN ('ro_panel_estimator_drafts', 'ro_panel_estimator_costs')
+          WHERE c.relnamespace = $1::regnamespace AND c.relname IN ('ro_panel_estimator_drafts', 'ro_panel_estimator_costs',
+            'panel_estimator_preset_families', 'panel_estimator_preset_versions')
           AND a.attname IN ('shop_id', 'ro_id')`, [schema])).rows;
-        assert.equal(rows.length, 4);
+        assert.equal(rows.length, 6);
         assert.ok(rows.every(row => row.type === ({ TEXT: 'text', UUID: 'uuid', 'VARCHAR(36)': 'character varying(36)' })[type]));
       });
 
@@ -129,7 +130,7 @@ for (const type of ['TEXT', 'UUID', 'VARCHAR(36)']) {
         const saved = await store.saveDraft(input);
         assert.ok(!JSON.stringify(saved).includes('SECRET'));
         assert.ok(!JSON.stringify(saved).includes('cost'));
-        assert.equal(saved.scenario.allocation.customer_cents, 0);
+        assert.equal(saved.scenario.allocation.customer_cents, undefined);
         assert.equal(saved.adjustments.discount_cents, 0);
         const raw = (await pool.query('SELECT assessments, scenario, adjustments FROM ro_panel_estimator_drafts WHERE shop_id=$1 AND ro_id=$2', [scope.shopId, scope.roId])).rows[0];
         assert.ok(!JSON.stringify(raw).includes('SECRET'));
@@ -169,7 +170,7 @@ for (const type of ['TEXT', 'UUID', 'VARCHAR(36)']) {
       await t.test('invalid numbers, booleans, panels, operations, sizes and duplicate panels fail without writes', async () => {
         const scope = await newScope();
         const patches = [
-          ...[-1, 1.1, Number.MAX_SAFE_INTEGER + 1, Infinity, NaN, true, '0'].map(parts_sell_cents => ({ parts_sell_cents })),
+          ...[-1, 1.1, 10000000000, Number.MAX_SAFE_INTEGER + 1, Infinity, NaN, true, '0'].map(parts_sell_cents => ({ parts_sell_cents })),
           ...[-1, 1.001, 1000001, NaN, false, '1.25'].map(body_hours => ({ body_hours })),
           { refinish: 1 }, { reviewed: 0 }, { panel_id: 'made_up_panel' }, { operation: 'approved' },
           { customer_notes: { private_notes: 'SECRET' } }, { label: 'x'.repeat(201) },
@@ -184,8 +185,8 @@ for (const type of ['TEXT', 'UUID', 'VARCHAR(36)']) {
         await assert.rejects(store.saveCosts({ ...scope, expectedVersion: 0, overhead_cents: false }), failure('INVALID_INPUT'));
         await assert.rejects(store.saveCosts({ ...scope, expectedVersion: 0, lines: [{ panel_id: 'hood', parts_cost_cents: -1 }] }), failure('INVALID_INPUT'));
         assert.equal((await store.getDraft(scope)).version, 0);
-        const upper = await store.saveDraft(saveInput(scope, { assessments: [validPanel({ body_hours: 0.29, parts_sell_cents: Number.MAX_SAFE_INTEGER })] }));
-        assert.equal(upper.assessments[0].parts_sell_cents, Number.MAX_SAFE_INTEGER);
+        const upper = await store.saveDraft(saveInput(scope, { assessments: [validPanel({ body_hours: 0.29, parts_sell_cents: 9999999999 })] }));
+        assert.equal(upper.assessments[0].parts_sell_cents, 9999999999);
       });
 
       await t.test('reference validation fails closed absent storage; existing photos require same shop AND RO', async () => {
