@@ -7,6 +7,7 @@ import { safeExternalErrorMessage } from '../lib/safeErrors'
 import EstimateReviewWarning from '../components/EstimateReviewWarning'
 import AppOverlay from '../components/AppOverlay'
 import EstimateFinancialReview from '../components/EstimateFinancialReview'
+import PanelEstimator from '../components/PanelEstimator'
 import EstimateSelectionToolbar from '../components/EstimateSelectionToolbar'
 
 const ITEM_TYPES = ['labor', 'parts', 'sublet', 'other']
@@ -199,6 +200,8 @@ export default function EstimateBuilder() {
   const navigate = useNavigate()
   const fileInputRef = useRef(null)
 
+  const [estimateMode, setEstimateMode] = useState('manual')
+  const [visualOpened, setVisualOpened] = useState(false)
   const [ro, setRo] = useState(null)
   const [items, setItems] = useState([])
   const [summary, setSummary] = useState(null)
@@ -714,6 +717,12 @@ export default function EstimateBuilder() {
           <p className="text-faint text-sm truncate">{ro?.ro_number || roId} {ro?.customer?.name ? `· ${ro.customer.name}` : ''}</p>
         </div>
       </div>
+      <div className="flex flex-wrap gap-2" aria-label="Estimate mode">
+        <button type="button" aria-pressed={estimateMode === 'manual'} className="min-h-11 rounded-instrument bg-raised px-4 text-ink" onClick={() => setEstimateMode('manual')}>Manual / insurance import</button>
+        <button type="button" aria-pressed={estimateMode === 'visual'} className="min-h-11 rounded-instrument bg-raised px-4 text-brand" onClick={() => { setVisualOpened(true); setEstimateMode('visual') }}>Visual panels</button>
+      </div>
+      {visualOpened && <div hidden={estimateMode !== 'visual'}><PanelEstimator roId={roId} vehicle={[ro?.vehicle?.year, ro?.vehicle?.make, ro?.vehicle?.model].filter(Boolean).join(' ')} photos={ro?.photos || []} /></div>}
+      <div hidden={estimateMode !== 'manual'} className="space-y-4">
       <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:items-center">
         <button
           type="button"
@@ -1030,6 +1039,7 @@ export default function EstimateBuilder() {
             </tr>
           </tfoot>
         </table>
+      </div>
       </div>
     </div>
   )

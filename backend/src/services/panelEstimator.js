@@ -156,6 +156,7 @@ function calculateEstimate(input) {
   const taxRate = scaledDecimal(input.tax_rate_bps === undefined ? 0 : input.tax_rate_bps, 0, 'tax_rate_bps', 10000n);
   const target = input.target_margin_bps == null ? null : scaledDecimal(input.target_margin_bps, 0, 'target_margin_bps', 9999n);
   const overhead = input.overhead_cents === null ? null : cents(input.overhead_cents === undefined ? 0 : input.overhead_cents, 'overhead_cents');
+  const includeOverhead = input.include_overhead_in_target === undefined ? false : boolean(input.include_overhead_in_target, 'include_overhead_in_target');
   const buckets = lines.filter(line => !line.included && !line.inspection_required).map(line => ({
     key: `line:${line.id}`, id: line.id, kind: 'line', taxable: line.taxable, gross: extend(line.unit_price, line.quantity),
   }));
@@ -170,12 +171,20 @@ function calculateEstimate(input) {
     if (settings.size !== 1) throw new TypeError('Minimum adjustment requires homogeneous tax settings and billable work');
     buckets.push({ key: 'minimum:', id: 'minimum_adjustment', kind: 'minimum', taxable: billable[0].taxable, gross: adjustment, discount: 0n });
   }
-  let tax = 0n;
+  // Round the shop taxable subtotal once, then allocate cents deterministically.
+  let taxableNet = 0n;
+  let allocatedTax = 0n;
   for (const bucket of buckets) {
     bucket.net = bucket.gross - bucket.discount;
-    bucket.tax = bucket.taxable ? roundHalfUp(bucket.net * taxRate, 10000n) : 0n;
-    tax += bucket.tax;
+    if (bucket.taxable) taxableNet += bucket.net;
+    bucket.tax = bucket.taxable ? bucket.net * taxRate / 10000n : 0n;
+    bucket.taxRemainder = bucket.taxable ? bucket.net * taxRate % 10000n : 0n;
+    allocatedTax += bucket.tax;
   }
+  const tax = roundHalfUp(taxableNet * taxRate, 10000n);
+  const taxableBuckets = buckets.filter(bucket => bucket.taxable).sort((a, b) =>
+    a.taxRemainder === b.taxRemainder ? compare(a.key, b.key) : a.taxRemainder > b.taxRemainder ? -1 : 1);
+  for (let i = 0; allocatedTax < tax; i++, allocatedTax++) taxableBuckets[i].tax++;
   const net = subtotal - discount + adjustment;
   const bucketMap = new Map(buckets.map(bucket => [bucket.key, bucket]));
   const missing = [];
@@ -192,8 +201,10 @@ function calculateEstimate(input) {
   const complete = missing.length === 0;
   const directComplete = !missing.some(item => item.reason !== 'missing_overhead');
   const totalCost = complete ? known + overhead : null;
-  const contribution = complete ? net - totalCost : null;
-  const targetRevenue = complete && target !== null ? (totalCost * 10000n + (10000n - target) - 1n) / (10000n - target) : null;
+  const contribution = directComplete ? net - known : null;
+  const afterOverhead = complete ? net - totalCost : null;
+  const targetCost = directComplete && (!includeOverhead || overhead !== null) ? known + (includeOverhead ? overhead : 0n) : null;
+  const targetRevenue = targetCost !== null && target !== null ? (targetCost * 10000n + (10000n - target) - 1n) / (10000n - target) : null;
   // Build all public objects explicitly. Never spread input (even nested lines).
   const sell = {
     lines: lines.map(line => {
@@ -221,6 +232,8 @@ function calculateEstimate(input) {
     direct_cost_cents: directComplete ? checkedCents(known) : null,
     overhead_cents: overhead === null ? null : checkedCents(overhead),
     total_cost_cents: totalCost === null ? null : checkedCents(totalCost),
+    include_overhead_in_target: includeOverhead,
+    after_overhead_cents: afterOverhead === null ? null : checkedCents(afterOverhead),
     contribution_cents: contribution === null ? null : checkedCents(contribution),
     // Only display ratios use Number; all cent arithmetic above is exact.
     margin_bps: contribution === null || net === 0n ? null : Number(contribution) / Number(net) * 10000,

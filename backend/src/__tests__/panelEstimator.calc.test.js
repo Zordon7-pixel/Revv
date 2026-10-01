@@ -210,13 +210,15 @@ test('zero revenue margin is null; no inferred target; overhead explicit or unkn
   assert.equal(calculateEstimate({ lines: [line({ quantity: 0, cost_unit_cents: null })] }).costs.complete, false);
   const costs = calculateEstimate({ lines: [line()], overhead_cents: 1000, target_margin_bps: 0 }).costs;
   assert.equal(costs.total_cost_cents, 5000);
-  assert.equal(costs.contribution_cents, 5000);
-  assert.equal(costs.target_revenue_cents, 5000);
+  assert.equal(costs.contribution_cents, 6000);
+  assert.equal(costs.after_overhead_cents, 5000);
+  assert.equal(costs.target_revenue_cents, 4000);
   const unknown = calculateEstimate({ lines: [line()], overhead_cents: null, target_margin_bps: 4000 }).costs;
   assert.equal(unknown.direct_cost_cents, 4000);
   assert.equal(unknown.complete, false);
-  assert.equal(unknown.margin_bps, null);
-  assert.equal(unknown.target_revenue_cents, null);
+  assert.equal(unknown.margin_bps, 6000);
+  assert.equal(unknown.target_revenue_cents, 6667);
+  assert.equal(calculateEstimate({ lines: [line()], overhead_cents: null, target_margin_bps: 4000, include_overhead_in_target: true }).costs.target_revenue_cents, null);
   assert.equal(calculateEstimate({ lines: [line({ unit_price_cents: 1000 })] }).costs.contribution_cents, -3000);
 });
 
@@ -233,14 +235,14 @@ test('minimum adjustment is visible after discount and taxed explicitly', () => 
   assert.throws(() => calculateEstimate({ lines: [line(), line({ id: 'b', panel_id: 'door', taxable: false })], minimum_cents: 30000 }));
 });
 
-test('mixed tax discount uses stable largest remainders before per-bucket tax', () => {
+test('mixed tax discount uses stable largest remainders before subtotal tax allocation', () => {
   const lines = [line({ id: 'a', unit_price_cents: 5 }), line({ id: 'b', panel_id: 'door', unit_price_cents: 5, taxable: false })];
   const input = { lines, discount_cents: 1, tax_rate_bps: 1000 };
   const result = calculateEstimate(input);
   assert.deepEqual(result.sell.buckets.map(bucket => [bucket.discount_cents, bucket.net_cents, bucket.tax_cents]), [[1, 4, 0], [0, 5, 0]]);
   assert.equal(result.sell.total_cents, 9);
   assert.deepEqual(calculateEstimate({ ...input, lines: [...lines].reverse() }), result);
-  assert.equal(calculateEstimate({ lines: [lines[0], { ...lines[1], taxable: true }], tax_rate_bps: 1000 }).sell.tax_cents, 2);
+  assert.equal(calculateEstimate({ lines: [lines[0], { ...lines[1], taxable: true }], tax_rate_bps: 1000 }).sell.tax_cents, 1);
   assert.equal(calculateEstimate({ lines: [lines[0]], discount_cents: 5, tax_rate_bps: 1000 }).sell.total_cents, 0);
 });
 
@@ -279,4 +281,25 @@ test('legacy profit serialized bytes and money helper behavior remain unchanged'
   assert.equal(money.dollarsToCents('$1,234.56'), 123456);
   assert.equal(money.roundToIntCents(null), null);
   assert.equal(money.reconcilePaymentStatus({ paidCents: 10, owedCents: 20 }), 'partial');
+});
+
+ test('F1 overhead is separate from gross contribution and target basis is explicit', () => {
+  for (const included of [false, true]) {
+    const { costs } = calculateEstimate({ ...fixture(), overhead_cents: 2000, include_overhead_in_target: included });
+    assert.equal(costs.contribution_cents, 18000);
+    assert.equal(costs.margin_bps, 4500);
+    assert.equal(costs.after_overhead_cents, 16000);
+    assert.equal(costs.target_revenue_cents, included ? 40000 : 36667);
+    assert.equal(costs.include_overhead_in_target, included);
+  }
+  assert.throws(() => calculateEstimate({ ...fixture(), include_overhead_in_target: 'true' }));
+});
+
+test('two five-cent taxable lines allocate one tax cent, independent of order', () => {
+  const lines = [line({ id: 'a', unit_price_cents: 5 }), line({ id: 'b', panel_id: 'door', unit_price_cents: 5 })];
+  const first = calculateEstimate({ lines, tax_rate_bps: 1000 });
+  assert.equal(first.sell.tax_cents, 1);
+  assert.deepEqual(first.sell.buckets.map(b => b.tax_cents), [1, 0]);
+  assert.equal(first.sell.buckets.reduce((sum, b) => sum + b.tax_cents, 0), first.sell.tax_cents);
+  assert.deepEqual(first, calculateEstimate({ lines: lines.reverse(), tax_rate_bps: 1000 }));
 });

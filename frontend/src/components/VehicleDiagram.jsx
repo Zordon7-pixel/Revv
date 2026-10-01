@@ -63,6 +63,8 @@ function fallbackLabel(id) {
     .join(' ')
 }
 
+export const vehiclePanelLabel = id => [...EXTERIOR_PANELS, ...INTERIOR_PANELS].find(panel => panel.id === id)?.label || fallbackLabel(id)
+
 export default function VehicleDiagram({ value = [], onChange, readOnly = false }) {
   const [hovered, setHovered] = useState(null)
   const selected = Array.isArray(value) ? value : []
@@ -173,7 +175,7 @@ export default function VehicleDiagram({ value = [], onChange, readOnly = false 
       )}
 
       <div className="relative">
-        <svg viewBox="0 0 320 460" width="240" height="345" style={{ display: 'block' }}>
+        <svg viewBox="0 0 320 460" width="240" height="345" className="max-w-full" style={{ display: 'block' }}>
           {mode === 'interior' ? renderInteriorCanvas() : renderExteriorCanvas()}
         </svg>
 
@@ -208,6 +210,12 @@ export default function VehicleDiagram({ value = [], onChange, readOnly = false 
         </div>
       )}
 
+      {!readOnly && <details className="w-full max-w-sm rounded-instrument border border-line-2 p-3">
+        <summary className="cursor-pointer text-sm text-brand">Select panels with keyboard</summary>
+        <div className="mt-3 grid grid-cols-1 gap-1 sm:grid-cols-2">{activePanels.map(panel => <label key={panel.id} className="flex min-h-11 items-center gap-2 text-sm text-ink">
+          <input type="checkbox" checked={selected.includes(panel.id)} onChange={() => toggle(panel.id)} />{panel.label}
+        </label>)}</div>
+      </details>}
       {!readOnly && (
         <p className="text-center text-xs text-faint">
           {mode === 'interior'
