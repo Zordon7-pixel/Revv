@@ -82,6 +82,7 @@ describe('AddROModal appraisal quick intake', () => {
       vehicle_id: 'vehicle-1',
       claim_number: 'CLM-100',
       policy_number: 'POL-200',
+      sms_consent: true,
     }))
     expect(api.post.mock.calls.filter(([url]) => url === '/claim-tracker/ro/ro-1/evidence')).toHaveLength(2)
     expect(api.post).toHaveBeenCalledWith('/estimate-metadata/metadata/ro-1', {
@@ -92,6 +93,45 @@ describe('AddROModal appraisal quick intake', () => {
         line_items: [expect.objectContaining({ description: 'Bumper cover' })],
       }),
     })
+  })
+
+  it.each([
+    ['new', undefined, false],
+    ['existing', false, false],
+    ['existing', null, null],
+    ['existing', undefined, null],
+  ])('appraisal consent stays explicit for %s customers (%s)', async (kind, stored, expected) => {
+    const get = api.get.getMockImplementation()
+    const post = api.post.getMockImplementation()
+    api.get.mockImplementation(async url => {
+      const result = await get(url)
+      if (url === '/customers') {
+        result.data.customers = kind === 'new' ? [] : result.data.customers.map(c => ({ ...c, sms_consent: stored }))
+      }
+      if (url === '/customers/customer-1/autofill') result.data.customer.sms_consent = stored
+      return result
+    })
+    api.post.mockImplementation((url, body) => {
+      if (url === '/customers') return Promise.resolve({ data: { id: 'customer-new' } })
+      if (url === '/vehicles') return Promise.resolve({ data: { id: 'vehicle-new' } })
+      return post(url, body)
+    })
+    const user = userEvent.setup()
+    const onSaved = vi.fn()
+    render(<MemoryRouter><AddROModal onClose={vi.fn()} onSaved={onSaved} /></MemoryRouter>)
+    await user.click(screen.getByRole('tab', { name: 'Appraisal Quick Intake' }))
+    fireEvent.change(screen.getByLabelText('Appraisal files'), { target: { files: [new File(['one'], 'page.jpg', { type: 'image/jpeg' })] } })
+    await user.click(screen.getByRole('button', { name: 'Read Appraisal' }))
+    await screen.findByDisplayValue('Miles Customer')
+    await user.click(screen.getByRole('button', { name: 'Use Details in New RO' }))
+    expect(screen.getByLabelText(/Customer consents to receive SMS status updates/i)).not.toBeChecked()
+    await user.click(screen.getByRole('button', { name: /Next/ }))
+    await user.click(screen.getByRole('button', { name: /Next/ }))
+    await user.click(screen.getByRole('button', { name: 'Add Repair Order' }))
+    await waitFor(() => expect(onSaved).toHaveBeenCalled())
+    expect(api.post).toHaveBeenCalledWith('/ros', expect.objectContaining({ sms_consent: expected }))
+    if (kind === 'new') expect(api.post).toHaveBeenCalledWith('/customers', expect.objectContaining({ sms_consent: false }))
+    else expect(api.post).not.toHaveBeenCalledWith('/customers', expect.anything())
   })
   async function openAuthorizationFlow({ duplicate = false, failure = false } = {}) {
     const get = api.get.getMockImplementation()

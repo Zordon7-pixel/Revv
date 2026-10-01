@@ -262,7 +262,9 @@ test('create reuses import-estimate path and writes shop-scoped RO, customer, ve
     assert.equal(body.imported_line_count, 5);
 
     const inserts = dbMock.calls.filter((call) => /^INSERT INTO/i.test(call.sql.trim()));
-    assert.ok(inserts.some((call) => /INSERT INTO customers/i.test(call.sql) && call.params[1] === 'shop-1'));
+    const customerInsert = inserts.find((call) => /INSERT INTO customers/i.test(call.sql));
+    assert.equal(customerInsert.params[1], 'shop-1');
+    assert.equal(customerInsert.params[4], false);
     assert.ok(inserts.some((call) => /INSERT INTO vehicles/i.test(call.sql) && call.params[1] === 'shop-1'));
     assert.ok(inserts.some((call) => /INSERT INTO repair_orders/i.test(call.sql) && call.params[1] === 'shop-1'));
 
@@ -277,6 +279,35 @@ test('create reuses import-estimate path and writes shop-scoped RO, customer, ve
     assert.equal(operations.length, 4);
     assert.ok(operations.some((call) => call.params[3] === 'RPR left quarter panel' && call.params[6] === 2.5 && call.params[7] === 65));
     assert.ok(operations.some((call) => call.params[3] === 'RNI tail lamp assembly for access' && call.params[6] === 0.3));
+  });
+});
+
+test('import-estimate customer creation accepts only explicit boolean SMS consent at either input path', async () => {
+  const dbMock = createDbMock();
+  await withTestApp(dbMock, async app => {
+    app.post('/consent-regression', (req, res) => {
+      req.user = { id: 'user-1', shop_id: 'shop-1' };
+      return require('../src/routes/ros').importEstimateHandler(req, res);
+    });
+    for (const nested of [false, true]) {
+      for (const choice of [{}, ...[null, false, 'true', 'false', '1', 1, {}, [], true].map(sms_consent => ({ sms_consent }))]) {
+        dbMock.calls.length = 0;
+        const body = {
+          customer: { name: 'Synthetic Consent Customer', ...(nested ? choice : {}) },
+          vehicle: { make: 'Toyota', model: 'Camry' },
+          ...(!nested ? choice : {}),
+        };
+        const res = await inject(app, {
+          method: 'POST', url: '/consent-regression',
+          headers: { 'content-type': 'application/json' },
+          body: Buffer.from(JSON.stringify(body)),
+        });
+        assert.equal(res.status, 201);
+        const insert = dbMock.calls.find(call => /INSERT INTO customers/i.test(call.sql));
+        assert.equal(insert.params[1], 'shop-1');
+        assert.equal(insert.params[4], choice.sms_consent === true);
+      }
+    }
   });
 });
 

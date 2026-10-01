@@ -199,7 +199,7 @@ router.post('/', auth, requireTechnician, async (req, res) => {
     if (nextEmailConsent && !normalizedEmail) {
       return res.status(400).json({ error: 'Customer email is required for email status updates.' });
     }
-    const nextSmsConsent = sms_consent !== false;
+    const nextSmsConsent = sms_consent === true;
     const nextPreferredMethod = normalizePreferredContactMethod(preferred_contact_method, nextSmsConsent, nextEmailConsent);
     const shop = await dbGet('SELECT id FROM shops WHERE id = $1', [req.user.shop_id]);
     if (!shop) return res.status(401).json({ error: 'Session expired. Please log out and back in.' });
@@ -212,7 +212,7 @@ router.post('/', auth, requireTechnician, async (req, res) => {
     );
     await sendCustomerOptInConfirmation({
       phone,
-      smsConsent: sms_consent !== false,
+      smsConsent: nextSmsConsent,
       shopId: req.user.shop_id,
     });
     res.status(201).json(await dbGet('SELECT * FROM customers WHERE id = $1 AND shop_id = $2', [id, req.user.shop_id]));

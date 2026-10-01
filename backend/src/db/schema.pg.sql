@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS customers (
   shop_id UUID REFERENCES shops(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   phone TEXT,
-  sms_consent BOOLEAN DEFAULT TRUE,
+  sms_consent BOOLEAN DEFAULT FALSE,
   email TEXT,
   email_consent BOOLEAN DEFAULT FALSE,
   preferred_contact_method TEXT DEFAULT 'sms',

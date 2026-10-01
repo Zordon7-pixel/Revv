@@ -92,7 +92,7 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
   const [form, setForm] = useState({
     // Customer (new or existing)
     customer_id: '', new_customer: false,
-    customer_name: '', customer_phone: '', customer_email: '', customer_address: '', sms_consent: true, email_consent: false,
+    customer_name: '', customer_phone: '', customer_email: '', customer_address: '', sms_consent: false, email_consent: false,
     // Vehicle
     vehicle_id: '', new_vehicle: true,
     year: '', make: '', model: '', vin: '', color: '', plate: '', mileage: '',
@@ -268,7 +268,7 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
           if (!next.customer_phone && customer?.phone) next.customer_phone = customer.phone
           if (!next.customer_email && customer?.email) next.customer_email = customer.email
           if (!next.customer_address && customer?.address) next.customer_address = customer.address
-          next.sms_consent = customer?.sms_consent !== false
+          next.sms_consent = typeof customer?.sms_consent === 'boolean' ? customer.sms_consent : null
           next.email_consent = customer?.email_consent === true
           if (latestVehicle && (!next.vehicle_id || next.new_vehicle)) {
             next.new_vehicle = false
@@ -347,7 +347,9 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
       customer_phone: matchedCustomer?.phone || fields.customer_phone,
       customer_email: matchedCustomer?.email || fields.customer_email,
       customer_address: matchedCustomer?.address || fields.customer_address,
-      sms_consent: matchedCustomer ? matchedCustomer.sms_consent === true : false,
+      sms_consent: matchedCustomer
+        ? (typeof matchedCustomer.sms_consent === 'boolean' ? matchedCustomer.sms_consent : null)
+        : false,
       email_consent: matchedCustomer ? matchedCustomer.email_consent === true : false,
       vehicle_id: matchedVehicle?.id || '',
       new_vehicle: !matchedVehicle,
@@ -691,7 +693,7 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
                       color: '',
                       plate: '',
                       mileage: '',
-                      sms_consent: true,
+                      sms_consent: false,
                     }))
                   }}
                   className={`flex-1 py-2 rounded-lg text-xs font-medium transition-colors ${form.new_customer ? 'bg-brand text-white' : 'bg-void text-muted border border-line-2'}`}
@@ -705,6 +707,7 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
                     value={form.customer_id}
                     onChange={e => {
                       const nextId = e.target.value
+                      const selectedCustomer = customers.find(c => c.id === nextId)
                       setCustomerVehicles([])
                       setForm((prev) => ({
                         ...prev,
@@ -718,7 +721,8 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
                         color: '',
                         plate: '',
                         mileage: '',
-                        sms_consent: true,
+                        sms_consent: typeof selectedCustomer?.sms_consent === 'boolean'
+                          ? selectedCustomer.sms_consent : null,
                         email_consent: false,
                       }))
                     }}
@@ -738,7 +742,7 @@ export default function AddROModal({ onClose, onSaved, presentation = 'modal' })
               <label className="flex items-start gap-2 text-xs text-ink">
                 <input
                   type="checkbox"
-                  checked={form.sms_consent}
+                  checked={form.sms_consent === true}
                   onChange={e => set('sms_consent', e.target.checked)}
                   className="mt-0.5 h-4 w-4 rounded border-line-2 bg-void accent-brand"
                 />
