@@ -567,7 +567,6 @@ async function initDb() {
   await pool.query(`ALTER TABLE ro_comms ALTER COLUMN summary SET DEFAULT ''`).catch(() => {});
 
   await require('../services/stockCapture').ensureStock(pool);
-  await require('./panelEstimator').ensurePanelEstimator(pool);
   await require('../services/partsDelivery').ensureDelivery(pool);
 
   await pool.query(`
@@ -673,6 +672,14 @@ async function initDb() {
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_estimate_line_items_ro ON estimate_line_items(ro_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_estimate_line_items_shop ON estimate_line_items(shop_id)`);
+  // Install guards only after all guarded tables exist, including fresh databases.
+  // Text child identifiers match the legacy line/metadata stores across parent types.
+  await pool.query(`CREATE TABLE IF NOT EXISTS estimate_metadata (
+    id TEXT PRIMARY KEY, ro_id TEXT NOT NULL, shop_id TEXT NOT NULL,
+    adjuster_totals JSONB, adjuster_raw_text TEXT, import_draft JSONB,
+    created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW()
+  )`);
+  await require('./panelEstimator').ensurePanelEstimator(pool);
 
   await pool.query(`
     ALTER TABLE shops

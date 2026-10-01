@@ -71,6 +71,7 @@ async function ensurePanelEstimator(pool) {
           FOR EACH ROW EXECUTE FUNCTION panel_estimator_immutable_version();
       END IF;
     END $$`);
+    await ensureRevisions(client, types);
     await client.query('COMMIT');
   } catch (error) {
     try { await client.query('ROLLBACK'); } catch (rollbackError) { error.rollbackError = rollbackError; }
@@ -81,3 +82,110 @@ async function ensurePanelEstimator(pool) {
 }
 
 module.exports = { ensurePanelEstimator };
+
+async function ensureRevisions(client, types) {
+  await client.query(`CREATE TABLE IF NOT EXISTS ro_panel_estimator_revisions (
+    shop_id ${types.shops} NOT NULL, ro_id ${types.repair_orders} NOT NULL, id TEXT NOT NULL,
+    version BIGINT NOT NULL CHECK (version > 0), scenario_key TEXT NOT NULL,
+    idempotency_key TEXT NOT NULL CHECK (length(idempotency_key) BETWEEN 1 AND 200),
+    request_hash TEXT NOT NULL CHECK (request_hash ~ '^[a-f0-9]{64}$'),
+    input_hash TEXT NOT NULL CHECK (input_hash ~ '^[a-f0-9]{64}$'),
+    quote_hash TEXT NOT NULL CHECK (quote_hash ~ '^[a-f0-9]{64}$'),
+    reviewed BOOLEAN NOT NULL CHECK (reviewed), reviewed_by TEXT NOT NULL,
+    reviewed_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+    public_snapshot JSONB NOT NULL, accounting_snapshot JSONB NOT NULL,
+    PRIMARY KEY (shop_id, ro_id, id), UNIQUE (shop_id, ro_id, idempotency_key),
+    UNIQUE (shop_id, ro_id, version),
+    FOREIGN KEY (shop_id, ro_id) REFERENCES ro_panel_estimator_drafts(shop_id, ro_id)
+  )`);
+  await client.query(`CREATE TABLE IF NOT EXISTS ro_panel_estimator_revision_costs (
+    shop_id ${types.shops} NOT NULL, ro_id ${types.repair_orders} NOT NULL, revision_id TEXT NOT NULL,
+    snapshot JSONB NOT NULL, PRIMARY KEY (shop_id, ro_id, revision_id),
+    FOREIGN KEY (shop_id, ro_id, revision_id) REFERENCES ro_panel_estimator_revisions(shop_id, ro_id, id)
+  )`);
+  await client.query(`ALTER TABLE ro_panel_estimator_drafts ADD COLUMN IF NOT EXISTS active_revision_id TEXT`);
+  await client.query(`DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='ro_panel_estimator_drafts'::regclass
+      AND conname='panel_active_revision_owner') THEN
+      ALTER TABLE ro_panel_estimator_drafts ADD CONSTRAINT panel_active_revision_owner
+        FOREIGN KEY (shop_id, ro_id, active_revision_id) REFERENCES ro_panel_estimator_revisions(shop_id, ro_id, id);
+    END IF;
+  END $$`);
+  for (const table of ['ro_panel_estimator_revisions', 'ro_panel_estimator_revision_costs']) {
+    await client.query(`DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid='${table}'::regclass AND tgname='panel_revision_immutable') THEN
+        CREATE TRIGGER panel_revision_immutable BEFORE UPDATE OR DELETE ON ${table}
+          FOR EACH ROW EXECUTE FUNCTION panel_estimator_immutable_version();
+      END IF;
+    END $$`);
+  }
+  // The transaction-local capability is set only by the server commit service.
+  // Lock the parent before observing selection: legacy child writes racing a
+  // commit wait, then see its committed pointer under READ COMMITTED.
+  await client.query(`CREATE OR REPLACE FUNCTION panel_estimator_guard_owner(s TEXT, r TEXT) RETURNS void
+    LANGUAGE plpgsql AS $$ BEGIN
+      PERFORM id FROM repair_orders WHERE shop_id::text=s AND id::text=r FOR UPDATE;
+      IF NOT FOUND THEN
+        IF EXISTS (SELECT 1 FROM repair_orders WHERE id::text=r) THEN
+          RAISE EXCEPTION 'PANEL_REVISION_CONFLICT' USING ERRCODE='P0001';
+        END IF;
+        RETURN;
+      END IF;
+      IF EXISTS (SELECT 1 FROM ro_panel_estimator_drafts
+        WHERE shop_id::text=s AND ro_id::text=r AND active_revision_id IS NOT NULL)
+        AND current_setting('revv.panel_commit', true) IS DISTINCT FROM jsonb_build_array(s,r)::text THEN
+        RAISE EXCEPTION 'PANEL_REVISION_CONFLICT' USING ERRCODE='P0001';
+      END IF;
+    END $$`);
+  await client.query(`CREATE OR REPLACE FUNCTION panel_estimator_guard_child() RETURNS trigger
+    LANGUAGE plpgsql AS $$ BEGIN
+      IF TG_OP <> 'INSERT' THEN PERFORM panel_estimator_guard_owner(OLD.shop_id::text, OLD.ro_id::text); END IF;
+      IF TG_OP <> 'DELETE' THEN PERFORM panel_estimator_guard_owner(NEW.shop_id::text, NEW.ro_id::text); RETURN NEW; END IF;
+      RETURN OLD;
+    END $$`);
+  await client.query(`CREATE OR REPLACE FUNCTION panel_estimator_guard_ro() RETURNS trigger
+    LANGUAGE plpgsql AS $$ DECLARE k TEXT; BEGIN
+      IF TG_OP='DELETE' THEN PERFORM panel_estimator_guard_owner(OLD.shop_id::text,OLD.id::text); RETURN OLD; END IF;
+      FOREACH k IN ARRAY ARRAY['id','shop_id','parts_cost','labor_cost','sublet_cost','tax','total','estimate_amount',
+        'true_profit','deductible','deductible_waived','referral_fee','goodwill_repair_cost','status',
+        'estimate_status','estimate_approved_at','estimate_approved_by','estimate_token','payment_type',
+        'insurance_approved_amount','total_insurer_owed','supplement_amount','supplement_status',
+        'claim_number','insurer','insurance_claim_number','insurance_company','adjuster_name',
+        'adjuster_phone','adjuster_email','policy_number','is_drp','amount_owed_cents'] LOOP
+        IF (to_jsonb(OLD)->k) IS DISTINCT FROM (to_jsonb(NEW)->k) THEN
+          PERFORM panel_estimator_guard_owner(OLD.shop_id::text,OLD.id::text);
+          PERFORM panel_estimator_guard_owner(NEW.shop_id::text,NEW.id::text);
+          EXIT;
+        END IF;
+      END LOOP;
+      RETURN NEW;
+    END $$`);
+  await client.query(`CREATE OR REPLACE FUNCTION panel_estimator_guard_selection() RETURNS trigger
+    LANGUAGE plpgsql AS $$ BEGIN
+      IF OLD.active_revision_id IS DISTINCT FROM NEW.active_revision_id AND
+        current_setting('revv.panel_commit', true) IS DISTINCT FROM jsonb_build_array(OLD.shop_id::text,OLD.ro_id::text)::text THEN
+        RAISE EXCEPTION 'PANEL_REVISION_CONFLICT' USING ERRCODE='P0001';
+      END IF;
+      RETURN NEW;
+    END $$`);
+  const guards = [
+    ['repair_orders', 'UPDATE OR DELETE', 'panel_estimator_guard_ro'],
+    ['ro_panel_estimator_drafts', 'UPDATE', 'panel_estimator_guard_selection'],
+    ['estimate_line_items', 'INSERT OR UPDATE OR DELETE', 'panel_estimator_guard_child'],
+    ['estimate_metadata', 'INSERT OR UPDATE OR DELETE', 'panel_estimator_guard_child'],
+    ['estimate_approval_links', 'INSERT OR UPDATE OR DELETE', 'panel_estimator_guard_child'],
+  ];
+  for (const [table, events, fn] of guards) {
+    const exists = (await client.query('SELECT to_regclass($1) AS relation', [table])).rows[0].relation;
+    if (!exists) continue; // Minimal standalone storage fixtures; next ensure installs it.
+    if (table === 'estimate_line_items') {
+      await client.query(`ALTER TABLE estimate_line_items ADD COLUMN IF NOT EXISTS panel_revision_id TEXT,
+        ADD COLUMN IF NOT EXISTS panel_source_key TEXT, ADD COLUMN IF NOT EXISTS panel_fingerprint TEXT`);
+    }
+    await client.query(`DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid='${table}'::regclass AND tgname='panel_estimator_guard') THEN
+        CREATE TRIGGER panel_estimator_guard BEFORE ${events} ON ${table} FOR EACH ROW EXECUTE FUNCTION ${fn}();
+      END IF;
+    END $$`);
+  }
+}

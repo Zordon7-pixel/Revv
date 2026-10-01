@@ -27,6 +27,8 @@ function isPaidStatus(status) {
 }
 
 async function getRoMoneySummary(roId, shopId) {
+  const selected = await getSelectedPanelMoney(roId, shopId);
+  if (selected) return selected;
   const summary = await dbGet(
     `SELECT
        COALESCE(SUM(total), 0) AS subtotal,
@@ -135,3 +137,22 @@ function allocateInsurance(input) {
   };
 }
 module.exports.allocateInsurance = allocateInsurance;
+
+// Lazy database access preserves pure calculator imports. Older helper-only test
+// adapters have no pool; real pools always check schema presence explicitly.
+async function getSelectedPanelMoney(roId, shopId) {
+  const pool = require('../db').pool;
+  if (!pool) return null;
+  const schema = (await pool.query(`SELECT to_regclass('ro_panel_estimator_revisions') AS revisions,
+    EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid=to_regclass('ro_panel_estimator_drafts')
+      AND attname='active_revision_id' AND NOT attisdropped) AS pointer`)).rows[0];
+  if (!schema.revisions || !schema.pointer) return null;
+  const row = (await pool.query(`SELECT d.active_revision_id, r.accounting_snapshot
+    FROM ro_panel_estimator_drafts d JOIN repair_orders ro ON ro.id=d.ro_id AND ro.shop_id=d.shop_id
+    LEFT JOIN ro_panel_estimator_revisions r ON r.shop_id=d.shop_id AND r.ro_id=d.ro_id AND r.id=d.active_revision_id
+    WHERE d.ro_id=$1 AND d.shop_id=$2`, [roId, shopId])).rows[0];
+  if (!row?.active_revision_id) return null;
+  if (!row.accounting_snapshot?.money) throw new Error('Invalid selected panel revision');
+  return { ...row.accounting_snapshot.money, revision_id: row.active_revision_id, source: 'panel_estimator_revision' };
+}
+module.exports.getSelectedPanelMoney = getSelectedPanelMoney;

@@ -3,6 +3,7 @@ const express = require('express');
 const n = require('../services/panelEstimatorStore');
 const { createPanelEstimatorDraft } = require('../services/panelEstimatorDraft');
 const { createPanelEstimatorPresets } = require('../services/panelEstimatorPresets');
+const { createPanelEstimatorRevisions } = require('../services/panelEstimatorRevisions');
 
 function createPanelEstimatorRouter({ database, authenticate } = {}) {
   database ??= require('../db');
@@ -11,6 +12,7 @@ function createPanelEstimatorRouter({ database, authenticate } = {}) {
   const router = express.Router();
   const store = n.createPanelEstimatorStore(pool);
   const drafts = createPanelEstimatorDraft(pool), presets = createPanelEstimatorPresets(pool);
+  const revisions = createPanelEstimatorRevisions(pool);
   const noStore = (req, res, next) => { res.set('Cache-Control', 'no-store'); next(); };
   const author = (req, res, next) => ['owner', 'admin', 'assistant'].includes(req.user?.role)
     ? next() : res.status(403).json({ error: 'FORBIDDEN' });
@@ -19,11 +21,15 @@ function createPanelEstimatorRouter({ database, authenticate } = {}) {
   const scope = req => ({ shopId: req.user.shop_id, roId: req.params.roId });
   const actor = req => ({ shopId: req.user.shop_id, actorId: req.user.id, role: req.user.role });
   const safeCodes = new Set(['INVALID_INPUT', 'INVALID_REFERENCE', 'PRESET_INCOMPATIBLE', 'INVALID_PACKAGE',
-    'NOT_FOUND', 'FORBIDDEN', 'VERSION_CONFLICT', 'PRESET_ARCHIVED']);
+    'NOT_FOUND', 'FORBIDDEN', 'VERSION_CONFLICT', 'PRESET_ARCHIVED', 'IDEMPOTENCY_CONFLICT',
+    'PREVIEW_CONFLICT', 'REVIEW_REQUIRED', 'SCOPE_RECONCILIATION_REQUIRED', 'LINE_RECONCILIATION_REQUIRED']);
   // Neither database errors nor request payloads are logged or returned.
   const endpoint = fn => async (req, res) => {
     try { await fn(req, res); }
     catch (err) {
+      if (['40P01', '40001'].includes(err.code) || (err.code === 'P0001' && err.message === 'PANEL_REVISION_CONFLICT')) {
+        return res.status(409).json({ error: 'VERSION_CONFLICT' });
+      }
       if (safeCodes.has(err.code)) return res.status(err.status ?? 400).json({ error: err.code });
       if (err instanceof TypeError || err instanceof RangeError || ['22P02', '22003'].includes(err.code)) {
         return res.status(400).json({ error: 'INVALID_INPUT' });
@@ -67,12 +73,12 @@ function createPanelEstimatorRouter({ database, authenticate } = {}) {
   router.get(base, ...authorRoute, endpoint(async (req, res) => {
     const draft = await store.getDraft(scope(req));
     const catalog = await presets.list(actor(req));
-    res.json({ ...draft, scenarios: [draft.scenario], presets: catalog, active_revision_id: null });
+    res.json({ ...draft, scenarios: [draft.scenario], presets: catalog, active_revision_id: await revisions.selected(scope(req)) });
   }));
   router.put(`${base}/draft`, ...authorRoute, endpoint(async (req, res) => {
     const expectedVersion = expected(req.body), body = draftBody(req.body);
     const draft = await store.saveDraft({ ...body, ...scope(req), expectedVersion });
-    res.json({ ...draft, scenarios: [draft.scenario], active_revision_id: null });
+    res.json({ ...draft, scenarios: [draft.scenario], active_revision_id: await revisions.selected(scope(req)) });
   }));
   router.post(`${base}/preview`, ...authorRoute, endpoint(async (req, res) => {
     const expectedVersion = expected(req.body), body = draftBody(req.body);
@@ -80,9 +86,17 @@ function createPanelEstimatorRouter({ database, authenticate } = {}) {
     res.json({ version: result.version, input_hash: result.input_hash, quote: result.sell, review_flags: result.sell.review_flags });
   }));
   router.get(`${base}/cost-summary`, ...privateRoute, endpoint(async (req, res) => {
-    if (req.query.revision_id !== undefined) throw n.error('NOT_FOUND', 404);
+    if (req.query.revision_id !== undefined) {
+      return res.json(await revisions.getCosts({ ...scope(req), ...actor(req), revisionId: req.query.revision_id }));
+    }
     const result = await drafts.read(scope(req));
     res.json({ version: result.version, input_hash: result.input_hash, costs: result.costs });
+  }));
+  router.post(`${base}/commit`, ...authorRoute, endpoint(async (req, res) => {
+    res.json(await revisions.commit({ ...scope(req), ...actor(req), body: req.body }));
+  }));
+  router.get(`${base}/quote`, ...authorRoute, endpoint(async (req, res) => {
+    res.json(await revisions.getQuote({ ...scope(req), ...actor(req), revisionId: req.query.revision_id }));
   }));
   router.put(`${base}/cost-settings`, ...privateRoute, endpoint(async (req, res) => {
     const expectedVersion = expected(req.body);

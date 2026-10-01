@@ -147,7 +147,14 @@ function assembleDraft({ draft, costs, taxRateBps, paidCents }) {
   } else {
     result.sell.allocation = allocateInsurance({ ...(draft.scenario.allocation ?? {}), total_cents: total, paid_cents: paidCents });
   }
-  return { sell: quoteDTO(result.sell), costs: result.costs };
+  const sell = quoteDTO(result.sell);
+  sell.scenario = { ...draft.scenario };
+  sell.adjustments = { ...draft.adjustments };
+  sell.discount_lines = sell.totals.discount_cents > 0
+    ? [{ description: 'Quote discount (already allocated to billing amounts)', amount_cents: sell.totals.discount_cents }]
+    : [];
+  sell.scope.assessments = n.publicSnapshot(draft).assessments;
+  return { sell, costs: result.costs };
 }
 
 function createPanelEstimatorDraft(database) {

@@ -219,7 +219,8 @@ for (const type of ['TEXT', 'UUID']) {
       });
       async function state() {
         const result = {};
-        for (const table of ['repair_orders', 'ro_panel_estimator_drafts', 'ro_panel_estimator_costs', 'ro_payments', 'panel_estimator_preset_versions']) {
+        for (const table of ['repair_orders', 'ro_panel_estimator_drafts', 'ro_panel_estimator_costs', 'ro_payments',
+          'ro_panel_estimator_revisions', 'ro_panel_estimator_revision_costs', 'panel_estimator_preset_versions']) {
           result[table] = (await pool.query(`SELECT * FROM ${table} ORDER BY 1,2`)).rows;
         }
         return result;
@@ -283,7 +284,7 @@ for (const type of ['TEXT', 'UUID']) {
         const service = createPanelEstimatorPresets(pool);
         await assert.rejects(service.create({ shopId: shop, actorId: user, role: 'assistant', body: preset() }), e => e.status === 403);
       });
-      await t.test('wrong/fake/incompatible preset and photo refs cannot save or preview; unsupported revisions', async () => {
+      await t.test('invalid preset and photo refs rejected; malformed commit cannot mutate state; missing quotes/private revisions return 404', async () => {
         const foreign = await request('/panel-presets', { tenant: foreignShop, method: 'POST', body: preset() });
         const photo = id(), siblingPhoto = id(), foreignPhoto = id();
         await pool.query('INSERT INTO ro_photos VALUES ($1,$2),($3,$4),($5,$6)', [photo, ro, siblingPhoto, siblingRO, foreignPhoto, foreignRO]);
@@ -298,7 +299,11 @@ for (const type of ['TEXT', 'UUID']) {
         }
         const valid = await request(`${base}/draft`, { method: 'PUT', body: { expected_version: version, ...draft({ assessments: [panel({ photo_ids: [photo] })] }) } });
         assert.equal(valid.status, 200); version = valid.body.version;
-        assert.equal((await request(`${base}/commit`, { method: 'POST', body: {} })).status, 404);
+        const beforeCommit = await state();
+        const malformedCommit = await request(`${base}/commit`, { method: 'POST', body: {} });
+        assert.equal(malformedCommit.status, 400);
+        assert.deepEqual(malformedCommit.body, { error: 'INVALID_INPUT' });
+        assert.deepEqual(await state(), beforeCommit);
         assert.equal((await request(`${base}/quote`)).status, 404);
         assert.equal((await request(`${base}/cost-summary?revision_id=pretend`)).status, 404);
       });
