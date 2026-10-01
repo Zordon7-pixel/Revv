@@ -23,11 +23,16 @@ const costs = () => ({ lines: [{ panel_id: 'hood', body_cost_rate_cents: 4000, r
   parts_cost_cents: 7000, materials_cost_cents: 3000, sublet_cost_cents: 0, private_notes: 'PRIVATE LINE' }],
   target_margin_bps: 4000, overhead_cents: 0, reason: 'PRIVATE REASON', private_notes: 'PRIVATE NOTE' });
 const errorCode = code => err => err.code === code;
-function noPrivate(value) {
+function noPrivate(value, path = '') {
   assert.doesNotMatch(JSON.stringify(value), /PRIVATE/);
   if (value && typeof value === 'object') for (const [key, child] of Object.entries(value)) {
-    assert.doesNotMatch(key, /cost|private|margin|target|reason|reviewed_by/);
-    noPrivate(child);
+    // Comparison arrays carry the exact same assessment DTO at before/after.
+    const assessmentComparison = /^(?:quote\.)?comparisons\.\d+\.differences\.\d+$/.test(path) &&
+      value.path === 'scope.assessments' && ['before', 'after'].includes(key);
+    const childPath = assessmentComparison ? 'scope.assessments' : path ? `${path}.${key}` : key;
+    if (!/^(?:quote\.)?(?:scope\.)?assessments\.\d+\.(?:preset_override|deferral)\.reason$/.test(childPath))
+      assert.doesNotMatch(key, /cost|private|margin|target|reason|reviewed_by/);
+    noPrivate(child, childPath);
   }
 }
 function localDatabase(value) {
@@ -342,6 +347,137 @@ for (const type of ['TEXT', 'UUID']) test(`real PostgreSQL revisions ${type}: se
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
       return { status: response.status, body: await response.json(), cache: response.headers.get('cache-control') };
     };
+    await t.test('B2 JWT area/minimum/override policy, accounting, history and assistant replay', async () => {
+      const scope = await newScope(), base = `${scope.roId}/panel-estimator`, source = panel();
+      const catalogBody = { contract_version: 1, name: 'Area-specific hood',
+        match: { panel_id: 'hood', body_style: 'sedan', severity: 'light', operation: 'repair', area: 'center' },
+        sell_settings: { ...Object.fromEntries(['body_hours','refinish_hours','refinish','body_rate_cents','refinish_rate_cents',
+          'parts_sell_cents','materials_sell_cents','sublet_sell_cents','taxable'].map(k => [k,source[k]])), minimum_cents: 50000 },
+        private_cost_config: { target_margin_bps: 4000, overhead_cents: 123, body_cost_rate_cents: 1234,
+          private_notes: 'PRIVATE PRESET' }, reason: 'PRIVATE CATALOG REASON' };
+      const created = await request('panel-presets', 'POST', catalogBody); assert.equal(created.status, 201);
+      const preset = created.body;
+      let input = draft({ assessments: [panel({ preset_version_id: preset.id })] });
+      const preview = await request(`${base}/preview`, 'POST', { ...input, expected_version: 0 }, 'assistant');
+      assert.equal(preview.status, 200); assert.equal(preview.body.quote.totals.net_cents, 50000);
+      assert.equal(preview.body.quote.totals.tax_cents, 5000);
+      assert.equal(preview.body.quote.totals.minimum_adjustment_cents, 10000);
+      for (const area of [null, 'edge']) {
+        const bad = await request(`${base}/preview`, 'POST', { ...input, expected_version: 0,
+          assessments: [{ ...input.assessments[0], area }] });
+        assert.equal(bad.body.error, 'PRESET_INCOMPATIBLE');
+      }
+      for (const [suffix, method] of [['preview', 'POST'], ['draft', 'PUT']]) {
+        const changed = { ...input, expected_version: 0, assessments: [{ ...input.assessments[0], body_rate_cents: 9000 }] };
+        assert.equal((await request(`${base}/${suffix}`, method, changed)).body.error, 'PRESET_OVERRIDE_REQUIRED');
+        changed.assessments[0].preset_override = { reason: 'Reviewed customer rate' };
+        changed.assessments[0].application_snapshot = { ...preset,
+          sell_settings: { ...preset.sell_settings, body_rate_cents: 9000, minimum_cents: 0 } };
+        changed.role = 'owner'; changed.actorId = actorId;
+        assert.equal((await request(`${base}/${suffix}`, method, changed, 'assistant')).status, 403);
+      }
+      input.assessments[0].body_rate_cents = 9000;
+      input.assessments[0].preset_override = { reason: 'Reviewed customer rate' };
+      input.assessments[0].minimum_cents = 0; // No assessment-level minimum override exists.
+      input.assessments[0].application_snapshot = { ...preset,
+        sell_settings: { ...preset.sell_settings, body_rate_cents: 9000, minimum_cents: 0, override_policy: 'owner_admin' } };
+      await assert.rejects(drafts.preview({ shopId, roId: scope.roId, body: input }), errorCode('FORBIDDEN'));
+      await assert.rejects(store.saveDraft({ shopId, roId: scope.roId, ...input, expectedVersion: 0 }), errorCode('FORBIDDEN'));
+      const save = await request(`${base}/draft`, 'PUT', { ...input, expected_version: 0 }); assert.equal(save.status, 200);
+      const reload = await request(base, 'GET', undefined, 'assistant'); assert.equal(reload.status, 200); noPrivate(reload.body);
+      assert.deepEqual(reload.body.assessments[0].preset_override, input.assessments[0].preset_override);
+      assert.equal(reload.body.assessments[0].application_snapshot.sell_settings.body_rate_cents, 10000);
+      await assert.rejects(drafts.preview({ shopId, roId: scope.roId }), errorCode('FORBIDDEN'));
+      assert.equal((await drafts.read({ shopId, roId: scope.roId })).sell.totals.total_cents, 55000);
+      const ready = await prepare(scope, input);
+      assert.equal((await request(`${base}/commit`, 'POST', ready, 'assistant')).status, 403);
+      const committed = await request(`${base}/commit`, 'POST', ready); assert.equal(committed.status, 200); noPrivate(committed.body);
+      assert.equal((await request(`${base}/commit`, 'POST', ready, 'assistant')).status, 403);
+      assert.deepEqual((await request(`${base}/commit`, 'POST', ready)).body, committed.body);
+      const state = await snapshot(scope), minimum = state.estimate_line_items.find(l => l.panel_source_key.startsWith('panel_minimum:'));
+      assert.equal(Number(minimum.total), 120); assert.equal(minimum.taxable, true);
+      assert.equal(state.estimate_line_items.reduce((sum, l) => sum + Math.round(Number(l.total) * 100), 0), 50000);
+      assert.equal(state.ro_panel_estimator_revisions[0].accounting_snapshot.money.totalCents, 55000);
+      assert.equal(Number(state.ro[0].total), 550);
+      const changedCatalog = { ...catalogBody, sell_settings: { ...catalogBody.sell_settings, minimum_cents: 60000, override_policy: 'locked' } };
+      const locked = await request(`panel-presets/${preset.family_id}/versions`, 'POST', changedCatalog); assert.equal(locked.status, 201);
+      const lockedInput = { ...input, assessments: [{ ...input.assessments[0], preset_version_id: locked.body.id }], expected_version: 2 };
+      for (const role of ['owner', 'admin', 'assistant']) {
+        for (const [suffix, method] of [['preview', 'POST'], ['draft', 'PUT'], ['commit', 'POST']]) {
+          assert.equal((await request(`${base}/${suffix}`, method, { ...lockedInput,
+            input_hash: '0'.repeat(64), reviewed: true, idempotency_key: randomUUID() }, role)).body.error, 'PRESET_LOCKED');
+        }
+      }
+      assert.deepEqual((await request(`${base}/quote?revision_id=${committed.body.revision_id}`, 'GET', undefined, 'assistant')).body, committed.body);
+      assert.equal((await prepare(scope, input)).input_hash, (await prepare(scope, input)).input_hash);
+      const foreign = await request('panel-presets', 'POST', catalogBody, 'owner', foreignShop);
+      assert.equal(foreign.status, 201);
+      assert.equal((await request(`${base}/preview`, 'POST', { ...lockedInput,
+        assessments: [{ ...source, preset_version_id: foreign.body.id }] })).body.error, 'INVALID_REFERENCE');
+      const privatePreset = await request(`panel-presets/${preset.id}/cost-config`);
+      assert.equal(privatePreset.body.private_cost_config.target_margin_bps, 4000);
+      assert.equal(privatePreset.body.private_cost_config.overhead_cents, 123);
+      assert.equal((await request(`panel-presets/${preset.id}/cost-config`, 'GET', undefined, 'assistant')).status, 403);
+    });
+    await t.test('B2 JWT retained cosmetic deferral, acknowledgements, reactivation and immutable history', async () => {
+      const scope = await newScope(), base = `${scope.roId}/panel-estimator`;
+      const cosmetic = panel({ operation: 'paint-only', body_hours: 0, parts_sell_cents: 0, optional_cosmetic: true });
+      const input = draft({ assessments: [cosmetic], adjustments: {} });
+      const ack = { reason: 'Cosmetic paint postponed', estimator_acknowledged: true, customer_acknowledged: true,
+        customer_acknowledgement_reference: 'Customer discussion recorded on work order' };
+      const deferred = { ...input, assessments: [{ ...cosmetic, deferral: ack }] };
+      for (const [suffix, method] of [['draft', 'PUT'], ['preview', 'POST']]) {
+        assert.equal((await request(`${base}/${suffix}`, method, { ...input, expected_version: 0 }, 'assistant')).status, 403);
+        assert.equal((await request(`${base}/${suffix}`, method, { ...deferred, expected_version: 0 })).body.error, 'SCOPE_RECONCILIATION_REQUIRED');
+      }
+      await store.saveCosts({ ...scope, ...costs(), expectedVersion: 0 });
+      const first = await commit(scope, input), before = await snapshot(scope);
+      for (const patch of [{ customer_acknowledged: false }, { estimator_acknowledged: false },
+        { customer_acknowledgement_reference: '' }, { reason: ' ' }]) {
+        assert.equal((await request(`${base}/preview`, 'POST', { ...deferred, expected_version: 2,
+          assessments: [{ ...cosmetic, deferral: { ...ack, ...patch } }] })).status, 400);
+      }
+      for (const patch of [{ operation: 'repair' }, { operation: 'inspection-required' }, { parts_sell_cents: 1 },
+        { extras: [{ key: 'calibration', scope: 'job', category: 'sublet', quantity: 1, unit_price_cents: 0, taxable: true }] }]) {
+        assert.equal((await request(`${base}/preview`, 'POST', { ...deferred, expected_version: 2,
+          assessments: [{ ...cosmetic, ...patch, deferral: ack }] })).status, 400);
+      }
+      const repackaged = { ...deferred, assessments: [{ ...cosmetic, deferral: ack,
+        package: { name: 'New package', price_cents: 10000, taxable: true, included_operations: ['refinish'] } }] };
+      assert.equal((await request(`${base}/preview`, 'POST', { ...repackaged, expected_version: 2 })).body.error, 'SCOPE_RECONCILIATION_REQUIRED');
+      await assert.rejects(commit(scope, { ...input, assessments: [] }), errorCode('SCOPE_RECONCILIATION_REQUIRED'));
+      assert.deepEqual(await snapshot(scope), before);
+      deferred.scenario = { payer: 'insurance', provenance: 'shop_prepared' };
+      const saved = await request(`${base}/draft`, 'PUT', { ...deferred, expected_version: 2 }); assert.equal(saved.status, 200);
+      assert.deepEqual(saved.body.assessments[0].deferral, ack);
+      const loaded = await request(base, 'GET', undefined, 'assistant'); assert.equal(loaded.status, 200); noPrivate(loaded.body);
+      assert.deepEqual(loaded.body.assessments[0].deferral, ack);
+      const ready = await prepare(scope, deferred);
+      assert.notEqual(ready.input_hash, (await prepare(scope, input)).input_hash);
+      for (const [suffix, method] of [['preview', 'POST'], ['draft', 'PUT']]) {
+        assert.equal((await request(`${base}/${suffix}`, method, { ...deferred, expected_version: 3,
+          role: 'owner', actorId }, 'assistant')).status, 403);
+      }
+      assert.equal((await request(`${base}/commit`, 'POST', ready, 'assistant')).status, 403);
+      const result = await request(`${base}/commit`, 'POST', ready); assert.equal(result.status, 200); noPrivate(result.body);
+      assert.equal(result.body.quote.totals.total_cents, 0); assert.equal(result.body.quote.scope.assessments.length, 1);
+      assert.deepEqual(result.body.quote.scope.panel_ids, ['hood']); assert.deepEqual(result.body.quote.lines, []);
+      const state = await snapshot(scope); assert.equal(state.estimate_line_items.length, 0); assert.equal(Number(state.ro[0].total), 0);
+      const privateResult = await revisions.getCosts({ ...scope, revisionId: result.body.revision_id });
+      assert.equal(privateResult.costs.direct_cost_cents, 0); assert.deepEqual(privateResult.costs.lines, []);
+      assert.equal((await request(`${base}/commit`, 'POST', ready, 'assistant')).status, 403);
+      assert.deepEqual(await revisions.getQuote({ ...scope, revisionId: first.revision_id }), first);
+      const again = await commit(scope, deferred); assert.equal(again.quote.totals.total_cents, 0);
+      const reactivated = await commit(scope, input); assert.equal(reactivated.quote.totals.total_cents, 16500);
+      assert.deepEqual(await revisions.getQuote({ ...scope, revisionId: first.revision_id }), first);
+      const required = await newScope(); await commit(required, draft());
+      await assert.rejects(commit(required, deferred), errorCode('SCOPE_RECONCILIATION_REQUIRED'));
+      // Classification saved but not committed cannot authorize a deferral.
+      const unclassified = await newScope();
+      await commit(unclassified, { ...input, assessments: [{ ...cosmetic, optional_cosmetic: false }] });
+      await store.saveDraft({ ...unclassified, ...input, expectedVersion: 1 });
+      await assert.rejects(commit(unclassified, deferred), errorCode('SCOPE_RECONCILIATION_REQUIRED'));
+    });
     await t.test('B1 mixed package JWT commit materializes exact tax splits and immutable private sources', async () => {
       const scope = await newScope(), base = `${scope.roId}/panel-estimator`;
       const privateCost = costs();
@@ -450,4 +586,19 @@ for (const type of ['TEXT', 'UUID']) test(`real PostgreSQL revisions ${type}: se
     if (owned) await admin.query(`DROP SCHEMA "${schema}" CASCADE`);
     await admin.end();
   }
+});
+
+test('B2 scope reconciliation compares decimal quantities numerically, including retained deferred work', () => {
+  const { requirePreservedScope } = require('../src/services/panelEstimatorRevisions');
+  const assessment = panel({ body_hours: 10 });
+  const previous = { lines: [{ id: 'hood:body', panel_id: 'hood', operation_id: 'repair', quantity: '10.00' }],
+    scope: { assessments: [{ ...assessment, extras: [] }] } };
+  const next = { lines: [{ ...previous.lines[0], quantity: '2.00' }], scope: previous.scope };
+  assert.throws(() => requirePreservedScope(previous, next), errorCode('SCOPE_RECONCILIATION_REQUIRED'));
+  next.lines[0].quantity = '11.00'; requirePreservedScope(previous, next);
+  const two = { ...previous, lines: [{ ...previous.lines[0], quantity: '2.00' }] };
+  next.lines[0].quantity = '10.00'; requirePreservedScope(two, next);
+  const deferred = { lines: [], scope: { assessments: [{ ...assessment, deferral: {}, extras: [] }] } };
+  assert.throws(() => requirePreservedScope(deferred, { lines: [],
+    scope: { assessments: [{ ...assessment, body_hours: 2, extras: [] }] } }), errorCode('SCOPE_RECONCILIATION_REQUIRED'));
 });

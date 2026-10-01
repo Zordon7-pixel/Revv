@@ -34,7 +34,7 @@ function billingRows(quote, revisionId) {
       ['parts', 'sublet'].includes(category) ? category : 'other';
     const value = { id: randomUUID(), type,
       description: bucket.kind === 'package_allocation' ? `${pkg.name} — ${bucket.category}` :
-        bucket.kind === 'package' ? pkg.name : bucket.kind === 'minimum' ? 'Minimum charge adjustment' : `${line.description} — ${line.operation_id}`,
+        bucket.kind === 'package' ? pkg.name : bucket.kind === 'panel_minimum' ? `${bucket.panel_id} — Minimum charge adjustment` : bucket.kind === 'minimum' ? 'Minimum charge adjustment' : `${line.description} — ${line.operation_id}`,
       quantity: '1.00', unit_price: dollars(bucket.net_cents), total: dollars(bucket.net_cents),
       taxable: bucket.taxable, sort_order: index, panel_revision_id: revisionId,
       panel_source_key: `${bucket.kind}:${bucket.id}` };
@@ -51,16 +51,29 @@ function moneySnapshot(quote, lines) {
     taxCents: quote.totals.tax_cents, totalCents: quote.totals.total_cents };
 }
 
+function requirePreservedAssessments(previous, panels) {
+  for (const old of previous) {
+    const next = panels.find(p => p.panel_id === old.panel_id);
+    if (!next || next.operation !== old.operation || (old.refinish && !next.refinish)) conflict('SCOPE_RECONCILIATION_REQUIRED');
+    // Retained deferred work is checked against its immutable committed scope by
+    // validateScopePolicy. Reactivation cannot shrink the retained work either.
+    for (const key of ['body_hours', 'refinish_hours']) {
+      if (Number(next[key] ?? 0) < Number(old[key] ?? 0)) conflict('SCOPE_RECONCILIATION_REQUIRED');
+    }
+    for (const extra of old.extras ?? []) {
+      const found = next.extras.find(e => e.key === extra.key && e.scope === extra.scope && e.category === extra.category);
+      if (!found || Number(found.quantity ?? 0) < Number(extra.quantity ?? 0)) conflict('SCOPE_RECONCILIATION_REQUIRED');
+    }
+  }
+}
 function requirePreservedScope(previous, quote) {
   for (const old of previous.lines) {
-    if (old.quantity <= 0) continue;
+    if (Number(old.quantity) <= 0) continue;
+    if (quote.scope.assessments.some(p => p.panel_id === old.panel_id && p.deferral)) continue;
     const next = quote.lines.find(l => l.id === old.id && l.operation_id === old.operation_id);
-    if (!next || next.quantity < old.quantity) conflict('SCOPE_RECONCILIATION_REQUIRED');
+    if (!next || Number(next.quantity) < Number(old.quantity)) conflict('SCOPE_RECONCILIATION_REQUIRED');
   }
-  for (const old of previous.scope.assessments) {
-    const next = quote.scope.assessments.find(p => p.panel_id === old.panel_id);
-    if (!next || next.operation !== old.operation || (old.refinish && !next.refinish)) conflict('SCOPE_RECONCILIATION_REQUIRED');
-  }
+  requirePreservedAssessments(previous.scope.assessments, quote.scope.assessments);
 }
 
 function createPanelEstimatorRevisions(database) {
@@ -95,7 +108,7 @@ function createPanelEstimatorRevisions(database) {
     const key = n.requiredText(raw.idempotency_key, 200);
     const requestHash = hashInputs({ body, expected_version: raw.expected_version, input_hash: raw.input_hash, reviewed: true });
     const client = await pool.connect();
-    const scope = { shopId: input.shopId, roId: input.roId, client };
+    const scope = { shopId: input.shopId, roId: input.roId, role: input.role, actorId: input.actorId, client };
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
       const owner = await client.query('SELECT id FROM repair_orders WHERE shop_id=$1 AND id=$2 FOR UPDATE', [input.shopId, input.roId]);
@@ -105,6 +118,10 @@ function createPanelEstimatorRevisions(database) {
       [input.shopId, input.roId, key])).rows[0];
       if (retry) {
         if (retry.request_hash !== requestHash) conflict('IDEMPOTENCY_CONFLICT');
+        // Retry is still an authorization boundary; assistants cannot replay an
+        // owner's overridden price or deferred work using a known idempotency key.
+        await n.validateReferences(client, input.shopId, input.roId, body.assessments, { role: input.role });
+        if (body.assessments.some(p => p.deferral) && !['owner', 'admin'].includes(input.role)) throw n.error('FORBIDDEN', 403);
         await client.query('COMMIT');
         return resultDTO(retry);
       }
@@ -168,4 +185,4 @@ function createPanelEstimatorRevisions(database) {
   return { commit, selected, getQuote: input => get(input), getCosts: input => get(input, true) };
 }
 
-module.exports = { createPanelEstimatorRevisions, differences };
+module.exports = { createPanelEstimatorRevisions, differences, requirePreservedAssessments, requirePreservedScope };

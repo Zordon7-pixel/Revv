@@ -27,6 +27,7 @@ function quoteDTO(sell) {
         n.CATEGORIES.filter(k => Object.hasOwn(pkg.sell_allocation_cents, k))) } : {}),
       included_operations: pkg.included_operations.map(op => ({ panel_id: op.panel_id, operation_id: op.operation_id })) })),
     buckets: sell.buckets.map(b => ({ ...Object.fromEntries(['id', 'kind', 'taxable', 'gross_cents', 'discount_cents', 'net_cents', 'tax_cents', 'total_cents'].map(k => [k, b[k]])),
+      ...(b.kind === 'panel_minimum' ? { panel_id: b.panel_id } : {}),
       ...(b.kind === 'package_allocation' ? { package_id: b.package_id, category: b.category } : {}) })),
     inspection_required: sell.inspection_required, complete: sell.complete,
     flags: sell.flags.map(f => ({ panel_id: f.panel_id, code: f.code })),
@@ -61,6 +62,7 @@ function assembleDraft({ draft, costs, taxRateBps, paidCents }) {
   if (!draft.scenario.payer) flag(null, 'missing_payer', true);
   if (!draft.assessments.length) flag(null, 'missing_assessments', true);
   for (const panel of draft.assessments) {
+    if (panel.deferral) continue;
     const privateLine = costs.lines.find(line => line.panel_id === panel.panel_id) ?? {};
     if (!panel.body_style) flag(panel.panel_id, 'invalid_body_style', true);
     if (!panel.severity) flag(panel.panel_id, 'invalid_severity', true);
@@ -131,6 +133,8 @@ function assembleDraft({ draft, costs, taxRateBps, paidCents }) {
   const result = calculateEstimate({ lines: calculable, packages: packages.filter(p => !pendingPackages.has(p.id)),
     discount_cents: incomplete ? 0 : draft.adjustments.discount_cents ?? 0,
     discounts: incomplete ? [] : discounts,
+    panel_minima: incomplete ? [] : draft.assessments.filter(p => !p.deferral && p.application_snapshot?.sell_settings.minimum_cents != null)
+      .map(p => ({ panel_id: p.panel_id, minimum_cents: p.application_snapshot.sell_settings.minimum_cents })),
     minimum_cents: incomplete ? 0 : draft.adjustments.minimum_cents ?? 0,
     tax_rate_bps: taxRateBps ?? 0, target_margin_bps: costs.target_margin_bps,
     overhead_cents: costs.overhead_cents, include_overhead_in_target: costs.include_overhead_in_target });
@@ -169,14 +173,18 @@ function assembleDraft({ draft, costs, taxRateBps, paidCents }) {
   sell.discount_lines = discounts.map(d => ({ ...d, description: 'Scoped discount (already allocated to billing amounts)' }));
   if (draft.adjustments.discount_cents > 0) sell.discount_lines.push({
     description: 'Quote discount (already allocated to billing amounts)', amount_cents: draft.adjustments.discount_cents });
+  sell.scope.panel_ids = draft.assessments.map(p => p.panel_id).sort();
   sell.scope.assessments = n.publicSnapshot(draft).assessments;
   return { sell, costs: result.costs };
 }
 
+// read() without a body is a safe stored read. preview() always rechecks policy,
+// including when called directly with no body. role/actorId belong to server
+// context, not the normalized/hashable customer draft.
 function createPanelEstimatorDraft(database) {
   const pool = database.pool ?? database;
   const store = n.createPanelEstimatorStore(pool);
-  async function read(input) {
+  async function read(input, reviewing = false) {
     const client = input.client ?? await pool.connect(), own = !input.client;
     try {
       if (own) await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
@@ -184,7 +192,8 @@ function createPanelEstimatorDraft(database) {
       const saved = await store.getDraft(scope);
       if (input.expectedVersion !== undefined && input.expectedVersion !== saved.version) throw n.error('VERSION_CONFLICT', 409);
       const draft = input.body === undefined ? saved : { version: saved.version, ...n.publicSnapshot(n.object(input.body)) };
-      await n.validateReferences(client, input.shopId, input.roId, draft.assessments);
+      await n.validateReferences(client, input.shopId, input.roId, draft.assessments, { role: input.role, enforce: reviewing || input.body !== undefined });
+      if (reviewing || input.body !== undefined) await n.validateScopePolicy(client, input, draft.assessments, saved.assessments);
       const costs = await store.getCosts(scope);
       const shop = await client.query('SELECT tax_rate FROM shops WHERE id=$1', [input.shopId]);
       let taxRateBps = null;
@@ -211,6 +220,6 @@ function createPanelEstimatorDraft(database) {
       throw err;
     } finally { if (own) client.release(); }
   }
-  return { read, preview: read };
+  return { read, preview: input => read(input, true) };
 }
 module.exports = { assembleDraft, createPanelEstimatorDraft, quoteDTO, canonical, hashInputs };

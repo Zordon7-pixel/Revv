@@ -161,6 +161,7 @@ function normalizeDiscounts(value, lines, packages) {
 function publicBucket(bucket) {
   return {
     id: bucket.id, kind: bucket.kind, taxable: bucket.taxable,
+    ...(bucket.kind === 'panel_minimum' ? { panel_id: bucket.panel_id } : {}),
     ...(bucket.package_id ? { package_id: bucket.package_id, category: bucket.category } : {}),
     gross_cents: checkedCents(bucket.gross), discount_cents: checkedCents(bucket.discount),
     net_cents: checkedCents(bucket.net), tax_cents: checkedCents(bucket.tax),
@@ -193,15 +194,15 @@ function calculateEstimate(input) {
   const overhead = input.overhead_cents === null ? null : cents(input.overhead_cents === undefined ? 0 : input.overhead_cents, 'overhead_cents');
   const includeOverhead = input.include_overhead_in_target === undefined ? false : boolean(input.include_overhead_in_target, 'include_overhead_in_target');
   const buckets = lines.filter(line => !line.included && !line.inspection_required).map(line => ({
-    key: `line:${line.id}`, id: line.id, kind: 'line', taxable: line.taxable, gross: extend(line.unit_price, line.quantity),
+    key: `line:${line.id}`, id: line.id, kind: 'line', panel_id: line.panel_id, taxable: line.taxable, gross: extend(line.unit_price, line.quantity),
   }));
   for (const pkg of packages) {
-    if (!pkg.allocation) buckets.push({ key: `package:${pkg.id}`, id: pkg.id, kind: 'package', taxable: pkg.taxable, gross: pkg.price });
+    if (!pkg.allocation) buckets.push({ key: `package:${pkg.id}`, id: pkg.id, kind: 'package', panel_id: pkg.members[0].panel_id, taxable: pkg.taxable, gross: pkg.price });
     else for (const [category, gross] of Object.entries(pkg.allocation)) {
       // Tuple encoding avoids collisions even when a package ID contains separators.
       const id = JSON.stringify([pkg.id, category]);
       buckets.push({ key: `package_allocation:${id}`, id, kind: 'package_allocation', package_id: pkg.id,
-        category, taxable: pkg.members.find(l => l.category === category).taxable, gross });
+        panel_id: pkg.members[0].panel_id, category, taxable: pkg.members.find(l => l.category === category).taxable, gross });
     }
   }
   const subtotal = buckets.reduce((sum, bucket) => sum + bucket.gross, 0n);
@@ -215,13 +216,40 @@ function calculateEstimate(input) {
   for (const d of discounts) applyDiscount(buckets.filter(b => b.kind === 'line' ? d.line_ids.includes(b.id) :
     d.package_ids.includes(b.package_id ?? b.id)), BigInt(d.amount_cents));
   applyDiscount(buckets, globalDiscount);
-  const adjustment = minimum > subtotal - discount ? minimum - (subtotal - discount) : 0n;
-  if (adjustment > 0n) {
+  // Immutable preset minima apply to their own panel after every discount. A
+  // mixed-tax panel needs a separate explicit allocation contract; reject rather
+  // than inventing tax policy. Whole-quote minimum only tops up the residual.
+  let adjustment = 0n;
+  const seenMinima = new Set();
+  const minima = list(input.panel_minima ?? [], 'panel_minima').map(raw => {
+    record(raw, 'panel minimum');
+    const panel_id = text(raw.panel_id, 'panel_id');
+    if (seenMinima.has(panel_id) || !lines.some(l => l.panel_id === panel_id)) throw new TypeError('Invalid panel minimum');
+    seenMinima.add(panel_id);
+    return { panel_id, minimum: cents(raw.minimum_cents, 'panel minimum') };
+  }).sort((a, b) => compare(a.panel_id, b.panel_id));
+  for (const entry of minima) {
+    if (packages.some(p => p.members.some(l => l.panel_id === entry.panel_id) && new Set(p.members.map(l => l.panel_id)).size !== 1)) {
+      throw new TypeError('Panel minimum requires panel-scoped packages');
+    }
+    const eligible = buckets.filter(b => b.panel_id === entry.panel_id);
+    const remaining = eligible.reduce((sum, b) => sum + b.gross - b.discount, 0n);
+    if (entry.minimum <= remaining) continue;
+    const billable = eligible.filter(b => b.kind !== 'line' || lines.find(l => l.id === b.id).quantity > 0n);
+    if (new Set(billable.map(b => b.taxable)).size !== 1) throw new TypeError('Panel minimum requires homogeneous tax settings and billable work');
+    const amount = entry.minimum - remaining;
+    buckets.push({ key: `panel_minimum:${entry.panel_id}`, id: `${entry.panel_id}:minimum_adjustment`,
+      kind: 'panel_minimum', panel_id: entry.panel_id, taxable: billable[0].taxable, gross: amount, discount: 0n });
+    adjustment += amount;
+  }
+  const wholeAdjustment = minimum > subtotal - discount + adjustment ? minimum - (subtotal - discount + adjustment) : 0n;
+  if (wholeAdjustment > 0n) {
     const billable = buckets.filter(bucket => bucket.kind !== 'line' || lines.find(line => line.id === bucket.id).quantity > 0n);
     const settings = new Set(billable.map(bucket => bucket.taxable));
     if (settings.size !== 1) throw new TypeError('Minimum adjustment requires homogeneous tax settings and billable work');
-    buckets.push({ key: 'minimum:', id: 'minimum_adjustment', kind: 'minimum', taxable: billable[0].taxable, gross: adjustment, discount: 0n });
+    buckets.push({ key: 'minimum:', id: 'minimum_adjustment', kind: 'minimum', taxable: billable[0].taxable, gross: wholeAdjustment, discount: 0n });
   }
+  adjustment += wholeAdjustment;
   // Round the shop taxable subtotal once, then allocate cents deterministically.
   let taxableNet = 0n;
   let allocatedTax = 0n;

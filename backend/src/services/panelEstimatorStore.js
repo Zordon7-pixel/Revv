@@ -136,6 +136,51 @@ function extras(value, privateOnly = false) {
       unit_price_cents: cents(raw.unit_price_cents), taxable: boolean(raw.taxable) };
   }).sort((a, b) => JSON.stringify([a.scope, a.key]).localeCompare(JSON.stringify([b.scope, b.key])));
 }
+// B2 acknowledgements are estimator-recorded disclosures, never digital approval.
+function presetOverride(value) {
+  if (value == null) return null;
+  keys(value, ['reason']);
+  return { reason: requiredText(value.reason, 4000) };
+}
+function deferral(value) {
+  if (value == null) return null;
+  keys(value, ['reason', 'estimator_acknowledged', 'customer_acknowledged', 'customer_acknowledgement_reference']);
+  if (value.estimator_acknowledged !== true || value.customer_acknowledged !== true) invalid();
+  return { reason: requiredText(value.reason, 4000), estimator_acknowledged: true, customer_acknowledged: true,
+    customer_acknowledgement_reference: requiredText(value.customer_acknowledgement_reference, 1000) };
+}
+function cosmeticEligible(panel) {
+  return ['paint-only', 'blend'].includes(panel.operation) && (panel.body_hours == null || panel.body_hours === 0) &&
+    panel.parts_sell_cents === 0 && panel.sublet_sell_cents === 0 && panel.extras.length === 0;
+}
+async function validateScopePolicy(client, input, panels, saved = []) {
+  const { canonical } = require('./panelEstimatorDraft');
+  const rows = await client.query(`SELECT r.public_snapshot FROM ro_panel_estimator_drafts d
+    JOIN ro_panel_estimator_revisions r ON r.shop_id=d.shop_id AND r.ro_id=d.ro_id AND r.id=d.active_revision_id
+    WHERE d.shop_id=$1 AND d.ro_id=$2`, [input.shopId, input.roId]);
+  const previous = rows.rows[0]?.public_snapshot;
+  const committed = assessments(previous?.scope.assessments);
+  if (committed.some(old => !panels.some(p => p.panel_id === old.panel_id))) {
+    throw error('SCOPE_RECONCILIATION_REQUIRED', 409);
+  }
+  for (const panel of panels) {
+    const old = saved.find(p => p.panel_id === panel.panel_id);
+    if ((panel.optional_cosmetic && !cosmeticEligible(panel)) || (panel.deferral && !panel.optional_cosmetic)) invalid();
+    if ((panel.optional_cosmetic !== (old?.optional_cosmetic ?? false) || panel.deferral ||
+        canonical(panel.deferral) !== canonical(old?.deferral ?? null)) && !['owner', 'admin'].includes(input.role)) {
+      throw error('FORBIDDEN', 403);
+    }
+    if (panel.deferral) {
+      const prior = committed.find(p => p.panel_id === panel.panel_id);
+      // Retain the selected assessment intact; changing work and deferring in one
+      // request must never convert required work into an optional omission.
+      const retained = p => { const { deferral, application_snapshot, ...rest } = p; return rest; };
+      if (!prior?.optional_cosmetic || !cosmeticEligible(prior) || canonical(retained(prior)) !== canonical(retained(panel))) {
+        throw error('SCOPE_RECONCILIATION_REQUIRED', 409);
+      }
+    }
+  }
+}
 function assessments(value) {
   return panelLines(value, raw => {
     const photo_ids = array(raw.photo_ids, 50).map(id => {
@@ -154,6 +199,8 @@ function assessments(value) {
       preset_version_id: text(raw.preset_version_id, 255), photo_ids: photo_ids.sort(),
       paint_system: text(raw.paint_system, 80), taxable: taxable(raw.taxable),
       package: packageSettings(raw.package), extras: extras(raw.extras),
+      preset_override: presetOverride(raw.preset_override), optional_cosmetic: boolean(raw.optional_cosmetic) ?? false,
+      deferral: deferral(raw.deferral),
       // Only a deep public projection can survive legacy reads. Saves replace this from the catalog.
       application_snapshot: raw.application_snapshot == null ? null : require('./panelEstimatorPresets').safeSnapshot(raw.application_snapshot),
     };
@@ -175,6 +222,7 @@ function publicSnapshot(raw) {
   if (snapshot.adjustments.discounts.length) {
     const lines = [], packages = [], shared = new Map();
     for (const panel of snapshot.assessments) {
+      if (panel.deferral) continue;
       const inspection_required = panel.operation === 'inspection-required';
       if (panel.package) packages.push({ id: `${panel.panel_id}:package` });
       for (const category of CATEGORIES) lines.push({ id: `${panel.panel_id}:${category}`,
@@ -195,8 +243,8 @@ function privateSnapshot(raw) {
     target_margin_bps: cents(raw.target_margin_bps, 9999), overhead_cents: cents(raw.overhead_cents), reason: text(raw.reason, 4000) };
 }
 
-async function validateReferences(client, shopId, roId, panels) {
-  await require('./panelEstimatorPresets').resolveApplications(client, shopId, panels);
+async function validateReferences(client, shopId, roId, panels, policy) {
+  await require('./panelEstimatorPresets').resolveApplications(client, shopId, panels, policy);
   const ids = [...new Set(panels.flatMap(panel => panel.photo_ids))];
   if (!ids.length) return;
   const table = await client.query("SELECT to_regclass('ro_photos') AS relation");
@@ -237,7 +285,10 @@ function createPanelEstimatorStore(pool) {
         if (expectedVersion !== version) throw error('VERSION_CONFLICT', 409);
         if (version === Number.MAX_SAFE_INTEGER) throw error('VERSION_CONFLICT', 409);
         const snapshot = kind === 'draft' ? publicSnapshot(input) : privateSnapshot(input);
-        if (kind === 'draft') await validateReferences(client, shopId, roId, snapshot.assessments);
+        if (kind === 'draft') {
+          await validateReferences(client, shopId, roId, snapshot.assessments, { role: input.role });
+          await validateScopePolicy(client, input, snapshot.assessments, publicSnapshot(draft ?? {}).assessments);
+        }
         // Inserting the draft for cost-only saves establishes the shared version.
         await client.query(`INSERT INTO ro_panel_estimator_drafts (shop_id, ro_id)
           SELECT shop_id, id FROM repair_orders WHERE shop_id = $1 AND id = $2
@@ -288,6 +339,6 @@ function createPanelEstimatorStore(pool) {
   };
 }
 
-module.exports = { createPanelEstimatorStore, publicSnapshot, privateSnapshot, validateReferences,
+module.exports = { createPanelEstimatorStore, publicSnapshot, privateSnapshot, validateReferences, validateScopePolicy, cosmeticEligible,
   PANELS, SELL, COST, CATEGORIES, assessments, taxable, packageSettings, extras, materialsPricing, costSources, discounts,
   error, invalid, object, text, requiredText, cents, hours, boolean, choice, array, amounts, keys };

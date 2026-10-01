@@ -29,10 +29,15 @@ function preset() {
     sell_settings: Object.fromEntries(['body_hours', 'refinish_hours', 'refinish', ...n.SELL, 'taxable'].map(k => [k, source[k]])),
     private_cost_config: { body_cost_rate_cents: 4000, target_margin_bps: 4000, private_notes: 'PRIVATE preset note' }, reason: 'PRIVATE preset reason' };
 }
-function noPrivate(value) {
+function noPrivate(value, path = '') {
   if (value && typeof value === 'object') for (const [key, child] of Object.entries(value)) {
-    assert.doesNotMatch(key, /cost|private|margin|target|reason|created_by/);
-    noPrivate(child);
+    // Comparison arrays carry the exact same assessment DTO at before/after.
+    const assessmentComparison = /^(?:quote\.)?comparisons\.\d+\.differences\.\d+$/.test(path) &&
+      value.path === 'scope.assessments' && ['before', 'after'].includes(key);
+    const childPath = assessmentComparison ? 'scope.assessments' : path ? `${path}.${key}` : key;
+    if (!/^(?:quote\.)?(?:scope\.)?assessments\.\d+\.(?:preset_override|deferral)\.reason$/.test(childPath))
+      assert.doesNotMatch(key, /cost|private|margin|target|reason|created_by/);
+    noPrivate(child, childPath);
   }
   assert.doesNotMatch(JSON.stringify(value), /PRIVATE/);
 }
@@ -327,7 +332,7 @@ for (const type of ['TEXT', 'UUID']) {
         assert.ok(privatePreset.body.effective_at); assert.equal(privatePreset.body.private_cost_config.body_cost_rate_cents, 4000);
         assert.equal((await request(`/panel-presets/${presetRow.id}/cost-config`, { role: 'assistant' })).status, 403);
         assert.equal((await request(`/panel-presets/${presetRow.id}/cost-config`, { tenant: foreignShop })).status, 404);
-        const selected = draft({ assessments: [panel({ preset_version_id: presetRow.id, body_rate_cents: 9000 })] });
+        const selected = draft({ assessments: [panel({ preset_version_id: presetRow.id, body_rate_cents: 9000, preset_override: { reason: 'Reviewed customer rate' } })] });
         const apply = await request(`${base}/draft`, { method: 'PUT', body: { expected_version: version, ...selected } });
         assert.equal(apply.status, 200); version = apply.body.version;
         assert.equal(apply.body.assessments[0].body_rate_cents, 9000); // Explicit manual choice retained.
@@ -440,3 +445,88 @@ for (const type of ['TEXT', 'UUID']) {
     }
   });
 }
+
+test('B2 resolver enforces immutable sell fields, wildcard/exact area and trusted role', async () => {
+  const { resolveApplications, safeSnapshot } = require('../src/services/panelEstimatorPresets');
+  const data = preset(); data.match.area = 'center'; data.sell_settings.minimum_cents = 50000;
+  const source = { ...normalizePreset(data), id: 'version', family_id: 'family', version: 1 };
+  const before = structuredClone(source);
+  const client = { query: async (sql, params) => {
+    assert.match(sql, /v.shop_id = \$1 AND v.id = \$2/);
+    return { rowCount: params[0] === 'tenant' && params[1] === 'version' ? 1 : 0, rows: [source] };
+  } };
+  const applied = patch => n.assessments([panel({ preset_version_id: 'version', area: 'center', ...patch })]);
+  const exact = applied(); await resolveApplications(client, 'tenant', exact, { role: 'assistant' });
+  assert.equal(exact[0].application_snapshot.sell_settings.minimum_cents, 50000);
+  assert.equal(safeSnapshot(source).sell_settings.override_policy, 'owner_admin');
+  const forged = applied({ minimum_cents: 0, application_snapshot: { ...safeSnapshot(source),
+    sell_settings: { ...safeSnapshot(source).sell_settings, minimum_cents: 0 } } });
+  await resolveApplications(client, 'tenant', forged, { role: 'assistant' });
+  assert.equal(forged[0].application_snapshot.sell_settings.minimum_cents, 50000);
+  assert.deepEqual(source, before);
+  await assert.rejects(resolveApplications(client, 'foreign', applied(), { role: 'owner' }), e => e.code === 'INVALID_REFERENCE');
+  await assert.rejects(resolveApplications(client, 'tenant', applied({ area: 'edge' }), { role: 'owner' }), e => e.code === 'PRESET_INCOMPATIBLE');
+  for (const patch of [{ body_hours: 3 }, { refinish_hours: 2 }, { body_rate_cents: 1 }, { refinish: false },
+    { taxable: { ...taxable(), parts: false } }, { package: { name: 'Package', price_cents: 100, taxable: true, included_operations: ['body'] } },
+    { extras: [{ key: 'scan', scope: 'job', category: 'sublet', quantity: 1, unit_price_cents: 100, taxable: true }] },
+    { materials_sell_cents: null, materials_pricing: { method: 'quantity_rate', quantity: 1, unit_rate_cents: 5000 } }]) {
+    await assert.rejects(resolveApplications(client, 'tenant', applied(patch), { role: 'owner' }), e => e.code === 'PRESET_OVERRIDE_REQUIRED');
+    for (const role of ['assistant', undefined]) {
+      await assert.rejects(resolveApplications(client, 'tenant', applied({ ...patch,
+        role: 'owner', preset_override: { reason: 'Reviewed scope and price' },
+        application_snapshot: { ...safeSnapshot(source), sell_settings: { ...source.sell_settings, ...patch, minimum_cents: 0 } } }), { role }), e => e.code === 'FORBIDDEN');
+    }
+    const changed = applied({ ...patch, preset_override: { reason: 'Reviewed scope and price' } });
+    await resolveApplications(client, 'tenant', changed, { role: 'admin' });
+    assert.deepEqual(changed[0].application_snapshot, safeSnapshot(before));
+    noPrivate({ assessments: changed });
+  }
+  source.sell_settings.override_policy = 'locked';
+  await assert.rejects(resolveApplications(client, 'tenant', applied({ body_hours: 3,
+    preset_override: { reason: 'Owner reviewed' } }), { role: 'owner' }), e => e.code === 'PRESET_LOCKED');
+  const legacy = applied({ body_hours: 3 });
+  await resolveApplications(client, 'tenant', legacy, { enforce: false }); // Safe stored read only.
+  source.match.area = null;
+  await resolveApplications(client, 'tenant', applied({ area: 'edge' }), { role: 'assistant' });
+});
+
+test('B2 scope acknowledgements, eligibility and disclosure privacy are conservative', async () => {
+  const cosmetic = panel({ operation: 'paint-only', body_hours: 0, parts_sell_cents: 0, sublet_sell_cents: 0, optional_cosmetic: true });
+  const acknowledgement = { reason: 'Cosmetic paint postponed', estimator_acknowledged: true, customer_acknowledged: true,
+    customer_acknowledgement_reference: 'Customer discussion recorded on work order' };
+  const saved = n.assessments([cosmetic]);
+  const client = { query: async () => ({ rows: [{ public_snapshot: { scope: { assessments: saved } } }] }) };
+  const deferred = n.assessments([{ ...cosmetic, deferral: acknowledgement }]);
+  await assert.rejects(n.validateScopePolicy(client, { role: 'owner' }, [], saved), e => e.code === 'SCOPE_RECONCILIATION_REQUIRED');
+  for (const role of ['assistant', undefined]) {
+    await assert.rejects(n.validateScopePolicy(client, { role }, saved, []), e => e.code === 'FORBIDDEN');
+    await assert.rejects(n.validateScopePolicy(client, { role }, n.assessments([{ ...cosmetic, optional_cosmetic: false }]), saved), e => e.code === 'FORBIDDEN');
+  }
+  await n.validateScopePolicy(client, { shopId: 'shop', roId: 'ro', role: 'owner' }, deferred, saved);
+  const input = n.publicSnapshot({ ...draft(), assessments: deferred, adjustments: {} });
+  const result = assembleDraft({ draft: input, costs: n.privateSnapshot(privateSettings()), taxRateBps: 1000, paidCents: 0 });
+  assert.deepEqual(result.sell.scope.panel_ids, ['hood']); assert.equal(result.sell.scope.assessments.length, 1);
+  assert.equal(result.sell.totals.total_cents, 0); assert.deepEqual(result.sell.lines, []);
+  assert.deepEqual(result.costs.lines, []); assert.equal(result.costs.direct_cost_cents, 0);
+  noPrivate(result.sell);
+  for (const role of ['assistant', undefined]) await assert.rejects(n.validateScopePolicy(client,
+    { shopId: 'shop', roId: 'ro', role }, deferred, deferred), e => e.code === 'FORBIDDEN');
+  for (const patch of [{ reason: '' }, { estimator_acknowledged: false }, { customer_acknowledged: false },
+    { customer_acknowledgement_reference: '  ' }]) assert.throws(() => n.assessments([{ ...cosmetic, deferral: { ...acknowledgement, ...patch } }]));
+  for (const patch of [{ operation: 'repair' }, { operation: 'replace' }, { operation: 'inspection-required' },
+    { body_hours: 1 }, { parts_sell_cents: 1 }, { sublet_sell_cents: 1 },
+    { extras: [{ key: 'scan', scope: 'job', category: 'sublet', quantity: 1, unit_price_cents: 0, taxable: true }] }]) {
+    await assert.rejects(n.validateScopePolicy(client, { role: 'owner' }, n.assessments([{ ...cosmetic, ...patch, deferral: acknowledgement }]), saved), e => e.code === 'INVALID_INPUT');
+  }
+  for (const previous of [[], n.assessments([{ ...cosmetic, optional_cosmetic: false }])]) {
+    await assert.rejects(n.validateScopePolicy({ query: async () => ({ rows: [{ public_snapshot: { scope: { assessments: previous } } }] }) },
+      { role: 'owner' }, deferred, saved), e => e.code === 'SCOPE_RECONCILIATION_REQUIRED');
+  }
+  await assert.rejects(n.validateScopePolicy(client, { role: 'owner' }, n.assessments([{ ...cosmetic,
+    refinish_hours: 0, deferral: acknowledgement }]), saved), e => e.code === 'SCOPE_RECONCILIATION_REQUIRED');
+  for (const path of ['private_notes', 'costs', 'reason', 'target_margin_bps']) {
+    assert.throws(() => noPrivate({ scope: { assessments: [{ [path]: 'sensitive' }] } }));
+    assert.throws(() => noPrivate({ scope: { assessments: [{ deferral: { [path]: 'PRIVATE sentinel' } }] } }));
+  }
+  assert.throws(() => noPrivate({ application_snapshot: { reason: 'Private catalog reason' } }));
+});

@@ -3,7 +3,7 @@ const { randomUUID } = require('node:crypto');
 const n = require('./panelEstimatorStore');
 
 /** Preset JSON contract v1 (all unknown keys, including nested keys, are rejected):
- * {contract_version:1,name,match:{panel_id,body_style,operation,severity,paint_system?},
+ * {contract_version:1,name,match:{panel_id,body_style,operation,severity,paint_system?,area?},
  *  sell_settings:{body_hours,refinish_hours,refinish,...SELL,taxable:{body,refinish,parts,materials,sublet},
  *    package:null|{name,price_cents,taxable,included_operations:[category,...]},
  *    extras:[{key,scope,category,description?,quantity,unit_price_cents,taxable}]},
@@ -19,25 +19,32 @@ const n = require('./panelEstimatorStore');
  * immutable source snapshot, checks compatibility, and never follows 'latest'.
  * B1 adds optional package.sell_allocation_cents and materials_pricing to public
  * sell settings; private cost_sources and extras.cost_source never enter that DTO.
+ * B2: match.area defaults null (wildcard); otherwise exact normalized text.
+ * sell_settings.minimum_cents defaults null; override_policy defaults owner_admin
+ * (or locked). Both are catalog-owned, never copied from the assessment JSON.
+ * Any changed controlled sell field requires trusted owner/admin and assessment
+ * preset_override:{reason}; locked forbids changes. Safe stored reads do not
+ * invent authorization or reprice previously committed quote snapshots.
  */
-const SELL_KEYS = ['body_hours', 'refinish_hours', 'refinish', ...n.SELL, 'taxable', 'package', 'extras', 'materials_pricing'];
+const SELL_KEYS = ['body_hours', 'refinish_hours', 'refinish', ...n.SELL, 'taxable', 'package', 'extras', 'materials_pricing', 'minimum_cents', 'override_policy'];
 function matchSettings(raw) {
-  n.keys(raw, ['panel_id', 'body_style', 'operation', 'severity', 'paint_system']);
+  n.keys(raw, ['panel_id', 'body_style', 'operation', 'severity', 'paint_system', 'area']);
   const panel = n.assessments([raw])[0];
   if (!panel.body_style || !panel.operation || !panel.severity) n.invalid();
   return { panel_id: panel.panel_id, body_style: panel.body_style, operation: panel.operation,
-    severity: panel.severity, paint_system: panel.paint_system };
+    severity: panel.severity, paint_system: panel.paint_system, area: panel.area };
 }
 function sellSettings(raw) {
   n.keys(raw, SELL_KEYS);
   // All core fields must exist; null explicitly records an unknown, not a free item.
-  for (const key of SELL_KEYS.filter(k => !['package', 'extras', 'materials_pricing'].includes(k))) {
+  for (const key of SELL_KEYS.filter(k => !['package', 'extras', 'materials_pricing', 'minimum_cents', 'override_policy'].includes(k))) {
     if (!Object.hasOwn(raw, key)) n.invalid();
   }
   n.keys(raw.taxable, n.CATEGORIES);
   if (n.CATEGORIES.some(key => !Object.hasOwn(raw.taxable, key))) n.invalid();
   return { body_hours: n.hours(raw.body_hours), refinish_hours: n.hours(raw.refinish_hours),
     refinish: n.boolean(raw.refinish), ...n.amounts(raw, n.SELL), taxable: n.taxable(raw.taxable),
+    minimum_cents: n.cents(raw.minimum_cents), override_policy: n.choice(raw.override_policy, ['owner_admin', 'locked']) ?? 'owner_admin',
     package: n.packageSettings(raw.package), extras: n.extras(raw.extras), materials_pricing: n.materialsPricing(raw) };
 }
 function privateConfig(raw) {
@@ -74,11 +81,11 @@ function safeSnapshot(row) {
   // Deep validators reject contamination instead of allowing private JSON through.
   return { id: n.requiredText(row.id, 255), family_id: n.requiredText(row.family_id, 255),
     version: n.cents(row.version, 2147483647), contract_version: 1, name: n.requiredText(row.name),
-    match: matchSettings(Object.fromEntries(['panel_id', 'body_style', 'operation', 'severity', 'paint_system'].map(k => [k, match[k]]))),
+    match: matchSettings(Object.fromEntries(['panel_id', 'body_style', 'operation', 'severity', 'paint_system', 'area'].map(k => [k, match[k]]))),
     sell_settings: sellSettings(projectedSell) };
 }
 const COLUMNS = 'v.id, v.family_id, v.version, v.contract_version, v.name, v.match, v.sell_settings';
-async function resolveApplications(client, shopId, panels) {
+async function resolveApplications(client, shopId, panels, { role, enforce = true } = {}) {
   for (const panel of panels) {
     panel.application_snapshot = null;
     if (!panel.preset_version_id) continue;
@@ -86,9 +93,19 @@ async function resolveApplications(client, shopId, panels) {
       WHERE v.shop_id = $1 AND v.id = $2`, [shopId, panel.preset_version_id]);
     if (!result.rowCount) throw n.error('INVALID_REFERENCE');
     const snapshot = safeSnapshot(result.rows[0]);
-    for (const key of ['panel_id', 'body_style', 'operation', 'severity', 'paint_system']) {
-      if ((key !== 'paint_system' || snapshot.match[key] !== null) && snapshot.match[key] !== panel[key]) {
+    for (const key of ['panel_id', 'body_style', 'operation', 'severity', 'paint_system', 'area']) {
+      if ((!['paint_system', 'area'].includes(key) || snapshot.match[key] !== null) && snapshot.match[key] !== panel[key]) {
         throw n.error('PRESET_INCOMPATIBLE');
+      }
+    }
+    if (enforce) {
+      const { canonical } = require('./panelEstimatorDraft');
+      const changed = SELL_KEYS.filter(k => !['minimum_cents', 'override_policy'].includes(k))
+        .some(k => canonical(panel[k]) !== canonical(snapshot.sell_settings[k]));
+      if (changed) {
+        if (snapshot.sell_settings.override_policy === 'locked') throw n.error('PRESET_LOCKED', 403);
+        if (!['owner', 'admin'].includes(role)) throw n.error('FORBIDDEN', 403);
+        if (!panel.preset_override) throw n.error('PRESET_OVERRIDE_REQUIRED');
       }
     }
     panel.application_snapshot = snapshot;

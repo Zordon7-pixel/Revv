@@ -18,11 +18,11 @@ function createPanelEstimatorRouter({ database, authenticate } = {}) {
     ? next() : res.status(403).json({ error: 'FORBIDDEN' });
   const privateAccess = (req, res, next) => ['owner', 'admin'].includes(req.user?.role)
     ? next() : res.status(403).json({ error: 'FORBIDDEN' });
-  const scope = req => ({ shopId: req.user.shop_id, roId: req.params.roId });
+  const scope = req => ({ shopId: req.user.shop_id, roId: req.params.roId, role: req.user.role, actorId: req.user.id });
   const actor = req => ({ shopId: req.user.shop_id, actorId: req.user.id, role: req.user.role });
   const safeCodes = new Set(['INVALID_INPUT', 'INVALID_REFERENCE', 'PRESET_INCOMPATIBLE', 'INVALID_PACKAGE',
     'NOT_FOUND', 'FORBIDDEN', 'VERSION_CONFLICT', 'PRESET_ARCHIVED', 'IDEMPOTENCY_CONFLICT',
-    'PREVIEW_CONFLICT', 'REVIEW_REQUIRED', 'SCOPE_RECONCILIATION_REQUIRED', 'LINE_RECONCILIATION_REQUIRED']);
+    'PRESET_LOCKED', 'PRESET_OVERRIDE_REQUIRED', 'PREVIEW_CONFLICT', 'REVIEW_REQUIRED', 'SCOPE_RECONCILIATION_REQUIRED', 'LINE_RECONCILIATION_REQUIRED']);
   // Neither database errors nor request payloads are logged or returned.
   const endpoint = fn => async (req, res) => {
     try { await fn(req, res); }

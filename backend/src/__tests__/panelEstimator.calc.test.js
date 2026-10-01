@@ -378,3 +378,44 @@ test('two five-cent taxable lines allocate one tax cent, independent of order', 
   assert.equal(first.sell.buckets.reduce((sum, b) => sum + b.tax_cents, 0), first.sell.tax_cents);
   assert.deepEqual(first, calculateEstimate({ lines: lines.reverse(), tax_rate_bps: 1000 }));
 });
+
+test('B2 panel minima follow scoped/global discounts and cannot be absorbed by another panel', () => {
+  const input = { lines: [line({ id: 'hood', unit_price_cents: 1000 }),
+    line({ id: 'roof', panel_id: 'roof', unit_price_cents: 9000, taxable: false })],
+  discounts: [{ id: 'hood-off', amount_cents: 200, line_ids: ['hood'] }], discount_cents: 980,
+  panel_minima: [{ panel_id: 'hood', minimum_cents: 2000 }], tax_rate_bps: 1000 };
+  const result = calculateEstimate(input);
+  assert.equal(result.sell.discount_cents, 1180);
+  assert.equal(result.sell.minimum_adjustment_cents, 1280);
+  assert.equal(result.sell.net_cents, 10100);
+  assert.equal(result.sell.tax_cents, 200);
+  assert.equal(result.sell.total_cents, 10300);
+  assert.deepEqual(result.sell.buckets.find(b => b.kind === 'panel_minimum'), {
+    id: 'hood:minimum_adjustment', panel_id: 'hood', kind: 'panel_minimum', taxable: true,
+    gross_cents: 1280, discount_cents: 0, net_cents: 1280, tax_cents: 128, total_cents: 1408 });
+  assert.deepEqual(calculateEstimate({ ...input, lines: [...input.lines].reverse() }), result);
+  const homogeneous = { ...input, lines: input.lines.map(l => ({ ...l, taxable: true })), minimum_cents: 10500 };
+  assert.equal(calculateEstimate(homogeneous).sell.minimum_adjustment_cents, 1680);
+  assert.equal(calculateEstimate(homogeneous).sell.net_cents, 10500);
+  for (const panel_minima of [[{ panel_id: 'missing', minimum_cents: 1 }],
+    [input.panel_minima[0], input.panel_minima[0]], [{ panel_id: 'hood', minimum_cents: -1 }]]) {
+    assert.throws(() => calculateEstimate({ ...input, panel_minima }));
+  }
+  assert.throws(() => calculateEstimate({ ...input, lines: [...input.lines,
+    line({ id: 'hood-part', category: 'parts', operation_id: 'parts', taxable: false, unit_price_cents: 1 })] }), /homogeneous/);
+});
+
+test('B2 package minimum counts package once and rejects ambiguous mixed-tax top-ups', () => {
+  const lines = [line({ id: 'body', package_id: 'pkg', included: true }),
+    line({ id: 'paint', operation_id: 'refinish', category: 'refinish', package_id: 'pkg', included: true })];
+  const input = { lines, packages: [{ id: 'pkg', price_cents: 1000, taxable: true,
+    included_operations: ['repair', 'refinish'] }], panel_minima: [{ panel_id: 'hood', minimum_cents: 2000 }],
+  discounts: [{ id: 'off', amount_cents: 100, package_ids: ['pkg'] }], tax_rate_bps: 1000 };
+  const result = calculateEstimate(input);
+  assert.equal(result.sell.net_cents, 2000); assert.equal(result.sell.tax_cents, 200);
+  assert.equal(result.sell.buckets.length, 2); assert.equal(result.costs.direct_cost_cents, 8000);
+  input.lines[0].taxable = false;
+  input.packages[0].taxable = null;
+  input.packages[0].sell_allocation_cents = { body: 500, refinish: 500 };
+  assert.throws(() => calculateEstimate(input), /homogeneous/);
+});
