@@ -110,6 +110,71 @@ test('compact preset contract rejects deep injection, uses scoped extras and cal
   assert.equal(typeof quoteDTO, 'function');
 });
 
+test('B1 material method exact extension, exclusivity, unknowns and private source normalization', () => {
+  const material = { method: 'quantity_rate', quantity: 1.25, unit_rate_cents: 2 };
+  const input = draft({ assessments: [panel({ materials_sell_cents: null, materials_pricing: material })], adjustments: {} });
+  const privateCost = privateSettings();
+  privateCost.lines[0].cost_sources = { body_cost_rate_cents: 'actual', materials_cost_cents: 'quoted' };
+  const result = calculate(input, privateCost);
+  assert.equal(result.sell.lines.find(l => l.category === 'materials').unit_price_cents, 3);
+  assert.equal(result.costs.direct_cost_cents, 22000); // Material cost remains an explicit total.
+  assert.equal(result.costs.lines.find(l => l.id === 'hood:body').cost_source, 'actual');
+  assert.equal(result.costs.lines.find(l => l.id === 'hood:materials').cost_source, 'quoted');
+  assert.equal(result.costs.lines.find(l => l.id === 'hood:parts').cost_source, null);
+  noPrivate(result.sell);
+  for (const missing of [{ quantity: null }, { unit_rate_cents: null }]) {
+    const pending = calculate(draft({ assessments: [panel({ materials_sell_cents: null,
+      materials_pricing: { ...material, ...missing } })] }), privateCost);
+    assert.equal(pending.sell.complete, false); assert.equal(pending.sell.totals.total_cents, null);
+    assert.equal(pending.costs.lines.find(l => l.id === 'hood:materials').cost_source, 'quoted');
+  }
+  for (const patch of [{ materials_sell_cents: 0 }, { materials_sell_cents: 12 }, { materials_sell_cents: undefined },
+    { materials_pricing: { method: 'quantity_rate', quantity: 1.001, unit_rate_cents: 1 } },
+    { materials_pricing: { method: 'quantity_rate', quantity: 1000001, unit_rate_cents: 1 } },
+    { materials_pricing: { method: 'quantity_rate', quantity: 1, unit_rate_cents: 0.5 } },
+    { materials_pricing: { method: 'explicit', quantity: 1 } }, { materials_pricing: { method: 'fake' } }]) {
+    assert.throws(() => calculate(draft({ assessments: [panel({ materials_sell_cents: null, materials_pricing: material, ...patch })] })));
+  }
+  assert.throws(() => calculate(draft({ assessments: [panel({ materials_sell_cents: null,
+    materials_pricing: { method: 'quantity_rate', quantity: 1000000, unit_rate_cents: 9999999999 } })] })));
+  assert.equal(calculate(draft({ assessments: [panel({ materials_sell_cents: null,
+    materials_pricing: { ...material, quantity: 0 } })], adjustments: {} })).sell.totals.subtotal_cents, 40000);
+  assert.throws(() => n.extras([{ key: 'materials', scope: 'hood', category: 'materials', materials_pricing: material }]));
+  for (const source of ['shop', '', false, 1, {}]) {
+    assert.throws(() => n.privateSnapshot({ lines: [{ panel_id: 'hood', cost_sources: { parts_cost_cents: source } }] }));
+    assert.throws(() => n.extras([{ key: 'mask', scope: 'job', cost_source: source }], true));
+  }
+  assert.throws(() => n.costSources({ arbitrary: 'actual' }));
+  const config = preset(); config.sell_settings.materials_sell_cents = null;
+  config.sell_settings.materials_pricing = material;
+  config.private_cost_config.cost_sources = { body_cost_rate_cents: 'estimated' };
+  assert.deepEqual(normalizePreset(config).sell_settings.materials_pricing, material);
+  assert.equal(normalizePreset(config).private_cost_config.cost_sources.body_cost_rate_cents, 'estimated');
+});
+
+test('B1 normalized mixed package and scoped discount DTOs preserve targets and block invalid scope', () => {
+  const assessment = panel({ taxable: { ...taxable(), body: false }, package: { name: 'Mixed', price_cents: 15000,
+    taxable: null, included_operations: ['body', 'refinish'], sell_allocation_cents: { body: 10000, refinish: 5000 } } });
+  const input = draft({ assessments: [assessment], adjustments: { discount_cents: 0,
+    discounts: [{ id: 'package', amount_cents: 3000, package_ids: ['hood:package'] },
+      { id: 'materials', amount_cents: 1000, line_ids: ['hood:materials'] }] } });
+  const quote = calculate(input).sell;
+  assert.equal(quote.totals.discount_cents, 4000); assert.equal(quote.totals.net_cents, 26000);
+  assert.equal(quote.totals.tax_cents, 1800);
+  assert.equal(quote.discount_lines.length, 2); noPrivate(quote);
+  assert.deepEqual(quote.discount_lines[1].package_ids, ['hood:package']);
+  for (const targets of [{ line_ids: ['hood:body'] }, { package_ids: ['missing'] }, { line_ids: ['missing'] },
+    { line_ids: ['hood:materials', 'hood:materials'] }, { line_ids: ['hood:materials'], package_ids: ['hood:package'] }]) {
+    assert.throws(() => calculate({ ...input, adjustments: { discounts: [{ id: 'bad', amount_cents: 1, ...targets }] } }));
+  }
+  const incomplete = structuredClone(input); incomplete.assessments[0].parts_sell_cents = null;
+  incomplete.adjustments.discounts[0].package_ids = ['missing'];
+  assert.throws(() => calculate(incomplete));
+  assert.throws(() => n.discounts(Array.from({ length: 101 }, (_, i) => ({ id: String(i), amount_cents: 0, line_ids: ['hood:parts'] }))));
+  const p = preset(); Object.assign(p.sell_settings, { package: assessment.package, taxable: assessment.taxable });
+  assert.deepEqual(normalizePreset(p).sell_settings.package.sell_allocation_cents, { body: 10000, refinish: 5000 });
+});
+
 function localDatabase(value) {
   const url = new URL(value);
   assert.ok(['postgres:', 'postgresql:'].includes(url.protocol));
@@ -306,6 +371,63 @@ for (const type of ['TEXT', 'UUID']) {
         assert.deepEqual(await state(), beforeCommit);
         assert.equal((await request(`${base}/quote`)).status, 404);
         assert.equal((await request(`${base}/cost-summary?revision_id=pretend`)).status, 404);
+      });
+      await t.test('B1 JWT save/reload/version, preset method/allocation and private provenance', async () => {
+        const target = `/${siblingRO}/panel-estimator`;
+        const material = { method: 'quantity_rate', quantity: 1.25, unit_rate_cents: 2 };
+        const assessment = panel({ materials_sell_cents: null, materials_pricing: material,
+          taxable: { ...taxable(), body: false }, package: { name: 'B1 mixed', price_cents: 15000, taxable: null,
+            included_operations: ['body', 'refinish'], sell_allocation_cents: { body: 10000, refinish: 5000 } },
+          extras: [{ key: 'mask', scope: 'job', category: 'materials', quantity: 1, unit_price_cents: 100, taxable: true }] });
+        const input = draft({ assessments: [assessment], adjustments: { discount_cents: 0,
+          discounts: [{ id: 'package', amount_cents: 3000, package_ids: ['hood:package'] }] } });
+        const saved = await request(`${target}/draft`, { role: 'assistant', method: 'PUT', body: { ...input, expected_version: 0 } });
+        assert.equal(saved.status, 200); assert.equal(saved.body.version, 1);
+        const reload = await request(target, { role: 'assistant' }); noPrivate(reload.body);
+        assert.deepEqual(reload.body.assessments[0].materials_pricing, material);
+        assert.deepEqual(reload.body.assessments[0].package.sell_allocation_cents, assessment.package.sell_allocation_cents);
+        assert.deepEqual(reload.body.adjustments.discounts[0].package_ids, ['hood:package']);
+        const privateCost = privateSettings();
+        privateCost.lines[0].cost_sources = { body_cost_rate_cents: 'actual', parts_cost_cents: 'quoted', materials_cost_cents: 'estimated' };
+        privateCost.lines[0].extras = [{ key: 'mask', scope: 'job', cost_unit_cents: 10, cost_source: 'quoted' }];
+        assert.equal((await request(`${target}/cost-settings`, { method: 'PUT', body: { ...privateCost, expected_version: 1 } })).body.version, 2);
+        assert.equal((await request(`${target}/draft`, { method: 'PUT', body: { ...input, expected_version: 1 } })).status, 409);
+        const summary = await request(`${target}/cost-summary`); assert.equal(summary.status, 200);
+        assert.equal(summary.body.costs.settings.lines[0].cost_sources.body_cost_rate_cents, 'actual');
+        assert.equal(summary.body.costs.lines.find(l => l.id === 'hood:extra:job:mask').cost_source, 'quoted');
+        assert.equal((await request(`${target}/cost-summary`, { role: 'assistant' })).status, 403);
+        const preview = await request(`${target}/preview`, { method: 'POST', body: { ...input, expected_version: 2 } });
+        assert.equal(preview.status, 200); noPrivate(preview.body);
+        assert.equal(preview.body.quote.totals.total_cents, 23513);
+        assert.equal(preview.body.quote.lines.find(l => l.category === 'materials' && !l.shared_key).unit_price_cents, 3);
+        const p = preset();
+        p.sell_settings = Object.fromEntries([...n.SELL, 'body_hours', 'refinish_hours', 'refinish', 'taxable', 'package', 'extras', 'materials_pricing'].map(k => [k, assessment[k]]));
+        p.private_cost_config.cost_sources = { body_cost_rate_cents: 'estimated' };
+        const created = await request('/panel-presets', { method: 'POST', body: p });
+        assert.equal(created.status, 201); noPrivate(created.body);
+        assert.deepEqual(created.body.sell_settings.materials_pricing, material);
+        const catalog = await request('/panel-presets'); noPrivate(catalog.body);
+        assert.deepEqual(catalog.body.presets.find(v => v.id === created.body.id).sell_settings.package, created.body.sell_settings.package);
+        assert.equal((await request(`/panel-presets/${created.body.id}/cost-config`)).body.private_cost_config.cost_sources.body_cost_rate_cents, 'estimated');
+        for (const patch of [{ materials_sell_cents: 0 }, { package: { ...assessment.package, sell_allocation_cents: { body: 15000 } } }]) {
+          assert.equal((await request(`${target}/draft`, { method: 'PUT', body: { ...input,
+            assessments: [{ ...assessment, ...patch }], expected_version: 2 } })).status, 400);
+        }
+        for (const discount of [{ id: 'bad', amount_cents: 1, line_ids: ['hood:body'] },
+          { id: 'bad', amount_cents: 1, line_ids: ['missing'] },
+          { id: 'bad', amount_cents: 1, package_ids: ['missing'] }]) {
+          for (const [suffix, method] of [['draft', 'PUT'], ['preview', 'POST']]) {
+            const invalid = await request(`${target}/${suffix}`, { method, body: { ...input,
+              adjustments: { discounts: [discount] }, expected_version: 2 } });
+            assert.equal(invalid.status, 400); assert.deepEqual(invalid.body, { error: 'INVALID_INPUT' });
+          }
+        }
+        const excessive = await request(`${target}/preview`, { method: 'POST', body: { ...input,
+          adjustments: { discounts: [{ id: 'excess', amount_cents: 15001, package_ids: ['hood:package'] }] }, expected_version: 2 } });
+        assert.equal(excessive.status, 400);
+        privateCost.lines[0].cost_sources.body_cost_rate_cents = 'shop';
+        assert.equal((await request(`${target}/cost-settings`, { method: 'PUT', body: { ...privateCost, expected_version: 2 } })).status, 400);
+        assert.equal((await request(target)).body.version, 2);
       });
     } finally {
       if (server) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }

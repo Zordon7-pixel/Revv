@@ -342,6 +342,55 @@ for (const type of ['TEXT', 'UUID']) test(`real PostgreSQL revisions ${type}: se
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
       return { status: response.status, body: await response.json(), cache: response.headers.get('cache-control') };
     };
+    await t.test('B1 mixed package JWT commit materializes exact tax splits and immutable private sources', async () => {
+      const scope = await newScope(), base = `${scope.roId}/panel-estimator`;
+      const privateCost = costs();
+      privateCost.lines[0].cost_sources = { body_cost_rate_cents: 'actual', refinish_cost_rate_cents: 'quoted', materials_cost_cents: 'estimated' };
+      privateCost.lines[0].extras = [{ key: 'mask', scope: 'job', cost_unit_cents: 0, cost_source: 'quoted' }];
+      await store.saveCosts({ ...scope, ...privateCost, expectedVersion: 0 });
+      const input = draft({ assessments: [panel({ materials_sell_cents: null,
+        materials_pricing: { method: 'quantity_rate', quantity: 1.25, unit_rate_cents: 2 },
+        extras: [{ key: 'mask', scope: 'job', category: 'materials', quantity: 1, unit_price_cents: 0, taxable: true }],
+        taxable: { body: false, refinish: true, parts: true, materials: true, sublet: true },
+        package: { name: 'Mixed package', price_cents: 15000, taxable: null,
+          included_operations: ['body', 'refinish'], sell_allocation_cents: { body: 10000, refinish: 5000 } } })],
+      adjustments: { discount_cents: 0, discounts: [{ id: 'package', amount_cents: 3000, package_ids: ['hood:package'] }] } });
+      const preview = await request(`${base}/preview`, 'POST', { ...input, expected_version: 1 });
+      assert.equal(preview.status, 200); assert.equal(preview.body.quote.totals.total_cents, 23403);
+      const body = { ...input, expected_version: 1, input_hash: preview.body.input_hash, reviewed: true, idempotency_key: randomUUID() };
+      const response = await request(`${base}/commit`, 'POST', body, 'assistant');
+      assert.equal(response.status, 200); assert.equal(response.body.version, 2); noPrivate(response.body);
+      const revision = response.body.revision_id;
+      assert.deepEqual((await request(`${base}/commit`, 'POST', body)).body, response.body);
+      const saved = await snapshot(scope), lines = saved.estimate_line_items;
+      assert.equal(new Set(lines.map(l => l.panel_source_key)).size, lines.length);
+      const splits = lines.filter(l => l.panel_source_key.startsWith('package_allocation:'));
+      assert.equal(splits.length, 2);
+      assert.deepEqual(splits.map(l => [l.taxable, Number(l.total), l.type]).sort((a,b) => a[1] - b[1]),
+        [[true, 40, 'labor'], [false, 80, 'labor']]);
+      assert.equal(lines.filter(l => l.panel_source_key === 'line:hood:body' || l.panel_source_key === 'line:hood:refinish').length, 0);
+      assert.equal(lines.reduce((sum, l) => sum + Math.round(Number(l.total) * 100), 0), 22003);
+      assert.equal(Number(saved.ro[0].total), 234.03); assert.equal(Number(saved.ro[0].tax), 14);
+      assert.equal(Number(saved.ro[0].labor_cost), 120); assert.equal(Number(saved.ro[0].parts_cost), 100);
+      const money = saved.ro_panel_estimator_revisions[0].accounting_snapshot.money;
+      assert.equal(money.taxableSubtotalCents, 14003); assert.equal(money.otherCents, 3);
+      const summary = await request(`${scope.roId}/summary`);
+      assert.equal(summary.body.summary.grand_total, 234.03);
+      assert.deepEqual((await request(`${base}/quote?revision_id=${revision}`)).body, response.body);
+      const historical = await request(`${base}/cost-summary?revision_id=${revision}`);
+      assert.equal(historical.body.costs.lines.find(l => l.id === 'hood:body').cost_source, 'actual');
+      assert.equal(historical.body.costs.lines.find(l => l.id === 'hood:extra:job:mask').cost_source, 'quoted');
+      assert.equal(historical.body.costs.settings.lines[0].cost_sources.materials_cost_cents, 'estimated');
+      assert.equal(historical.body.costs.direct_cost_cents, 22000);
+      assert.equal((await request(`${base}/cost-summary?revision_id=${revision}`, 'GET', undefined, 'assistant')).status, 403);
+      privateCost.lines[0].cost_sources.body_cost_rate_cents = 'estimated';
+      await store.saveCosts({ ...scope, ...privateCost, expectedVersion: 2 });
+      assert.deepEqual((await request(`${base}/cost-summary?revision_id=${revision}`)).body, historical.body);
+      const next = await commit(scope, input); assert.notEqual(next.revision_id, revision);
+      assert.equal(next.quote.totals.total_cents, 23403);
+      assert.deepEqual((await request(`${base}/quote?revision_id=${revision}`)).body, response.body);
+      assert.equal((await snapshot(scope)).estimate_line_items.length, lines.length);
+    });
     await t.test('mounted production routes: commit/quote/cost roles, selected summary, draft isolation and tax freeze', async () => {
       const scope = await newScope(), base = `${scope.roId}/panel-estimator`;
       const preview = await request(`${base}/preview`, 'POST', { ...draft(), expected_version: 0 });

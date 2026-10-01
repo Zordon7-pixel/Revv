@@ -1,9 +1,9 @@
 'use strict';
 const { createHash } = require('node:crypto');
 const n = require('./panelEstimatorStore');
-const { calculateEstimate, allocateInsurance } = require('./panelEstimator');
+const { calculateEstimate, allocateInsurance, normalizeDiscounts } = require('./panelEstimator');
 const { exactMoney } = require('./roMoney');
-const { scaledDecimal, checkedCents } = exactMoney;
+const { scaledDecimal, checkedCents, roundHalfUp } = exactMoney;
 
 function canonical(value) {
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
@@ -23,8 +23,11 @@ function quoteDTO(sell) {
   const safe = {
     lines: sell.lines.map(line => ({ ...publicLine(line), net_cents: line.net_cents, tax_cents: line.tax_cents })),
     packages: sell.packages.map(pkg => ({ id: pkg.id, name: pkg.name, price_cents: pkg.price_cents, taxable: pkg.taxable,
+      ...(pkg.sell_allocation_cents ? { sell_allocation_cents: n.amounts(pkg.sell_allocation_cents,
+        n.CATEGORIES.filter(k => Object.hasOwn(pkg.sell_allocation_cents, k))) } : {}),
       included_operations: pkg.included_operations.map(op => ({ panel_id: op.panel_id, operation_id: op.operation_id })) })),
-    buckets: sell.buckets.map(b => Object.fromEntries(['id', 'kind', 'taxable', 'gross_cents', 'discount_cents', 'net_cents', 'tax_cents', 'total_cents'].map(k => [k, b[k]]))),
+    buckets: sell.buckets.map(b => ({ ...Object.fromEntries(['id', 'kind', 'taxable', 'gross_cents', 'discount_cents', 'net_cents', 'tax_cents', 'total_cents'].map(k => [k, b[k]])),
+      ...(b.kind === 'package_allocation' ? { package_id: b.package_id, category: b.category } : {}) })),
     inspection_required: sell.inspection_required, complete: sell.complete,
     flags: sell.flags.map(f => ({ panel_id: f.panel_id, code: f.code })),
     subtotal_cents: sell.subtotal_cents, discount_cents: sell.discount_cents,
@@ -69,20 +72,20 @@ function assembleDraft({ draft, costs, taxRateBps, paidCents }) {
     const pkg = panel.package;
     const packageId = pkg ? `${panel.panel_id}:package` : null;
     const panelLines = [];
-    function add(category, operation, quantity, price, cost, extra) {
+    function add(category, operation, quantity, price, cost, extra, source) {
       const included = !extra && !!pkg?.included_operations.includes(category);
       const line = { id: extra ? `${panel.panel_id}:extra:${extra.scope}:${extra.key}` : `${panel.panel_id}:${category}`,
         panel_id: panel.panel_id, operation_id: operation, shared_key: extra ? `extra:${extra.scope}` : null,
         category, description: extra?.description ?? panel.label ?? panel.panel_id,
         quantity, unit_price_cents: price, taxable: extra ? extra.taxable : panel.taxable[category],
-        cost_unit_cents: cost ?? null, cost_source: cost == null ? null : 'shop',
+        cost_unit_cents: cost ?? null, cost_source: source ?? null,
         package_id: included ? packageId : null, included, inspection_required: inspect };
       // An included operation's sale is explicitly the package price, not a missing hourly price.
       if (included) line.unit_price_cents = 0;
       const unknown = inspect || quantity === null || (!included && price === null) || line.taxable === null;
       if (unknown) {
         flag(panel.panel_id, inspect ? 'inspection_required' : `missing_${extra ? 'extra' : category}_inputs`, true);
-        pending.push(publicLine(line));
+        pending.push(line);
       } else lines.push(line);
       panelLines.push(line);
     }
@@ -90,37 +93,50 @@ function assembleDraft({ draft, costs, taxRateBps, paidCents }) {
     // Body work is required for repair/replace; other operations explicitly omit it.
     const bodyActive = ['repair', 'replace'].includes(panel.operation);
     add('body', panel.operation ?? 'unknown', bodyActive ? panel.body_hours : inspect ? null : 0,
-      bodyActive ? panel.body_rate_cents : inspect ? null : 0, privateLine.body_cost_rate_cents);
+      bodyActive ? panel.body_rate_cents : inspect ? null : 0, privateLine.body_cost_rate_cents, null, privateLine.cost_sources?.body_cost_rate_cents);
     add('refinish', 'refinish', panel.refinish === false ? 0 : panel.refinish_hours,
-      panel.refinish === false ? 0 : panel.refinish_rate_cents, privateLine.refinish_cost_rate_cents);
+      panel.refinish === false ? 0 : panel.refinish_rate_cents, privateLine.refinish_cost_rate_cents, null, privateLine.cost_sources?.refinish_cost_rate_cents);
     for (const category of ['parts', 'materials', 'sublet']) {
-      add(category, category, 1, panel[`${category}_sell_cents`], privateLine[`${category}_cost_cents`]);
+      let price = panel[`${category}_sell_cents`];
+      // B1 material quantities extend the sell total once, half up. Private material
+      // costs remain total amounts, not per-unit costs multiplied by sell quantity.
+      if (category === 'materials' && panel.materials_pricing?.method === 'quantity_rate') {
+        const method = panel.materials_pricing;
+        price = method.quantity === null || method.unit_rate_cents === null ? null : checkedCents(roundHalfUp(
+          scaledDecimal(method.quantity, 2, 'materials quantity', 100000000n) * BigInt(method.unit_rate_cents), 100n));
+      }
+      const quantity = category === 'materials' && panel.materials_pricing?.method === 'quantity_rate' && price === null ? null : 1;
+      add(category, category, quantity, price, privateLine[`${category}_cost_cents`], null, privateLine.cost_sources?.[`${category}_cost_cents`]);
     }
     for (const extra of panel.extras) {
       const cost = (privateLine.extras ?? []).find(c => c.key === extra.key && c.scope === extra.scope);
-      add(extra.category, `extra:${extra.key}`, extra.quantity, extra.unit_price_cents, cost?.cost_unit_cents, extra);
+      add(extra.category, `extra:${extra.key}`, extra.quantity, extra.unit_price_cents, cost?.cost_unit_cents, extra, cost?.cost_source);
     }
     if (pkg) {
       const members = panelLines.filter(line => line.included);
-      if (members.length !== pkg.included_operations.length || members.some(line => line.quantity === 0 || (line.taxable !== null && line.taxable !== pkg.taxable))) {
+      if (members.length !== pkg.included_operations.length || members.some(line => line.quantity === 0 ||
+          (line.taxable !== null && pkg.taxable !== null && line.taxable !== pkg.taxable))) {
         throw n.error('INVALID_PACKAGE');
       }
       packages.push({ id: packageId, price_cents: pkg.price_cents, taxable: pkg.taxable,
+        ...(pkg.sell_allocation_cents ? { sell_allocation_cents: pkg.sell_allocation_cents } : {}),
         included_operations: members.map(line => ({ panel_id: line.panel_id, operation_id: line.operation_id })) });
     }
   }
   // Unknown package members cannot be fed to the strict calculator as zero work.
   const pendingPackages = new Set(pending.map(line => line.package_id).filter(Boolean));
   const calculable = lines.filter(line => !pendingPackages.has(line.package_id));
-  for (const line of lines.filter(line => pendingPackages.has(line.package_id))) pending.push(publicLine(line));
+  for (const line of lines.filter(line => pendingPackages.has(line.package_id))) pending.push(line);
+  const discounts = normalizeDiscounts(draft.adjustments.discounts, [...calculable, ...pending], packages);
   const result = calculateEstimate({ lines: calculable, packages: packages.filter(p => !pendingPackages.has(p.id)),
     discount_cents: incomplete ? 0 : draft.adjustments.discount_cents ?? 0,
+    discounts: incomplete ? [] : discounts,
     minimum_cents: incomplete ? 0 : draft.adjustments.minimum_cents ?? 0,
     tax_rate_bps: taxRateBps ?? 0, target_margin_bps: costs.target_margin_bps,
     overhead_cents: costs.overhead_cents, include_overhead_in_target: costs.include_overhead_in_target });
   result.sell.packages.push(...packages.filter(pkg => pendingPackages.has(pkg.id)));
   result.sell.packages.forEach(pkg => { pkg.name = draft.assessments.find(p => `${p.panel_id}:package` === pkg.id).package.name; });
-  result.sell.lines.push(...pending);
+  result.sell.lines.push(...pending.map(publicLine));
   result.sell.lines.sort((a, b) => a.id.localeCompare(b.id));
   result.sell.complete = !incomplete;
   result.sell.flags = [...new Map(flags.map(f => [canonical(f), f])).values()].sort((a, b) => canonical(a).localeCompare(canonical(b)));
@@ -128,7 +144,7 @@ function assembleDraft({ draft, costs, taxRateBps, paidCents }) {
   result.sell.tax_rate_bps = taxRateBps;
   if (incomplete) {
     for (const field of ['subtotal_cents', 'minimum_adjustment_cents', 'net_cents', 'tax_cents', 'total_cents']) result.sell[field] = null;
-    result.sell.discount_cents = draft.adjustments.discount_cents ?? 0;
+    result.sell.discount_cents = checkedCents(BigInt(draft.adjustments.discount_cents ?? 0) + discounts.reduce((sum, d) => sum + BigInt(d.amount_cents), 0n));
     // No bucket or line may suggest a final discount/tax allocation for a partial draft.
     result.sell.buckets = [];
     result.sell.lines.forEach(line => { line.net_cents = null; line.tax_cents = null; });
@@ -136,7 +152,7 @@ function assembleDraft({ draft, costs, taxRateBps, paidCents }) {
     for (const field of ['contribution_cents', 'after_overhead_cents', 'margin_bps']) result.costs[field] = null;
   }
   if (pending.length) {
-    result.costs.lines.push(...pending.map(line => ({ id: line.id, cost_unit_cents: null, cost_source: null, cost_cents: null })));
+    result.costs.lines.push(...pending.map(line => ({ id: line.id, cost_unit_cents: line.cost_unit_cents, cost_source: line.cost_source, cost_cents: null })));
     result.costs.missing.push(...pending.map(line => ({ id: line.id, reason: 'incomplete_operation' })));
     for (const field of ['direct_cost_cents', 'total_cost_cents', 'target_revenue_cents']) result.costs[field] = null;
   }
@@ -150,9 +166,9 @@ function assembleDraft({ draft, costs, taxRateBps, paidCents }) {
   const sell = quoteDTO(result.sell);
   sell.scenario = { ...draft.scenario };
   sell.adjustments = { ...draft.adjustments };
-  sell.discount_lines = sell.totals.discount_cents > 0
-    ? [{ description: 'Quote discount (already allocated to billing amounts)', amount_cents: sell.totals.discount_cents }]
-    : [];
+  sell.discount_lines = discounts.map(d => ({ ...d, description: 'Scoped discount (already allocated to billing amounts)' }));
+  if (draft.adjustments.discount_cents > 0) sell.discount_lines.push({
+    description: 'Quote discount (already allocated to billing amounts)', amount_cents: draft.adjustments.discount_cents });
   sell.scope.assessments = n.publicSnapshot(draft).assessments;
   return { sell, costs: result.costs };
 }

@@ -74,23 +74,62 @@ function taxable(value) {
 }
 function packageSettings(value) {
   if (value == null) return null;
-  const raw = keys(value, ['name', 'price_cents', 'taxable', 'included_operations']);
+  const raw = keys(value, ['name', 'price_cents', 'taxable', 'included_operations', 'sell_allocation_cents']);
   const included_operations = array(raw.included_operations, 5).map(v => choice(v, CATEGORIES));
   if (!included_operations.length || included_operations.includes(null) || new Set(included_operations).size !== included_operations.length) invalid();
   const price_cents = cents(raw.price_cents), tax = boolean(raw.taxable);
-  if (price_cents === null || tax === null) invalid();
-  return { name: requiredText(raw.name), price_cents, taxable: tax, included_operations: included_operations.sort() };
+  const allocation = raw.sell_allocation_cents == null ? null : keys(raw.sell_allocation_cents, included_operations);
+  if (price_cents === null || (tax === null && !allocation)) invalid();
+  if (allocation && (included_operations.some(k => cents(allocation[k]) === null) ||
+      included_operations.reduce((sum, k) => sum + allocation[k], 0) !== price_cents)) invalid();
+  return { name: requiredText(raw.name), price_cents, taxable: tax, included_operations: included_operations.sort(),
+    ...(allocation ? { sell_allocation_cents: amounts(allocation, [...included_operations].sort()) } : {}) };
+}
+// B1: one base-material method. Extras remain distinct explicitly named operations.
+function materialsPricing(raw) {
+  const value = raw.materials_pricing;
+  if (value == null) return { method: 'explicit' };
+  object(value);
+  if (value.method === 'explicit') { keys(value, ['method']); return { method: 'explicit' }; }
+  keys(value, ['method', 'quantity', 'unit_rate_cents']);
+  if (value.method !== 'quantity_rate' || raw.materials_sell_cents !== null) invalid();
+  return { method: 'quantity_rate', quantity: hours(value.quantity), unit_rate_cents: cents(value.unit_rate_cents) };
+}
+// B1: provenance is independent of amount; absent sources remain unknown.
+const costSource = value => {
+  if (value == null) return null;
+  if (!['estimated', 'quoted', 'actual'].includes(value)) invalid();
+  return value;
+};
+function costSources(value) {
+  const raw = keys(value ?? {}, COST);
+  return Object.fromEntries(COST.map(k => [k, costSource(raw[k])]));
+}
+// B1: at most 100 scoped records, one nonempty target list each. The legacy
+// discount_cents remains a separate global adjustment over the scoped residual.
+function discounts(value) {
+  const seen = new Set();
+  return array(value, 100).map(raw => {
+    keys(raw, ['id', 'amount_cents', 'line_ids', 'package_ids']);
+    const id = requiredText(raw.id), amount_cents = cents(raw.amount_cents);
+    const line_ids = array(raw.line_ids, 1000).map(v => requiredText(v, 1000)).sort();
+    const package_ids = array(raw.package_ids, PANELS.size).map(v => requiredText(v, 1000)).sort();
+    if (seen.has(id) || amount_cents === null || !!line_ids.length === !!package_ids.length ||
+        new Set(line_ids).size !== line_ids.length || new Set(package_ids).size !== package_ids.length) invalid();
+    seen.add(id);
+    return { id, amount_cents, line_ids, package_ids };
+  }).sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 }
 function extras(value, privateOnly = false) {
   const seen = new Set();
   return array(value, 30).map(raw => {
-    keys(raw, privateOnly ? ['key', 'scope', 'cost_unit_cents'] : ['key', 'scope', 'category', 'description', 'quantity', 'unit_price_cents', 'taxable']);
+    keys(raw, privateOnly ? ['key', 'scope', 'cost_unit_cents', 'cost_source'] : ['key', 'scope', 'category', 'description', 'quantity', 'unit_price_cents', 'taxable']);
     const key = requiredText(raw.key, 80), scope = requiredText(raw.scope, 80);
     if (!/^[a-z][a-z0-9_]*$/.test(key) || !/^[a-z][a-z0-9_]*$/.test(scope)) invalid();
     const identity = JSON.stringify([scope, key]);
     if (seen.has(identity)) invalid();
     seen.add(identity);
-    if (privateOnly) return { key, scope, cost_unit_cents: cents(raw.cost_unit_cents) };
+    if (privateOnly) return { key, scope, cost_unit_cents: cents(raw.cost_unit_cents), cost_source: costSource(raw.cost_source) };
     const category = choice(raw.category, CATEGORIES);
     if (!category) invalid();
     return { key, scope, category, description: text(raw.description), quantity: hours(raw.quantity),
@@ -111,7 +150,7 @@ function assessments(value) {
       damage_type: text(raw.damage_type), area: text(raw.area),
       operation: choice(raw.operation, ['repair', 'replace', 'paint-only', 'blend', 'inspection-required']),
       refinish: boolean(raw.refinish), body_hours: hours(raw.body_hours), refinish_hours: hours(raw.refinish_hours),
-      ...amounts(raw, SELL), customer_notes: text(raw.customer_notes, 4000), reviewed: boolean(raw.reviewed),
+      ...amounts(raw, SELL), materials_pricing: materialsPricing(raw), customer_notes: text(raw.customer_notes, 4000), reviewed: boolean(raw.reviewed),
       preset_version_id: text(raw.preset_version_id, 255), photo_ids: photo_ids.sort(),
       paint_system: text(raw.paint_system, 80), taxable: taxable(raw.taxable),
       package: packageSettings(raw.package), extras: extras(raw.extras),
@@ -124,15 +163,34 @@ function publicSnapshot(raw) {
   const scenario = raw.scenario == null ? { payer: 'cash', provenance: 'shop_prepared' } : object(raw.scenario);
   const allocation = scenario.allocation == null ? null : amounts(object(scenario.allocation), ALLOCATION);
   const adjustments = object(raw.adjustments ?? {});
-  return {
+  const snapshot = {
     assessments: assessments(raw.assessments).sort((a, b) => a.panel_id.localeCompare(b.panel_id)),
     scenario: { payer: choice(scenario.payer, ['cash', 'insurance']),
       provenance: choice(scenario.provenance, ['shop_prepared', 'imported_carrier']), allocation },
-    adjustments: amounts(adjustments, ['discount_cents', 'minimum_cents']),
+    adjustments: { ...amounts(adjustments, ['discount_cents', 'minimum_cents']), discounts: discounts(adjustments.discounts) },
   };
+  // B1: save rejects dangling/included targets as well as preview. These are the
+  // assembler's exact base/extra IDs; shared extras use the calculator's smallest
+  // lexical representative. Amount eligibility is checked during calculation.
+  if (snapshot.adjustments.discounts.length) {
+    const lines = [], packages = [], shared = new Map();
+    for (const panel of snapshot.assessments) {
+      const inspection_required = panel.operation === 'inspection-required';
+      if (panel.package) packages.push({ id: `${panel.panel_id}:package` });
+      for (const category of CATEGORIES) lines.push({ id: `${panel.panel_id}:${category}`,
+        included: panel.package?.included_operations.includes(category) ?? false, inspection_required });
+      for (const extra of panel.extras) {
+        const key = JSON.stringify([extra.scope, extra.key, extra.category]);
+        const line = { id: `${panel.panel_id}:extra:${extra.scope}:${extra.key}`, inspection_required };
+        if (!shared.has(key) || line.id < shared.get(key).id) shared.set(key, line);
+      }
+    }
+    require('./panelEstimator').normalizeDiscounts(snapshot.adjustments.discounts, [...lines, ...shared.values()], packages);
+  }
+  return snapshot;
 }
 function privateSnapshot(raw) {
-  return { lines: panelLines(raw.lines, line => ({ ...amounts(line, COST), extras: extras(line.extras, true), private_notes: text(line.private_notes, 4000) })).sort((a, b) => a.panel_id.localeCompare(b.panel_id)),
+  return { lines: panelLines(raw.lines, line => ({ ...amounts(line, COST), cost_sources: costSources(line.cost_sources), extras: extras(line.extras, true), private_notes: text(line.private_notes, 4000) })).sort((a, b) => a.panel_id.localeCompare(b.panel_id)),
     private_notes: text(raw.private_notes, 4000), include_overhead_in_target: boolean(raw.include_overhead_in_target) ?? false,
     target_margin_bps: cents(raw.target_margin_bps, 9999), overhead_cents: cents(raw.overhead_cents), reason: text(raw.reason, 4000) };
 }
@@ -231,5 +289,5 @@ function createPanelEstimatorStore(pool) {
 }
 
 module.exports = { createPanelEstimatorStore, publicSnapshot, privateSnapshot, validateReferences,
-  PANELS, SELL, COST, CATEGORIES, assessments, taxable, packageSettings, extras,
+  PANELS, SELL, COST, CATEGORIES, assessments, taxable, packageSettings, extras, materialsPricing, costSources, discounts,
   error, invalid, object, text, requiredText, cents, hours, boolean, choice, array, amounts, keys };

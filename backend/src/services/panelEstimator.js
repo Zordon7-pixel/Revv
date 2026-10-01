@@ -83,7 +83,7 @@ function normalizePackages(rawPackages, lines) {
     const id = text(raw.id, 'package id');
     if (packages.has(id)) throw new TypeError('Duplicate package id');
     const price = cents(raw.price_cents, 'package price_cents');
-    const taxable = boolean(raw.taxable, 'package taxable');
+    const taxable = raw.taxable === null ? null : boolean(raw.taxable, 'package taxable');
     const members = lines.filter(line => line.package_id === id && line.included);
     const matched = new Set();
     for (const ref of list(raw.included_operations, 'included_operations')) {
@@ -96,10 +96,20 @@ function normalizePackages(rawPackages, lines) {
       matched.add(candidates[0].id);
     }
     if (!members.length || matched.size !== members.length) throw new TypeError('Package requires explicit included operations');
-    if (members.some(line => line.inspection_required || line.quantity === 0n || line.taxable !== taxable)) {
-      throw new TypeError('Package requires priced work with homogeneous tax settings');
+    if (members.some(line => line.inspection_required || line.quantity === 0n)) throw new TypeError('Package requires priced work');
+    // B1: allocation is public sell policy, never inferred from private costs.
+    let allocation = null;
+    if (raw.sell_allocation_cents != null) {
+      const values = record(raw.sell_allocation_cents, 'sell allocation');
+      const categories = members.map(l => l.category);
+      if (new Set(categories).size !== categories.length || categories.some(c => !['body', 'refinish', 'parts', 'materials', 'sublet'].includes(c)) ||
+          Object.keys(values).length !== categories.length || Object.keys(values).some(c => !categories.includes(c))) throw new TypeError('Invalid allocation categories');
+      allocation = Object.fromEntries([...categories].sort(compare).map(c => [c, cents(values[c], 'sell allocation cents')]));
+      if (Object.values(allocation).reduce((sum, v) => sum + v, 0n) !== price) throw new TypeError('Allocation must equal package price');
     }
-    packages.set(id, { id, price, taxable, members });
+    if ((!allocation && taxable === null) || (taxable !== null && members.some(l => l.taxable !== taxable)) ||
+        (!allocation && members.some(l => l.taxable !== members[0].taxable))) throw new TypeError('Package requires explicit tax allocation');
+    packages.set(id, { id, price, taxable, members, allocation });
   }
   for (const line of lines) {
     if (line.package_id && !packages.has(line.package_id)) throw new TypeError('Unknown package');
@@ -127,9 +137,31 @@ function allocateDiscount(buckets, discount, subtotal) {
   for (let i = 0; allocated < discount; i++, allocated++) eligible[i].discount++;
 }
 
+// B1: scopes name exact sell identities, not descriptions or included operations.
+// Sorting discounts and targets makes overlapping discounts independent of input order.
+function normalizeDiscounts(value, lines, packages) {
+  const seen = new Set();
+  const entries = list(value === undefined ? [] : value, 'discounts');
+  if (entries.length > 100) throw new TypeError('Too many discounts');
+  return entries.map(raw => {
+    record(raw, 'discount');
+    const id = text(raw.id, 'discount id');
+    if (seen.has(id)) throw new TypeError('Duplicate discount id');
+    seen.add(id);
+    const line_ids = list(raw.line_ids ?? [], 'line_ids').map(v => text(v, 'line id')).sort(compare);
+    const package_ids = list(raw.package_ids ?? [], 'package_ids').map(v => text(v, 'package id')).sort(compare);
+    if (!!line_ids.length === !!package_ids.length || new Set(line_ids).size !== line_ids.length ||
+        new Set(package_ids).size !== package_ids.length ||
+        line_ids.some(id => !lines.some(l => l.id === id && !l.included && !l.inspection_required)) ||
+        package_ids.some(id => !packages.some(p => p.id === id))) throw new TypeError('Invalid discount targets');
+    return { id, amount_cents: checkedCents(cents(raw.amount_cents, 'discount amount')), line_ids, package_ids };
+  }).sort((a, b) => compare(a.id, b.id));
+}
+
 function publicBucket(bucket) {
   return {
     id: bucket.id, kind: bucket.kind, taxable: bucket.taxable,
+    ...(bucket.package_id ? { package_id: bucket.package_id, category: bucket.category } : {}),
     gross_cents: checkedCents(bucket.gross), discount_cents: checkedCents(bucket.discount),
     net_cents: checkedCents(bucket.net), tax_cents: checkedCents(bucket.tax),
     total_cents: checkedCents(bucket.net + bucket.tax),
@@ -151,7 +183,10 @@ function calculateEstimate(input) {
   record(input, 'estimate');
   const lines = normalizeLines(input.lines);
   const packages = normalizePackages(input.packages === undefined ? [] : input.packages, lines);
-  const discount = cents(input.discount_cents === undefined ? 0 : input.discount_cents, 'discount_cents');
+  const globalDiscount = cents(input.discount_cents === undefined ? 0 : input.discount_cents, 'discount_cents');
+  const discounts = normalizeDiscounts(input.discounts, lines, packages);
+  const discount = globalDiscount + discounts.reduce((sum, d) => sum + BigInt(d.amount_cents), 0n);
+  checkedCents(discount);
   const minimum = cents(input.minimum_cents === undefined ? 0 : input.minimum_cents, 'minimum_cents');
   const taxRate = scaledDecimal(input.tax_rate_bps === undefined ? 0 : input.tax_rate_bps, 0, 'tax_rate_bps', 10000n);
   const target = input.target_margin_bps == null ? null : scaledDecimal(input.target_margin_bps, 0, 'target_margin_bps', 9999n);
@@ -160,13 +195,29 @@ function calculateEstimate(input) {
   const buckets = lines.filter(line => !line.included && !line.inspection_required).map(line => ({
     key: `line:${line.id}`, id: line.id, kind: 'line', taxable: line.taxable, gross: extend(line.unit_price, line.quantity),
   }));
-  for (const pkg of packages) buckets.push({ key: `package:${pkg.id}`, id: pkg.id, kind: 'package', taxable: pkg.taxable, gross: pkg.price });
+  for (const pkg of packages) {
+    if (!pkg.allocation) buckets.push({ key: `package:${pkg.id}`, id: pkg.id, kind: 'package', taxable: pkg.taxable, gross: pkg.price });
+    else for (const [category, gross] of Object.entries(pkg.allocation)) {
+      // Tuple encoding avoids collisions even when a package ID contains separators.
+      const id = JSON.stringify([pkg.id, category]);
+      buckets.push({ key: `package_allocation:${id}`, id, kind: 'package_allocation', package_id: pkg.id,
+        category, taxable: pkg.members.find(l => l.category === category).taxable, gross });
+    }
+  }
   const subtotal = buckets.reduce((sum, bucket) => sum + bucket.gross, 0n);
   checkedCents(subtotal);
-  allocateDiscount(buckets, discount, subtotal);
+  buckets.forEach(b => { b.discount = 0n; });
+  function applyDiscount(eligible, amount) {
+    const remaining = eligible.map(b => ({ key: b.key, gross: b.gross - b.discount, original: b }));
+    allocateDiscount(remaining, amount, remaining.reduce((sum, b) => sum + b.gross, 0n));
+    remaining.forEach(b => { b.original.discount += b.discount; });
+  }
+  for (const d of discounts) applyDiscount(buckets.filter(b => b.kind === 'line' ? d.line_ids.includes(b.id) :
+    d.package_ids.includes(b.package_id ?? b.id)), BigInt(d.amount_cents));
+  applyDiscount(buckets, globalDiscount);
   const adjustment = minimum > subtotal - discount ? minimum - (subtotal - discount) : 0n;
   if (adjustment > 0n) {
-    const billable = buckets.filter(bucket => bucket.kind === 'package' || lines.find(line => line.id === bucket.id).quantity > 0n);
+    const billable = buckets.filter(bucket => bucket.kind !== 'line' || lines.find(line => line.id === bucket.id).quantity > 0n);
     const settings = new Set(billable.map(bucket => bucket.taxable));
     if (settings.size !== 1) throw new TypeError('Minimum adjustment requires homogeneous tax settings and billable work');
     buckets.push({ key: 'minimum:', id: 'minimum_adjustment', kind: 'minimum', taxable: billable[0].taxable, gross: adjustment, discount: 0n });
@@ -220,10 +271,12 @@ function calculateEstimate(input) {
       };
     }),
     packages: packages.map(pkg => ({ id: pkg.id, price_cents: checkedCents(pkg.price), taxable: pkg.taxable,
+      ...(pkg.allocation ? { sell_allocation_cents: Object.fromEntries(Object.entries(pkg.allocation).map(([k, v]) => [k, checkedCents(v)])) } : {}),
       included_operations: pkg.members.map(line => ({ panel_id: line.panel_id, operation_id: line.operation_id })) })),
     buckets: buckets.sort((a, b) => compare(a.key, b.key)).map(publicBucket),
     inspection_required: lines.some(line => line.inspection_required),
     subtotal_cents: checkedCents(subtotal), discount_cents: checkedCents(discount),
+    discounts,
     minimum_adjustment_cents: checkedCents(adjustment), net_cents: checkedCents(net),
     tax_rate_bps: Number(taxRate), tax_cents: checkedCents(tax), total_cents: checkedCents(net + tax),
   };
@@ -242,4 +295,4 @@ function calculateEstimate(input) {
   } };
 }
 
-module.exports = { calculateEstimate, allocateInsurance };
+module.exports = { calculateEstimate, allocateInsurance, normalizeDiscounts };

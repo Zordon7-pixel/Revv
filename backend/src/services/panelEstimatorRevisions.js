@@ -26,12 +26,15 @@ function differences(before, after, path = '') {
 function billingRows(quote, revisionId) {
   return quote.buckets.map((bucket, index) => {
     const line = quote.lines.find(l => l.id === bucket.id);
-    const pkg = quote.packages.find(p => p.id === bucket.id);
-    const type = bucket.kind !== 'line' ? 'other' :
-      ['body', 'refinish'].includes(line.category) ? 'labor' :
-        ['parts', 'sublet'].includes(line.category) ? line.category : 'other';
+    const pkg = quote.packages.find(p => p.id === (bucket.package_id ?? bucket.id));
+    // B1 allocation buckets materialize once per category, preserving explicit
+    // taxability and accounting classification. Legacy whole packages stay other.
+    const category = bucket.kind === 'package_allocation' ? bucket.category : line?.category;
+    const type = ['body', 'refinish'].includes(category) ? 'labor' :
+      ['parts', 'sublet'].includes(category) ? category : 'other';
     const value = { id: randomUUID(), type,
-      description: bucket.kind === 'package' ? pkg.name : bucket.kind === 'minimum' ? 'Minimum charge adjustment' : `${line.description} — ${line.operation_id}`,
+      description: bucket.kind === 'package_allocation' ? `${pkg.name} — ${bucket.category}` :
+        bucket.kind === 'package' ? pkg.name : bucket.kind === 'minimum' ? 'Minimum charge adjustment' : `${line.description} — ${line.operation_id}`,
       quantity: '1.00', unit_price: dollars(bucket.net_cents), total: dollars(bucket.net_cents),
       taxable: bucket.taxable, sort_order: index, panel_revision_id: revisionId,
       panel_source_key: `${bucket.kind}:${bucket.id}` };

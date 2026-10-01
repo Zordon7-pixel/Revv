@@ -17,8 +17,10 @@ const n = require('./panelEstimatorStore');
  * Application is explicit: clients copy safe sell settings for user review. Merely
  * selecting a version does NOT replace entered prices. The server retains the
  * immutable source snapshot, checks compatibility, and never follows 'latest'.
+ * B1 adds optional package.sell_allocation_cents and materials_pricing to public
+ * sell settings; private cost_sources and extras.cost_source never enter that DTO.
  */
-const SELL_KEYS = ['body_hours', 'refinish_hours', 'refinish', ...n.SELL, 'taxable', 'package', 'extras'];
+const SELL_KEYS = ['body_hours', 'refinish_hours', 'refinish', ...n.SELL, 'taxable', 'package', 'extras', 'materials_pricing'];
 function matchSettings(raw) {
   n.keys(raw, ['panel_id', 'body_style', 'operation', 'severity', 'paint_system']);
   const panel = n.assessments([raw])[0];
@@ -29,18 +31,18 @@ function matchSettings(raw) {
 function sellSettings(raw) {
   n.keys(raw, SELL_KEYS);
   // All core fields must exist; null explicitly records an unknown, not a free item.
-  for (const key of SELL_KEYS.filter(k => !['package', 'extras'].includes(k))) {
+  for (const key of SELL_KEYS.filter(k => !['package', 'extras', 'materials_pricing'].includes(k))) {
     if (!Object.hasOwn(raw, key)) n.invalid();
   }
   n.keys(raw.taxable, n.CATEGORIES);
   if (n.CATEGORIES.some(key => !Object.hasOwn(raw.taxable, key))) n.invalid();
   return { body_hours: n.hours(raw.body_hours), refinish_hours: n.hours(raw.refinish_hours),
     refinish: n.boolean(raw.refinish), ...n.amounts(raw, n.SELL), taxable: n.taxable(raw.taxable),
-    package: n.packageSettings(raw.package), extras: n.extras(raw.extras) };
+    package: n.packageSettings(raw.package), extras: n.extras(raw.extras), materials_pricing: n.materialsPricing(raw) };
 }
 function privateConfig(raw) {
-  n.keys(raw, [...n.COST, 'extras', 'private_notes', 'target_margin_bps', 'overhead_cents', 'include_overhead_in_target']);
-  return { ...n.amounts(raw, n.COST), extras: n.extras(raw.extras, true), private_notes: n.text(raw.private_notes, 4000),
+  n.keys(raw, [...n.COST, 'cost_sources', 'extras', 'private_notes', 'target_margin_bps', 'overhead_cents', 'include_overhead_in_target']);
+  return { ...n.amounts(raw, n.COST), cost_sources: n.costSources(raw.cost_sources), extras: n.extras(raw.extras, true), private_notes: n.text(raw.private_notes, 4000),
     target_margin_bps: n.cents(raw.target_margin_bps, 9999), overhead_cents: n.cents(raw.overhead_cents),
     include_overhead_in_target: n.boolean(raw.include_overhead_in_target) ?? false };
 }
@@ -54,7 +56,8 @@ function normalizePreset(raw) {
   if (settings.package) {
     for (const category of settings.package.included_operations) {
       const quantity = category === 'body' ? settings.body_hours : category === 'refinish' ? settings.refinish_hours : 1;
-      if (!quantity || settings.taxable[category] !== settings.package.taxable || result.match.operation === 'inspection-required' ||
+      if (!quantity || settings.taxable[category] === null ||
+          (settings.package.taxable !== null && settings.taxable[category] !== settings.package.taxable) || result.match.operation === 'inspection-required' ||
           (category === 'refinish' && settings.refinish !== true)) n.invalid();
     }
   }

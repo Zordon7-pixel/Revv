@@ -131,7 +131,7 @@ test('fixed packages charge once, retain underlying costs, and charge explicit e
   assert.equal(calculateEstimate(input).costs.complete, false);
 });
 
-test('packages reject implicit membership, mixed tax, unknown refs and repeated membership', () => {
+test('packages reject implicit membership, unallocated mixed tax, unknown refs and repeated membership', () => {
   for (const mutate of [
     input => { delete input.packages[0].included_operations; },
     input => { input.packages[0].included_operations = []; },
@@ -149,6 +149,81 @@ test('packages reject implicit membership, mixed tax, unknown refs and repeated 
     assert.throws(() => calculateEstimate(input));
   }
   assert.throws(() => calculateEstimate({ lines: [line({ included: true })] }));
+});
+
+test('B1 mixed-tax package allocations charge once and reject incomplete or conflicting allocations', () => {
+  const input = packageFixture();
+  input.lines[0].taxable = false;
+  Object.assign(input.packages[0], { taxable: null, sell_allocation_cents: { body: 10001, refinish: 4999 } });
+  const result = calculateEstimate(input);
+  assert.equal(result.sell.subtotal_cents, 15000);
+  assert.equal(result.sell.tax_cents, 500);
+  assert.equal(result.sell.total_cents, 15500);
+  assert.equal(result.costs.direct_cost_cents, 6000);
+  assert.deepEqual(result.sell.packages[0].sell_allocation_cents, { body: 10001, refinish: 4999 });
+  assert.deepEqual(result.sell.buckets.map(b => [b.category, b.gross_cents, b.taxable]), [['body', 10001, false], ['refinish', 4999, true]]);
+  assert.ok(result.sell.lines.every(l => l.net_cents === 0));
+  assert.deepEqual(calculateEstimate({ ...input, lines: [...input.lines].reverse() }), result);
+  const changedCosts = structuredClone(input); changedCosts.lines[0].cost_unit_cents = null;
+  assert.deepEqual(calculateEstimate(changedCosts).sell, result.sell);
+  for (const allocation of [{ body: 15000 }, { body: 10000, refinish: 4999 },
+    { body: 10001, refinish: 4999, parts: 0 }, { body: -1, refinish: 15001 },
+    { body: 10000.5, refinish: 4999.5 }, { body: null, refinish: 15000 }]) {
+    assert.throws(() => calculateEstimate({ ...input, packages: [{ ...input.packages[0], sell_allocation_cents: allocation }] }));
+  }
+  assert.throws(() => calculateEstimate({ ...input, packages: [{ ...input.packages[0], taxable: true }] }));
+  const homogeneous = packageFixture();
+  homogeneous.packages[0].sell_allocation_cents = { body: 0, refinish: 15000 };
+  assert.equal(calculateEstimate(homogeneous).sell.total_cents, 16500);
+});
+
+test('B1 scoped discounts use residual largest remainders, stable IDs, and package targets', () => {
+  const input = { lines: [line({ id: 'a', unit_price_cents: 5 }),
+    line({ id: 'b', panel_id: 'roof', unit_price_cents: 5, taxable: false })],
+  discounts: [{ id: 'b', amount_cents: 1, line_ids: ['b', 'a'] },
+    { id: 'a', amount_cents: 1, line_ids: ['b', 'a'] }], discount_cents: 1, tax_rate_bps: 1000 };
+  const result = calculateEstimate(input);
+  assert.equal(result.sell.discount_cents, 3);
+  assert.deepEqual(result.sell.buckets.map(b => [b.discount_cents, b.net_cents]), [[2, 3], [1, 4]]);
+  assert.deepEqual(calculateEstimate({ ...input, lines: [...input.lines].reverse(), discounts: [...input.discounts].reverse() }), result);
+  const overlapping = { ...input, discount_cents: 0, discounts: [
+    { id: 'a', amount_cents: 3, line_ids: ['a'] }, { id: 'b', amount_cents: 3, line_ids: ['a', 'b'] }] };
+  const overlapResult = calculateEstimate(overlapping);
+  assert.deepEqual(overlapResult.sell.buckets.map(b => b.net_cents), [1, 3]);
+  assert.deepEqual(calculateEstimate({ ...overlapping, discounts: [...overlapping.discounts].reverse() }), overlapResult);
+  for (const discounts of [[{ id: 'x', amount_cents: 1, line_ids: ['missing'] }],
+    [{ id: 'x', amount_cents: 1, line_ids: ['a', 'a'] }], [{ id: 'x', amount_cents: 1 }],
+    [{ id: 'x', amount_cents: 6, line_ids: ['a'] }],
+    [{ id: 'x', amount_cents: 1, line_ids: ['a'], package_ids: ['p'] }],
+    [{ id: 'x', amount_cents: 1, package_ids: ['missing'] }],
+    [input.discounts[0], input.discounts[0]],
+    [{ id: 'a', amount_cents: 5, line_ids: ['a'] }, { id: 'b', amount_cents: 1, line_ids: ['a'] }]]) {
+    assert.throws(() => calculateEstimate({ ...input, discounts }));
+  }
+  assert.throws(() => calculateEstimate({ ...input, discount_cents: 9 }));
+  const pkg = packageFixture(); pkg.lines[0].taxable = false;
+  Object.assign(pkg.packages[0], { taxable: null, sell_allocation_cents: { body: 10000, refinish: 5000 } });
+  pkg.discounts = [{ id: 'p-discount', amount_cents: 3000, package_ids: ['p'] }]; pkg.discount_cents = 1;
+  const sale = calculateEstimate(pkg).sell;
+  assert.deepEqual(sale.buckets.map(b => b.net_cents), [7999, 4000]);
+  assert.equal(sale.tax_cents, 400); assert.equal(sale.total_cents, 12399);
+  assert.throws(() => calculateEstimate({ ...pkg, discounts: [{ id: 'x', amount_cents: 1, line_ids: ['a'] }] }));
+  assert.throws(() => calculateEstimate({ ...pkg, discounts: [{ id: 'x', amount_cents: 1, package_ids: ['p', 'p'] }] }));
+  const minimum = calculateEstimate({ lines: [line({ unit_price_cents: 10 })],
+    discounts: [{ id: 'x', amount_cents: 3, line_ids: ['a'] }], discount_cents: 2, minimum_cents: 8 });
+  assert.equal(minimum.sell.minimum_adjustment_cents, 3); assert.equal(minimum.sell.net_cents, 8);
+});
+
+test('B1 private provenance does not change amount completeness or public sell', () => {
+  const base = calculateEstimate({ lines: [line({ cost_source: null })] });
+  for (const source of ['estimated', 'quoted', 'actual', 'legacy arbitrary source']) {
+    const result = calculateEstimate({ lines: [line({ cost_source: source })] });
+    assert.equal(result.costs.lines[0].cost_source, source);
+    assert.equal(result.costs.direct_cost_cents, base.costs.direct_cost_cents);
+    assert.deepEqual(result.sell, base.sell);
+    const missing = calculateEstimate({ lines: [line({ cost_source: source, cost_unit_cents: null })] });
+    assert.equal(missing.costs.complete, false); assert.equal(missing.costs.lines[0].cost_source, source);
+  }
 });
 
 test('package repeated operations require scoped references', () => {
