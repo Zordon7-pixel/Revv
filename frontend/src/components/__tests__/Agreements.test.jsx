@@ -9,6 +9,26 @@ const context = { identity: { name: 'Customer', email: 'qa@example.test', vehicl
 
 beforeEach(() => { cleanup(); api.get.mockReset(); api.post.mockReset() })
 describe('shop agreement controls', () => {
+  it('only offers void for a pending request with the owner/admin capability', async () => {
+    api.get.mockImplementation((path) => Promise.resolve({ data: path === '/agreements/templates' ? { templates: [] } : {
+      agreements: [{ id:'pending-1', title:'Pending agreement', status:'pending', recipient_name:'Customer', created_at:'2026-09-26' }],
+    } }))
+    const view = render(<ROAgreements roId="ro-void" archiveOnly />)
+    await screen.findByText('Pending agreement')
+    expect(screen.queryByRole('button', { name:'Void pending request' })).not.toBeInTheDocument()
+    view.rerender(<ROAgreements roId="ro-void" archiveOnly canCountersign />)
+    api.post.mockResolvedValue({ data:{ success:true } })
+    fireEvent.click(screen.getByRole('button', { name:'Void pending request' }))
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/agreements/pending-1/void'))
+  })
+  it.each(['awaiting_shop', 'signed', 'voided'])('never offers void for %s even to managers', async (status) => {
+    api.get.mockImplementation((path) => Promise.resolve({ data: path === '/agreements/templates' ? { templates: [] } : {
+      agreements: [{ id:'immutable-1', title:'Existing agreement', status, recipient_name:'Customer', created_at:'2026-09-26' }],
+    } }))
+    render(<ROAgreements roId="ro-signed" archiveOnly canCountersign />)
+    await screen.findByText('Existing agreement')
+    expect(screen.queryByRole('button', { name:/Void .*request/ })).not.toBeInTheDocument()
+  })
   it('uploads the PDF and configured signature requirements without sending messages', async () => {
     api.get.mockResolvedValue({ data: { templates: [] } })
     api.post.mockResolvedValue({ data: { id: 'template-1' } })

@@ -33,3 +33,11 @@ test('revision changes with customer vehicle or money; stale review is rejected'
  }
  assert.equal(buildAutofill(ro,customer,vehicle).revision,baseline.revision);
 });
+test('revision must be a nonempty SHA-256 string even when a malformed value matches', () => {
+ const current = buildAutofill(ro, customer, vehicle);
+ for (const supplied of [undefined, null, '', ' ', false, 0, {}, [], 'malformed', 'a'.repeat(63), 'a'.repeat(65), 'G'.repeat(64), current.revision + '\n']) {
+  assert.throws(() => checkRevision(supplied, current), { status: 409 });
+  assert.throws(() => checkRevision(supplied, { revision: supplied }), { status: 409 });
+ }
+ assert.doesNotThrow(() => checkRevision(current.revision, current));
+});
