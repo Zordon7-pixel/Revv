@@ -1,22 +1,21 @@
-# Authorization autofill - 2026-09-27
+# Authorization autofill — guarded scope, corrected 2026-10-01
 
-Build from verified production 9291a5f in codex/revv-autofill-20260927. Existing Miles original clauses stay active; attorney-review PDFs are not production signing templates. Other shops' static uploads remain unchanged.
+The September 27 record referenced production `9291a5f` and branch `codex/revv-autofill-20260927`. That historical reference does not establish current deployment, tenant import or legal approval. This implementation is not deployment approval. Current mission boundaries and verification commands are in [readiness remediation](READINESS-REMEDIATION-20261001.md).
 
-## Behavior
-A tenant-scoped preparation endpoint supplies customer/vehicle/claim details, source-labelled saved RO total and deductible, an estimate snapshot reference, and date of loss where already recorded. Missing values remain explicit staff inputs. A prior date of loss may be reused only for matching customer, VIN and claim. No unreviewed OCR amount becomes an authorization. Staff see the auto-filled summary, confirm monetary values and stage, preview the exact PDF, then create the immutable signing snapshot. Customer only reviews/consents/signs. A source revision detects changes since staff loaded the RO. Existing links and signed documents remain frozen.
+## Actual preparation scope
 
-## Files / preflight
-Existing: backend/src/routes/agreements.js, backend/src/services/milesAgreements.js, frontend/src/components/ROAgreements.jsx, frontend/src/components/__tests__/Agreements.test.jsx, backend/test/agreements.integration.test.js.
-To create: backend/src/services/agreementAutofill.js and backend/test/agreementAutofill.test.js.
+`agreementAutofill.js` supplies a tenant-scoped RO/customer/vehicle summary, saved RO dollar total, deductible and source labels. A draft marked `needs_review` suppresses the suggested total; no total is inferred from OCR rows, net insurer payments or legacy ambiguous-unit estimate fields. Deductible still comes from the saved RO and requires staff review. Missing/invalid values remain staff inputs. The estimate reference is a label derived from saved timestamps, not an independently signed estimate archive.
 
-## Completion gate
-Unit + disposable PostgreSQL integration tests for tenant isolation, zero/missing money, source conflicts, date validation, preview/no-write and frozen signatures. Frontend coverage for autofill, review reset, failed loading and RO switching. Production frontend build, independent review, desktop/mobile screenshots of the real component using clearly synthetic customer data, pushed PR, merge/deploy and live commit verification. No lint/typecheck scripts exist. No real customer signing or notifications during QA.
+Loss date comes from a valid saved RO loss date, or the latest non-voided intake preparation when name, VIN and claim match. This lookup is within the same RO/shop; it does not require that earlier intake to be signed. Completion is stricter: both preview and creation require a signed intake for the same shop/RO/template and matching name, VIN and claim (including matching blank claims).
 
-Pending provider activation: inspect existing access without exposing secrets; no replacement for absent credentials is invented. Supplier sync requires named suppliers/provider access. Automatic customer messages require a separate reviewed integration; none are sent by this build.
+Prepared PDFs are limited to the three recognized Miles profiles in `milesAgreements.js`, gated by exact tenant ID, preparation kind and pinned original-PDF hash. Other shops' static uploaded PDFs do not acquire automatic field maps. Revised attorney-review PDFs remain inactive; no import or legal signoff is claimed here.
 
-## Implementation and remaining boundaries
-Preparation, preview and create use repeatable-read transactions to resolve a consistent source snapshot. Create verifies the client revision against that snapshot. The UI drops stale asynchronous responses after RO switches and resets review after edits. Manually overridden defaults are explicitly labelled as staff-entered. Missing loss dates are entered by staff once and reused from matching prior authorization records; no date is inferred from intake or today. Preview produces a PDF without a request, event or customer notification.
+The preparation, prepared preview and creation routes use repeatable-read source snapshots. Prepared preview/create require a current lowercase 64-hex `source_revision`; missing, null, malformed and stale values fail with 409. Static-template creation may omit the property; if present, it must pass the same strict check. The frontend sends revisions for prepared templates. Static creation without a revision does not receive the prepared-source freshness guarantee.
 
-Revised legal PDFs remain attorney-review artifacts, not activated templates. Their final approved layout will need an approved profile/map; this release does not claim arbitrary uploaded PDFs acquire field mappings automatically. No shop financial or contract wording is changed by autofill.
+Staff review money, stage and overrides. The UI resets review on edits and discards stale responses after switching ROs. Preview validates supplied or saved email using the same helper as creation, before display truncation; absent email remains allowed for tablet signing. Preview creates no signing request, token or audit event and sends no notification. Prepared creation freezes the document/details; signing and downloads compare stored document hashes. These hashes do not make audit events hash-chained or JSON audit exports cryptographically signed.
 
-Provider check: Railway CLI still reports unauthorized on September 27; no production provider credential was changed or printed. Existing GitHub deployment remains usable. External provider activation and supplier synchronization are separate from this release. Supplier names requested; awaiting response. No live external messages sent.
+## Phase2 source disposition and remaining verification
+
+Source and existing tests cover mandatory prepared/optional strict static revisions, invalid/null email parity, completion claim matching, and owner/admin-only void of pending requests. `awaiting_shop` still blocks duplicate creation but cannot be voided; conflict copy now says only pending requests can be voided by an owner/admin. The UI exposes void only for pending requests with manager capability. This phase inspects those results without claiming a new PostgreSQL, frontend/browser or PDF visual pass.
+
+Hermes must run the explicit local disposable database tests and frontend gates on the final committed SHA. Historical test counts or production references do not satisfy that gate. Browser checks with synthetic data, PDF visual inspection, any Miles import and legal approval require their own actual evidence. No merge/deploy is part of this implementation mission. OpenAI/eBay/Twilio/Resend remain LIVE UNKNOWN; no provider credential inspection or activation is performed.

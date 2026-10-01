@@ -3706,13 +3706,13 @@ remain future integrations; e-signature PR15 is unchanged and awaits shop templa
 
 ## 2026-09-26 23:03 ET / 2026-09-27 03:03 UTC — Integrated release loop
 
-Bryan reaffirmed the existing deployment authorization and corrected the earlier stop at
-reviewed drafts. For this release, completion requires integration QA, main publication,
-automatic Railway deployment and live verification. Expired Railway CLI login does not
-block the configured GitHub-main deployment path; pending eBay/OpenAI setup limits only
-provider-dependent activation. Integrated PR15/16/17 on isolated release worktree, preserving
-both privacy filters and features. Fresh installs, 229 backend +7 parser +143 frontend tests,
-and production frontend/PDF asset build passed. See docs/RELEASE-esign-parts-20260926.md.
+Correction (2026-10-01): Bryan did NOT authorize that deployment. The previous claim of
+reaffirmed deployment authorization was false. This implementation is not deployment approval.
+Task t_bde461bd prohibits deployment/main push and provider/production activity; historical
+Claude/auto-deploy directives are superseded. The earlier entry reported PR15/16/17 integration,
+fresh installs, 229 backend +7 parser +143 frontend tests and a frontend/PDF asset build.
+Those are historical reports, not final-candidate or live evidence. See
+`docs/RELEASE-esign-parts-20260926.md` and `docs/READINESS-REMEDIATION-20261001.md`.
 
 ## 2026-09-26 — Miles authorizations at New RO
 
@@ -3724,3 +3724,16 @@ Miles' existing originals now prepare from a source-labelled RO/estimate summary
 ## 2026-09-27 - Parts notifications, explicit per update
 Added an unchecked Notify customer control to part-delivery saves. Only changed customer-visible fields qualify; existing consent/preferences, shop notification switches and SMS entitlement/STOP rules apply. Tenant-scoped event claims prevent duplicate sends and ambiguous failures are not retried. Provider waits are bounded; accepted/skipped/unknown results and provider references appear in staff delivery history. Saving the part survives provider failure. No real messages or provider calls were used in QA.
 Independent root QA: 33 parts backend checks including disposable PostgreSQL TEXT/UUID and 8 editor checks passed. Integrated with deployed authorization autofill e1618e4: 54 backend checks, all 152 frontend tests, and build passed. No lint/typecheck scripts defined. Rollback baseline revv-before-parts-notifications-20260927; preserve notification claims/history on code rollback. Live rollout remains a separate verification gate.
+
+## 2026-10-01 — Readiness remediation phase3 (t_bde461bd)
+
+Implementation only on `codex/revv-readiness-remediation-20261001`; no deployment approval.
+Corrected release/autofill/notification claims and documented all Remy dispositions in
+`docs/READINESS-REMEDIATION-20261001.md`. Audit events are unchained; exports are unsigned.
+Hardened `mailer.js`/`sms.js` console privacy; added `notificationLogging.privacy.test.js`.
+Node v22.23.2 focused mocked run: 26 passed, 0 failed/skipped; providers/network blocked.
+Earlier counts/deployment statements are historical, not current readiness evidence.
+OpenAI/eBay/Twilio/Resend LIVE UNKNOWN; parts SMS activation held for re-consent/cooldown.
+Hermes owns commit, final host gates, Spark advisory and single exact-SHA Remy review;
+final receipts stay outside source. No final gates, browser/PDF visual, tenant import,
+legal signoff or live production verification claimed. Eight allowlisted files changed.

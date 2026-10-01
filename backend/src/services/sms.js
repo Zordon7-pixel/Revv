@@ -56,10 +56,9 @@ async function getSmsShop(shopId) {
 function twilioConfigFromShop(shop, shopId) {
   const hasApiKeyCreds = !!(shop?.twilio_account_sid && shop?.twilio_api_key && shop?.twilio_api_secret && shop?.twilio_phone_number);
   const hasAuthTokenCreds = !!(shop?.twilio_account_sid && shop?.twilio_auth_token && shop?.twilio_phone_number);
-  const hasDbCreds = hasApiKeyCreds || hasAuthTokenCreds;
 
   if (shopId) {
-    console.log(`[SMS] getTwilioConfigForShop(${shopId}): DB has account_sid=${!!shop?.twilio_account_sid}, api_key=${!!shop?.twilio_api_key}, auth_token=${!!shop?.twilio_auth_token}, phone=${!!shop?.twilio_phone_number} → using ${hasDbCreds ? 'DB creds' : 'env vars'}`);
+    console.log('[SMS] Resolving shop configuration');
   }
 
   if (hasApiKeyCreds) {
@@ -86,9 +85,9 @@ function twilioConfigFromShop(shop, shopId) {
 
   const envConfig = getEnvTwilioConfig();
   if (envConfig) {
-    console.log(`[SMS] Using env var config: account_sid=${!!envConfig.accountSid}, api_key=${!!envConfig.apiKey}, auth_token=${!!envConfig.authToken}, phone=${!!envConfig.phoneNumber}`);
+    console.log('[SMS] Using environment configuration');
   } else {
-    console.warn(`[SMS] No Twilio config found in DB or env vars for shop ${shopId}`);
+    console.warn('[SMS] No Twilio configuration found');
   }
   return envConfig ? { ...envConfig, plan: shop?.plan, sms_comp: shop?.sms_comp, _source: 'env' } : null;
 }
@@ -100,9 +99,9 @@ async function getTwilioConfigForShop(shopId) {
   }
   const envConfig = getEnvTwilioConfig();
   if (envConfig) {
-    console.log(`[SMS] Using env var config: account_sid=${!!envConfig.accountSid}, api_key=${!!envConfig.apiKey}, auth_token=${!!envConfig.authToken}, phone=${!!envConfig.phoneNumber}`);
+    console.log('[SMS] Using environment configuration');
   } else {
-    console.warn(`[SMS] No Twilio config found in DB or env vars for shop ${shopId}`);
+    console.warn('[SMS] No Twilio configuration found');
   }
   return envConfig ? { ...envConfig, _source: 'env' } : null;
 }
@@ -126,7 +125,7 @@ async function sendSMS(phone, message, options = {}) {
       [shopId, phone]
     );
     if (optedOut) {
-      console.warn(`[SMS] Suppressed send to opted-out number for shop ${shopId}.`);
+      console.warn('[SMS] Suppressed send: opted_out');
       return { ok: false, reason: 'opted_out', body: finalMessage };
     }
   }
@@ -146,22 +145,21 @@ async function sendSMS(phone, message, options = {}) {
     }
 
     if (!smsEntitled(shop)) {
-      console.warn(`[SMS] Suppressed send for non-entitled shop ${shopId}.`);
+      console.warn('[SMS] Suppressed send: sms_not_entitled');
       return { ok: false, reason: 'sms_not_entitled', body: finalMessage };
     }
   }
 
   if (!config) config = await getTwilioConfigForShop(shopId);
   if (!config) {
-    console.warn(`[SMS] Twilio is not configured${shopId ? ` for shop ${shopId}` : ''}. Skipping SMS send.`);
+    console.warn('[SMS] Twilio is not configured. Skipping SMS send.');
     return { ok: false, reason: 'not configured', body: finalMessage };
   }
 
   try {
     // API Key auth: twilio(apiKeySid, apiKeySecret, { accountSid })
     // Auth Token auth: twilio(accountSid, authToken)
-    const authMethod = config.apiKey ? 'api_key' : 'auth_token';
-    console.log(`[SMS] Sending to ${phone} from ${config.phoneNumber} via ${authMethod} (source: ${config._source || 'unknown'})`);
+    console.log('[SMS] Sending');
     const client = config.apiKey
       ? twilio(config.apiKey, config.apiSecret, { accountSid: config.accountSid })
       : twilio(config.accountSid, config.authToken);
@@ -171,10 +169,18 @@ async function sendSMS(phone, message, options = {}) {
       from: config.phoneNumber,
       body: finalMessage,
     });
-    console.log(`[SMS] Sent successfully. SID: ${result.sid}`);
+    // Twilio message SIDs have a fixed prefix and 32 hex digits.
+    const reference = typeof result.sid === 'string' && result.sid.length === 34
+      && /^SM[a-f0-9]{32}$/i.test(result.sid) ? result.sid : 'unavailable';
+    console.log('[SMS] Sent successfully; reference:', reference);
     return { ok: true, sid: result.sid, body: finalMessage };
   } catch (error) {
-    console.error(`[SMS] Failed to send to ${phone}:`, error.message);
+    // Bound provider codes; never log messages, objects, or coerced values.
+    const code = (typeof error.code === 'number' && Number.isInteger(error.code)
+      && error.code >= 10000 && error.code <= 99999)
+      || (typeof error.code === 'string' && error.code.length === 5 && /^[1-9][0-9]{4}$/.test(error.code))
+      ? error.code : 'unknown';
+    console.error('[SMS] Send failed; provider code:', code);
     return { ok: false, reason: error.message, body: finalMessage };
   }
 }

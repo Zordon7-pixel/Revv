@@ -1,23 +1,23 @@
-# Parts customer notifications — 2026-09-27
+# Parts customer notifications — corrected 2026-10-01
 
-## Scope
-An unchecked Notify customer control on the delivery editor explicitly requests an outbound update for that save only. Save-only remains default. Only changes to customer-visible status, ETA/source, checked quantities or customer note qualify; supplier and internal edits and carrier observations do not. Existing customer opt-ins, contact preferences, shop switches and SMS plan/STOP gates apply. No new AI/provider credentials. Provider acceptance is not confirmed delivery.
+## Scope and consent limitation
 
-## Existing artifacts verified before edits
-- backend/src/routes/parts.js: PUT /:id/delivery saves staff delivery revisions.
-- backend/src/services/partsDelivery.js: event schema, snapshots, transactional revision checks.
-- backend/src/services/sms.js: sendSMS enforces entitlement and STOP suppression.
-- backend/src/services/mailer.js: sendMail uses existing Resend configuration, returns null when unconfigured.
-- frontend/src/components/PartDeliveryEditor.jsx and its existing PartDelivery.test.jsx tests.
-- New: backend/src/services/partsNotifications.js and backend/test/partsNotifications.test.js.
+An unchecked Notify customer control requests an outbound update for that save only. Save-only remains default. Only changed customer-visible status, ETA/source, checked quantities or customer note qualify; supplier/internal-only edits and carrier observations do not. Provider acceptance is not confirmed delivery.
 
-## Safety and completion gate
-A unique shop/part/revision claim prevents concurrent/retried sends, including ambiguous provider failures. No background retry; unknown results require staff verification. Records store outcome codes without raw recipient/body. Save must survive notification failure and UI must show the outcome before closing. Claimed events are staff-created and still current. Safe content excludes supplier, shipment numbers, cost and private notes. Tests mock providers and exercise tenant scoping, no-op, concurrency, preference/consent and provider outcomes; frontend tests and production build. No real customer messages or production data changes. Root worker independently reviews and integrates the commit.
+`partsNotifications.js` requires literal channel consent TRUE, a compatible contact preference, a contact value and a shop switch that is not explicitly FALSE. Missing shop switch values do not themselves block sends. SMS additionally enforces plan entitlement and STOP suppression. These are boolean gates, **not proof of positive historical SMS consent**. Older defaults allowed TRUE without a recorded choice. New-path defaults are now FALSE, create requires explicit boolean TRUE, and legacy stored TRUE/FALSE/NULL and STOP records are preserved.
 
-## Implemented evidence
-- Explicit per-save checkbox defaults off. Provider result receipt remains on screen until Done, and delivery history retains each channel outcome plus provider reference if accepted.
-- Eight-second provider wait per channel caps response delay. Timeouts are unknown (not failed delivery); durable unique claims prevent retries of ambiguous sends. No automated retries are added.
-- Additive parts_delivery_notifications table stores shop/part/revision and safe result codes only; include in backup/retention. No customer phone, address, email or message body is duplicated into the audit table.
-- Existing Resend and Twilio are used. Existing SMS service enforces plan entitlement and STOP handling. Missing consent/preference/contact/shop-enabled checks apply before provider calls. No provider or customer record was changed in production.
-- Verification: 15 focused backend unit tests, 18 disposable PostgreSQL integration tests across TEXT/UUID IDs, 149 frontend tests, production build, syntax and diff checks passed. Provider calls were mocked. No standalone lint/typecheck scripts exist in package manifests.
-- Independent root review requested bounded provider waits and durable history; both fixed and regression tested. Root owns final independent QA, PR and deployment. This branch is not independently deployed.
+Source inspection of customer schema/migrations, customer/RO writes and STOP/START handling found no trustworthy positive historical SMS consent provenance: no durable link from a TRUE value to who consented, when, by what method and to which disclosure. STOP timestamps record opt-out, not opt-in; START removes suppression without creating that provenance. No tenant/database history was inspected. Parts SMS activation is held pending separate approved re-consent work: collect a fresh explicit in-person choice plus provenance, actual time and disclosure version; never fabricate timestamps or bulk-rewrite legacy values or STOP records.
+
+## Delivery behavior and limits
+
+A unique shop/part/revision claim prevents duplicate sends for one event, including ambiguous failures. It is **not a per-customer cooldown** across revisions or parts. Follow-up `NOTIFY-COOLDOWN` must define and test that limit before parts SMS activation. No automatic retries are added. An eight-second wait per channel bounds the caller's wait, not provider execution/cancellation; timeouts require verification before retry. Saving the part survives provider failure.
+
+History stores channel outcomes and accepted provider references. The code does not deliberately copy recipient/body into notification result records, but provider references there are stringified/truncated, not cryptographically authenticated or allowlisted. This phase hardens only console logging in `mailer.js` and `sms.js`; it does not certify every persisted provider field. See follow-up `NOTIFY-REFERENCE-VALIDATION` in the disposition document.
+
+Mailer no-config returns null. SMS no-config/suppression returns its existing failed outcome and body; provider exceptions preserve SMS reason or mailer's thrown error. Console logs now retain static outcomes, validated UUID email references, fixed-format Twilio message SIDs, bounded HTTP status and five-digit Twilio error codes. Raw addresses, phone numbers, subject/body, sender/auth data and provider messages/objects are excluded. Customer switches, provider calls, entitlement/STOP and returns remain unchanged.
+
+## Evidence and activation boundary
+
+The September 27 record reported 15 focused backend tests, 18 disposable PostgreSQL integration tests, 149 frontend tests and a build. These are historical reports, not final-candidate evidence. Current commands and the phase3 mocked privacy result are in [readiness remediation](READINESS-REMEDIATION-20261001.md); final-SHA receipts remain outside source.
+
+OpenAI/eBay/Twilio/Resend remain **LIVE UNKNOWN**, excluded from live verification and activation. No provider calls, real messages, production access or configuration changes occur in this mission. This implementation does not add a runtime activation switch: existing explicit notification requests can still reach configured providers if someone activates/uses them. No newly enabled provider path is introduced here; keep activation held operationally. If future rollout needs an enforceable parts-specific hold, isolate that code scope for Codex rather than disabling unrelated messaging. Hermes owns commit/gates/advisory/final exact-SHA review; implementation and historical QA do not authorize deployment.

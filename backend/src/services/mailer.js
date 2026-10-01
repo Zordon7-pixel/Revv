@@ -7,14 +7,14 @@ const RESEND_API_KEY = process.env.RESEND_API_KEY;
 const FROM = process.env.RESEND_FROM || 'REVV <noreply@revvshop.app>';
 
 if (RESEND_API_KEY) {
-  console.log('[Mailer] Resend configured — from:', FROM);
+  console.log('[Mailer] Resend configured');
 } else {
   console.log('[Mailer] RESEND_API_KEY not set — email notifications disabled');
 }
 
 async function sendMail(to, subject, html) {
   if (!RESEND_API_KEY) {
-    console.log('[Mailer] No-op: Resend not configured', { to, subject });
+    console.log('[Mailer] No-op: Resend not configured');
     return null;
   }
 
@@ -31,14 +31,19 @@ async function sendMail(to, subject, html) {
     const data = await res.json();
 
     if (!res.ok) {
-      console.error('[Mailer] Resend error:', data);
+      console.error('[Mailer] Resend rejected send; HTTP status:',
+        Number.isInteger(res.status) && res.status >= 100 && res.status <= 599 ? res.status : 'unknown');
       throw new Error(data.message || 'Resend API error');
     }
 
-    console.log('[Mailer] Sent via Resend:', data.id);
+    // Only UUID-shaped provider references may enter logs; never coerce arbitrary values.
+    const reference = typeof data.id === 'string' && data.id.length === 36
+      && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(data.id)
+      ? data.id : 'unavailable';
+    console.log('[Mailer] Sent via Resend; reference:', reference);
     return data;
   } catch (err) {
-    console.error('[Mailer] Error:', err.message);
+    console.error('[Mailer] Send failed');
     throw err;
   }
 }
