@@ -152,13 +152,24 @@ test('POST /customers attempts opt-in confirmation only for consented creates wi
     });
   }
 
+  for (const method of [undefined, null, 'import', 'VERBAL']) {
+    const invalid = await runCreate({ name: 'Invalid', sms_consent: true, sms_consent_method: method });
+    assert.equal(invalid.statusCode, 400);
+  }
+  assert.equal(dbRuns.length, 0);
+  assert.equal(smsCalls.length, 0);
+
   smsCalls.length = 0;
   dbRuns.length = 0;
-  let res = await runCreate({ name: 'Jane Customer', phone: '+15551234567', sms_consent: true });
+  let res = await runCreate({ name: 'Jane Customer', phone: '+15551234567', sms_consent: true, sms_consent_method: 'verbal', sms_consent_at: '1900-01-01', sms_consent_by: 'spoof' });
   assert.equal(res.statusCode, 201);
   assert.equal(res.body.sms_consent, true);
   assert.equal(dbRuns[0].params[4], true);
   assert.equal(dbRuns[0].params[7], 'sms');
+  assert.ok(dbRuns[0].params[11] instanceof Date);
+  assert.ok(dbRuns[0].params[11].getFullYear() > 2020);
+  assert.equal(dbRuns[0].params[12], 'verbal');
+  assert.equal(dbRuns[0].params[13], 'user-1');
   assert.equal(smsCalls.length, 1);
   assert.deepEqual(smsCalls[0], [
     '+15551234567',
@@ -181,7 +192,7 @@ test('POST /customers attempts opt-in confirmation only for consented creates wi
 
   smsCalls.length = 0;
   dbRuns.length = 0;
-  res = await runCreate({ name: 'No Phone', phone: '   ', sms_consent: true });
+  res = await runCreate({ name: 'No Phone', phone: '   ', sms_consent: true, sms_consent_method: 'verbal' });
   assert.equal(res.statusCode, 201);
   assert.equal(smsCalls.length, 0);
 });

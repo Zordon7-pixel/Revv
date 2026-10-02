@@ -29,11 +29,9 @@ test('consent integration rejects non-disposable connection targets', () => {
 });
 
 const schemaSource = fs.readFileSync(path.join(__dirname, '../src/db/schema.pg.sql'), 'utf8');
-const migrationSource = fs.readFileSync(path.join(__dirname, '../src/db/migrate.js'), 'utf8');
 const customerDDL = schemaSource.match(/CREATE TABLE IF NOT EXISTS customers \([\s\S]*?\n\);/)?.[0];
-// Execute the actual targeted statements without importing/running the app migrator.
-const consentStatements = [...migrationSource.matchAll(/`(ALTER TABLE customers [^`]*\bsms_consent\b[^`]*)`/g)]
-  .map(match => match[1]);
+const migration = require('../src/db/customerConsent');
+const { hasConfirmedSmsConsent, consentMutation, normalizePreferredContactMethod } = require('../src/services/customerConsent');
 
 for (const idType of ['UUID', 'TEXT']) {
   for (const scenario of ['fresh', 'legacy default TRUE', 'missing column']) {
@@ -42,7 +40,6 @@ for (const idType of ['UUID', 'TEXT']) {
     }, async t => {
       const address = disposableAddress(url);
       assert.ok(customerDDL, 'Actual customers schema DDL must be found');
-      assert.equal(consentStatements.length, 2, 'Expected targeted add-column and set-default statements');
       // Explicit fields avoid ambient PGHOST/PGDATABASE/PGOPTIONS/service overrides.
       const { Client } = require('pg');
       const client = new Client({
@@ -87,21 +84,132 @@ for (const idType of ['UUID', 'TEXT']) {
               [id(String(value)), shopId, `Synthetic ${value}`, value]);
           }
         }
-        const before = (await client.query('SELECT * FROM customers ORDER BY id')).rows;
-        const expected = scenario === 'missing column' ? before.map(row => ({ ...row, sms_consent: null })) : before;
+        if (scenario !== 'missing column') {
+          for (const label of ['later-stop', 'later-opt-in']) {
+            await client.query('INSERT INTO customers (id, shop_id, name, sms_consent) VALUES ($1,$2,$3,true)',
+              [id(label), shopId, label]);
+          }
+        }
+        // Existing provenance must survive the very first upgrade, not just reruns.
+        await client.query(`ALTER TABLE customers ADD COLUMN sms_consent_at TIMESTAMPTZ,
+          ADD COLUMN sms_consent_method TEXT, ADD COLUMN sms_consent_by TEXT`);
+        if (scenario !== 'missing column') {
+          const preserved = await insertDefault('preexisting-confirmation');
+          await client.query(`UPDATE customers SET sms_consent=true, sms_consent_at=now(),
+            sms_consent_method='verbal', sms_consent_by='original-staff' WHERE id=$1`, [preserved.id]);
+          const before = (await client.query('SELECT * FROM customers WHERE id=$1', [preserved.id])).rows[0];
+          await migration.up(client);
+          const after = (await client.query('SELECT * FROM customers WHERE id=$1', [preserved.id])).rows[0];
+          assert.deepEqual(after, { ...before, sms_consent_revision: '0' });
+        }
+        await migration.up(client);
+        assert.equal((await client.query('SELECT * FROM customers WHERE id=$1', [original.id])).rows[0].sms_consent,
+          scenario === 'missing column' ? null : false);
+        const audit = (await client.query('SELECT * FROM customer_consent_resets')).rows;
+        assert.equal(audit.length, scenario === 'missing column' ? 0 : scenario === 'legacy default TRUE' ? 4 : 3);
+        for (const row of audit) {
+          assert.equal(row.prior_consent, true);
+          assert.equal(row.shop_id, shopId);
+          assert.equal(row.prior_at, null);
+          assert.ok(row.reset_at instanceof Date);
+          assert.match(row.reason, /Legacy TRUE/);
+        }
+        const confirmed = await insertDefault('confirmed');
+        await client.query(`UPDATE customers SET sms_consent=true, sms_consent_at=now(),
+          sms_consent_method='written', sms_consent_by='staff-text-id' WHERE id=$1`, [confirmed.id]);
+        const explicit = (await client.query('SELECT * FROM customers WHERE id=$1', [confirmed.id])).rows[0];
+        assert.ok(hasConfirmedSmsConsent(explicit));
         for (let pass = 0; pass < 3; pass++) {
-          for (const sql of consentStatements) await client.query(sql);
-          // Whole rows, including timestamps, IDs and contact data, stay intact.
-          const originals = (await client.query('SELECT * FROM customers WHERE id = ANY($1) ORDER BY id', [before.map(row => row.id)])).rows;
-          assert.deepEqual(originals, expected);
-          const defaults = await client.query(`SELECT column_default FROM information_schema.columns
-            WHERE table_schema = $1 AND table_name = 'customers' AND column_name = 'sms_consent'`, [schema]);
-          assert.equal(defaults.rows[0].column_default, 'false');
+          await migration.up(client);
+          assert.deepEqual((await client.query('SELECT * FROM customer_consent_resets')).rows, audit);
+          assert.deepEqual((await client.query('SELECT * FROM customers WHERE id=$1', [confirmed.id])).rows[0], explicit);
           assert.equal((await insertDefault(`after-${pass}`)).sms_consent, false);
         }
+        // A redundant STOP write must invalidate rollback even without changing false.
+        if (audit.length > 1) await client.query('UPDATE customers SET sms_consent=false WHERE id=$1', [audit[0].customer_id]);
+        if (audit.length > 1) await client.query(`UPDATE customers SET sms_consent=true,
+          sms_consent_at=now(), sms_consent_method='verbal', sms_consent_by='later-staff' WHERE id=$1`, [audit[1].customer_id]);
+        await migration.down(client);
+        const rolled = (await client.query('SELECT * FROM customers ORDER BY id')).rows;
+        for (const [i, row] of audit.entries()) {
+          assert.equal(rolled.find(c => c.id === row.customer_id).sms_consent, !(audit.length > 1 && i === 0));
+          assert.equal(hasConfirmedSmsConsent(rolled.find(c => c.id === row.customer_id)), i === 1);
+        }
+        assert.deepEqual(rolled.find(c => c.id === confirmed.id), explicit);
+        await migration.down(client);
+        await migration.up(client); // one-time reset stays consumed after rollback
+        assert.deepEqual((await client.query('SELECT * FROM customers ORDER BY id')).rows, rolled);
+        // Exercise real route SQL against this transaction; route transactions
+        // use savepoints so fixture cleanup remains a single outer rollback.
+        const mock = (file, exports) => {
+          const key = require.resolve(file);
+          require.cache[key] = { id: key, filename: key, loaded: true, exports };
+        };
+        mock('../src/db', {
+          dbGet: async (sql, params) => (await client.query(sql, params)).rows[0],
+          dbRun: (sql, params) => client.query(sql, params),
+          dbAll: async (sql, params) => (await client.query(sql, params)).rows,
+          pool: { connect: async () => ({ release() {}, query: (sql, params) => client.query(
+            sql === 'BEGIN' ? 'SAVEPOINT route_write' : sql === 'COMMIT' ? 'RELEASE SAVEPOINT route_write'
+              : sql === 'ROLLBACK' ? 'ROLLBACK TO SAVEPOINT route_write' : sql, params) }) },
+        });
+        mock('../src/middleware/auth', (req, res, next) => next());
+        mock('../src/middleware/roles', { requireTechnician: (req, res, next) => next() });
+        mock('../src/services/customerOptInConfirmation', { sendCustomerOptInConfirmation: async () => ({ attempted: false }) });
+        delete require.cache[require.resolve('../src/routes/customers')];
+        const router = require('../src/routes/customers');
+        async function call(method, path, body, customerId, tenant = shopId) {
+          const handler = router.stack.find(l => l.route?.path === path && l.route.methods[method]).route.stack.at(-1).handle;
+          const res = { statusCode: 200, status(n) { this.statusCode = n; return this; }, json(v) { this.body = v; return this; } };
+          await handler({ body, params: { id: customerId }, user: { id: 'authenticated-staff', shop_id: tenant } }, res);
+          return res;
+        }
+        let response = await call('post', '/', { name: 'Reconfirmed', sms_consent: true });
+        assert.equal(response.statusCode, 400);
+        response = await call('post', '/', { name: 'Reconfirmed', sms_consent: true,
+          sms_consent_method: 'written', sms_consent_by: 'spoof', sms_consent_at: '1900-01-01' });
+        assert.equal(response.statusCode, 201);
+        const created = response.body;
+        assert.ok(hasConfirmedSmsConsent(created));
+        assert.equal(created.sms_consent_by, 'authenticated-staff');
+        assert.ok(created.sms_consent_at.getFullYear() > 2020);
+        response = await call('put', '/:id', { address: 'Changed', sms_consent_at: '1900-01-01', sms_consent_by: 'spoof' }, created.id);
+        assert.equal(response.statusCode, 200);
+        assert.deepEqual(response.body.sms_consent_at, created.sms_consent_at);
+        assert.equal(response.body.sms_consent_by, created.sms_consent_by);
+        assert.equal(response.body.sms_consent_revision, created.sms_consent_revision);
+        response = await call('put', '/:id', { sms_consent: false, preferred_contact_method: 'sms' }, created.id);
+        assert.equal(response.body.sms_consent, false);
+        assert.equal(response.body.sms_consent_at, null);
+        assert.equal(response.body.preferred_contact_method, 'none');
+        response = await call('put', '/:id', { sms_consent: true, sms_consent_method: 'verbal' }, created.id);
+        assert.ok(hasConfirmedSmsConsent(response.body));
+        response = await call('put', '/:id', { sms_consent: false }, created.id, id('other-shop'));
+        assert.equal(response.statusCode, 404);
+        response = await call('post', '/', { name: 'Null consent', sms_consent: null, preferred_contact_method: 'sms' });
+        assert.equal(response.body.sms_consent, false);
+        assert.equal(response.body.preferred_contact_method, 'none');
+
       } finally {
         await client.query('ROLLBACK');
       }
     });
   }
 }
+
+test('shared eligibility fails closed and staff provenance is server owned', () => {
+  const good = consentMutation({ sms_consent: true, sms_consent_method: 'verbal',
+    sms_consent_at: '1900-01-01', sms_consent_by: 'attacker' }, 'staff');
+  assert.ok(hasConfirmedSmsConsent(good));
+  assert.equal(good.sms_consent_by, 'staff');
+  assert.ok(good.sms_consent_at.getFullYear() > 2020);
+  for (const patch of [{ sms_consent: null }, { sms_consent: 'true' }, { sms_consent_at: null },
+    { sms_consent_at: 'bad' }, { sms_consent_at: '2026-02-30T00:00:00Z' }, { sms_consent_at: Infinity }, { sms_consent_method: 'import' },
+    { sms_consent_by: ' ' }, { sms_consent_by: null }]) assert.equal(hasConfirmedSmsConsent({ ...good, ...patch }), false);
+  assert.throws(() => consentMutation({ sms_consent: true }, 'staff'), /verbal or written/);
+  assert.throws(() => consentMutation({ sms_consent: true, sms_consent_method: 'verbal' }, null), /staff/);
+  assert.equal(consentMutation({ sms_consent: null }, 'staff'), null);
+  assert.equal(hasConfirmedSmsConsent(consentMutation({ sms_consent: false }, 'staff')), false);
+  assert.equal(normalizePreferredContactMethod('sms', false, false), 'none');
+  assert.equal(normalizePreferredContactMethod('both', null, true), 'email');
+});

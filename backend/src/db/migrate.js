@@ -30,6 +30,8 @@ async function runMigrations() {
       console.log('PostgreSQL schema already exists; running idempotent column additions.');
     }
 
+    await require('./customerConsent').up({ query });
+
     // ── Idempotent column additions ──────────────────────────────────────────
     // These ALWAYS run regardless of schema state. Each wrapped independently.
     const alters = [
@@ -64,12 +66,7 @@ async function runMigrations() {
       `ALTER TABLE shops ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT`,
       `ALTER TABLE shops ADD COLUMN IF NOT EXISTS plan_expires_at TIMESTAMPTZ`,
       `ALTER TABLE shops ADD COLUMN IF NOT EXISTS trial_ends_at TIMESTAMPTZ DEFAULT (NOW() + INTERVAL '14 days')`,
-      // Preserve historical TRUE/FALSE/NULL values; absent columns leave old rows unknown.
-      // Historical TRUE is not verified consent: no SMS source/timestamp evidence exists
-      // in this schema. Keep parts-SMS activation out of the approved release scope.
-      // Re-consent follow-up: retain existing rows and STOP records, collect a fresh
-      // explicit choice in person with source/time/disclosure evidence, then review
-      // eligibility before activation. No bulk backfill, opt-out, or automatic messages.
+      // Shared consent migration above audits legacy TRUE and installs revision protection.
       `ALTER TABLE customers ADD COLUMN IF NOT EXISTS sms_consent BOOLEAN`,
       `ALTER TABLE customers ALTER COLUMN sms_consent SET DEFAULT FALSE`,
       `ALTER TABLE customers ADD COLUMN IF NOT EXISTS email_consent BOOLEAN DEFAULT FALSE`,

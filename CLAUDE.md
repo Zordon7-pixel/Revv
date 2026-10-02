@@ -3737,3 +3737,24 @@ OpenAI/eBay/Twilio/Resend LIVE UNKNOWN; parts SMS activation held for re-consent
 Hermes owns commit, final host gates, Spark advisory and single exact-SHA Remy review;
 final receipts stay outside source. No final gates, browser/PDF visual, tenant import,
 legal signoff or live production verification claimed. Eight allowlisted files changed.
+
+## 2026-10-02 — Customer consent foundation, t_3ead3bd0 Phase 1
+
+Implementation in panel-estimator worktree only; Hermes owns lifecycle and host gates.
+Shared `services/customerConsent.js` exposes `hasConfirmedSmsConsent(customer)`,
+`consentMutation(body, authenticatedStaffId)` and `normalizePreferredContactMethod`.
+POST /api/customers and PUT /api/customers/:id accept true only with verbal/written
+method; server records timestamp and staff. PUT with consent omitted preserves evidence;
+false revokes and clears evidence. Lists/autofill expose provenance.
+`db/customerConsent.js` up/down use a one-time reset ledger with prior evidence and a
+consent revision trigger. Any UPDATE naming consent/provenance columns advances the
+revision, including redundant false STOP writes; unrelated edits must omit those columns.
+Down restores only unchanged reset revisions and retains schema/audit/trigger/default FALSE.
+It does not fabricate provenance; restored legacy TRUE remains ineligible to the shared guard.
+Phase 2 must wire RO intake, every outbound guard and STOP to this contract; existing
+STOP SQL assigning sms_consent=false already advances the database revision automatically.
+No production migration, provider call, dispatch, push or deployment performed.
+Focused tests: loopback PostgreSQL blocked by sandbox EPERM; host execution still required.
+Files: this log; db/index.js, db/migrate.js, db/customerConsent.js;
+services/customerConsent.js; routes/customers.js; customerConsent.integration.test.js;
+customerOptInConfirmation.test.js. No broader fixture updates or complete gates performed.
