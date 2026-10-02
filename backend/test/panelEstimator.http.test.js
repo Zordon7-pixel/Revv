@@ -304,26 +304,39 @@ for (const type of ['TEXT', 'UUID']) {
         assert.deepEqual(one.body, two.body); assert.deepEqual(await state(), before);
         assert.equal((await request(`${base}/preview`, { method: 'POST', body: { ...body, adjustments: { tax_rate_bps: 0 } } })).status, 400);
         assert.equal((await request(`${base}/draft`, { method: 'PUT', body: { ...body, scenario: { payer: 'insurance', provenance: 'carrier_approved' } } })).status, 400);
-        await pool.query('UPDATE shops SET tax_rate=0 WHERE id=$1', [shop]);
+        await pool.query('UPDATE shops SET tax_rate=NULL WHERE id=$1', [shop]);
+        try {
+          const missingTax = await request(`${base}/preview`, { method: 'POST', body });
+          assert.equal(missingTax.status, 200);
+          assert.equal(missingTax.body.quote.totals.total_cents, null);
+          assert.ok(missingTax.body.review_flags.some(f => f.code === 'missing_shop_tax_rate'));
+        } finally { await pool.query('UPDATE shops SET tax_rate=0.1 WHERE id=$1', [shop]); }
+        // Payment history holds shop tax permanently; give F2 its own tenant
+        // instead of repricing a paid shop to clean up this fixture.
+        const paidShop = id(), paidRO = id(), paidBase = `/${paidRO}/panel-estimator`;
+        await pool.query('INSERT INTO shops VALUES ($1,0)', [paidShop]);
+        await pool.query('INSERT INTO repair_orders VALUES ($1,$2)', [paidRO, paidShop]);
         for (const [status, amount] of [['paid', 20000], ['succeeded', 10000], ['pending', 99999], ['failed', 99999]]) {
-          await pool.query('INSERT INTO ro_payments VALUES ($1,$2,$3,$4,$5)', [id(), shop, ro, amount, status]);
+          await pool.query('INSERT INTO ro_payments VALUES ($1,$2,$3,$4,$5)', [id(), paidShop, paidRO, amount, status]);
         }
         await pool.query('INSERT INTO ro_payments VALUES ($1,$2,$3,99999,$4)', [id(), foreignShop, foreignRO, 'paid']);
-        const insurance = { expected_version: version, ...draft({ adjustments: {}, assessments: [panel({ body_hours: 1,
+        const insurance = { expected_version: 0, ...draft({ adjustments: {}, assessments: [panel({ body_hours: 1,
           body_rate_cents: 180000, refinish_hours: 0, refinish_rate_cents: 0, parts_sell_cents: 0, materials_sell_cents: 0 })],
         scenario: { payer: 'insurance', provenance: 'shop_prepared', allocation: { covered_cents: 160000, deductible_cents: 50000,
           uncovered_cents: 20000, adjustment_cents: 0, total_cents: 1, customer_cents: 1, paid_cents: 0 } } }) };
-        const known = await request(`${base}/preview`, { method: 'POST', body: insurance });
+        const known = await request(`${paidBase}/preview`, { tenant: paidShop, method: 'POST', body: insurance });
         assert.equal(known.status, 200); assert.deepEqual(known.body.quote.allocation, {
           complete: true, carrier_cents: 110000, customer_cents: 70000, paid_cents: 30000, balance_cents: 150000 });
         insurance.scenario.allocation.covered_cents = null;
-        const unknown = await request(`${base}/preview`, { method: 'POST', body: insurance });
+        const unknown = await request(`${paidBase}/preview`, { tenant: paidShop, method: 'POST', body: insurance });
+        assert.equal(unknown.status, 200);
         assert.equal(unknown.body.quote.allocation.customer_cents, null);
-        await pool.query('UPDATE shops SET tax_rate=NULL WHERE id=$1', [shop]);
-        const missingTax = await request(`${base}/preview`, { method: 'POST', body });
-        assert.equal(missingTax.body.quote.totals.total_cents, null);
-        assert.ok(missingTax.body.review_flags.some(f => f.code === 'missing_shop_tax_rate'));
-        await pool.query('UPDATE shops SET tax_rate=0.1 WHERE id=$1', [shop]);
+        const held = await state();
+        for (const tax of [null, 0.1]) await assert.rejects(
+          pool.query('UPDATE shops SET tax_rate=$2 WHERE id=$1', [paidShop, tax]),
+          e => e.code === '23514' && e.message === 'RO_FINANCIAL_HOLD');
+        assert.equal(Number((await pool.query('SELECT tax_rate FROM shops WHERE id=$1', [paidShop])).rows[0].tax_rate), 0);
+        assert.deepEqual(await state(), held);
       });
       await t.test('presets strict writes, private authorization, immutable versions and explicit application snapshots', async () => {
         assert.equal((await request('/panel-presets', { role: 'assistant', method: 'POST', body: preset() })).status, 403);

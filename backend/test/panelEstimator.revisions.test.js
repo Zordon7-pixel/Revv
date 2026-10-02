@@ -203,8 +203,13 @@ for (const type of ['TEXT', 'UUID']) test(`real PostgreSQL revisions ${type}: se
       assert.equal((await snapshot(scope)).ro_panel_estimator_revisions.length, 1);
     });
     await t.test('direct service: changed posted payments invalidate preview, changed private settings invalidate version', async () => {
-      const scope = await newScope(), request = await prepare(scope);
-      await pool.query('INSERT INTO ro_payments VALUES ($1,$2,$3,1000,\'paid\')', [randomUUID(),shopId,scope.roId]);
+      // Isolate payment history from later unpaid-shop tax-freeze coverage.
+      const paidShop = id();
+      await pool.query('INSERT INTO shops VALUES ($1,0.1)', [paidShop]);
+      const scope = await newScope(paidShop), request = await prepare(scope);
+      await pool.query('INSERT INTO ro_payments VALUES ($1,$2,$3,1000,\'paid\')', [randomUUID(),paidShop,scope.roId]);
+      await assert.rejects(pool.query('UPDATE shops SET tax_rate=0.2 WHERE id=$1', [paidShop]),
+        e => e.code === '23514' && e.message === 'RO_FINANCIAL_HOLD');
       await assert.rejects(revisions.commit({ ...scope, body: request }), errorCode('PREVIEW_CONFLICT'));
       const fresh = await prepare(scope);
       await store.saveCosts({ ...scope, ...costs(), expectedVersion: 0 });

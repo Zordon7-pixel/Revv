@@ -4275,3 +4275,72 @@ Unidentified historical Checkout links and reconciliation-only holds remain the
 Phase B limitation. No production data/provider calls, secrets/.env access, agents,
 board/review requests, main/canonical/readiness edits, commit/push or deployment.
 `release_authorized=false`.
+
+## 2026-10-02 03:11 EDT / 07:11 UTC — t_6f27a266 Phase E regression repair
+
+**Implementation complete; uncommitted; PostgreSQL host verification pending.**
+Started clean at `3c0e21ed250333c20eb88f721c2f72f509ea7295` on the assigned
+`codex/revv-panel-estimator-20261001` worktree. Read QA-CHECKLIST and Phase D notes.
+Hermes owns lifecycle, final comprehensive gates, commit, push and packet.
+
+Inspected every actual `not ok` and surrounding context in
+`/Users/zordon/hermes-artifacts/revv-panel-estimator-20261001/gates-remy-fail-5ab183e7/20261002-030426-3c0e21ed2503/backend-node.log`:
+**1108 tests / 1092 pass / 16 fail / zero skips**. All 16 are accounted for below;
+counts include six failed parent tests, not 16 independent defects.
+- HTTP TEXT/UUID: lines 2701/2780 fail when the F2 fixture changes shop tax after
+  posting payments (`RO_FINANCIAL_HOLD`). Lines 2732/2811 then calculate 22103
+  instead of 23513 because that shared shop remains at zero tax. Parents 2757/2836.
+- PDF TEXT/UUID: lines 3214/3480 fail in tax cleanup, masking the preceding attempt
+  to recommit selected money after posting payment. The failed cleanup leaves 20%
+  tax, so lines 3233/3499 produce $38 instead of $19 tax. Parents 3457/3723.
+- Revisions TEXT/UUID: lines 3848/3974 change shared-shop tax after an earlier
+  preview-conflict fixture posted payment. Parents 3867/3993.
+The supplied log shows financial holds and cascading fixture contamination, not
+missing-column or mock-loader failures. Production SQL/optional-field guards and
+mocks therefore need no change for these failures.
+
+Repair: isolated paid scenarios by tenant; missing-tax coverage runs before payment;
+comparison revisions are created before payment, with payment then freezing their
+JSON/PDF history. Existing exact F1/F2, 23513-cent, $19-tax/$289-total, private-data,
+comparison and stale-preview assertions remain. Added exact SQLSTATE/message checks
+for rejected paid-shop tax changes and post-payment recommit, state/ledger/line/
+revision rollback equality, live paid-preview balance, and unchanged historical and
+public JSON/PDF after payment. Both TEXT and UUID fixtures retain minimal schemas;
+no trigger disabling, production changes, assertion weakening or new test skips.
+
+**Changed paths (4, including this document):**
+- CLAUDE.md
+- backend/test/panelEstimator.http.test.js
+- backend/test/panelEstimator.quotePdf.test.js
+- backend/test/panelEstimator.revisions.test.js
+
+**Actual verification:** Node v22.23.2, scrubbed `env -i`, synthetic fixture data,
+provider behavior mocked; preloads reject dotenv. Focused non-DB execution explicitly
+filters database tests; its zero-skips TAP footer is NOT a full-suite pass:
+```sh
+env -i PATH=/opt/homebrew/opt/node@22/bin:/usr/bin:/bin NODE_ENV=test CI=1 NODE_OPTIONS=--require=/tmp/revv-phaseB-no-network.cjs /opt/homebrew/opt/node@22/bin/node --test --test-skip-pattern='PostgreSQL|mounted HTTP actual JWT' backend/test/panelEstimator.http.test.js backend/test/panelEstimator.quotePdf.test.js backend/test/panelEstimator.revisions.test.js backend/test/financialClosure.phaseD.test.js backend/test/payments.phase4.test.js
+```
+Exit 0; `/tmp/revv-phaseE-mocked.log` tail: **tests 450, pass 450, fail 0,
+cancelled 0, skipped 0, todo 0**. Preload blocks sockets/fetch.
+
+Unfiltered focused run, including all three repaired PostgreSQL suites:
+```sh
+env -i PATH=/opt/homebrew/opt/node@22/bin:/usr/bin:/bin NODE_ENV=test CI=1 NODE_OPTIONS=--require=/tmp/revv-phaseC-loopback-only.cjs PANEL_ESTIMATOR_TEST_DATABASE_URL=postgresql://revv_panel@127.0.0.1:55459/revv_panel_test /opt/homebrew/opt/node@22/bin/node --test backend/test/panelEstimator.http.test.js backend/test/panelEstimator.quotePdf.test.js backend/test/panelEstimator.revisions.test.js backend/test/financialClosure.phaseD.test.js backend/test/payments.phase4.test.js
+```
+Exit 1; `/tmp/revv-phaseE-full-focused.log` tail: **tests 462, pass 450, fail 12,
+cancelled 0, skipped 0, todo 0**. Ten `connect EPERM 127.0.0.1:55459` failures
+before fixture creation plus two failed parent tests. No sandbox bypass. These
+results cannot verify the changed DB assertions; Hermes must rerun them on host.
+
+Static validation (exit 0) and whitespace validation (exit 0):
+```sh
+for file in backend/test/panelEstimator.http.test.js backend/test/panelEstimator.quotePdf.test.js backend/test/panelEstimator.revisions.test.js; do
+  env -i PATH=/opt/homebrew/opt/node@22/bin:/usr/bin:/bin NODE_ENV=test CI=1 /opt/homebrew/opt/node@22/bin/node --check "$file" || exit $?
+done
+git diff --check
+```
+Supplied Phase D host 603/603 and parser 7/frontend 380/build/diff passes are prior
+receipts, not Phase E gates. Safety-sensitive financial hold/history regression
+coverage; over two files. No agents, board/review activity, commit/push/deploy,
+production/provider access, .env/secrets, main/canonical/readiness edits or release.
+`release_authorized=false`.

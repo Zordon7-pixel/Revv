@@ -239,7 +239,7 @@ for (const type of ['TEXT','UUID']) test(`A2 PostgreSQL ${type}: real JWT HTTP P
     const commit = async (scope, body) => revisions.commit({ ...scope,body: await prepare(scope,body) });
     const authorPath = scope => `/api/estimate-items/${scope.roId}/panel-estimator`;
     const issue = async (scope,revision) => {
-      const result = await request(`${authorPath(scope)}/approval-link`,'POST',binding(revision));
+      const result = await request(`${authorPath(scope)}/approval-link`,'POST',binding(revision),'owner',scope.shopId);
       assert.equal(result.status,201); return result.body;
     };
     const legacyLink = async scope => {
@@ -341,30 +341,56 @@ for (const type of ['TEXT','UUID']) test(`A2 PostgreSQL ${type}: real JWT HTTP P
       for (const family of families) assert.equal((await request(publicPath(family,undecided))).body.error,'APPROVAL_REVOKED');
     });
     await t.test('historical JSON/PDF stays frozen after tax/payments; comparisons remain safe and nonrecursive', async () => {
-      const scope = await newScope();
+      // Paid history prevents subsequent tax changes and selected-money commits.
+      // Build alternatives first, then settle in a tenant isolated from later tests.
+      const historyShop = id();
+      await raw.query('INSERT INTO shops(id,tax_rate) VALUES ($1,0.1)', [historyShop]);
+      const scope = await newScope(historyShop);
+      const authorRequest = url => request(url,'GET',undefined,'owner',historyShop);
       const first = await commit(scope), url = `${authorPath(scope)}/quote.pdf?revision_id=${first.revision_id}`;
-      const before = (await parsePdf((await request(url)).body)).text;
-      await raw.query('UPDATE shops SET tax_rate=0.2 WHERE id=$1',[shopId]);
-      await raw.query("INSERT INTO ro_payments VALUES ($1,$2,$3,2000,'paid')",[randomUUID(),shopId,scope.roId]);
-      try {
-        assert.equal((await parsePdf((await request(url)).body)).text,before);
-        const next = await commit(scope, draft({ assessments: [panel({ parts_sell_cents: 20000 })] }));
-        const old = next.quote.comparisons[0]; safe(next);
-        assert.deepEqual(old.totals,first.quote.totals); assert.deepEqual(old.allocation,first.quote.allocation);
-        assert.equal(old.version,first.version); assert.equal(old.quote_hash,first.quote_hash);
-        assert.equal(old.comparisons,undefined); assert.equal(old.historical,true);
-        assert.ok(old.differences.some(d => d.path === 'scope.assessments["hood"].parts_sell_cents' && d.after === '$200.00'));
-        assert.ok(old.differences.some(d => d.path === 'totals.tax_rate_bps' && d.before === '10%' && d.after === '20%'));
-        const third = await commit(scope);
-        assert.ok(third.quote.comparisons.every(c => c.comparisons === undefined));
-        const link = await issue(scope,third);
-        const json = (await request(publicPath(families[0],link,''))).body; safe(json);
-        assert.deepEqual(json.quote,third.quote);
-        const pdf = await parsePdf((await request(publicPath(families[0],link))).body); safe(pdf.text);
-        assert.match(pdf.text,/Historical repair total: \$440.00/);
-        assert.equal((await parsePdf((await request(url)).body)).text,before);
-        assert.deepEqual(await revisions.getQuote({ ...scope,revisionId: first.revision_id }),first);
-      } finally { await raw.query('UPDATE shops SET tax_rate=0.1 WHERE id=$1',[shopId]); }
+      const before = (await parsePdf((await authorRequest(url)).body)).text;
+      await raw.query('UPDATE shops SET tax_rate=0.2 WHERE id=$1',[historyShop]);
+      assert.equal((await parsePdf((await authorRequest(url)).body)).text,before);
+      const next = await commit(scope, draft({ assessments: [panel({ parts_sell_cents: 20000 })] }));
+      const old = next.quote.comparisons[0]; safe(next);
+      assert.deepEqual(old.totals,first.quote.totals); assert.deepEqual(old.allocation,first.quote.allocation);
+      assert.equal(old.version,first.version); assert.equal(old.quote_hash,first.quote_hash);
+      assert.equal(old.comparisons,undefined); assert.equal(old.historical,true);
+      assert.ok(old.differences.some(d => d.path === 'scope.assessments["hood"].parts_sell_cents' && d.after === '$200.00'));
+      assert.ok(old.differences.some(d => d.path === 'totals.tax_rate_bps' && d.before === '10%' && d.after === '20%'));
+      const third = await commit(scope);
+      assert.ok(third.quote.comparisons.every(c => c.comparisons === undefined));
+      const link = await issue(scope,third);
+      const json = (await request(publicPath(families[0],link,''))).body; safe(json);
+      assert.deepEqual(json.quote,third.quote);
+      const pdf = await parsePdf((await request(publicPath(families[0],link))).body); safe(pdf.text);
+      assert.match(pdf.text,/Historical repair total: \$440.00/);
+      assert.equal((await parsePdf((await authorRequest(url)).body)).text,before);
+      assert.deepEqual(await revisions.getQuote({ ...scope,revisionId: first.revision_id }),first);
+      await raw.query("INSERT INTO ro_payments VALUES ($1,$2,$3,2000,'paid')",[randomUUID(),historyShop,scope.roId]);
+      const heldState = async () => {
+        const state = await sideEffects(scope);
+        for (const table of ['ro_panel_estimator_drafts','ro_panel_estimator_revisions',
+          'ro_panel_estimator_revision_costs','estimate_line_items']) {
+          state[table] = (await raw.query(`SELECT to_jsonb(t) AS row FROM ${table} t
+            WHERE shop_id=$1 AND ro_id=$2 ORDER BY to_jsonb(t)::text`,[historyShop,scope.roId])).rows;
+        }
+        return state;
+      };
+      const held = await heldState();
+      const paidPreview = await drafts.preview({ ...scope,body: draft() });
+      assert.equal(paidPreview.sell.allocation.paid_cents,2000);
+      assert.equal(paidPreview.sell.allocation.balance_cents,third.quote.totals.total_cents-2000);
+      assert.equal(third.quote.allocation.paid_cents,0);
+      const financialHold = e => e.code === '23514' && e.message === 'RO_FINANCIAL_HOLD';
+      await assert.rejects(raw.query('UPDATE shops SET tax_rate=0.1 WHERE id=$1',[historyShop]),financialHold);
+      await assert.rejects(commit(scope),financialHold);
+      assert.deepEqual(await heldState(),held);
+      assert.equal(Number((await raw.query('SELECT tax_rate FROM shops WHERE id=$1',[historyShop])).rows[0].tax_rate),0.2);
+      assert.equal((await parsePdf((await authorRequest(url)).body)).text,before);
+      assert.deepEqual(await revisions.getQuote({ ...scope,revisionId: first.revision_id }),first);
+      assert.deepEqual((await request(publicPath(families[0],link,''))).body.quote,third.quote);
+      assert.equal((await parsePdf((await request(publicPath(families[0],link))).body)).text,pdf.text);
     });
     await t.test('real HTTP mixed package and long strings preserve parsed net/tax without double charging', async () => {
       const scope = await newScope();
