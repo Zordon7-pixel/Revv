@@ -1178,7 +1178,12 @@ router.get('/job-cost/summary', auth, requireAdmin, async (req, res) => {
     res.json({ totalJobs, totalRevenue: revenueCents / 100,
       totalCost: economics.cost_cents === null ? null : economics.cost_cents / 100,
       grossProfit, avgMargin, profitableCount: economics.profitable_count,
-      ...aggregateMetadata(economics), rows: rows.map(row => redactSelectedRO(row, selected)) });
+      ...aggregateMetadata(economics), rows: rows.map(row => {
+        const redacted = redactSelectedRO(row, selected);
+        const panelEconomics = selected.get(String(row.id))?.panel_economics;
+        return ['owner', 'admin'].includes(String(req.user.role || '').toLowerCase()) && panelEconomics
+          ? { ...redacted, panel_economics: panelEconomics } : redacted;
+      }) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

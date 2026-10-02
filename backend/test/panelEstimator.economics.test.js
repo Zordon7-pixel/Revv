@@ -118,6 +118,74 @@ test('calculator snapshots project and aggregate without assumptions, private in
   } finally { if (original) require.cache[path] = original; else delete require.cache[path]; }
 });
 
+test('L3 job-cost handler projects only owner/admin rows from the already loaded map', async () => {
+  const initialModules = new Set(Object.keys(require.cache));
+  const cached = new Map();
+  const stub = (path, exports) => {
+    const resolved = require.resolve(path);
+    cached.set(resolved, require.cache[resolved]);
+    require.cache[resolved] = { id: resolved, filename: resolved, loaded: true, exports };
+  };
+  const dto = { source: 'panel_estimator_revision', revision_id: 'frozen-complete',
+    contribution_cents: 60000, direct_cost_cents: 40000, margin_bps: 6000, complete: true, missing_count: 0 };
+  const zero = { ...dto, revision_id: 'frozen-zero', contribution_cents: 0, direct_cost_cents: 100000, margin_bps: 0 };
+  const unknown = { ...dto, revision_id: 'frozen-unknown', contribution_cents: null, direct_cost_cents: null,
+    margin_bps: null, complete: false, missing_count: 2 };
+  // Deliberately give even unauthorized roles a private map to pin the output boundary.
+  const selected = new Map([['complete', { panel_economics: dto }], ['zero', { panel_economics: zero }],
+    ['unknown', { panel_economics: unknown }]]);
+  const rows = ['complete', 'zero', 'unknown', 'legacy'].map(id => ({ id, total: 1000,
+    true_profit: 920, parts_cost: 0, labor_cost: 1000, sublet_cost: 0 }));
+  let selectedReads = 0, rowReads = 0;
+  try {
+    stub('../src/db', { pool: { query: () => assert.fail('Unexpected extra database read') }, dbAll: async (sql, params) => {
+      rowReads++;
+      assert.match(sql, /WHERE ro.shop_id = \$1/); assert.deepEqual(params, ['synthetic-shop']);
+      return rows;
+    } });
+    stub('../src/middleware/auth', (req, res, next) => next());
+    stub('../src/services/panelEstimatorEconomics', { ...economics, selectedEconomics: async (shop, ids) => {
+      selectedReads++; assert.equal(shop, 'synthetic-shop'); assert.deepEqual(ids, rows.map(row => row.id));
+      return selected;
+    } });
+    const forbidden = () => assert.fail('Unexpected provider invocation');
+    stub('../src/services/sms', { sendSMS: forbidden });
+    stub('../src/services/mailer', { sendMail: forbidden });
+    stub('../src/services/customerBilling', {});
+    stub('../src/services/quickbooks', { syncInvoiceForRo: forbidden });
+    stub('../src/services/customerOptInConfirmation', { sendCustomerOptInConfirmation: forbidden });
+    stub('../src/routes/insuranceOcr', { insuranceOcrLimiter: (req, res, next) => next() });
+    const routePath = require.resolve('../src/routes/ros');
+    cached.set(routePath, require.cache[routePath]); delete require.cache[routePath];
+    const route = require(routePath).stack.find(layer => layer.route?.path === '/job-cost/summary').route;
+    assert.equal(route.stack.length, 3); // auth, requireAdmin, handler; real JWT/PG proof is below.
+    assert.equal(route.stack[1].handle, require('../src/middleware/roles').requireAdmin);
+    const handler = route.stack.at(-1).handle;
+    for (const role of ['owner', 'admin', 'assistant', 'superadmin']) {
+      let result;
+      await handler({ user: { shop_id: 'synthetic-shop', role }, query: {} }, {
+        json: body => { result = body; }, status: code => { assert.fail(`Unexpected status ${code}`); },
+      });
+      assert.equal(result.profit_complete, false); assert.equal(result.grossProfit, null);
+      assert.equal(result.totalCost, null); assert.equal(result.profitableCount, null);
+      assert.equal(result.rows[0].true_profit, null);
+      assert.equal(result.rows[3].true_profit, 920);
+      assert.equal(Object.hasOwn(result.rows[3], 'panel_economics'), false);
+      if (['owner', 'admin'].includes(role)) {
+        assert.deepEqual(result.rows.map(row => row.panel_economics), [dto, zero, unknown, undefined]);
+        noPrivate(result);
+      } else {
+        noEconomics(result);
+        for (const row of result.rows) assert.equal(Object.hasOwn(row, 'panel_economics'), false);
+      }
+    }
+    assert.equal(selectedReads, 4); assert.equal(rowReads, 4);
+  } finally {
+    for (const path of Object.keys(require.cache)) if (!initialModules.has(path)) delete require.cache[path];
+    for (const [path, value] of cached) { if (value) require.cache[path] = value; else delete require.cache[path]; }
+  }
+});
+
 test('L2 real PostgreSQL frozen economics and mounted production RO/dashboard/report routes', { timeout: 60000 }, async t => {
   const config = localDatabase(process.env.PANEL_ESTIMATOR_TEST_DATABASE_URL);
   const schema = `panel_economics_${randomUUID().replaceAll('-', '')}`;
@@ -211,7 +279,7 @@ test('L2 real PostgreSQL frozen economics and mounted production RO/dashboard/re
         input_hash: preview.input_hash, reviewed: true, idempotency_key: randomUUID() } });
     };
     const selected = await newScope(), knownZero = await newScope(), foreign = await newScope(otherShop);
-    const revision = await commit(selected, costs()); await commit(knownZero, costs(10000)); await commit(foreign, costs(1));
+    const revision = await commit(selected, costs()); const zeroRevision = await commit(knownZero, costs(10000)); await commit(foreign, costs(1));
     const dto = { source: 'panel_estimator_revision', revision_id: revision.revision_id,
       contribution_cents: 60000, direct_cost_cents: 40000, margin_bps: 6000, complete: true, missing_count: 0 };
     const legacy = await newScope();
@@ -272,10 +340,21 @@ test('L2 real PostgreSQL frozen economics and mounted production RO/dashboard/re
       const job = await ok('/ros/job-cost/summary');
       assert.equal(job.grossProfit, 612.34); assert.equal(job.profitableCount, 2); assert.equal(job.totalCost, 1410);
       assert.equal(job.rows.find(row => row.id === selected.roId).true_profit, null); noPrivate(job);
+      for (const role of ['owner', 'admin']) {
+        const report = await ok('/ros/job-cost/summary', role);
+        assert.deepEqual(report.rows.find(row => row.id === selected.roId).panel_economics, dto);
+        assert.deepEqual(report.rows.find(row => row.id === knownZero.roId).panel_economics, {
+          ...dto, revision_id: zeroRevision.revision_id, contribution_cents: 0,
+          direct_cost_cents: 100000, margin_bps: 0,
+        });
+        assert.equal(Object.hasOwn(report.rows.find(row => row.id === legacy.roId), 'panel_economics'), false);
+        noPrivate(report);
+      }
       for (const role of ['assistant', 'superadmin']) {
         for (const path of ['/reports/summary', '/ros/job-cost/summary', ...(role === 'superadmin' ? ['/dashboard/instruments'] : [])]) {
           queries.length = 0;
           const result = await ok(path, role); noEconomics(result);
+          for (const row of result.rows || []) assert.equal(Object.hasOwn(row, 'panel_economics'), false);
           assert.equal(result.profit_complete, false); assert.equal(result.unknown_count, 2);
           for (const key of ['profit', 'grossProfit', 'true_profit_cents', 'profit_margin_percent', 'avgMargin', 'totalCost', 'profitableCount'])
             if (Object.hasOwn(result, key)) assert.equal(result[key], null);
@@ -283,7 +362,7 @@ test('L2 real PostgreSQL frozen economics and mounted production RO/dashboard/re
         }
       }
     });
-    const missing = await newScope(); await commit(missing);
+    const missing = await newScope(); const missingRevision = await commit(missing);
     await t.test('missing direct costs remain null with known subtotal separate; no partial aggregate masquerades as zero', async () => {
       const detail = await ok(`/ros/${missing.roId}`);
       assert.equal(detail.panel_economics.contribution_cents, null); assert.equal(detail.panel_economics.direct_cost_cents, null);
@@ -294,6 +373,15 @@ test('L2 real PostgreSQL frozen economics and mounted production RO/dashboard/re
         assert.equal(dashboard.true_profit_cents, null); assert.equal(dashboard.profit_margin_percent, null);
         assert.equal(dashboard.profit_complete, false); assert.equal(dashboard.unknown_count, 1); assert.equal(dashboard.known_profit_cents, 61234);
         const job = await ok('/ros/job-cost/summary', role);
+        const missingDto = (await ok(`/ros/${missing.roId}`, role)).panel_economics;
+        assert.equal(missingDto.revision_id, missingRevision.revision_id);
+        assert.equal(missingDto.complete, false);
+        assert.equal(missingDto.contribution_cents, null);
+        assert.equal(missingDto.direct_cost_cents, null);
+        assert.equal(missingDto.margin_bps, null);
+        assert.deepEqual(job.rows.find(row => row.id === missing.roId).panel_economics, missingDto);
+        assert.deepEqual(job.rows.find(row => row.id === selected.roId).panel_economics, dto);
+        assert.equal(job.rows.find(row => row.id === knownZero.roId).panel_economics.contribution_cents, 0);
         assert.equal(job.grossProfit, null); assert.equal(job.avgMargin, null); assert.equal(job.profitableCount, null); assert.equal(job.totalCost, null);
         const report = await ok('/reports/summary', role); assert.equal(report.profit, null); assert.equal(report.unknown_count, 1);
       }

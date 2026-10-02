@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Calculator, TrendingUp } from 'lucide-react'
 import api from '../lib/api'
+import { getTokenPayload } from '../lib/auth'
 import {
   dollarsToCents,
   EmptyState,
@@ -12,25 +13,52 @@ import {
   StatusBadge,
 } from '../components/ui'
 
-function percent(value) {
-  const numeric = Number(value || 0)
-  return `${Number.isFinite(numeric) ? numeric.toFixed(1) : '0.0'}%`
+// Shared presentation of the server economics contracts across financial pages.
+// Selected billing buckets are sale amounts; only the private server DTO is economics.
+export const isPanelSelected = row => !!(row?.panel_estimator_selected || row?.panel_economics)
+const privateRole = role => ['owner', 'admin'].includes(String(role || '').toLowerCase())
+const supplied = value => value != null && value !== '' && Number.isFinite(Number(value))
+const numberOrNull = value => supplied(value) ? Number(value) : null
+const centsToDollars = value => supplied(value) ? Number(value) / 100 : null
+export const economicsTone = value => value == null ? 'muted' : value >= 0 ? 'good' : 'crit'
+export function economicsPercent(value) {
+  return supplied(value) ? `${Number(value).toFixed(1)}%` : 'Not supplied'
 }
-
-function rowMoney(row) {
+export function EconomicsMoney({ value, ...props }) {
+  return supplied(value) ? <Money cents={dollarsToCents(value)} {...props} /> : <span className="text-muted">Not supplied</span>
+}
+export function rowEconomics(row, role) {
   const revenue = Number(row.total || 0)
-  const cost = Number(row.parts_cost || 0) + Number(row.labor_cost || 0) + Number(row.sublet_cost || 0)
-  const profit = Number(row.true_profit || 0)
-  return {
-    revenue,
-    cost,
-    profit,
-    margin: revenue > 0 ? (profit / revenue) * 100 : 0,
+  if (isPanelSelected(row)) {
+    const dto = privateRole(role) && row.panel_economics?.source === 'panel_estimator_revision' ? row.panel_economics : null
+    return { revenue, selected: true, hidden: !privateRole(role), dto,
+      cost: centsToDollars(dto?.direct_cost_cents),
+      profit: centsToDollars(dto?.contribution_cents),
+      margin: centsToDollars(dto?.margin_bps) }
   }
+  const profit = Number(row.true_profit || 0)
+  return { revenue, cost: Number(row.parts_cost || 0) + Number(row.labor_cost || 0) + Number(row.sublet_cost || 0),
+    profit, margin: revenue > 0 ? (profit / revenue) * 100 : 0 }
+}
+export function EconomicsSource({ money }) {
+  if (!money.selected || money.hidden) return null
+  return <p className="break-words text-xs text-muted">Panel estimator · {money.dto ? `Revision ${money.dto.revision_id}` : 'Revision not supplied'}{money.dto?.complete === false ? ' · Incomplete costs' : ''}</p>
+}
+export function aggregateEconomics(data, role, { profit = data?.grossProfit, margin = data?.avgMargin, legacyLabel = 'Gross profit' } = {}) {
+  const panel = (data?.profit_source && data.profit_source !== 'legacy_profit') || data?.rows?.some(isPanelSelected)
+  const metadata = panel || data?.profit_complete !== undefined || data?.unknown_count !== undefined
+  const hidden = panel && !privateRole(role)
+  const complete = !hidden && (metadata ? data?.profit_complete === true && supplied(data?.unknown_count) && Number(data.unknown_count) === 0 : true)
+  const value = input => complete ? (metadata || input === null ? numberOrNull(input) : Number(input || 0)) : null
+  return { panel, hidden, complete, profit: value(profit), margin: value(margin), cost: value(data?.totalCost), profitable: value(data?.profitableCount),
+    known: !hidden && !complete && supplied(data?.known_profit_cents) ? Number(data.known_profit_cents) / 100 : null,
+    label: panel ? data?.profit_source === 'panel_estimator_revision' ? 'Estimated gross contribution' : 'Estimated contribution + recorded legacy profit' : legacyLabel,
+    detail: !complete ? `Not supplied${supplied(data?.unknown_count) ? ` · ${data.unknown_count} jobs incomplete` : ''}` : panel ? data?.profit_source === 'panel_estimator_revision' ? 'Panel estimator revisions · Before overhead' : 'Panel contribution before overhead; legacy profit as recorded' : 'Recorded shop profit' }
 }
 
 export default function JobCosting() {
   const navigate = useNavigate()
+  const role = getTokenPayload()?.role
   const today = new Date().toISOString().split('T')[0]
   const firstOfMonth = `${today.slice(0, 8)}01`
 
@@ -58,7 +86,8 @@ export default function JobCosting() {
     load()
   }, [])
 
-  const profitable = data?.profitableCount || 0
+  const economics = aggregateEconomics(data, role)
+  const profitable = economics.profitable
   const total = data?.totalJobs || 0
   const headerActions = (
     <>
@@ -76,14 +105,15 @@ export default function JobCosting() {
         <>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <StatInstrument label="Total revenue" value={<Money cents={dollarsToCents(data.totalRevenue)} className="text-gold" />} detail="Selected date range" tone="gold" onClick={() => navigate('/ros')} />
-            <StatInstrument label="Total cost" value={<Money cents={dollarsToCents(data.totalCost)} className="text-gold" />} detail="Parts, labor, and sublet" tone="gold" onClick={() => navigate('/ros')} />
-            <StatInstrument label="Gross profit" value={<Money cents={dollarsToCents(data.grossProfit)} className={Number(data.grossProfit || 0) >= 0 ? 'text-good' : 'text-crit'} />} detail="Revenue minus recorded cost" tone={Number(data.grossProfit || 0) >= 0 ? 'good' : 'crit'} onClick={() => navigate('/ros')} />
-            <StatInstrument label="Average margin" value={<span className={`font-mono tabular-nums ${Number(data.avgMargin || 0) >= 0 ? 'text-good' : 'text-crit'}`}>{percent(data.avgMargin)}</span>} detail="Across selected jobs" tone={Number(data.avgMargin || 0) >= 0 ? 'good' : 'crit'} onClick={() => navigate('/ros')} />
+            {!economics.hidden && <StatInstrument label="Total cost" value={<EconomicsMoney value={economics.cost} className="text-gold" />} detail={economics.panel ? "Estimated direct cost + recorded legacy cost" : "Parts, labor, and sublet"} onClick={() => navigate('/ros')} />}
+            {!economics.hidden && <StatInstrument label={economics.label} value={<EconomicsMoney value={economics.profit} className={economics.profit >= 0 ? 'text-good' : 'text-crit'} />} detail={economics.detail} tone={economicsTone(economics.profit)} onClick={() => navigate('/ros')} />}
+            {!economics.hidden && <StatInstrument label="Average margin" value={economicsPercent(economics.margin)} detail="Server report margin across selected jobs" tone={economicsTone(economics.margin)} onClick={() => navigate('/ros')} />}
           </div>
 
+          {economics.known != null && <p className="text-sm text-muted">Partial known subtotal: <EconomicsMoney value={economics.known} /> · {economics.label}. Not all job economics supplied; not a total.</p>}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <StatInstrument label="Total jobs" value={<span className="font-mono tabular-nums">{total}</span>} detail={`${from} to ${to}`} onClick={() => navigate('/ros')} />
-            <StatInstrument label="Jobs profitable" value={<span className="font-mono tabular-nums text-good">{total > 0 ? Math.round((profitable / total) * 100) : 0}%</span>} detail={`${profitable} of ${total} jobs`} tone="good" onClick={() => navigate('/ros')} />
+            {!economics.hidden && <StatInstrument label="Jobs profitable" value={profitable == null ? 'Not supplied' : `${total > 0 ? Math.round((profitable / total) * 100) : 0}%`} detail={profitable == null ? economics.detail : `${profitable} of ${total} jobs`} onClick={() => navigate('/ros')} />}
           </div>
         </>
       )}
@@ -95,16 +125,17 @@ export default function JobCosting() {
         <Panel title="Repair orders" description={`${from} to ${to}`}>
           <div className="grid gap-3 p-3 md:hidden">
             {data.rows.map((row) => {
-              const money = rowMoney(row)
+              const money = rowEconomics(row, role)
               return (
                 <button key={row.id} type="button" onClick={() => navigate(`/ros/${row.id}`)} className="rounded-instrument border border-line bg-panel-2 p-4 text-left transition-colors hover:border-brand">
                   <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="font-mono text-sm font-semibold text-brand">{row.ro_number}</p><p className="mt-1 truncate text-sm text-ink">{row.customer_name || 'Customer not linked'}</p><p className="mt-1 truncate text-xs text-muted">{[row.year, row.make, row.model].filter(Boolean).join(' ') || 'Vehicle not linked'}</p></div><StatusBadge status={row.status} /></div>
-                  <dl className="mt-4 grid grid-cols-2 gap-3 text-xs">
+                  <EconomicsSource money={money} />
+                  {!money.hidden && <dl className="mt-4 grid grid-cols-2 gap-3 text-xs">
                     <div><dt className="text-faint">Revenue</dt><dd className="mt-1"><Money cents={dollarsToCents(money.revenue)} className="text-gold" /></dd></div>
-                    <div><dt className="text-faint">Cost</dt><dd className="mt-1"><Money cents={dollarsToCents(money.cost)} /></dd></div>
-                    <div><dt className="text-faint">Profit</dt><dd className="mt-1"><Money cents={dollarsToCents(money.profit)} className={money.profit >= 0 ? 'text-good' : 'text-crit'} /></dd></div>
-                    <div><dt className="text-faint">Margin</dt><dd className={`mt-1 font-mono tabular-nums ${money.profit >= 0 ? 'text-good' : 'text-crit'}`}>{percent(money.margin)}</dd></div>
-                  </dl>
+                    <div><dt className="text-faint">{money.selected ? 'Estimated direct cost' : 'Cost'}</dt><dd className="mt-1">{money.hidden ? 'Restricted' : <EconomicsMoney value={money.cost} />}</dd></div>
+                    <div><dt className="text-faint">{money.selected ? 'Estimated gross contribution' : 'Profit'}</dt><dd className="mt-1"><EconomicsMoney value={money.hidden ? null : money.profit} className={money.profit == null ? 'text-muted' : money.profit >= 0 ? 'text-good' : 'text-crit'} /></dd></div>
+                    <div><dt className="text-faint">Margin</dt><dd className={`mt-1 font-mono tabular-nums ${money.margin == null ? 'text-muted' : money.margin >= 0 ? 'text-good' : 'text-crit'}`}>{economicsPercent(money.margin)}</dd></div>
+                  </dl>}
                 </button>
               )
             })}
@@ -112,19 +143,19 @@ export default function JobCosting() {
 
           <div className="hidden overflow-x-auto md:block">
             <table className="w-full min-w-[900px] text-sm">
-              <thead className="bg-panel-2 text-xs text-faint"><tr><th className="px-4 py-3 text-left">RO</th><th className="px-4 py-3 text-left">Customer</th><th className="px-4 py-3 text-left">Vehicle</th><th className="px-4 py-3 text-right">Revenue</th><th className="px-4 py-3 text-right">Cost</th><th className="px-4 py-3 text-right">Profit</th><th className="px-4 py-3 text-right">Margin</th><th className="px-4 py-3 text-left">Status</th></tr></thead>
+              <thead className="bg-panel-2 text-xs text-faint"><tr><th className="px-4 py-3 text-left">RO</th><th className="px-4 py-3 text-left">Customer</th><th className="px-4 py-3 text-left">Vehicle</th><th className="px-4 py-3 text-right">Revenue</th><th className="px-4 py-3 text-right">Cost</th><th className="px-4 py-3 text-right">{economics.panel ? 'Estimated contribution / legacy profit' : 'Profit'}</th><th className="px-4 py-3 text-right">Margin</th><th className="px-4 py-3 text-left">Status</th></tr></thead>
               <tbody>
                 {data.rows.map((row) => {
-                  const money = rowMoney(row)
+                  const money = rowEconomics(row, role)
                   return (
                     <tr key={row.id} onClick={() => navigate(`/ros/${row.id}`)} className="cursor-pointer border-t border-line text-ink transition-colors hover:bg-panel-2">
-                      <td className="px-4 py-3 font-mono text-xs font-semibold text-brand">{row.ro_number}</td>
+                      <td className="px-4 py-3 font-mono text-xs font-semibold text-brand">{row.ro_number}<EconomicsSource money={money} /></td>
                       <td className="px-4 py-3">{row.customer_name || '-'}</td>
                       <td className="px-4 py-3 text-xs text-muted">{[row.year, row.make, row.model].filter(Boolean).join(' ') || '-'}</td>
                       <td className="px-4 py-3 text-right"><Money cents={dollarsToCents(money.revenue)} className="text-gold" /></td>
-                      <td className="px-4 py-3 text-right"><Money cents={dollarsToCents(money.cost)} /></td>
-                      <td className="px-4 py-3 text-right"><Money cents={dollarsToCents(money.profit)} className={money.profit >= 0 ? 'font-semibold text-good' : 'font-semibold text-crit'} /></td>
-                      <td className={`px-4 py-3 text-right font-mono text-xs tabular-nums ${money.profit >= 0 ? 'text-good' : 'text-crit'}`}>{percent(money.margin)}</td>
+                      <td className="px-4 py-3 text-right">{money.hidden ? 'Restricted' : <EconomicsMoney value={money.cost} />}</td>
+                      <td className="px-4 py-3 text-right"><EconomicsMoney value={money.hidden ? null : money.profit} className={money.profit == null ? 'text-muted' : money.profit >= 0 ? 'font-semibold text-good' : 'font-semibold text-crit'} /></td>
+                      <td className={`px-4 py-3 text-right font-mono text-xs tabular-nums ${money.margin == null ? 'text-muted' : money.margin >= 0 ? 'text-good' : 'text-crit'}`}>{economicsPercent(money.margin)}</td>
                       <td className="px-4 py-3"><StatusBadge status={row.status} /></td>
                     </tr>
                   )
