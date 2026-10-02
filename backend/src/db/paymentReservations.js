@@ -180,7 +180,9 @@ async function ensureFinancialGuards(client) {
         (CASE WHEN TG_OP<>'DELETE' THEN jsonb_build_object('s',NEW.shop_id::text,'r',NEW.ro_id::text) END)) x(v)
         WHERE v IS NOT NULL) parents ORDER BY v->>'r',v->>'s' LOOP
         PERFORM id FROM repair_orders WHERE shop_id::text=doc->>'s' AND id::text=doc->>'r' FOR UPDATE;
-        IF NOT FOUND AND TG_OP<>'DELETE' THEN RAISE EXCEPTION 'RO_NOT_FOUND' USING ERRCODE='23514'; END IF;
+        -- This BEFORE trigger runs before the composite ownership FK. Preserve
+        -- its foreign_key_violation contract for absent or wrong-tenant parents.
+        IF NOT FOUND AND TG_OP<>'DELETE' THEN RAISE EXCEPTION 'RO_NOT_FOUND' USING ERRCODE='23503'; END IF;
       END LOOP;
       IF TG_OP='DELETE' THEN RETURN OLD; END IF; RETURN NEW;
     END $$`);
