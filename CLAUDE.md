@@ -3878,3 +3878,51 @@ Phase 4 commit fallback: staging exit 128, shared Git index.lock creation denied
 by sandbox. No commit; HEAD remains f2cf34506db4e12b2cc2aa56070a4bb88af44585.
 Hermes guard must stage/commit on top, then run exact-SHA host gates. Five changed
 JS files passed Node22 --check; git diff --check exit 0.
+
+## 2026-10-02 01:12 EDT / 05:12 UTC — t_3ead3bd0 Phase 5 regression correction
+
+Started clean at `05153fb000b4fb8aa8feee222ad180622c0ec875` on the assigned
+`codex/revv-panel-estimator-20261001` worktree. New regression evidence is the
+supplied `20261002-003938-05153fb000b4` diagnostic logs, not a duplicate dispatch.
+Phase 1–4 pending/commit-block notes above are historical. Diagnostic host lifecycle
+passed; failure injection and paid-role matrix remain unchanged. Phase 5 repairs
+the optional-column/table trigger regression and older consent fixtures. No final
+candidate host pass is claimed. P3 transport cancellation remains deferred.
+
+The balance exception now uses guarded JSON field access and checks for optional
+ro_payments before querying, retaining immutable selected-total bounds and SQL error
+propagation. TEXT/UUID tests cover minimal schemas, absent ledger, arbitrary balance
+rejection and unexpected SQL failure. SMS tests reach entitlement/privacy branches
+with confirmed scoped customers; malicious provider and zero-leak checks remain.
+Import tests reject invalid attestation before writes and verify server staff/time;
+OCR cannot grant consent. Appraisal coverage preserves upload/payload assertions,
+checks unconfirmed legacy values and omits unchanged consent mutations.
+
+Ten modified files:
+- CLAUDE.md
+- docs/REMEDIATION-remy-15114f26.md
+- backend/src/db/panelEstimator.js
+- backend/src/__tests__/smsTierGate.test.js
+- backend/src/__tests__/notificationLogging.privacy.test.js
+- backend/test/partsNotifications.test.js
+- backend/test/partsDelivery.integration.test.js
+- backend/test/estimateImport.test.js
+- backend/test/panelEstimator.revisions.test.js
+- frontend/src/components/__tests__/AddROModal.appraisal.test.jsx
+
+Node22 sanitized, no-network focused commands and receipts are in the remediation
+runbook. Backend exit 0: tests 138, pass 138, fail 0, skipped 0, including unchanged
+112 Phase 4 tests. Frontend exit 0: 2 files, 29 passed, none skipped. Seven changed
+backend JS files passed --check; git diff --check exit 0. No DB suite was run or
+counted in these focused results; Hermes owns DB and full exact clean SHA gates.
+Final migration runbook explains up/down exports, audit tables, idempotence,
+preservation of subsequent STOP/reconfirmation and restored-TRUE ineligibility.
+Safety-sensitive finance/consent/audit/timestamp/data-loss scope and over two files;
+Hermes owns routing. No agents, board, review, deploy, provider, production, .env,
+main/canonical/readiness edits, amend, rebase or push.
+
+Phase 5 commit blocker: git add exited 128, unable to create the shared canonical
+Git worktree index.lock (Operation not permitted). Chained commit did not run;
+no staging or new SHA. HEAD remains `05153fb000b4fb8aa8feee222ad180622c0ec875`.
+No bypass attempted. Hermes must inspect/commit on top and run full exact-SHA gates;
+completion/block is reported here for t_3ead3bd0 without a prohibited board call.

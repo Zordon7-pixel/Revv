@@ -1,7 +1,11 @@
-# Remy remediation — t_3ead3bd0, Phases 3–4
+# Remy remediation — t_3ead3bd0, Phases 3–5
 
-Implementation on `codex/revv-panel-estimator-20261001`, based on
-`32bb393611538aed333cb53667a8edae1afc748d`. This is not a release receipt.
+Phase 5 starts clean at `05153fb000b4fb8aa8feee222ad180622c0ec875` on
+`codex/revv-panel-estimator-20261001`. This is not a release receipt.
+The Phase 3/4 gate, pending-work and commit-block statements below are historical
+receipts for those working trees, not current state. Phase 5 status is at the end.
+The parent diagnostic host run includes the Phase 4 lifecycle pass; its minimal
+schema failures and older consent fixture failures are the Phase 5 correction scope.
 Hermes owns final gates, commit fallback, push, advisory/review routing and shipping.
 
 ## Consent re-confirmation
@@ -61,7 +65,7 @@ issued approvals or roll back signed records. Existing expiry/revocation/conflic
 rules remain in force. Staff link revocation on the guarded estimator router is also
 unavailable while OFF. No public approval or financial service was changed here.
 
-## Verification and remaining scope
+## Phase 3 historical verification and remaining scope
 
 Focused tests use Node **v22.23.2**, `env -i`, `NODE_ENV=test`, `CI=1`, mocked APIs/DB,
 and no listening socket or external provider. Commands from repository root:
@@ -125,7 +129,9 @@ line items, parts orders and portal tokens exactly. Existing late-parent trigger
 coverage additionally exercises rollback after payments and other children have
 already been deleted. Guard rejection, successful deletion, cross-shop isolation,
 role/payment-state matrix and draft/delete serialization remain covered.
-**These real-DB assertions are pending host execution, not verified in sandbox.**
+**At Phase 4 completion these real-DB assertions were pending host execution.
+The supplied diagnostic host run subsequently passed lifecycle; no Phase 5 DB
+rerun is claimed. The failure-injection and paid-role matrix are unchanged.**
 
 ### Intent balance and panel integration
 
@@ -190,3 +196,106 @@ Operation not permitted. Nothing staged or committed by Codex. HEAD remains
 `f2cf34506db4e12b2cc2aa56070a4bb88af44585`. Hermes must inspect the diff and commit
 on top (no amend/rebase), then run host gates against that new full SHA. No push
 or sandbox bypass attempted.
+
+
+## Legacy consent migration operations — final runbook
+
+`backend/src/db/customerConsent.js` exports `up(db)` and `down(db)`; `db` must
+provide `query`. The existing DB startup/migration paths call `up`. Each direction
+submits one multi-statement query on one connection, atomically, with a
+`SHARE ROW EXCLUSIVE` lock on customers. For an explicitly authorized migration,
+use those exports with the intended database adapter; do not copy individual SQL
+statements or run the customer-consent down operation as estimator rollback.
+No migration was executed in Phase 5.
+
+`up` adds provenance and `sms_consent_revision`, sets default FALSE, and installs
+the revision trigger. The `customer_consent_migrations` entry
+`explicit_sms_consent_v1` marks the one-time reset. `customer_consent_resets`
+retains customer/shop identity, prior consent/provenance, reset revision/time,
+reason and restoration time. Only legacy TRUE lacking complete valid provenance
+is audited and reset to FALSE. Existing confirmed consent is preserved.
+
+Repeated `up` is idempotent: the migration ledger prevents another reset. It does
+not overwrite subsequent STOP or re-confirmation. Any UPDATE naming a consent or
+provenance column advances the revision, even a redundant FALSE STOP update;
+unrelated writes must omit those columns. Preserve both audit tables and the
+trigger. Never delete the ledger to force a rerun. Running `up` after `down` also
+does not reset again: the original migration marker remains.
+
+`down` is a conditional data restoration, not schema removal. It restores only
+unrestored audit rows whose customer/shop, reset revision, FALSE consent and prior
+provenance still match, and only while the migration is not marked rolled back.
+It NEVER overwrites a subsequent STOP/reconfirmation or other consent write.
+It records `restored_at` and `rolled_back_at`; repeated `down` does nothing further.
+It retains provenance columns, default FALSE, revision trigger and audit tables.
+A restored historical TRUE still lacks eligible provenance: down restoration alone
+cannot make it eligible for SMS. Keep the complete-provenance send guard and STOP
+checks in place; do not roll back to boolean-only send eligibility.
+
+Hermes should verify both audit tables and customer revision/evidence in an
+isolated test database using `backend/test/customerConsent.integration.test.js`
+and `backend/test/smsConsent.phase2.test.js`, including repeated up/down, later STOP,
+later reconfirmation and restored-TRUE suppression. Do not export customer evidence
+into ordinary logs. Retain audit history through any operational rollback.
+
+## Phase 5 — regression correction and gate handoff
+
+Source diagnostic receipts (read, not rerun):
+`/Users/zordon/hermes-artifacts/revv-panel-estimator-20261001/gates-remy-fail-15114f26/20261002-003938-05153fb000b4/`.
+At the unchanged base SHA, backend had 602 tests (523 pass, 79 fail), frontend
+376 tests (371 pass, 5 fail); parser 7 pass and build/diff passed. These are
+historical diagnostic results, not final candidate gates.
+
+The production trigger reads optional balance fields through `to_jsonb`, enters
+the balance exception only for that changed field, and queries optional
+`ro_payments` only after `to_regclass` confirms it exists. Gross or remaining
+balance is still bound to the immutable selected accounting total and tenant;
+unexpected SQL failures propagate. The existing TEXT/UUID revisions suite adds
+missing-column, absent-ledger, arbitrary-balance and broken-ledger regressions.
+No fixture columns were added to hide the panel schema regression.
+
+Older SMS/parts fixtures now provide explicit provenance, preserving entitlement,
+STOP, malicious-provider logging and zero-leak assertions. No-shop sends expect
+`missing_recipient_scope`; separate scoped confirmed-customer coverage reaches
+unconfigured suppression. Import tests retain every negative input, reject invalid
+methods with 400 before writes, ignore nested OCR consent and verify authenticated
+staff/server time against spoofed evidence. Appraisal tests retain payload/upload/
+authorization assertions and verify legacy TRUE/null unconfirmed, OCR evidence
+ignored, and unchanged confirmed customers omitting consent mutation.
+
+Focused local checks use Node v22.23.2, `env -i`, NODE_ENV=test and CI=1.
+A temporary preload (`/tmp/revv-phase5-no-network.cjs`) rejects dotenv loading,
+socket connections and unmocked fetch. Vitest uses the existing config through
+`/tmp/revv-phase5-vitest.config.mjs`, overriding envDir to an empty temporary
+directory so project .env files are not loaded. No external provider is called.
+
+```sh
+# From worktree root:
+env -i PATH=/opt/homebrew/opt/node@22/bin:/usr/bin:/bin NODE_ENV=test CI=1 NODE_OPTIONS='--require=/tmp/revv-phase5-no-network.cjs' /opt/homebrew/opt/node@22/bin/node --test --test-concurrency=1 backend/src/__tests__/smsTierGate.test.js backend/src/__tests__/notificationLogging.privacy.test.js backend/test/partsNotifications.test.js backend/test/estimateImport.test.js backend/test/payments.phase4.test.js
+# From frontend/:
+env -i PATH=/opt/homebrew/opt/node@22/bin:/usr/bin:/bin NODE_ENV=test CI=1 NODE_OPTIONS='--require=/tmp/revv-phase5-no-network.cjs' /opt/homebrew/opt/node@22/bin/node node_modules/vitest/vitest.mjs run --config /tmp/revv-phase5-vitest.config.mjs src/components/__tests__/AddROModal.appraisal.test.jsx src/pages/__tests__/ConsentAndAvailability.phase3.test.jsx
+```
+
+Backend exit 0: tests 138, pass 138, fail 0, skipped 0 (includes unchanged Phase 4
+112 tests). Frontend exit 0: 2 files, 29 tests passed, none skipped. Logs:
+`/tmp/revv-phase5-backend.log`, `/tmp/revv-phase5-frontend.log`. Frontend emits
+existing Vite deprecation and React Router future-flag warnings.
+No DB suites were run or counted as passes/skips in these focused commands.
+Hermes owns DB execution (including TEXT/UUID regressions, parts delivery,
+approval/quote/economics, consent migration and unchanged lifecycle), full suites,
+parser/build and final exact clean SHA gates. No final pass is claimed.
+P3 remains deliberately deferred: timeout is an unknown provider outcome;
+transport cancellation is not implemented.
+
+Ten files including CLAUDE.md and this runbook; financial guard, consent provenance,
+audit/timestamp and data-loss-sensitive regression scope, exceeding two files.
+No board/agent/review/deployment/provider/production calls, main/canonical/readiness
+changes, amend, rebase or push. Hermes owns subsequent review routing.
+
+Phase 5 static checks: all seven changed backend JS files passed Node22 --check;
+`git diff --check` exit 0. Phase 5 staging exited 128:
+`fatal: Unable to create '/Volumes/Zordon Storage /openclaw-workspace/Revv/.git/worktrees/panel-estimator-20261001/index.lock': Operation not permitted`.
+The chained commit did not run. No files were staged, no new SHA was created,
+and HEAD remains `05153fb000b4fb8aa8feee222ad180622c0ec875`. No bypass attempted.
+Hermes must inspect these ten files, commit on top without amend/rebase, and run
+final gates against that exact clean full SHA. No board write was made, as directed.

@@ -318,6 +318,41 @@ for (const type of ['TEXT', 'UUID']) test(`real PostgreSQL revisions ${type}: se
       noPrivate(quote);
     });
 
+    await t.test('minimal schema guard: optional balance columns/table, strict selected total and SQL errors', async () => {
+      const client = await pool.connect();
+      const params = [main.roId, shopId];
+      const total = Number((await pool.query(`SELECT r.accounting_snapshot->'money'->>'totalCents' AS total
+        FROM ro_panel_estimator_drafts d JOIN ro_panel_estimator_revisions r ON r.id=d.active_revision_id
+        AND r.shop_id=d.shop_id AND r.ro_id=d.ro_id WHERE d.ro_id=$1 AND d.shop_id=$2`, params)).rows[0].total);
+      assert.ok(total > 0);
+      // This fixture intentionally has no amount_paid_cents column.
+      assert.equal(Object.hasOwn((await pool.query('SELECT * FROM repair_orders WHERE id=$1 AND shop_id=$2', params)).rows[0], 'amount_paid_cents'), false);
+      try {
+        for (const scenario of ['no_balance_columns', 'no_ledger', 'invalid_balance', 'broken_ledger']) {
+          await client.query('BEGIN');
+          try {
+            if (scenario === 'no_balance_columns') {
+              await client.query('ALTER TABLE repair_orders DROP COLUMN amount_owed_cents');
+              await client.query("UPDATE repair_orders SET status='repair' WHERE id=$1 AND shop_id=$2", params);
+              await assert.rejects(client.query('UPDATE repair_orders SET total=1 WHERE id=$1 AND shop_id=$2', params), errorCode('P0001'));
+            } else if (scenario === 'broken_ledger') {
+              await client.query('ALTER TABLE ro_payments RENAME COLUMN amount_cents TO broken_amount');
+              await assert.rejects(client.query('UPDATE repair_orders SET amount_owed_cents=$3 WHERE id=$1 AND shop_id=$2', [...params, total - 1]), errorCode('42703'));
+            } else {
+              await client.query('ALTER TABLE ro_payments RENAME TO absent_optional_ledger');
+              // Seed a different balance with the existing scoped commit capability.
+              await client.query("SELECT set_config('revv.panel_commit',jsonb_build_array($1::text,$2::text)::text,true)", [shopId,main.roId]);
+              await client.query('UPDATE repair_orders SET amount_owed_cents=0 WHERE id=$1 AND shop_id=$2', params);
+              await client.query("SELECT set_config('revv.panel_commit','',true)");
+              const update = () => client.query('UPDATE repair_orders SET amount_owed_cents=$3 WHERE id=$1 AND shop_id=$2 RETURNING amount_owed_cents', [...params, scenario === 'no_ledger' ? total : total - 1]);
+              if (scenario === 'no_ledger') assert.equal(Number((await update()).rows[0].amount_owed_cents), total);
+              else await assert.rejects(update(), errorCode('P0001'));
+            }
+          } finally { await client.query('ROLLBACK'); }
+        }
+      } finally { client.release(); }
+    });
+
     await t.test('database guards: legacy financial/approval/metadata/line writes blocked, normal RO works', async () => {
       const before = await snapshot(main);
       const queries = [

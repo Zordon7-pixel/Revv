@@ -282,7 +282,7 @@ test('create reuses import-estimate path and writes shop-scoped RO, customer, ve
   });
 });
 
-test('import-estimate customer creation accepts only explicit boolean SMS consent at either input path', async () => {
+test('import-estimate customer creation accepts only top-level staff attestation with a valid method', async () => {
   const dbMock = createDbMock();
   await withTestApp(dbMock, async app => {
     app.post('/consent-regression', (req, res) => {
@@ -290,22 +290,37 @@ test('import-estimate customer creation accepts only explicit boolean SMS consen
       return require('../src/routes/ros').importEstimateHandler(req, res);
     });
     for (const nested of [false, true]) {
-      for (const choice of [{}, ...[null, false, 'true', 'false', '1', 1, {}, [], true].map(sms_consent => ({ sms_consent }))]) {
+      for (const choice of [{}, ...[null, false, 'true', 'false', '1', 1, {}, [], true].map(sms_consent => ({ sms_consent })),
+        ...['verbal', 'written', 'ocr', '', null].map(sms_consent_method => ({ sms_consent: true, sms_consent_method }))]) {
         dbMock.calls.length = 0;
         const body = {
-          customer: { name: 'Synthetic Consent Customer', ...(nested ? choice : {}) },
+          customer: { name: 'Synthetic Consent Customer', ...(nested ? choice : {}), sms_consent_at: '2000-01-01T00:00:00Z', sms_consent_by: 'spoofed-ocr' },
+          sms_consent_at: '2000-01-01T00:00:00Z', sms_consent_by: 'spoofed-staff',
           vehicle: { make: 'Toyota', model: 'Camry' },
           ...(!nested ? choice : {}),
         };
+        const started = Date.now();
         const res = await inject(app, {
           method: 'POST', url: '/consent-regression',
           headers: { 'content-type': 'application/json' },
           body: Buffer.from(JSON.stringify(body)),
         });
+        if (!nested && choice.sms_consent === true && !['verbal', 'written'].includes(choice.sms_consent_method)) {
+          assert.equal(res.status, 400);
+          assert.equal(dbMock.calls.some(call => /INSERT|UPDATE|DELETE/i.test(call.sql)), false);
+          continue;
+        }
         assert.equal(res.status, 201);
         const insert = dbMock.calls.find(call => /INSERT INTO customers/i.test(call.sql));
         assert.equal(insert.params[1], 'shop-1');
-        assert.equal(insert.params[4], choice.sms_consent === true);
+        const confirmed = !nested && choice.sms_consent === true;
+        assert.equal(insert.params[4], confirmed);
+        if (confirmed) {
+          assert.equal(insert.params[10], choice.sms_consent_method);
+          assert.equal(insert.params[11], 'user-1');
+          assert.ok(new Date(insert.params[9]).getTime() >= started);
+          assert.ok(new Date(insert.params[9]).getTime() <= Date.now());
+        } else assert.deepEqual(insert.params.slice(9, 12), [null, null, null]);
       }
     }
   });

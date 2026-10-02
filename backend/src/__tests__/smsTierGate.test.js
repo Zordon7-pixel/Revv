@@ -3,6 +3,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
 
+// Prevent the initial service imports from loading the real DB or dotenv.
+const dbPath = require.resolve('../db');
+require.cache[dbPath] = { id: dbPath, filename: dbPath, loaded: true, exports: {} };
+
 const { maybeSendInboundAutoReply } = require('../services/smsAutoReply');
 const { smsEntitled } = require('../services/sms');
 
@@ -119,6 +123,12 @@ function loadSmsWithMocks(shopPatch) {
     filename: dbPath,
     loaded: true,
     exports: {
+      dbAll: async (sql, params) => {
+        assert.match(sql, /FROM customers WHERE shop_id = \$1/);
+        assert.deepEqual(params, [SHOP_BASE.id, CUSTOMER_PHONE.slice(1)]);
+        return [{ sms_consent: true, sms_consent_at: '2026-10-01T12:00:00Z',
+          sms_consent_method: 'verbal', sms_consent_by: 'staff-1' }];
+      },
       dbGet: async (sql) => {
         if (/FROM sms_opt_outs/.test(sql)) return null;
         if (/FROM shops/.test(sql)) return shop;

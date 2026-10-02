@@ -10,7 +10,7 @@ for(const idType of ['TEXT','UUID']) test(`parts delivery lifecycle and boundari
   await db.query(`CREATE TABLE shops(id ${idType} PRIMARY KEY,name TEXT,phone TEXT,address TEXT,city TEXT,state TEXT,zip TEXT,tracking_api_key TEXT,sms_notifications_enabled BOOLEAN,email_notifications_enabled BOOLEAN);
     CREATE TABLE users(id ${idType},revoke_all_before TIMESTAMPTZ);
     CREATE TABLE revoked_tokens(id TEXT,token_jti TEXT);
-    CREATE TABLE customers(id ${idType},shop_id ${idType},name TEXT,phone TEXT,email TEXT,sms_consent BOOLEAN,email_consent BOOLEAN,preferred_contact_method TEXT);
+    CREATE TABLE customers(id ${idType},shop_id ${idType},name TEXT,phone TEXT,email TEXT,sms_consent BOOLEAN,sms_consent_at TIMESTAMPTZ,sms_consent_method TEXT,sms_consent_by TEXT,email_consent BOOLEAN,preferred_contact_method TEXT);
     CREATE TABLE vehicles(id ${idType},shop_id ${idType},year TEXT,make TEXT,model TEXT,color TEXT,plate TEXT,vin TEXT);
     CREATE TABLE repair_orders(id ${idType} PRIMARY KEY,shop_id ${idType},customer_id ${idType},vehicle_id ${idType},ro_number TEXT,status TEXT,job_type TEXT,intake_date TEXT,estimated_delivery TEXT,actual_delivery TEXT,notes TEXT,parts_cost REAL,labor_cost REAL,total REAL,created_at TIMESTAMPTZ DEFAULT NOW());
     CREATE TABLE parts_orders(id ${idType} PRIMARY KEY,shop_id ${idType},ro_id ${idType},part_name TEXT,part_number TEXT,vendor TEXT,quantity INTEGER,unit_cost REAL,status TEXT,ordered_date TEXT,expected_date TEXT,received_date TEXT,notes TEXT,tracking_number TEXT,carrier TEXT,tracking_status TEXT,tracking_detail TEXT,tracking_updated_at TEXT,created_at TIMESTAMPTZ DEFAULT NOW(),updated_at TIMESTAMPTZ DEFAULT NOW());
@@ -72,7 +72,7 @@ for(const idType of ['TEXT','UUID']) test(`parts delivery lifecycle and boundari
     const unchanged=await api(`/parts/${part.id}/delivery`,{method:'PUT',body:{delivery_revision:part.delivery_revision,customer_note:'Date confirmation pending',notify_customer:true}});assert.equal(unchanged.data.notification.reason,'no_customer_change');
     const privateEdit=await api(`/parts/${part.id}/delivery`,{method:'PUT',body:{delivery_revision:part.delivery_revision,notes:'PRIVATE supplier update',notify_customer:true}});part=privateEdit.data;assert.equal(part.notification.reason,'no_customer_change');
     assert.equal((await db.query('SELECT COUNT(*)::int AS n FROM parts_delivery_notifications')).rows[0].n,1);
-    await db.query("UPDATE customers SET phone='+15555550101',email='synthetic@example.test',sms_consent=TRUE,email_consent=TRUE,preferred_contact_method='both' WHERE id=$1 AND shop_id=$2",[customer,a]);
+    await db.query("UPDATE customers SET phone='+15555550101',email='synthetic@example.test',sms_consent=TRUE,sms_consent_at=NOW(),sms_consent_method='verbal',sms_consent_by=$3,email_consent=TRUE,preferred_contact_method='both' WHERE id=$1 AND shop_id=$2",[customer,a,user]);
     const prev=part.delivery_revision;part=await savePart(db,a,user,{customer_note:'New estimated date being checked',delivery_revision:prev},{id:part.id,requireRevision:true});
     let sends=0;const providers={sendSMS:async()=>{sends++;return {ok:true}},sendMail:async()=>{sends++;return {id:'synthetic'}}};
     const results=await Promise.all([notifyPartUpdate(db,a,part,prev,providers),notifyPartUpdate(db,a,part,prev,providers)]);

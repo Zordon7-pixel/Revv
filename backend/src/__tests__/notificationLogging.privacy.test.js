@@ -33,6 +33,13 @@ async function harness(run) {
     consoleMethods.forEach(k => { console[k] = (...args) => logs.push([k, ...args]); });
     global.fetch = async (...args) => { state.fetchCalls.push(args); return state.fetch(...args); };
     require.cache[paths[2]] = { id: paths[2], filename: paths[2], loaded: true, exports: {
+      dbAll: async (sql, params) => {
+        state.dbCalls.push({ sql, params });
+        assert.match(sql, /FROM customers WHERE shop_id = \$1/);
+        assert.deepEqual(params, [privateValues.shop, privateValues.phone.slice(1)]);
+        return [{ sms_consent: true, sms_consent_at: '2026-10-01T12:00:00Z',
+          sms_consent_method: 'written', sms_consent_by: 'staff-1' }];
+      },
       dbGet: async (sql, params) => {
         state.dbCalls.push({ sql, params });
         return /sms_opt_outs/.test(sql) ? (state.optedOut ? { exists: 1 } : null) : state.shop;
@@ -115,15 +122,19 @@ test('mailer transport and JSON failures rethrow the same error without logging 
 test('SMS unconfigured and STOP/entitlement suppression preserve outcomes without provider calls', () => harness(async (s, logs) => {
   const { sendSMS, getTwilioConfigForShop } = require('../services/sms');
   assert.equal(await getTwilioConfigForShop(privateValues.shop), null);
-  assert.deepEqual(await sendSMS(privateValues.phone, privateValues.body), { ok: false, reason: 'not configured', body: privateValues.body + footer });
+  assert.deepEqual(await sendSMS(privateValues.phone, privateValues.body), { ok: false, reason: 'missing_recipient_scope', body: privateValues.body + footer });
+  s.shop = { plan: 'pro' };
+  assert.deepEqual(await sendSMS(privateValues.phone, privateValues.body, { shopId: privateValues.shop }), { ok: false, reason: 'not configured', body: privateValues.body + footer });
   s.optedOut = true;
   assert.deepEqual(await sendSMS(privateValues.phone, privateValues.body, smsOptions), { ok: false, reason: 'opted_out', body: privateValues.body + footer });
-  assert.deepEqual(s.dbCalls.at(-1).params, [privateValues.shop, privateValues.phone]);
+  assert.deepEqual(s.dbCalls.at(-1).params, [privateValues.shop, privateValues.phone.slice(1)]);
   s.optedOut = false;
   assert.deepEqual(await sendSMS(privateValues.phone, privateValues.body, { ...smsOptions, twilioConfig: { ...config, plan: 'free' } }), { ok: false, reason: 'sms_not_entitled', body: privateValues.body + footer });
   assert.equal(s.authCalls.length, 0);
   assert.equal(s.sends.length, 0);
-  assert.ok(logs.some(row => row.includes('[SMS] Suppressed send: opted_out')));
+  assert.ok(logs.some(row => row[0] === 'warn' && row[1] === '[SMS] Suppressed send:' && row[2] === 'opted_out'));
+  assert.ok(logs.some(row => row[0] === 'warn' && row[1] === '[SMS] Suppressed send:' && row[2] === 'missing_recipient_scope'));
+  assert.ok(logs.some(row => row.includes('[SMS] Twilio is not configured. Skipping SMS send.')));
   assert.ok(logs.some(row => row.includes('[SMS] Suppressed send: sms_not_entitled')));
 }));
 
@@ -138,7 +149,7 @@ test('SMS success preserves calls/body/SID for both auth modes and validates log
   }
   const apiConfig = { ...config, apiKey: privateValues.token, apiSecret: privateValues.token };
   s.send = async () => ({ sid });
-  assert.deepEqual(await sendSMS(privateValues.phone, privateValues.body, { ...smsOptions, twilioConfig: apiConfig, customerFacing: false }), { ok: true, sid, body: privateValues.body });
+  assert.deepEqual(await sendSMS(privateValues.phone, privateValues.body, { ...smsOptions, twilioConfig: apiConfig, customerFacing: false }), { ok: true, sid, body: privateValues.body + footer });
   assert.deepEqual(s.authCalls.at(-1), [apiConfig.apiKey, apiConfig.apiSecret, { accountSid: apiConfig.accountSid }]);
 }));
 

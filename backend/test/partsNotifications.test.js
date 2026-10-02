@@ -2,7 +2,7 @@ const test=require('node:test');const assert=require('node:assert/strict');
 const {publicChange,content,channelAllowed,notifyPartUpdate,validateNotificationRequest}=require('../src/services/partsNotifications');
 const before={part_name:'Headlamp',status:'ordered',quantity:2,received_quantity:0,expected_date:null,eta_source:'unknown',customer_note:null};
 const after={...before,status:'shipped',expected_date:'2026-10-01',eta_source:'supplier',customer_note:'Arrival estimate updated.'};
-const context={before_state:before,after_state:after,shop_name:'Test <shop>',ro_number:'RO-TEST',phone:'+15555550101',email:'synthetic@example.test',sms_consent:true,email_consent:true,preferred_contact_method:'both'};
+const context={before_state:before,after_state:after,shop_name:'Test <shop>',ro_number:'RO-TEST',phone:'+15555550101',email:'synthetic@example.test',sms_consent:true,sms_consent_at:"2026-10-01T12:00:00Z",sms_consent_method:"verbal",sms_consent_by:"staff-test",email_consent:true,preferred_contact_method:'both'};
 function fakeDb(overrides={}) {
   const calls=[];let claimed=false;
   const db={calls,connect:async()=>({query:async()=>({rows:[]}),release(){}}),query:async(sql,params)=>{
