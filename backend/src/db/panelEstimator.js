@@ -73,6 +73,7 @@ async function ensurePanelEstimator(pool) {
     END $$`);
     await ensureRevisions(client, types);
     await ensureApprovals(client, types);
+    await require('./paymentReservations').ensureFinancialGuards(client);
     await client.query('COMMIT');
   } catch (error) {
     try { await client.query('ROLLBACK'); } catch (rollbackError) { error.rollbackError = rollbackError; }

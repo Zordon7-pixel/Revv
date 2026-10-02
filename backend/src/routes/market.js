@@ -4,6 +4,7 @@ const path = require('path');
 const multer = require('multer');
 const { v4: uuidv4 } = require('uuid');
 const { dbGet, dbAll, dbRun } = require('../db');
+const { withLockedShopDeletion, PaymentError } = require('../services/paymentReservations');
 const auth = require('../middleware/auth');
 const { requireAdmin } = require('../middleware/roles');
 const { getRatesForState, getAllStates } = require('../data/market-rates');
@@ -207,17 +208,21 @@ router.put('/shop', auth, async (req, res) => {
 router.delete('/demo-data', auth, async (req, res) => {
   try {
     const shopId = req.user.shop_id;
-    await dbRun('DELETE FROM parts_orders WHERE ro_id IN (SELECT id FROM repair_orders WHERE shop_id = $1)', [shopId]);
-    await dbRun('DELETE FROM job_status_log WHERE ro_id IN (SELECT id FROM repair_orders WHERE shop_id = $1)', [shopId]);
-    await dbRun('DELETE FROM time_entries WHERE shop_id = $1', [shopId]);
-    await dbRun('DELETE FROM schedules WHERE shop_id = $1', [shopId]);
-    await dbRun('DELETE FROM repair_orders WHERE shop_id = $1', [shopId]);
-    await dbRun('DELETE FROM vehicles WHERE shop_id = $1', [shopId]);
-    await dbRun("DELETE FROM users WHERE shop_id = $1 AND role = 'customer'", [shopId]);
-    await dbRun('DELETE FROM customers WHERE shop_id = $1', [shopId]);
+    await withLockedShopDeletion(shopId, async client => {
+      await client.query('DELETE FROM parts_orders WHERE ro_id::text IN (SELECT id::text FROM repair_orders WHERE shop_id = $1)', [shopId]);
+      await client.query('DELETE FROM job_status_log WHERE ro_id::text IN (SELECT id::text FROM repair_orders WHERE shop_id = $1)', [shopId]);
+      await client.query('DELETE FROM time_entries WHERE shop_id = $1', [shopId]);
+      await client.query('DELETE FROM schedules WHERE shop_id = $1', [shopId]);
+      await client.query('DELETE FROM repair_orders WHERE shop_id = $1', [shopId]);
+      await client.query('DELETE FROM vehicles WHERE shop_id = $1', [shopId]);
+      await client.query("DELETE FROM users WHERE shop_id = $1 AND role = 'customer'", [shopId]);
+      await client.query('DELETE FROM customers WHERE shop_id = $1', [shopId]);
+    });
     res.json({ ok: true, message: 'All demo data cleared. Shop settings and staff accounts are untouched.' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err instanceof PaymentError ? err.status : 500).json({
+      error: err instanceof PaymentError ? err.message : 'Could not clear demo data',
+    });
   }
 });
 

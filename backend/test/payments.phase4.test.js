@@ -465,7 +465,14 @@ test('real PostgreSQL payment reservations, parallel creation and settlement (mo
           }
           // Foreign financial/signature rows never influence the owning tenant.
           const ro=await makeRo();
-          await raw.query("INSERT INTO ro_payments(id,shop_id,ro_id,amount_cents,status) VALUES ($1,$2,$3,0,'succeeded')",[randomUUID(),other,ro]);
+          const foreignInsert = () => raw.query("INSERT INTO ro_payments(id,shop_id,ro_id,amount_cents,status) VALUES ($1,$2,$3,0,'succeeded')",[randomUUID(),other,ro]);
+          await assert.rejects(foreignInsert(), /RO_NOT_FOUND/);
+          // Simulate a legacy row predating this migration in the disposable schema.
+          // Keep the original cross-tenant retention assertions as well as rejection
+          // of new corrupt writes. Never disable guards outside this owned fixture.
+          await raw.query('ALTER TABLE ro_payments DISABLE TRIGGER revv_financial_guard');
+          try { await foreignInsert(); }
+          finally { await raw.query('ALTER TABLE ro_payments ENABLE TRIGGER revv_financial_guard'); }
           await raw.query("INSERT INTO agreement_requests(id,ro_id,shop_id,status) VALUES ($1,$2,$3,'signed')",[randomUUID(),ro,other]);
           assert.equal((await invoke(router,'/:id',{},'owner',shop,ro)).statusCode,200);
           assert.equal((await raw.query('SELECT 1 FROM ro_payments WHERE ro_id=$1 AND shop_id=$2',[ro,other])).rowCount,1);
@@ -591,6 +598,7 @@ test('real PostgreSQL payment reservations, parallel creation and settlement (mo
         await t.test('selected panel money remains authoritative on transaction client',async()=> {
           await raw.query(`CREATE TABLE ro_panel_estimator_drafts(ro_id ${identityType},shop_id ${identityType},active_revision_id TEXT);
             CREATE TABLE ro_panel_estimator_revisions(id TEXT,ro_id ${identityType},shop_id ${identityType},accounting_snapshot JSONB)`);
+          await migration.up(raw); // Install optional selection guard after late table creation.
           const ro=await makeRo(),f=consumers(db,money);
           await raw.query('UPDATE estimate_line_items SET total=999 WHERE ro_id=$1',[ro]);
           await raw.query('INSERT INTO ro_panel_estimator_drafts VALUES ($1,$2,$3)',[ro,shop,'chosen']);

@@ -14,6 +14,9 @@ async function withLockedRo(roId, shopId, work) {
   const client = await require('../db').pool.connect();
   try {
     await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
+    // Freeze the tax input before reading money. SHARE conflicts with tax updates
+    // but lets payments on different ROs proceed concurrently.
+    await client.query('SELECT id FROM shops WHERE id = $1 FOR SHARE', [shopId]);
     const ro = (await client.query('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2 FOR UPDATE', [roId, shopId])).rows[0];
     if (!ro) fail('Repair order not found', 404);
     const result = await work(client, ro);
@@ -181,4 +184,24 @@ async function settlePaymentEvent(event) {
   });
 }
 
-module.exports = { PaymentError, withLockedRo, getPaymentBalance, reservePayment, metadataFor, recordProviderResult, settlePaymentEvent };
+// Bulk reset preflights every locked RO before deleting any child. Keep the
+// whole existing reset in this transaction so late FK/trigger failures are atomic.
+async function withLockedShopDeletion(shopId, work) {
+  const client = await require('../db').pool.connect();
+  try {
+    await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
+    const ros = (await client.query('SELECT id FROM repair_orders WHERE shop_id = $1 ORDER BY id FOR UPDATE', [shopId])).rows;
+    for (const ro of ros) await client.query('SELECT revv_assert_ro_deletable($1::text, $2::text)', [shopId, ro.id]);
+    const result = await work(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    if (error.code === '23514' && ['RO_HISTORY_PROTECTED', 'RO_FINANCIAL_HOLD'].includes(error.message)) {
+      throw new PaymentError('Cannot reset data with payment, reservation, approval, claim, agreement or panel history', 409);
+    }
+    throw error;
+  } finally { client.release(); }
+}
+
+module.exports = { withLockedShopDeletion, PaymentError, withLockedRo, getPaymentBalance, reservePayment, metadataFor, recordProviderResult, settlePaymentEvent };

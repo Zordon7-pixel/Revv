@@ -107,6 +107,11 @@ function routes(h) {
     '../middleware/roLimitGuard': noop, './insuranceOcr': { insuranceOcrLimiter: noop },
     '../services/panelEstimatorEconomics': { selectedEconomics: async () => new Map(), redactSelectedRO: r => r },
     '../services/profit': { calculateProfit: () => ({}) },
+    '../services/paymentReservations': {
+      PaymentError: class PaymentError extends Error {},
+      withLockedRo: async () => { throw new Error('Unexpected payment transaction in SMS test'); },
+      getPaymentBalance: async () => { throw new Error('Unexpected payment balance in SMS test'); },
+    },
     '../services/roMoney': { roundToIntCents: Math.round, dollarsToCents: n => Math.round(Number(n || 0) * 100) },
     '../services/mailer': { sendMail: async () => { throw new Error('Unexpected email'); } },
     '../services/emailTemplates': {}, '../services/ownerActivity': { recordOwnerActivity() {} },

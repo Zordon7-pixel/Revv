@@ -401,7 +401,16 @@ test('L1 real PostgreSQL and mounted production lifecycle/payment handlers', { t
         const scope = await newScope(), revision = await commit(scope);
         const total = revision.quote.totals.total_cents, before = await evidence(scope);
         for (const [status,amount,tenant] of [['succeeded',1000,shopId],['paid',500,shopId],['failed',total,otherShop],['pending',total,otherShop],['succeeded',total,otherShop]]) {
-          await raw.query('INSERT INTO ro_payments(id,shop_id,ro_id,amount_cents,status) VALUES ($1,$2,$3,$4,$5)',[randomUUID(),tenant,scope.roId,amount,status]);
+          const insert = () => raw.query('INSERT INTO ro_payments(id,shop_id,ro_id,amount_cents,status) VALUES ($1,$2,$3,$4,$5)',[randomUUID(),tenant,scope.roId,amount,status]);
+          if (tenant === shopId) await insert();
+          else {
+            await assert.rejects(insert(), /RO_NOT_FOUND/);
+            // Isolated legacy fixture only: retain the original foreign-history
+            // assertions while proving new cross-tenant ledger writes are refused.
+            await raw.query('ALTER TABLE ro_payments DISABLE TRIGGER revv_financial_guard');
+            try { await insert(); }
+            finally { await raw.query('ALTER TABLE ro_payments ENABLE TRIGGER revv_financial_guard'); }
+          }
         }
         for (const status of ['failed','pending']) {
           const held = await newScope(), quote = await commit(held);
@@ -435,6 +444,48 @@ test('L1 real PostgreSQL and mounted production lifecycle/payment handlers', { t
           assert.equal(providerCalls.length,calls);
         }
       }
+    });
+
+    for (const paymentFirst of [false,true]) await t.test(`selected revision vs reservation, payment first=${paymentFirst}`, async () => {
+      const scope = await newScope(), first = await commit(scope);
+      const changed = draft(); changed.assessments[0].body_rate_cents = 5000;
+      const body = await prepare(scope, changed);
+      const { reservePayment } = require('../src/services/paymentReservations');
+      const reached = deferred(), resume = deferred(), waiting = deferred(); let held=false;
+      hook = async (sql, params, phase) => {
+        if (!/SELECT .*FROM repair_orders.*FOR UPDATE/.test(sql) || !params?.includes(scope.roId)) return;
+        if (phase === 'after' && !held) { held=true; reached.resolve(); await resume.promise; }
+        else if (phase === 'before' && held) waiting.resolve();
+      };
+      const reserve = () => reservePayment({roId:scope.roId,shopId:scope.shopId,kind:'intent'});
+      const select = () => revisions.commit({...scope,body});
+      const one = paymentFirst ? reserve() : select();
+      let results;
+      try {
+        await Promise.race([reached.promise,one.then(()=>{throw Error('Writer did not acquire parent lock');})]);
+        const two = paymentFirst ? select() : reserve();
+        results = Promise.allSettled([one,two]);
+        await waiting.promise;
+      } finally { hook=null; resume.resolve(); }
+      const [a,b] = await results;
+      assert.equal(a.status,'fulfilled');
+      const { getRoMoneySummary } = require('../src/services/roMoney');
+      const money = await getRoMoneySummary(scope.roId,scope.shopId);
+      if (paymentFirst) {
+        assert.equal(b.status,'rejected'); assert.match(b.reason.message,/RO_FINANCIAL_HOLD/);
+        assert.equal(money.totalCents,first.quote.totals.total_cents);
+        assert.equal((await raw.query('SELECT count(*)::int AS n FROM ro_panel_estimator_revisions WHERE shop_id=$1 AND ro_id=$2',[scope.shopId,scope.roId])).rows[0].n,1);
+      } else {
+        assert.equal(b.status,'fulfilled');assert.equal(b.value.amountCents,a.value.quote.totals.total_cents);
+        assert.ok(money.totalCents < first.quote.totals.total_cents);
+      }
+      // The server panel capability never bypasses the financial hold on a pointer.
+      const c = await raw.connect();
+      try {
+        await c.query('BEGIN');
+        await c.query("SELECT set_config('revv.panel_commit', jsonb_build_array($1::text,$2::text)::text,true)",[scope.shopId,scope.roId]);
+        await assert.rejects(c.query('UPDATE ro_panel_estimator_drafts SET active_revision_id=NULL WHERE shop_id=$1 AND ro_id=$2',[scope.shopId,scope.roId]),/RO_FINANCIAL_HOLD/);
+      } finally {await c.query('ROLLBACK');c.release();}
     });
 
     await t.test('summary readers observe old or new committed selection; stale owed overwrite remains rejected', async () => {

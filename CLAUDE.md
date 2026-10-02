@@ -4194,3 +4194,84 @@ git diff --check
 Safety-sensitive finance, approvals/signatures, tenant isolation, timestamps and
 data-loss prevention; over two files. Hermes owns all further lifecycle/reporting,
 commits/gates/push/packet. No Spark/Grok verdict or release authorization claimed.
+
+## 2026-10-02 03:00 EDT / 07:00 UTC — t_6f27a266 Phase D
+
+**Implementation only; uncommitted; host verification required.** Started clean at
+`095b2115cb032576c0378ac097835bd61049e46a` in the assigned worktree/branch. Hermes
+owns lifecycle, gates, commit, push and the UNSENT packet. No release authorization.
+Read the Phase C entry and QA-CHECKLIST. Historical receipts supplied for this task:
+Phase C focused **476/476 pass, no skips**; diagnostic full gates on 095b211 were
+backend **988 pass / 9 fail / 997 total**, frontend 380 pass, parser 7 pass,
+build/diff pass. Those receipts are not Phase D gates.
+
+**Required closure implemented (findings 3/5; safety-critical financial/deletion changes):**
+- The existing reservation migration installs real PostgreSQL guards on RO monetary
+  fields, estimate lines/metadata, panel selection, shop tax and payment evidence.
+  Monetary child writes lock the same owning RO as reservation/manual/settlement
+  transactions, including both parents of a moved row. Optional columns use JSON;
+  optional tables are checked explicitly, with TEXT/UUID bindings. The panel
+  initializer also installs these guards after creating its tables, covering fresh
+  startup order without changing the existing immutable panel triggers/capability.
+- Conservative operational hold: ANY ledger/reservation history (including zero,
+  failed, pending, settled, unknown or retryable), or legacy paid evidence, refuses
+  financial edits, imports/metadata changes and selected-revision replacement.
+  Shop tax changes also refuse if any RO in that shop has financial history. Payments
+  acquire a shared shop lock before the RO lock and money reads, so tax cannot change
+  between computing and reserving a balance. Existing taxed line totals and immutable
+  selected accounting snapshots remain the money source; no alternative total formula
+  or repricing/cancellation/release workflow was introduced. Unrelated RO status edits
+  and unselected draft/private-cost work remain available.
+- Settlement bookkeeping remains writable after ledger success insertion; manual-paid
+  cents cannot decrease. Ledger/reservation identity and amounts cannot be rewritten,
+  deleted or truncated. Direct financial inserts lock/check their tenant parent, so
+  deletion cannot leave newly inserted orphan evidence. Old malformed foreign history
+  is retained and stays tenant isolated; synthetic legacy fixtures preserve those
+  assertions and additionally reject new cross-tenant evidence inserts.
+- Settings resets (all sections) and demo-data deletion now run one READ COMMITTED
+  transaction: lock ROs in order, preflight paid/approved/signed/claim/agreement/panel
+  evidence before any child deletion, then commit all work or roll it all back. Protected
+  resets return 409. Neither path deletes payments or reservations. Parent database
+  deletion guards also cover direct deletion. Child-parent ID comparisons tolerate TEXT
+  children with UUID parents. Issued/voided agreements and issued claim links are retained
+  conservatively. A shop with protected ROs cannot use even a customer/vehicle/timeclock
+  reset; ordinary operational edits remain available.
+- All nine SMS diagnostic failures were the strict VM loader rejecting the new
+  `../services/paymentReservations` dependency, before handlers executed. Added an
+  explicit isolated helper mock that fails on unexpected payment work. Original
+  confirmed-positive calls to real mocked Twilio and zero-call negative assertions
+  remain intact; no assertion removal or new skipped test.
+
+**Changed paths (10, including this document):** CLAUDE.md;
+backend/src/db/{paymentReservations,panelEstimator}.js;
+backend/src/services/paymentReservations.js;
+backend/src/routes/{settings,market}.js;
+backend/test/{financialClosure.phaseD,payments.phase4,panelEstimator.lifecycle,smsConsent.phase2}.test.js.
+
+**Verification actually run:** Node v22.23.2, scrubbed `env -i`, NODE_ENV=test,
+CI=1. The existing preload rejects dotenv; mocked execution rejects sockets/fetch.
+All provider behavior is mocked. Focused command (deliberately excludes DB cases,
+not a full gate):
+```sh
+env -i PATH=/opt/homebrew/opt/node@22/bin:/usr/bin:/bin NODE_ENV=test CI=1 NODE_OPTIONS=--require=/tmp/revv-phaseB-no-network.cjs /opt/homebrew/opt/node@22/bin/node --test --test-skip-pattern='real PostgreSQL' backend/test/financialClosure.phaseD.test.js backend/test/payments.phase4.test.js backend/test/smsConsent.phase2.test.js backend/src/__tests__/moneyAuthority.phase1.test.js backend/src/__tests__/roMoney.unit.test.js backend/test/agreements.test.js backend/src/__tests__/trueShopProfit.costProfile.test.js backend/src/__tests__/redesign.phase4.test.js backend/src/__tests__/role-guards.test.js
+```
+Exit 0; `/tmp/revv-phaseD-mocked.log`: **470 tests, 470 pass, 0 fail, 0 skipped**.
+JavaScript syntax checks and `git diff --check` pass.
+
+Unfiltered focused command, with the existing SMS database case explicitly enabled:
+```sh
+env -i PATH=/opt/homebrew/opt/node@22/bin:/usr/bin:/bin NODE_ENV=test CI=1 NODE_OPTIONS=--require=/tmp/revv-phaseC-loopback-only.cjs PANEL_ESTIMATOR_TEST_DATABASE_URL=postgresql://revv_panel@127.0.0.1:55459/revv_panel_test CUSTOMER_CONSENT_TEST_DATABASE_URL=postgresql://revv_panel@127.0.0.1:55459/revv_customer_consent_test /opt/homebrew/opt/node@22/bin/node --test backend/test/financialClosure.phaseD.test.js backend/test/payments.phase4.test.js backend/test/panelEstimator.lifecycle.test.js backend/test/smsConsent.phase2.test.js backend/src/__tests__/moneyAuthority.phase1.test.js backend/src/__tests__/roMoney.unit.test.js backend/test/agreements.test.js
+```
+Exit 1; `/tmp/revv-phaseD-full-focused.log`: **466 tests, 458 pass, 8 fail, 0 skipped**.
+Six DB connection failures are `connect EPERM 127.0.0.1:55459`, before fixture
+creation, plus two failed suite parents. No sandbox bypass attempted. The real tests
+use disposable schemas/temp tables only. Added cases cover both orders of reserve
+versus line decrease/deletion/taxability, parent authority/metadata and shop tax,
+actual selected-revision commit races and rollback, manual-paid plus reserved taxed
+capacity, success trigger ordering/idempotency, evidence preservation, atomic bulk
+refusal/late rollback and bulk deletion versus direct financial insertion. Their SQL
+and race outcomes still require Hermes host execution; no final gates are claimed.
+Unidentified historical Checkout links and reconciliation-only holds remain the
+Phase B limitation. No production data/provider calls, secrets/.env access, agents,
+board/review requests, main/canonical/readiness edits, commit/push or deployment.
+`release_authorized=false`.
