@@ -19,8 +19,9 @@ function normalizedPaymentStatus(ro) {
 }
 
 function normalizeAmountCents(amount) {
+  if (!['number', 'string'].includes(typeof amount) || String(amount).trim() === '') return null;
   const parsed = Number(amount);
-  if (!Number.isInteger(parsed) || parsed <= 0) return null;
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) return null;
   return parsed;
 }
 
@@ -56,7 +57,7 @@ async function handleCreateIntent(req, res) {
     }
 
     const ro = await dbGet(
-      'SELECT id, shop_id, ro_number, customer_id, payment_status, payment_received FROM repair_orders WHERE id = $1 AND shop_id = $2',
+      'SELECT id, shop_id, ro_number, customer_id, payment_status, payment_received, amount_paid_cents FROM repair_orders WHERE id = $1 AND shop_id = $2',
       [roId, req.user.shop_id]
     );
     if (!ro) return res.status(404).json({ error: 'Repair order not found' });
@@ -66,9 +67,20 @@ async function handleCreateIntent(req, res) {
       return res.status(400).json({ error: 'No payable estimate line items found for this RO' });
     }
 
-    const amountCents = amount === undefined ? money.totalCents : normalizeAmountCents(amount);
+    const ledgerPaidCents = await getPaidCents(ro.id, req.user.shop_id);
+    // Legacy manual payments may predate the ledger. Never charge that money again.
+    const paidCents = Math.max(ledgerPaidCents, Number(ro.amount_paid_cents || 0));
+    const remainingCents = money.totalCents - paidCents;
+    if (!Number.isSafeInteger(money.totalCents) || !Number.isSafeInteger(paidCents) || paidCents < 0 ||
+        !Number.isSafeInteger(remainingCents) || remainingCents <= 0 ||
+        String(ro.payment_status || '').toLowerCase() === 'paid' ||
+        ro.payment_received === true || Number(ro.payment_received) > 0) {
+      return res.status(400).json({ error: 'Repair order is already paid or has an invalid balance' });
+    }
+    const amountCents = amount === undefined ? remainingCents : normalizeAmountCents(amount);
     if (!amountCents) return res.status(400).json({ error: 'amount must be a positive integer in cents' });
-    if (amountCents !== money.totalCents && allow_partial !== true) {
+    if (amountCents > remainingCents) return res.status(400).json({ error: 'Payment amount exceeds the remaining balance' });
+    if (amountCents !== remainingCents && allow_partial !== true) {
       return res.status(400).json({ error: 'Payment amount must match the server-calculated amount owed' });
     }
 
@@ -76,8 +88,8 @@ async function handleCreateIntent(req, res) {
       roId: ro.id,
       shopId: req.user.shop_id,
       roNumber: ro.ro_number || '',
-      amountOwedCents: String(money.totalCents),
-      paymentKind: amountCents === money.totalCents ? 'full' : 'partial',
+      amountOwedCents: String(remainingCents),
+      paymentKind: amountCents === remainingCents ? 'full' : 'partial',
     });
 
     if (!paymentIntent) {
@@ -116,14 +128,14 @@ async function handleCreateIntent(req, res) {
            amount_owed_cents = $3,
            updated_at = $4
        WHERE id = $5 AND shop_id = $6`,
-      ['pending', paymentIntent.id, money.totalCents, new Date().toISOString(), ro.id, req.user.shop_id]
+      ['pending', paymentIntent.id, remainingCents, new Date().toISOString(), ro.id, req.user.shop_id]
     );
 
     return res.json({
       clientSecret: paymentIntent.client_secret,
       paymentIntentId: paymentIntent.id,
       amountCents,
-      amountOwedCents: money.totalCents,
+      amountOwedCents: remainingCents,
     });
   } catch (err) {
     return res.status(500).json({ error: err.message || 'Failed to create payment intent' });

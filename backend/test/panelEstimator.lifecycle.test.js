@@ -225,12 +225,67 @@ test('L1 real PostgreSQL and mounted production lifecycle/payment handlers', { t
       } finally { await raw.query('DROP TRIGGER z_late_delete ON repair_orders'); }
     });
 
+    await t.test('failure after first dependent DELETE restores every row; paid guards preserve every row', async () => {
+      const dependentTables = ['job_status_log', 'ro_payments', 'ro_photos', 'estimate_line_items', 'parts_orders', 'portal_tokens'];
+      const seed = async scope => {
+        await children(scope);
+        await raw.query("INSERT INTO estimate_line_items(id,ro_id,shop_id,type,description,unit_price) VALUES ($1,$2,$3,'parts','Synthetic',100)", [randomUUID(),scope.roId,scope.shopId]);
+        for (const table of ['parts_orders','portal_tokens']) await raw.query(`INSERT INTO ${table}(id,ro_id,shop_id) VALUES ($1,$2,$3)`, [randomUUID(),scope.roId,scope.shopId]);
+      };
+      const snapshot = async scope => {
+        const result = { ro: await ro(scope) };
+        for (const table of dependentTables) result[table] = (await raw.query(`SELECT to_jsonb(t)::text AS bytes FROM ${table} t WHERE ro_id=$1 ORDER BY id`, [scope.roId])).rows;
+        return result;
+      };
+      const scope = await newScope(), foreign = await newScope(otherShop);
+      await seed(scope); await seed(foreign);
+      const before = await snapshot(scope), foreignBefore = await snapshot(foreign);
+      // ro_payments is second: prove the first DELETE actually ran before raising.
+      await raw.query(`CREATE FUNCTION reject_second_delete() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+          IF EXISTS (SELECT 1 FROM job_status_log WHERE ro_id=OLD.ro_id) THEN
+            RAISE EXCEPTION 'TEST_FIRST_DELETE_NOT_EXECUTED';
+          END IF;
+          RAISE EXCEPTION 'TEST_AFTER_FIRST_DELETE';
+        END $$;
+        CREATE TRIGGER phase4_failure BEFORE DELETE ON ro_payments FOR EACH ROW EXECUTE FUNCTION reject_second_delete()`);
+      const errors = [];
+      const originalQuery = raw.query.bind(raw);
+      // Observe completion of the first real DELETE through the transaction adapter.
+      hook = (sql, params, phase) => { if (phase === 'after' && /DELETE FROM job_status_log/.test(sql)) errors.push('first-delete-completed'); };
+      try {
+        assert.equal((await request(roPath(scope), 'DELETE')).status, 500);
+        assert.deepEqual(errors, ['first-delete-completed']);
+        assert.deepEqual(await snapshot(scope), before);
+        assert.deepEqual(await snapshot(foreign), foreignBefore);
+      } finally { hook = null; await originalQuery('DROP TRIGGER phase4_failure ON ro_payments'); }
+      assert.equal((await request(roPath(scope), 'DELETE')).status, 200);
+      assert.equal(await ro(scope), undefined);
+      for (const table of dependentTables) assert.equal((await raw.query(`SELECT 1 FROM ${table} WHERE ro_id=$1`, [scope.roId])).rowCount, 0);
+      assert.deepEqual(await snapshot(foreign), foreignBefore);
+      for (const role of ['technician','employee','staff','tech','owner','admin','assistant','superadmin']) {
+        for (const fact of ['ledger','paid','partial','received','legacy','unpaid']) {
+          const item = await newScope(); await seed(item);
+          await raw.query("UPDATE ro_payments SET status=$1 WHERE ro_id=$2 AND shop_id=$3", [fact === 'ledger' ? 'succeeded' : 'failed',item.roId,item.shopId]);
+          await raw.query('UPDATE repair_orders SET payment_status=$1,payment_received=$2,amount_paid_cents=$3 WHERE id=$4 AND shop_id=$5',
+            [fact === 'paid' || fact === 'partial' ? fact : 'unpaid',fact === 'received' ? 1 : 0,fact === 'legacy' ? 1 : 0,item.roId,item.shopId]);
+          const prior = await snapshot(item);
+          const allowed = ['owner','admin','assistant','superadmin'].includes(role) || (fact === 'unpaid' && role !== 'tech');
+          assert.equal((await request(roPath(item),'DELETE',undefined,otherShop,role)).status, role === 'tech' ? 403 : 404);
+          assert.deepEqual(await snapshot(item), prior);
+          assert.equal((await request(roPath(item),'DELETE',undefined,shopId,role)).status, allowed ? 200 : 403, `${role}/${fact}`);
+          if (!allowed) assert.deepEqual(await snapshot(item), prior);
+          else { assert.equal(await ro(item), undefined); for (const table of dependentTables) assert.equal((await raw.query(`SELECT 1 FROM ${table} WHERE ro_id=$1`, [item.roId])).rowCount,0); }
+        }
+      }
+    });
+
     await t.test('DELETE and first draft serialize under the parent lock in both orders', async () => {
       for (const deleteFirst of [true, false]) {
         const scope = await newScope(); await children(scope);
         const locked = deferred(), release = deferred(), waiting = deferred(); let held = false;
         hook = async (sql, params, phase) => {
-          if (!/SELECT id FROM repair_orders.*FOR UPDATE/s.test(sql) || !params.includes(scope.roId)) return;
+          if (!/SELECT id.*FROM repair_orders.*FOR UPDATE/s.test(sql) || !params.includes(scope.roId)) return;
           if (phase === 'after' && !held) { held = true; locked.resolve(); await release.promise; }
           else if (phase === 'before' && held) waiting.resolve();
         };
@@ -300,9 +355,10 @@ test('L1 real PostgreSQL and mounted production lifecycle/payment handlers', { t
         const result = await request(index ? '/api/payments/create-intent' : '/api/payments/intent', 'POST',
           { [index ? 'roId' : 'ro_id']: scope.roId, amount, allow_partial: true });
         assert.equal(result.status, 200, JSON.stringify(result.body));
-        assert.equal(result.body.amountOwedCents, total); assert.equal(result.body.clientSecret, 'synthetic-client-secret');
+        assert.equal(result.body.amountOwedCents, index ? total - 1000 : total); assert.equal(result.body.clientSecret, 'synthetic-client-secret');
         const intent = providerCalls.find(call => call.id === result.body.paymentIntentId);
-        assert.equal(intent.metadata.amountOwedCents, String(total));
+        assert.equal(intent.metadata.amountOwedCents, String(index ? total - 1000 : total));
+        assert.equal((await ro(scope)).amount_owed_cents, index ? total - 1000 : total);
         const event = { type: 'payment_intent.succeeded', data: { object: { ...intent, amount_received: amount } } };
         for (let replay = 0; replay < 2; replay++) {
           const webhook = await request('/api/payments/webhook', 'POST', event, shopId, null);
@@ -333,6 +389,39 @@ test('L1 real PostgreSQL and mounted production lifecycle/payment handlers', { t
       assert.equal(linked.status, 200, JSON.stringify(linked.body));
       assert.equal(linked.body.amountCents, selected.quote.totals.total_cents);
       assert.equal(providerCalls.at(-1).checkout.line_items[0].price_data.unit_amount, selected.quote.totals.total_cents);
+    });
+
+    await t.test('both intent aliases cap remaining selected money and ignore failed/pending/foreign payments', async () => {
+      for (const alias of ['intent','create-intent']) {
+        const scope = await newScope(), revision = await commit(scope);
+        const total = revision.quote.totals.total_cents, before = await evidence(scope);
+        for (const [status,amount,tenant] of [['succeeded',1000,shopId],['paid',500,shopId],['failed',total,shopId],['pending',total,shopId],['succeeded',total,otherShop]]) {
+          await raw.query('INSERT INTO ro_payments(id,shop_id,ro_id,amount_cents,status) VALUES ($1,$2,$3,$4,$5)',[randomUUID(),tenant,scope.roId,amount,status]);
+        }
+        const body = { [alias === 'intent' ? 'ro_id' : 'roId']:scope.roId };
+        const count = providerCalls.length;
+        for (const amount of [total,total-1499,0,-1,1.5,null,true]) {
+          const rejected = await request(`/api/payments/${alias}`,'POST',{...body,amount,allow_partial:true});
+          assert.equal(rejected.status,400,JSON.stringify(rejected.body));
+        }
+        assert.equal(providerCalls.length,count);
+        const result = await request(`/api/payments/${alias}`,'POST',body);
+        assert.equal(result.status,200,JSON.stringify(result.body));
+        assert.equal(result.body.amountCents,total-1500);
+        assert.equal(result.body.amountOwedCents,total-1500);
+        assert.equal((await ro(scope)).amount_owed_cents,total-1500);
+        assert.equal(providerCalls.at(-1).metadata.amountOwedCents,String(total-1500));
+        assert.equal(await evidence(scope),before);
+        // Arbitrary amounts and financial rewrites remain rejected by the real guard.
+        await assert.rejects(raw.query('UPDATE repair_orders SET amount_owed_cents=1 WHERE id=$1 AND shop_id=$2',[scope.roId,shopId]),error=>error.code==='P0001');
+        await assert.rejects(raw.query('UPDATE repair_orders SET amount_owed_cents=$1,total=1 WHERE id=$2 AND shop_id=$3',[total-1500,scope.roId,shopId]),error=>error.code==='P0001');
+        for (const amount of [total-1500,total]) {
+          await raw.query('INSERT INTO ro_payments(id,shop_id,ro_id,amount_cents,status) VALUES ($1,$2,$3,$4,$5)',[randomUUID(),shopId,scope.roId,amount,'succeeded']);
+          const calls = providerCalls.length;
+          assert.equal((await request(`/api/payments/${alias}`,'POST',body)).status,400);
+          assert.equal(providerCalls.length,calls);
+        }
+      }
     });
 
     await t.test('summary readers observe old or new committed selection; stale owed overwrite remains rejected', async () => {

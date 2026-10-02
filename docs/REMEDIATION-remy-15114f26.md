@@ -1,4 +1,4 @@
-# Remy remediation — t_3ead3bd0, Phase 3 only
+# Remy remediation — t_3ead3bd0, Phases 3–4
 
 Implementation on `codex/revv-panel-estimator-20261001`, based on
 `32bb393611538aed333cb53667a8edae1afc748d`. This is not a release receipt.
@@ -94,3 +94,99 @@ Commit guard: `git add` failed with exit 128: unable to create
 Operation not permitted. No staging/commit completed; HEAD remains the Phase 2 base.
 Hermes must inspect the ten-file working diff, stage and commit on top (no amend or
 rebase), then bind final gates to the resulting full SHA. No sandbox bypass attempted.
+
+## Phase 4 — t_3ead3bd0, 2026-10-02
+
+Started clean on `f2cf34506db4e12b2cc2aa56070a4bb88af44585`, branch
+`codex/revv-panel-estimator-20261001`. This section supersedes the Phase 3
+remaining-scope notes for deletion/payments only. Hermes retains lifecycle,
+exact-SHA gates, push and handoff; no review or release verdict is claimed.
+
+### Deletion provenance and safeguards
+
+The READ COMMITTED transaction, tenant-scoped parent FOR UPDATE lock, draft guard,
+scoped dependent deletes, rollback and commit already existed at this base.
+`git blame` attributes them to ancestor
+`2b80fef002cd836dfa36f9b551e4af8a5a7333d8`; Phase 4 does not claim new transaction
+code. It adds a paid-state check on the same locked parent and transaction client,
+before any DELETE. Technician-rank roles (`technician`, `employee`, `staff`) get
+403 if successful (`paid`/`succeeded`) tenant ledger payments sum positive, or the
+RO says paid/partial, payment_received is positive/true, or amount_paid_cents is
+positive. A stale unpaid RO cannot hide successful payments. Actual middleware
+already rejects `tech` (unknown rank); it remains rejected, including unpaid ROs.
+Owner/admin/superadmin and the existing admin-ranked assistant retain permitted
+behavior, subject to unchanged panel draft and immutable-history protection.
+
+The loopback PostgreSQL lifecycle test now installs a BEFORE DELETE trigger on
+ro_payments (second dependent table). It raises after confirming status logs from
+the first dependent DELETE are absent; the adapter also observes that first
+DELETE completing. Post-error snapshots must restore RO, logs, payments, photos,
+line items, parts orders and portal tokens exactly. Existing late-parent trigger
+coverage additionally exercises rollback after payments and other children have
+already been deleted. Guard rejection, successful deletion, cross-shop isolation,
+role/payment-state matrix and draft/delete serialization remain covered.
+**These real-DB assertions are pending host execution, not verified in sandbox.**
+
+### Intent balance and panel integration
+
+Both `/intent` and `/create-intent` use getRoMoneySummary unchanged and subtract
+successful tenant payments via getPaidCents. Failed/pending payments do not count.
+The larger of ledger paid and legacy amount_paid_cents is used conservatively
+(without double counting). Paid/payment_received legacy records are refused even
+without ledger rows. Default amount is remaining; non-partial must equal remaining;
+positive integer partial amounts may not exceed it. Fully paid/overpaid and invalid
+amounts are refused before mocked Stripe creation. Response amountOwedCents,
+provider metadata and the intent's RO amount_owed_cents write all use remaining.
+
+Necessary scoped integration: panelEstimator's RO trigger now accepts only the
+selected immutable quote total or its derived remaining balance for amount_owed_cents.
+The total form preserves existing settlement/webhook/mark-paid behavior; those
+routes still store gross owed and are not redesigned here. Arbitrary balance edits,
+quote/insurer totals, approval fields and revision evidence remain guarded. This
+function is refreshed by the existing startup initializer; no production initializer
+or migration was executed. Both routes and this guard change belong in the same
+candidate. Do not deploy the intent balance write without its guard integration.
+
+Residual: these checks do not reserve provider balances. Concurrent intents can
+observe the same remaining amount, and payments/quote changes between the read and
+provider creation remain possible. Provider success followed by a DB failure can
+leave an outstanding provider intent. No cancellation, idempotency redesign or
+cross-provider transaction guarantee is claimed. P3 deferred: current Twilio and
+mailer wrappers do not expose a shared cancellable transport; timeout still means
+provider outcome unknown, not an aborted send.
+
+### Evidence and Hermes host command
+
+Node v22.23.2; sanitized environment, no .env or external provider calls. From root:
+
+```sh
+env -i PATH=/opt/homebrew/opt/node@22/bin:/usr/bin:/bin NODE_ENV=test CI=1 /opt/homebrew/opt/node@22/bin/node --test backend/test/payments.phase4.test.js
+env -i PATH=/opt/homebrew/opt/node@22/bin:/usr/bin:/bin NODE_ENV=test CI=1 PANEL_ESTIMATOR_TEST_DATABASE_URL=postgresql://revv_panel@127.0.0.1:55459/revv_panel_test /opt/homebrew/opt/node@22/bin/node --test backend/test/panelEstimator.lifecycle.test.js
+```
+
+Mocked command exit 0: tests 112, pass 112, fail 0, skipped 0; output
+`/tmp/revv-phase4-mocked.log`. Executes production handlers and role middleware
+without sockets; financial summary inputs are mocked, successful ledger SQL uses
+the actual helper. Real-DB command exit 1: tests 2, pass 1, fail 1, skipped 0;
+`connect EPERM 127.0.0.1:55459 - Local (0.0.0.0:0)` before schema creation.
+No sandbox bypass. Hermes must run that exact loopback command; it tests real
+selected-panel money, SQL and triggers with mocked Stripe and isolated disposable
+schema cleanup. Full gate fixture repairs remain a separate phase.
+
+Rollback safeguards: preserve all customer, payment, panel and audit records.
+Use the Phase 3 product switch to stop estimator work without reverting data.
+A code rollback must keep paid-delete/overcharge protection or suspend those routes;
+restoring the vulnerable intent handler is not a safe financial rollback. Do not
+run data-down migrations or erase records to satisfy a prior trigger definition.
+Seven files changed; financial/access-control/data-loss-sensitive scope and over
+two files. Hermes owns subsequent review routing; Codex requested no review.
+
+Phase 4 static checks: all five changed JavaScript files passed Node22 --check;
+`git diff --check` exit 0. These are working-tree checks, not exact-SHA host gates.
+
+Phase 4 commit guard: `git add` of the seven listed files exited 128, unable to
+create `/Volumes/Zordon Storage /openclaw-workspace/Revv/.git/worktrees/panel-estimator-20261001/index.lock`:
+Operation not permitted. Nothing staged or committed by Codex. HEAD remains
+`f2cf34506db4e12b2cc2aa56070a4bb88af44585`. Hermes must inspect the diff and commit
+on top (no amend/rebase), then run host gates against that new full SHA. No push
+or sandbox bypass attempted.

@@ -3851,3 +3851,30 @@ Commit fallback: staging exited 128 because the sandbox cannot create the shared
 Git worktree `index.lock` under the canonical repository's `.git/worktrees/`.
 No new commit; HEAD remains `32bb393611538aed333cb53667a8edae1afc748d`.
 Hermes guard must stage/commit the ten-file diff, then run exact-SHA gates.
+
+## 2026-10-02 00:37 EDT / 04:37 UTC — t_3ead3bd0 Phase 4 implementation
+
+Started clean at `f2cf34506db4e12b2cc2aa56070a4bb88af44585` on the assigned branch.
+Preserved the existing transactional tenant-locked RO DELETE (provenance
+`2b80fef002cd836dfa36f9b551e4af8a5a7333d8`), added paid technician guards, and
+capped both intent aliases at authoritative remaining money with legacy manual-paid
+protection. Narrow panel trigger integration allows the quote-derived remaining
+balance without changing selected money. See the Phase 4 remediation document
+for exact behavior, residual concurrency/provider limitations and rollback safeguards.
+
+Focused Node22 mocked command in that document: exit 0, tests 112, pass 112,
+fail 0, skipped 0 (`/tmp/revv-phase4-mocked.log`). Real loopback PostgreSQL command:
+exit 1, tests 2, pass 1, fail 1; connect EPERM 127.0.0.1:55459. Real rollback,
+trigger and lifecycle verification remains pending Hermes host execution.
+Seven files: this log, remediation doc, routes/ros.js, routes/payments.js,
+db/panelEstimator.js, test/panelEstimator.lifecycle.test.js,
+test/payments.phase4.test.js (backend paths under backend/).
+Safety-sensitive financial/access/data-loss changes; exceeds two files.
+No agents, board writes, reviews, push, deploy, external providers, production DB,
+secrets/.env, prior consent/frontend or readiness edits. P3 deferred honestly;
+full gates/fixture repairs remain Hermes/separate-phase work.
+
+Phase 4 commit fallback: staging exit 128, shared Git index.lock creation denied
+by sandbox. No commit; HEAD remains f2cf34506db4e12b2cc2aa56070a4bb88af44585.
+Hermes guard must stage/commit on top, then run exact-SHA host gates. Five changed
+JS files passed Node22 --check; git diff --check exit 0.

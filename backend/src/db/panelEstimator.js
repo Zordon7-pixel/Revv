@@ -156,6 +156,19 @@ async function ensureRevisions(client, types) {
         'claim_number','insurer','insurance_claim_number','insurance_company','adjuster_name',
         'adjuster_phone','adjuster_email','policy_number','is_drp','amount_owed_cents'] LOOP
         IF (to_jsonb(OLD)->k) IS DISTINCT FROM (to_jsonb(NEW)->k) THEN
+          -- Intents store the derived balance; existing settlement routes store gross owed.
+          -- Both must come from the selected quote, never caller-supplied financial totals.
+          IF k = 'amount_owed_cents' AND NEW.amount_owed_cents >= 0 AND EXISTS (
+            SELECT 1 FROM ro_panel_estimator_drafts d
+            JOIN ro_panel_estimator_revisions r ON r.id=d.active_revision_id AND r.shop_id=d.shop_id AND r.ro_id=d.ro_id
+            WHERE d.ro_id=OLD.id AND d.shop_id=OLD.shop_id
+              AND NEW.amount_owed_cents IN ((r.accounting_snapshot->'money'->>'totalCents')::bigint,
+                (r.accounting_snapshot->'money'->>'totalCents')::bigint
+                - GREATEST(COALESCE(OLD.amount_paid_cents,0), COALESCE((
+                  SELECT SUM(p.amount_cents) FROM ro_payments p WHERE p.ro_id::text=OLD.id::text AND p.shop_id::text=OLD.shop_id::text
+                    AND LOWER(COALESCE(p.status,'')) IN ('paid','succeeded')
+                ),0)))
+          ) THEN CONTINUE; END IF;
           PERFORM panel_estimator_guard_owner(OLD.shop_id::text,OLD.id::text);
           PERFORM panel_estimator_guard_owner(NEW.shop_id::text,NEW.id::text);
           EXIT;

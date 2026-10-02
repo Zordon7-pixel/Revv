@@ -2672,13 +2672,24 @@ router.delete('/:id', auth, requireTechnician, async (req, res) => {
     const params = [req.params.id, req.user.shop_id];
     // Serialize with draft saves, revision commits and approval decisions.
     const ro = (await client.query(
-      'SELECT id FROM repair_orders WHERE id = $1 AND shop_id = $2 FOR UPDATE', params
+      'SELECT id, payment_status, payment_received, amount_paid_cents FROM repair_orders WHERE id = $1 AND shop_id = $2 FOR UPDATE', params
     )).rows[0];
     if (!ro) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Not found' });
     }
     const exists = async table => (await client.query('SELECT to_regclass($1) AS relation', [table])).rows[0].relation;
+    if (getRoleRank(req.user.role) < ROLE_RANK.admin) {
+      const paid = await exists('ro_payments') ? (await client.query(
+        `SELECT COALESCE(SUM(amount_cents), 0) AS paid_cents FROM ro_payments
+         WHERE ro_id = $1 AND shop_id = $2 AND LOWER(COALESCE(status, '')) IN ('paid', 'succeeded')`, params
+      )).rows[0].paid_cents : 0;
+      if (Number(paid) > 0 || ['paid', 'partial'].includes(String(ro.payment_status || '').toLowerCase()) ||
+          ro.payment_received === true || Number(ro.payment_received) > 0 || Number(ro.amount_paid_cents) > 0) {
+        await client.query('ROLLBACK');
+        return res.status(403).json({ error: 'Admin access required to delete a paid or partially paid repair order' });
+      }
+    }
     if (await exists('ro_panel_estimator_drafts')) {
       const draft = (await client.query(
         'SELECT 1 FROM ro_panel_estimator_drafts WHERE ro_id = $1 AND shop_id = $2', params
