@@ -82,7 +82,7 @@ test('real PostgreSQL Phase D financial mutation and bulk deletion closure', {ti
         raw=new Pool({...config,options:`-c search_path=${schema}`,application_name:schema,max:8});
         await raw.query(`CREATE TABLE shops(id ${type} PRIMARY KEY,tax_rate NUMERIC DEFAULT 0.1);
           CREATE TABLE repair_orders(id ${type} PRIMARY KEY,shop_id ${type},status TEXT DEFAULT 'estimate',
-            total NUMERIC DEFAULT 100,estimate_amount NUMERIC DEFAULT 100,payment_status TEXT DEFAULT 'unpaid',
+            tax NUMERIC DEFAULT 10,total NUMERIC DEFAULT 100,estimate_amount NUMERIC DEFAULT 100,payment_status TEXT DEFAULT 'unpaid',
             payment_received INTEGER DEFAULT 0,paid_amount INTEGER,paid_at TEXT,payment_received_at TEXT,
             payment_method TEXT,stripe_payment_intent_id TEXT,updated_at TIMESTAMPTZ,
             estimate_status TEXT,estimate_approved_at TEXT,insurance_approved_amount NUMERIC);
@@ -252,17 +252,48 @@ test('real PostgreSQL Phase D financial mutation and bulk deletion closure', {ti
           assert.deepEqual(await snapshot(f),before);
           assert.equal((await money.getRoMoneySummary(f.ro,f.shop,raw)).totalCents,7000);
         });
-        await t.test('tax increase and safe decrease recompute live totals; unsafe reduction rolls back whole shop',async()=> {
+        for(const [column,value] of [['payment_status','paid'],['payment_status',' SuCcEeDeD '],
+          ['payment_received',1],['payment_received',2],['status',' CLOSED '],['status','completed'],['status','total_loss']]) {
+          await t.test(`tax decrease/increase preserves paid/closed snapshots: ${column}=${value}`,async()=> {
+            const f=await fixture();
+            await raw.query(`UPDATE repair_orders SET total=110,estimate_amount=110,amount_owed_cents=11000,
+              amount_paid_cents=11000,${column}=$2 WHERE id=$1 AND shop_id=$3`,[f.ro,value,f.shop]);
+            await raw.query("INSERT INTO ro_payments(id,shop_id,ro_id,amount_cents,status) VALUES ($1,$2,$3,11000,'succeeded')",
+              [randomUUID(),f.shop,f.ro]);
+            const before=await snapshot(f);
+            // A decrease below historical paid money must succeed, not assert a
+            // floor at the new default. Neither direction may rewrite history.
+            for(const rate of [0,0.2,0.05]) {
+              await raw.query('UPDATE shops SET tax_rate=$2 WHERE id=$1',[f.shop,rate]);
+              assert.equal(Number((await raw.query('SELECT tax_rate FROM shops WHERE id=$1',[f.shop])).rows[0].tax_rate),rate);
+              assert.deepEqual(await snapshot(f),before);
+            }
+          });
+        }
+        await t.test('open paid-plus-held tax floor rolls back whole shop while paid/closed snapshots stay unchanged',async()=> {
           const f=await fixture();
-          await payments.reservePayment({roId:f.ro,shopId:f.shop,kind:'checkout',amount:10500,allowPartial:true});
+          await raw.query("UPDATE repair_orders SET amount_paid_cents=3000,payment_status='partial' WHERE id=$1 AND shop_id=$2",[f.ro,f.shop]);
+          await payments.reservePayment({roId:f.ro,shopId:f.shop,kind:'checkout',amount:7500,allowPartial:true});
           const sibling=randomUUID();
           await raw.query('INSERT INTO repair_orders(id,shop_id) VALUES ($1,$2)',[sibling,f.shop]);
           await raw.query("INSERT INTO estimate_line_items(id,shop_id,ro_id,type,unit_price) VALUES ($1,$2,$3,'parts',200)",[randomUUID(),f.shop,sibling]);
+          const historical=[];
+          for(const [status,payment] of [['delivery','paid'],['closed','unpaid']]) {
+            const id=randomUUID();historical.push(id);
+            await raw.query('INSERT INTO repair_orders(id,shop_id,status,payment_status,total,estimate_amount,amount_owed_cents) VALUES ($1,$2,$3,$4,110,110,11000)',
+              [id,f.shop,status,payment]);
+            await raw.query("INSERT INTO estimate_line_items(id,shop_id,ro_id,type) VALUES ($1,$2,$3,'parts')",[randomUUID(),f.shop,id]);
+            await raw.query('UPDATE repair_orders SET amount_paid_cents=11000 WHERE id=$1 AND shop_id=$2',[id,f.shop]);
+          }
+          const history=async()=>(await raw.query('SELECT * FROM repair_orders WHERE id::text=ANY($1::text[]) ORDER BY id',[historical])).rows;
+          const issued=await history();
           for(const rate of [0.2,0.05]) {
             await raw.query('UPDATE shops SET tax_rate=$2 WHERE id=$1',[f.shop,rate]);
+            assert.deepEqual(await history(),issued);
             for(const ro of [f.ro,sibling]) {
               const summary=await money.getRoMoneySummary(ro,f.shop,raw);
-              const row=(await raw.query('SELECT total,estimate_amount,amount_owed_cents FROM repair_orders WHERE id=$1',[ro])).rows[0];
+              const row=(await raw.query('SELECT tax,total,estimate_amount,amount_owed_cents FROM repair_orders WHERE id=$1',[ro])).rows[0];
+              assert.equal(Number(row.tax)*100,summary.taxCents);
               assert.equal(Number(row.total)*100,summary.totalCents);
               assert.equal(Number(row.estimate_amount)*100,summary.totalCents);
               assert.equal(row.amount_owed_cents,summary.totalCents);
@@ -369,6 +400,45 @@ test('real PostgreSQL Phase D financial mutation and bulk deletion closure', {ti
             if(deleteFirst){assert.equal(outcome.status,'rejected');assert.match(outcome.reason.message,/RO_NOT_FOUND/);}
             else {assert.equal(outcome.value.statusCode,409);assert.equal((await raw.query('SELECT 1 FROM ro_photos WHERE ro_id=$1',[f.ro])).rowCount,1);}
           } finally {await c.query('ROLLBACK');c.release();if(results)await results;}
+        });
+        for(const flagType of ['BOOLEAN','TEXT']) for(const paid of [false,true]) {
+          await t.test(`tax respects optional payment columns and ${flagType} received=${paid}`,async()=> {
+            const f=await fixture(),c=await raw.connect();
+            try {
+              await c.query('BEGIN');
+              await c.query('ALTER TABLE repair_orders DROP COLUMN payment_status, DROP COLUMN status');
+              await c.query('ALTER TABLE repair_orders ALTER COLUMN payment_received DROP DEFAULT');
+              await c.query(`ALTER TABLE repair_orders ALTER COLUMN payment_received TYPE ${flagType} USING ${flagType==='BOOLEAN'?'payment_received<>0':'payment_received::text'}`);
+              await c.query('UPDATE repair_orders SET payment_received=$2 WHERE id=$1 AND shop_id=$3',[f.ro,paid,f.shop]);
+              await c.query('SET CONSTRAINTS ALL IMMEDIATE');
+              const row=async()=>(await c.query('SELECT * FROM repair_orders WHERE id=$1 AND shop_id=$2',[f.ro,f.shop])).rows[0];
+              const before=await row();
+              for(const rate of [0,0.2]) {
+                await c.query('UPDATE shops SET tax_rate=$2 WHERE id=$1',[f.shop,rate]);
+                if(paid)assert.deepEqual(await row(),before);
+                else {
+                  const current=await row();assert.equal(Number(current.tax),100*rate);
+                  assert.equal(Number(current.total),100*(1+rate));assert.equal(current.amount_owed_cents,10000*(1+rate));
+                }
+              }
+            } finally {await c.query('ROLLBACK');c.release();}
+          });
+        }
+        for(const closed of [false,true]) await t.test(`tax supports missing payment/money columns, closed=${closed}`,async()=> {
+          const f=await fixture(),c=await raw.connect();
+          try {
+            await c.query('BEGIN');
+            await c.query('ALTER TABLE repair_orders DROP COLUMN payment_status, DROP COLUMN payment_received, DROP COLUMN amount_paid_cents, DROP COLUMN amount_owed_cents, DROP COLUMN tax, DROP COLUMN total, DROP COLUMN estimate_amount');
+            if(closed)await c.query("UPDATE repair_orders SET status='closed' WHERE id=$1 AND shop_id=$2",[f.ro,f.shop]);
+            else await c.query('ALTER TABLE repair_orders DROP COLUMN status');
+            await c.query('SET CONSTRAINTS ALL IMMEDIATE');
+            const before=(await c.query('SELECT * FROM repair_orders WHERE id=$1',[f.ro])).rows;
+            for(const rate of [0,0.2]) {
+              await c.query('UPDATE shops SET tax_rate=$2 WHERE id=$1',[f.shop,rate]);
+              assert.equal(Number((await c.query('SELECT tax_rate FROM shops WHERE id=$1',[f.shop])).rows[0].tax_rate),rate);
+              assert.deepEqual((await c.query('SELECT * FROM repair_orders WHERE id=$1',[f.ro])).rows,before);
+            }
+          } finally {await c.query('ROLLBACK');c.release();}
         });
       } finally {if(raw)await raw.end();if(created)await admin.query(`DROP SCHEMA ${schema} CASCADE`);}
     });

@@ -165,7 +165,7 @@ for(const kind of ['intent','checkout']) test(`${kind}: missing Stripe configura
   assert.equal(kind==='intent'?result.statusCode:result.ok,kind==='intent'?503:false);
   assert.equal(f.state.attempts.length,0);assert.equal(f.calls.length,0);
 });
-for(const type of ['payment_intent.payment_failed','payment_intent.canceled','checkout.session.expired','checkout.session.async_payment_failed']) test(`${type}: release only terminal objects, retain history, fresh retry identity`,async()=>{
+for(const type of ['payment_intent.payment_failed','payment_intent.canceled','checkout.session.expired']) test(`${type}: release only terminal objects, retain history, fresh retry identity`,async()=>{
   const f=memoryFixture(), checkout=type.startsWith('checkout');
   if(checkout) await f.billing.createPaymentCheckoutLinkForRo({roId:'ro',shopId:'shop'});else await reserveIntent(f);
   const a=f.state.attempts[0],o=f.objects.get(checkout?a.stripe_checkout_session_id:a.stripe_payment_intent_id);
@@ -176,6 +176,48 @@ for(const type of ['payment_intent.payment_failed','payment_intent.canceled','ch
   const retry=await reserveIntent(f);assert.equal(retry.statusCode,200);assert.equal(held(f),10000);
   assert.equal(f.state.attempts.length,2);assert.notEqual(f.state.attempts[1].idempotency_key,a.idempotency_key);
   await webhook(f,type,o);assert.equal(a.status,'released');assert.equal(held(f),10000);
+});
+for(const type of ['payment_intent.payment_failed','checkout.session.async_payment_failed']) {
+  for(const lookup of ['metadata','provider']) test(`Checkout ${type}, ${lookup} lookup: decline holds capacity and same-session retry settles once`,async()=>{
+    const f=memoryFixture();await f.billing.createPaymentCheckoutLinkForRo({roId:'ro',shopId:'shop'});
+    const a=f.state.attempts[0],session=f.objects.get(a.stripe_checkout_session_id);
+    const intent={id:'pi_checkout_retry',amount:10000,currency:'usd',status:'requires_payment_method',metadata:{...session.metadata}};
+    session.payment_intent=intent.id;f.objects.set(intent.id,intent);
+    if(lookup==='provider') {
+      // A prior unpaid completion binds the intent; subsequent legacy events may
+      // identify it by provider ID without the attempt metadata.
+      await webhook(f,'checkout.session.completed',session);
+      delete intent.metadata.paymentAttemptId;delete session.metadata.paymentAttemptId;
+    }
+    const failure=structuredClone(type.startsWith('checkout')?session:intent);
+    const beforeCalls=f.calls.length;
+    for(let i=0;i<2;i++)await webhook(f,type,failure);
+    assert.equal(f.calls.length,beforeCalls,'failure must not call provider reconciliation');
+    assert.equal(session.status,'open');assert.equal(intent.status,'requires_payment_method');
+    assert.equal(a.status,'open');assert.equal(a.stripe_payment_intent_id,intent.id);
+    assert.equal(a.stripe_checkout_session_id,session.id);assert.equal(held(f),10000);
+    const balance=await f.reservations.withLockedRo('ro','shop',(client,ro)=>f.reservations.getPaymentBalance(client,ro));
+    assert.equal(balance.occupiedCents,10000);assert.equal(balance.availableCents,0);
+    assert.equal((await reserveIntent(f)).statusCode,409);assert.equal(f.state.attempts.length,1);
+    assert.equal(f.state.audit.length,0);assert.equal(f.state.ledger.length,0);
+    intent.status='succeeded';intent.amount_received=10000;session.status='complete';session.payment_status='paid';
+    for(const event of ['checkout.session.completed','payment_intent.succeeded','checkout.session.async_payment_succeeded']) {
+      await webhook(f,event,event.startsWith('checkout')?session:intent);
+    }
+    await webhook(f,type,failure);
+    assert.equal(f.calls.length,beforeCalls);assert.equal(held(f),0);assert.equal(a.status,'settled');
+    assert.equal(f.state.attempts.length,1);assert.equal(f.state.ledger.length,1);
+    assert.equal(f.state.ledger[0].status,'succeeded');assert.equal(f.state.ro.amount_paid_cents,10000);
+  });
+}
+test('untracked Checkout async failure stays held and open for subsequent success',async()=>{
+  const f=memoryFixture(),s={id:'cs_legacy_retry',amount_total:10000,currency:'usd',status:'open',payment_status:'unpaid',
+    payment_intent:null,metadata:{roId:'ro',shopId:'shop'}};
+  await webhook(f,'checkout.session.async_payment_failed',s);
+  assert.equal(f.calls.length,0);assert.equal(held(f),10000);assert.equal(f.state.attempts[0].kind,'checkout');
+  s.payment_intent='pi_legacy_retry';s.status='complete';s.payment_status='paid';
+  await webhook(f,'checkout.session.completed',s);await webhook(f,'checkout.session.completed',s);
+  assert.equal(held(f),0);assert.equal(f.state.ledger.length,1);assert.equal(f.state.ro.amount_paid_cents,10000);
 });
 for(const kind of ['intent','checkout']) test(`${kind}: 24h lazy expiry confirms cancellation under shared lock`,async()=>{
   const f=memoryFixture();if(kind==='intent')await reserveIntent(f);else await f.billing.createPaymentCheckoutLinkForRo({roId:'ro',shopId:'shop'});
@@ -386,6 +428,31 @@ test('real PostgreSQL mounted ready -> auto link -> cash, audit/tenant/concurren
           assert.equal((await snapshot(ro)).audit.length,0);
           assert.equal((await request('POST',`/api/payments/reconcile/${ro}`,{},'admin')).status,200);
           assert.equal((await snapshot(ro)).held,0);
+        });
+        await t.test('Checkout decline keeps persisted capacity; retry on same session settles once',async()=>{
+          const ro=await makeRo();await f.billing.createPaymentCheckoutLinkForRo({roId:ro,shopId:shop});
+          const before=await snapshot(ro),attempt=before.attempts[0],session=p.objects.get(attempt.stripe_checkout_session_id);
+          const intent={id:`pi_${randomUUID()}`,amount:10000,currency:'usd',status:'requires_payment_method',metadata:{...session.metadata}};
+          session.payment_intent=intent.id;p.objects.set(intent.id,intent);
+          const calls=p.calls.length,decline=structuredClone(intent);
+          for(const type of ['payment_intent.payment_failed','checkout.session.async_payment_failed']) {
+            for(let i=0;i<2;i++)await f.reservations.settlePaymentEvent({type,data:{object:type.startsWith('checkout')?session:decline}});
+          }
+          const failed=await snapshot(ro);
+          assert.equal(failed.held,before.held);assert.equal(failed.held,10000);assert.equal(failed.attempts.length,1);
+          assert.equal(failed.attempts[0].status,'open');assert.equal(failed.attempts[0].stripe_payment_intent_id,intent.id);
+          assert.equal(failed.attempts[0].stripe_checkout_session_id,session.id);
+          assert.equal(failed.audit.length,0);assert.equal(p.calls.length,calls);assert.equal(session.status,'open');
+          assert.equal((await request('POST','/api/payments/intent',{ro_id:ro})).status,409);
+          intent.status='succeeded';intent.amount_received=10000;session.status='complete';session.payment_status='paid';
+          for(const type of ['checkout.session.completed','payment_intent.succeeded','checkout.session.async_payment_succeeded']) {
+            await f.reservations.settlePaymentEvent({type,data:{object:type.startsWith('checkout')?session:intent}});
+          }
+          await f.reservations.settlePaymentEvent({type:'payment_intent.payment_failed',data:{object:decline}});
+          const settled=await snapshot(ro);
+          assert.equal(settled.attempts.length,1);assert.equal(settled.attempts[0].id,attempt.id);
+          assert.equal(settled.attempts[0].status,'settled');assert.equal(settled.held,0);
+          assert.equal(settled.ledger.length,1);assert.equal(settled.ro.amount_paid_cents,10000);assert.equal(p.calls.length,calls);
         });
         await t.test('cash cancellation failure persists uncertainty/audit across connections; retry succeeds',async()=>{
           const ro=await makeRo();await request('POST','/api/payments/intent',{ro_id:ro});p.control.failCancel=true;

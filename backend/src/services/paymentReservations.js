@@ -174,7 +174,12 @@ async function settlePaymentEvent(event, locked = null) {
     if (!success) {
       if (event.type !== 'checkout.session.completed' && payment && !succeeded(payment)) await client.query(`UPDATE ro_payments SET status = 'failed', failure_message = 'Payment failed', updated_at = NOW()
         WHERE id = $1 AND shop_id = $2 AND ro_id = $3 AND LOWER(COALESCE(status,'')) NOT IN ('paid','succeeded')`, [payment.id, shopId, roId]);
-      if (attempt && attempt.status !== 'settled' && event.type !== 'checkout.session.completed') {
+      // Checkout owns retries on its existing session. A decline/async failure
+      // is not terminal proof and must never invoke active expire/cancel logic.
+      // Staff, cash and expiry reconciliation still intentionally close attempts.
+      const checkoutRetry = attempt?.kind === 'checkout' &&
+        ['payment_intent.payment_failed', 'checkout.session.async_payment_failed'].includes(event.type);
+      if (attempt && attempt.status !== 'settled' && event.type !== 'checkout.session.completed' && !checkoutRetry) {
         await reconcileAttempt(client, ro, { ...attempt, kind: attempt.kind || (checkout ? 'checkout' : 'intent'),
           stripe_payment_intent_id: intentId, stripe_checkout_session_id: sessionId || attempt.stripe_checkout_session_id },
         { reason: 'provider_event', terminalObject: ['checkout.session.expired', 'payment_intent.canceled'].includes(event.type) ? object : null });

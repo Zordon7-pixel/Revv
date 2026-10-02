@@ -263,7 +263,15 @@ async function ensureFinancialGuards(client) {
   await client.query(`CREATE OR REPLACE FUNCTION revv_check_shop_tax() RETURNS trigger
     LANGUAGE plpgsql AS $$ DECLARE ro RECORD; money JSONB; assignments TEXT; BEGIN
       IF (to_jsonb(OLD)->'tax_rate') IS NOT DISTINCT FROM (to_jsonb(NEW)->'tax_rate') THEN RETURN NULL; END IF;
-      FOR ro IN SELECT id FROM repair_orders WHERE shop_id::text=NEW.id::text ORDER BY id FOR UPDATE LOOP
+      FOR ro IN SELECT id,to_jsonb(p) AS doc FROM repair_orders p WHERE shop_id::text=NEW.id::text ORDER BY id FOR UPDATE LOOP
+        -- Issued paid/closed totals are historical, not subject to a new shop
+        -- default or its floor. JSON access supports absent legacy columns and
+        -- boolean/integer payment flags without requiring a schema conversion.
+        IF lower(btrim(COALESCE(ro.doc->>'status',''))) IN ('closed','completed','total_loss')
+          OR lower(btrim(COALESCE(ro.doc->>'payment_status',''))) IN ('paid','succeeded')
+          OR lower(btrim(COALESCE(ro.doc->>'payment_received','0'))) NOT IN ('0','false','') THEN
+          CONTINUE;
+        END IF;
         PERFORM revv_assert_money_floor(NEW.id::text,ro.id::text);
         money := revv_authoritative_money(NEW.id::text,ro.id::text);
         IF money->>'revision_id' IS NOT NULL THEN CONTINUE; END IF;
