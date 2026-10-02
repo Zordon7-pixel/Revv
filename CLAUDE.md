@@ -3966,3 +3966,110 @@ changes are left uncommitted for Hermes. Static verification is recorded below.
 Static verification: Node22 --check passed for all six changed backend JS files;
 git diff --check exit 0. Final status confirms exactly ten changed paths, no staged
 files, and unchanged base HEAD. These are working-tree checks only.
+
+## 2026-10-02 02:20 EDT / 06:20 UTC — t_6f27a266 Phase B
+
+Implemented REQUIRED findings 4/5 only, starting clean at
+`78891080a121e189968983c1cd1390f5551f62ef` on the assigned worktree/branch.
+Working tree remains uncommitted. Hermes owns lifecycle, commit, gates, push and
+packet. No lifecycle runner, agents, board, review, provider/production DB calls,
+.env/secrets access, canonical/main edits, rebase, amend or deployment.
+
+Both intent aliases and shared Checkout (including existing portal/ready-text
+callers) now reserve in `ro_payment_attempts` under tenant RO FOR UPDATE, using
+READ COMMITTED and the same client for selected-panel, fallback, tax and paid
+queries. Remaining = authoritative total minus max(successful ledger, legacy
+amount_paid_cents), with manual-paid guards; available additionally subtracts all
+unsettled attempts and unmatched legacy non-success ledger amounts. Reservations
+commit BEFORE provider creation. Stable UUID, idempotency key, amount, kind,
+provider linkage and state persist; Checkout puts attempt metadata on both session
+and intent. Provider responses attach IDs under the same parent-first lock.
+No caller timeout/error/null response or retryable failure releases capacity.
+`reserved` itself is a durable unknown-outcome hold if later work fails.
+
+Success webhooks validate tenant/RO, attempt, provider identity, currency and amount,
+then atomically settle the attempt, insert/update the unique intent ledger and
+reconcile RO money under the parent lock. Missing parents cannot gain ledger rows.
+Duplicate Checkout/intent success does not double count; stale failures or delayed
+creation responses cannot downgrade settled success. New success advances the
+legacy manual-paid floor once, preventing old manual money from being charged again.
+Generic error bodies replace provider/SQL details. Other Stripe creation/settlement
+paths inspected: subscriptions use mode=subscription and separate shop billing;
+no additional RO provider creation path was found.
+
+Schema setup: `db/paymentReservations.up(pool)` runs in both startup/migration paths,
+with a transaction advisory lock for concurrent idempotent setup. No request-time
+DDL. TEXT reservation bindings support UUID/TEXT legacy parents/ledgers, without
+converting or deleting financial rows. No down/release migration exists.
+
+**Manual reconciliation hold / limits:** all uncertain attempts remain occupied,
+even when provider creation may never have happened, and failed/canceled legacy
+ledger rows remain conservatively occupied. There is no automated provider retry,
+cancellation, superseding-object logic or hold-release endpoint. Verified successful
+settlement is the only implemented transition out of occupied capacity. Operators
+must reconcile uncertain attempts against their stable identity/provider records;
+any non-settlement release needs a separately authorized, audited implementation.
+Pre-change Checkout links had no durable local session record: dangling RO provider
+pointers and unexplained pending state fail closed, and observed legacy webhook
+objects acquire holds. Completely unidentifiable historical payable links cannot be
+discovered locally. Reconcile them before rollout; Phase B cannot establish a global
+no-overcharge guarantee for those links or for concurrent paths deferred to Phase C.
+
+**Phase C integration required (ros.js untouched):** keep parent RO lock first and
+use its transaction client throughout. Deletion must reject paid/approved/signed
+ROs for every role and reject any reservation/financial history before dependent
+DELETEs; never cascade/delete attempts or ledger/audit evidence. Manual mark-paid
+must take the same lock and reject occupied/unknown capacity before posting money.
+Approval/financial-authority changes must serialize on that parent and cannot
+reduce total below paid plus reserved capacity. `withLockedRo` and
+`getPaymentBalance(client, ro)` are exported for integration; the latter deliberately
+rejects paid/invalid balances, so deletion history checks must query evidence directly.
+Older lifecycle fixtures need migration setup and reservation-aware mocks/assertions.
+`src/__tests__/moneyAuthority.phase1.test.js` also needs a pool.connect transaction
+adapter, refreshed helper module cache and updated settlement parameter assertions;
+its two payment cases currently fail on the old DB mock (2 pass / 2 fail, exit 1).
+No fixture or guard was weakened to hide that deferred work.
+
+Exactly ten changed paths (backend paths are relative to repository root):
+- CLAUDE.md
+- backend/src/db/index.js
+- backend/src/db/migrate.js
+- backend/src/db/paymentReservations.js
+- backend/src/routes/payments.js
+- backend/src/services/customerBilling.js
+- backend/src/services/paymentReservations.js
+- backend/src/services/roMoney.js
+- backend/src/services/stripe.js
+- backend/test/payments.phase4.test.js
+
+Actual focused commands, Node v22.23.2, repository root, scrubbed environment:
+```sh
+env -i PATH=/opt/homebrew/opt/node@22/bin:/usr/bin:/bin NODE_ENV=test CI=1 NODE_OPTIONS=--require=/tmp/revv-phaseB-no-network.cjs /opt/homebrew/opt/node@22/bin/node --test --test-skip-pattern='real PostgreSQL' backend/test/payments.phase4.test.js backend/src/__tests__/roMoney.unit.test.js
+env -i PATH=/opt/homebrew/opt/node@22/bin:/usr/bin:/bin NODE_ENV=test CI=1 NODE_OPTIONS=--require=/tmp/revv-phaseB-no-network.cjs /opt/homebrew/opt/node@22/bin/node --test backend/src/__tests__/moneyAuthority.phase1.test.js
+env -i PATH=/opt/homebrew/opt/node@22/bin:/usr/bin:/bin NODE_ENV=test CI=1 NODE_OPTIONS=--require=/tmp/revv-phaseB-no-dotenv.cjs PANEL_ESTIMATOR_TEST_DATABASE_URL=postgresql://revv_panel@127.0.0.1:55459/revv_panel_test /opt/homebrew/opt/node@22/bin/node --test --test-name-pattern='real PostgreSQL' backend/test/payments.phase4.test.js
+```
+Temporary preloads reject dotenv/fetch; the mocked preload also rejects socket
+connections. No app .env loads. Focused mocked result: exit 0, **143 pass, 0 fail,
+0 skipped** (DB test explicitly excluded). Logs: `/tmp/revv-phaseB-mocked.log`,
+`/tmp/revv-phaseB-older-money.log`, `/tmp/revv-phaseB-db.log`.
+DB attempt: exit 1, **0 pass / 3 fail / 0 skipped** (parent plus TEXT/UUID cases),
+both fixtures stopped at `connect EPERM 127.0.0.1:55459` before schema creation.
+No bypass. Host must execute real parallel intent/intent and intent/Checkout,
+partial capacity, delayed/duplicate/stale webhooks, unknown/provider-persistence
+failures, rollback, legacy floor, tenant binding and repeated migration tests.
+These are pending evidence, not passing PostgreSQL/gate results.
+
+Safety-sensitive finance, tenant isolation and settlement timestamps; ten files
+exceed the two-file threshold. No review verdict. Static/final focused results below.
+
+Static verification exit 0: all nine changed JavaScript files passed Node22 --check;
+`git diff --check` passed. Exact syntax-check command:
+```sh
+for file in backend/src/db/index.js backend/src/db/migrate.js backend/src/db/paymentReservations.js backend/src/routes/payments.js backend/src/services/customerBilling.js backend/src/services/paymentReservations.js backend/src/services/roMoney.js backend/src/services/stripe.js backend/test/payments.phase4.test.js; do
+  env -i PATH=/opt/homebrew/opt/node@22/bin:/usr/bin:/bin NODE_ENV=test CI=1 /opt/homebrew/opt/node@22/bin/node --check "$file" || exit $?
+done
+git diff --check
+```
+Final status: exactly ten changed paths, no staged changes, HEAD unchanged at
+`78891080a121e189968983c1cd1390f5551f62ef`. Final mocked tail: tests 143,
+pass 143, fail 0, cancelled 0, skipped 0. DB execution remains host-blocked above.

@@ -31,6 +31,7 @@ async function runMigrations() {
     }
 
     await require('./customerConsent').up({ query });
+    await require('./paymentReservations').up(require('./postgres').pool);
 
     // ── Idempotent column additions ──────────────────────────────────────────
     // These ALWAYS run regardless of schema state. Each wrapped independently.

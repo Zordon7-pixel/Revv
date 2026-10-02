@@ -26,10 +26,11 @@ function isPaidStatus(status) {
   return ['paid', 'succeeded'].includes(normalizePaymentStatus(status));
 }
 
-async function getRoMoneySummary(roId, shopId) {
-  const selected = await getSelectedPanelMoney(roId, shopId);
+async function getRoMoneySummary(roId, shopId, client) {
+  const get = client ? async (sql, params) => (await client.query(sql, params)).rows[0] : dbGet;
+  const selected = await getSelectedPanelMoney(roId, shopId, client);
   if (selected) return selected;
-  const summary = await dbGet(
+  const summary = await get(
     `SELECT
        COALESCE(SUM(total), 0) AS subtotal,
        COALESCE(SUM(CASE WHEN type = 'labor' THEN total ELSE 0 END), 0) AS labor_total,
@@ -43,7 +44,7 @@ async function getRoMoneySummary(roId, shopId) {
     [roId, shopId]
   );
 
-  const shop = await dbGet('SELECT COALESCE(tax_rate, 0) AS tax_rate FROM shops WHERE id = $1', [shopId]);
+  const shop = await get('SELECT COALESCE(tax_rate, 0) AS tax_rate FROM shops WHERE id = $1', [shopId]);
   const taxRate = Number(shop?.tax_rate || 0);
   const subtotalCents = dollarsToCents(summary?.subtotal);
   const taxableSubtotalCents = dollarsToCents(summary?.taxable_subtotal);
@@ -63,8 +64,9 @@ async function getRoMoneySummary(roId, shopId) {
   };
 }
 
-async function getPaidCents(roId, shopId) {
-  const row = await dbGet(
+async function getPaidCents(roId, shopId, client) {
+  const get = client ? async (sql, params) => (await client.query(sql, params)).rows[0] : dbGet;
+  const row = await get(
     `SELECT COALESCE(SUM(amount_cents), 0)::bigint AS paid_cents
      FROM ro_payments
      WHERE ro_id = $1
@@ -146,8 +148,8 @@ module.exports.allocateInsurance = allocateInsurance;
 
 // Lazy database access preserves pure calculator imports. Older helper-only test
 // adapters have no pool; real pools always check schema presence explicitly.
-async function getSelectedPanelMoney(roId, shopId) {
-  const pool = require('../db').pool;
+async function getSelectedPanelMoney(roId, shopId, client) {
+  const pool = client || require('../db').pool;
   if (!pool) return null;
   const schema = (await pool.query(`SELECT to_regclass('ro_panel_estimator_revisions') AS revisions,
     EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid=to_regclass('ro_panel_estimator_drafts')

@@ -13,7 +13,7 @@ function getStripeClient() {
   return stripeClient;
 }
 
-async function createPaymentIntent(amount, currency = 'usd', metadata = {}) {
+async function createPaymentIntent(amount, currency = 'usd', metadata = {}, idempotencyKey) {
   const stripe = getStripeClient();
   if (!stripe) return null;
 
@@ -22,7 +22,7 @@ async function createPaymentIntent(amount, currency = 'usd', metadata = {}) {
     currency,
     metadata,
     automatic_payment_methods: { enabled: true },
-  });
+  }, idempotencyKey ? { idempotencyKey } : undefined);
 }
 
 function constructWebhookEvent(body, sig) {

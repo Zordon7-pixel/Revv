@@ -567,6 +567,7 @@ async function initDb() {
   await pool.query(`ALTER TABLE ro_comms ALTER COLUMN summary SET DEFAULT ''`).catch(() => {});
 
   await require('./customerConsent').up(pool);
+  await require('./paymentReservations').up(pool);
   await require('../services/stockCapture').ensureStock(pool);
   await require('../services/partsDelivery').ensureDelivery(pool);
 
