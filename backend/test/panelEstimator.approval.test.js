@@ -3,6 +3,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { randomUUID, createHash } = require('node:crypto');
 const { once } = require('node:events');
+const { Readable } = require('node:stream');
+const { readFileSync } = require('node:fs');
 const { Pool } = require('pg');
 const express = require('express');
 const jwt = require('jsonwebtoken');
@@ -10,7 +12,8 @@ const { ensurePanelEstimator } = require('../src/db/panelEstimator');
 const { createPanelEstimatorDraft } = require('../src/services/panelEstimatorDraft');
 const { createPanelEstimatorStore } = require('../src/services/panelEstimatorStore');
 const { createPanelEstimatorRevisions } = require('../src/services/panelEstimatorRevisions');
-const { panelPublicHandler, publicError, publicRequestError, approvalTelemetry } = require('../src/services/panelEstimatorApproval');
+const { panelPublicHandler, publicError, publicRequestError, approvalTelemetry,
+  panelBearerRequest, panelBearerParserError } = require('../src/services/panelEstimatorApproval');
 
 const DATABASE = 'postgresql://revv_panel@127.0.0.1:55459/revv_panel_test';
 function databaseConfig(value) {
@@ -78,6 +81,75 @@ test('pe_ delegation catches failures and excludes bearer requests from telemetr
     assert.equal(res.statusCode,500); safe(res.body);
     assert.equal(processor({ request: { url: '/api/approval/pe_secret' } }),null);
   } finally { sentry.configureScope = previous; }
+});
+
+test('real JSON parser uses shared scoped privacy/error middleware on all bearer paths', async t => {
+  const sentry = require('@sentry/node'), logs = [];
+  for (const method of ['log','warn','error']) t.mock.method(console,method,(...args) => logs.push(args));
+  let ip = 1;
+  const parse = async (path, body, contentType = 'application/json', fixedIP) => {
+    const req = Readable.from([Buffer.from(body)]);
+    Object.assign(req, { originalUrl: path, method: 'POST', app: express(), ip: fixedIP || `192.0.2.${ip++}`,
+      headers: { 'content-type': contentType, 'content-length': String(Buffer.byteLength(body)) } });
+    const res = { headers: {}, set(k,v) { this.headers[k.toLowerCase()] = v; },
+      setHeader(k,v) { this.set(k,v); }, status(v) { this.statusCode = v; return this; },
+      json(v) { this.body = v; return this; }, send(v) { return this.json(v); } };
+    // A disabled client exercises real Sentry scope processing without a transport.
+    const hub = new sentry.Hub(new sentry.NodeClient({ enabled: false, integrations: [] }));
+    hub.run(() => panelBearerRequest(req,res,() => {}));
+    const event = { message: 'PRIVATE_SENTINEL', request: { url: path, data: body } };
+    const telemetry = await hub.getScope().applyToEvent(event);
+    const error = await new Promise(resolve => express.json({ limit: '1kb' })(req,res,resolve));
+    let forwarded;
+    if (error) await panelBearerParserError(error,req,res,err => { forwarded = err; });
+    return { res, error, forwarded, telemetry, event };
+  };
+  const token = `pe_${'a'.repeat(64)}`, body = `{ "PRIVATE_SENTINEL": "${token}", `;
+  for (const family of ['/api/approval','/api/ros/approval','/api/repair-orders/approval','/approve']) {
+    for (const value of [token, '%70%65%5fmalformed%', 'pe_bad']) for (const suffix of ['', '/respond']) {
+      const result = await parse(`${family}/${value}${suffix}?private=PRIVATE_SENTINEL`,body);
+      assert.equal(result.error.type,'entity.parse.failed');
+      assert.equal(result.forwarded,undefined);
+      assert.equal(result.res.statusCode,400);
+      assert.deepEqual(result.res.body,{ error: 'INVALID_INPUT' });
+      assert.equal(result.res.headers['cache-control'],'no-store');
+      assert.equal(result.res.headers['referrer-policy'],'no-referrer');
+      assert.equal(result.telemetry,null);
+    }
+  }
+  for (const [input,contentType,status] of [
+    [JSON.stringify({ private: 'PRIVATE_SENTINEL'.repeat(100) }),'application/json',413],
+    [body,'application/json; charset=private-sentinel',415],
+  ]) {
+    const result = await parse(`/api/approval/${token}`,input,contentType);
+    assert.equal(result.res.statusCode,status);
+    assert.deepEqual(result.res.body,{ error: 'INVALID_INPUT' });
+    assert.equal(result.res.headers['cache-control'],'no-store');
+  }
+  const valid = await parse(`/api/approval/${token}`,JSON.stringify({ decision: 'approve' }));
+  assert.equal(valid.error,undefined); assert.equal(valid.telemetry,null);
+  assert.equal(valid.res.headers['cache-control'],'no-store');
+  for (const path of ['/api/health','/api/approval/ordinary','/api/ros/approval/ordinary',
+    '/api/repair-orders/ordinary','/api/customers?url=/api/approval/pe_bad']) {
+    const result = await parse(path,body);
+    assert.equal(result.forwarded,result.error,'Ordinary errors must keep their identity');
+    assert.equal(result.res.headers['cache-control'],undefined);
+    assert.deepEqual(result.telemetry,result.event,'Ordinary telemetry must survive even with a token in its body');
+  }
+  for (let i=0;i<21;i++) {
+    const result = await parse(`/api/approval/${token}`,body,'application/json','198.51.100.99');
+    assert.equal(result.res.statusCode,i<20 ? 400 : 429);
+    assert.equal(result.res.headers['cache-control'],'no-store');
+    assert.equal(/PRIVATE_SENTINEL|pe_/.test(JSON.stringify(result.res.body)),false);
+  }
+  assert.equal(/PRIVATE_SENTINEL|pe_/.test(JSON.stringify(logs)),false,'Private parser data reached console');
+});
+test('production app mounts shared protection around JSON parsing without starting jobs', () => {
+  const source = readFileSync(require.resolve('../src/app'),'utf8');
+  const before = source.indexOf('app.use(panelBearerRequest)'), parser = source.indexOf('app.use(express.json(');
+  const after = source.indexOf('app.use(panelBearerParserError)');
+  assert.ok(source.indexOf('app.use(sentry.requestHandler())') < before && before < parser);
+  assert.ok(parser < after && after < source.indexOf("app.use('/api/auth'"));
 });
 
 for (const type of ['TEXT','UUID']) test(`A1 PostgreSQL ${type}: real JWT HTTP both public families and transactional audit`, async t => {
@@ -178,10 +250,12 @@ for (const type of ['TEXT','UUID']) test(`A1 PostgreSQL ${type}: real JWT HTTP b
     process.env.JWT_SECRET = 'synthetic-panel-approval-test-only';
     const authenticate = fresh('../src/middleware/auth');
     const app = express(); app.set('trust proxy','loopback');
-    app.use(require('@sentry/node').Handlers.requestHandler()); app.use(express.json());
+    app.use(require('@sentry/node').Handlers.requestHandler());
+    app.use(panelBearerRequest); app.use(express.json()); app.use(panelBearerParserError);
     app.use('/api/estimate-items',require('../src/routes/panelEstimator').createPanelEstimatorRouter({ database: pool,authenticate }));
     app.use('/api/approval',fresh('../src/routes/approval'));
     app.use('/api/ros',fresh('../src/routes/ros'));
+    app.use('/api/repair-orders',require('../src/routes/ros'));
     server = app.listen(0,'127.0.0.1'); await once(server,'listening');
     let ip = 1;
     async function request(path,method = 'GET',body,role = 'owner',shop = shopId,fixedIP) {
@@ -441,14 +515,16 @@ for (const type of ['TEXT','UUID']) test(`A1 PostgreSQL ${type}: real JWT HTTP b
       assert.deepEqual(effects,[]);
     });
     await t.test('public failures and rate limits are no-store and sanitized on both families', async () => {
-      for (const family of families) {
-        const token = `pe_${'c'.repeat(64)}`, address = family === families[0] ? '198.51.100.1' : '198.51.100.2';
-        const malformed = await fetch(`http://127.0.0.1:${server.address().port}${family}/${token}`, {
-          method: 'POST',headers: { 'Content-Type': 'application/json','X-Forwarded-For': '203.0.113.5' },
-          body: `{ "token": "${token}", `,
-        });
-        assert.equal(malformed.status,400); assert.equal(malformed.headers.get('cache-control'),'no-store');
-        assert.deepEqual(await malformed.json(),{ error: 'INVALID_INPUT' });
+      for (const family of [...families,'/api/repair-orders/approval']) {
+        const token = `pe_${'c'.repeat(64)}`, address = `198.51.100.${[...families,'/api/repair-orders/approval'].indexOf(family)+1}`;
+        for (const suffix of ['', '/respond']) {
+          const malformed = await fetch(`http://127.0.0.1:${server.address().port}${family}/${token}${suffix}`, {
+            method: 'POST',headers: { 'Content-Type': 'application/json','X-Forwarded-For': '203.0.113.5' },
+            body: `{ "token": "${token}", `,
+          });
+          assert.equal(malformed.status,400); assert.equal(malformed.headers.get('cache-control'),'no-store');
+          assert.deepEqual(await malformed.json(),{ error: 'INVALID_INPUT' });
+        }
         for (let i=0;i<20;i++) {
           const result = await request(`${family}/${token}`,'GET',undefined,null,shopId,address);
           assert.equal(result.status,404); assert.equal(result.cache,'no-store'); safe(result.body);

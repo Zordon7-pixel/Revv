@@ -3,10 +3,10 @@ const { randomBytes, randomUUID, createHash } = require('node:crypto');
 const n = require('./panelEstimatorStore');
 const { canonical, hashInputs } = require('./panelEstimatorDraft');
 const Sentry = require('@sentry/node');
+const rateLimit = require('express-rate-limit');
 
-// Register when routes load, before the server accepts requests. A per-route
-// scrub alone misses JSON-parser errors, which happen before router middleware.
-// Suppress bearer-bearing events/breadcrumbs without changing unrelated events.
+// Pure filter for bearer-bearing telemetry copies. Request suppression below
+// is scoped before parsing, never registered as a global event processor.
 function approvalTelemetry(event) {
   const seen = new WeakSet();
   function sensitive(value) {
@@ -21,7 +21,7 @@ function approvalTelemetry(event) {
   }
   return sensitive(event) ? null : event;
 }
-Sentry.addGlobalEventProcessor(approvalTelemetry);
+// Suppression is installed on the request scope below, never the global scope.
 
 const DISCLOSURE = Object.freeze({ version: 'panel-quote-v1',
   text: 'Your decision applies only to the displayed repair scope and price in this quote revision. Customer approval does not establish insurance carrier approval, authorize a payment, or provide SMS consent or an agreement signature. Changes require a new quote and approval.' });
@@ -167,15 +167,30 @@ function publicError(res, err) {
   return res.status(500).json({ error: 'APPROVAL_UNAVAILABLE' });
 }
 const noStore = (req,res,next) => { res.set('Cache-Control','no-store'); res.set('Referrer-Policy','no-referrer'); next(); };
-// Mounted before and after public routes: also catches upstream body-parser and
-// route-parameter decoding errors without passing bearer data to finalhandler.
+function isPanelBearerRequest(req) {
+  const match = /^(?:\/api\/(?:ros\/|repair-orders\/)?approval|\/approve)\/([^/?#]+)/i.exec(req.originalUrl || req.url || '');
+  if (!match) return false;
+  // Decode ASCII escapes even if a later escape is malformed: Express will
+  // reject that parameter, but its bearer URL still needs privacy protection.
+  return /^pe_/i.test(match[1].replace(/%([a-f0-9]{2})/gi, (_, hex) => String.fromCharCode(parseInt(hex,16))));
+}
+// Mount after Sentry's requestHandler (which isolates scopes), before parsers.
+function panelBearerRequest(req,res,next) {
+  if (!isPanelBearerRequest(req)) return next();
+  Sentry.configureScope(scope => scope.addEventProcessor(() => null));
+  return noStore(req,res,next);
+}
+// Router mounts handle parameter decoding errors; the app-level mount below
+// handles parser errors, which cannot reach a nested router's error handlers.
 function publicRequestError(limiter) {
   return (err,req,res,next) => {
     noStore(req,res,() => {});
     const send = () => {
       if (res.headersSent) return;
       if (err.type === 'entity.too.large') return res.status(413).json({ error: 'INVALID_INPUT' });
-      if (err.type === 'entity.parse.failed' || err instanceof URIError)
+      if (['charset.unsupported','encoding.unsupported'].includes(err.type))
+        return res.status(415).json({ error: 'INVALID_INPUT' });
+      if (['entity.parse.failed','request.aborted','request.size.invalid'].includes(err.type) || err instanceof URIError)
         return res.status(400).json({ error: 'INVALID_INPUT' });
       return publicError(res,err);
     };
@@ -185,6 +200,14 @@ function publicRequestError(limiter) {
       });
     } catch { if (!res.headersSent) res.status(500).json({ error: 'APPROVAL_UNAVAILABLE' }); }
   };
+}
+const bearerInputError = publicRequestError(rateLimit({
+  windowMs: 15 * 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false,
+  message: { error: 'Too many requests. Try again in 15 minutes.' },
+}));
+function panelBearerParserError(err,req,res,next) {
+  if (!isPanelBearerRequest(req)) return next(err);
+  return bearerInputError(err,req,res,next);
 }
 function panelPublicHandler(database, method) {
   const service = createPanelEstimatorApproval(database);
@@ -250,4 +273,5 @@ async function respondLegacyApproval(database, token, body, notificationKind) {
   });
 }
 module.exports = { createPanelEstimatorApproval, revokePendingApprovalLinks, panelPublicHandler,
-  noStore, publicError, publicRequestError, respondLegacyApproval, approvalTelemetry, DISCLOSURE };
+  noStore, publicError, publicRequestError, panelBearerRequest, panelBearerParserError,
+  respondLegacyApproval, approvalTelemetry, DISCLOSURE };
