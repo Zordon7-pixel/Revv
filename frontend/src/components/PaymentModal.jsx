@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { AlertCircle, CheckCircle, CreditCard, Loader2, X } from 'lucide-react'
 import { loadStripe } from '@stripe/stripe-js'
 import { CardElement, Elements, useElements, useStripe } from '@stripe/react-stripe-js'
 import api from '../lib/api'
 import AppOverlay from './AppOverlay'
+import { money, PaymentAmounts, usePaymentConfirmation, validatePaymentSession } from './paymentSession'
 
 const CARD_OPTIONS = {
   style: {
@@ -16,43 +17,22 @@ const CARD_OPTIONS = {
   },
 }
 
-function CheckoutForm({ amount, clientSecret, onSuccess }) {
+function CheckoutForm({ amount, session, onSuccess }) {
   const stripe = useStripe()
   const elements = useElements()
-  const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState('')
-  const [success, setSuccess] = useState(false)
-  const amountLabel = Number(amount || 0).toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })
+  const { submitting, attempted, success, error, submit } = usePaymentConfirmation({ session, onSuccess })
 
-  async function handleSubmit(event) {
+  function handleSubmit(event) {
     event.preventDefault()
-    if (!stripe || !elements || !clientSecret) return
-
-    setSubmitting(true)
-    setError('')
-    const card = elements.getElement(CardElement)
-    const result = await stripe.confirmCardPayment(clientSecret, { payment_method: { card } })
-
-    if (result.error) {
-      setError(result.error.message || 'Payment failed')
-      setSubmitting(false)
-      return
-    }
-    if (result.paymentIntent?.status === 'succeeded') {
-      setSuccess(true)
-      setSubmitting(false)
-      onSuccess?.()
-      return
-    }
-    setError('Payment did not complete. Please try again.')
-    setSubmitting(false)
+    if (!stripe || !elements) return
+    return submit(() => stripe.confirmCardPayment(session.clientSecret, {
+      payment_method: { card: elements.getElement(CardElement) },
+    }))
   }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      <PaymentAmounts session={session} estimate={amount} succeeded={success} />
       <div className="rounded-instrument border border-line-2 bg-void p-3">
         <label className="mb-2 block text-[11px] text-muted">Card details</label>
         <CardElement options={CARD_OPTIONS} />
@@ -64,36 +44,41 @@ function CheckoutForm({ amount, clientSecret, onSuccess }) {
       )}
       {success && (
         <div role="status" className="flex items-center gap-2 rounded-instrument border border-good/35 bg-good/10 px-3 py-2 text-xs text-good">
-          <CheckCircle size={14} aria-hidden="true" /> Payment successful.
+          <CheckCircle size={14} aria-hidden="true" /> Payment received: {money(session.amountCents)}
         </div>
       )}
       <button
         type="submit"
-        disabled={!stripe || submitting || success}
+        disabled={!stripe || !elements || submitting || attempted}
         className="w-full rounded-instrument bg-gold py-2.5 text-sm font-semibold text-on-gold transition-colors hover:bg-gold-lit disabled:cursor-not-allowed disabled:opacity-50"
       >
-        {submitting ? 'Processing...' : `Pay $${amountLabel}`}
+        {submitting ? 'Processing...' : `Pay ${money(session.amountCents)}`}
       </button>
     </form>
   )
 }
 
-export default function PaymentModal({ roId, amount, onClose, onSuccess }) {
+export default function PaymentModal(props) {
+  return <PaymentModalSession key={JSON.stringify([props.roId, props.amount])} {...props} />
+}
+
+function PaymentModalSession({ roId, amount, onClose, onSuccess }) {
   const publishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY
   const stripePromise = useMemo(
     () => (publishableKey ? loadStripe(publishableKey) : null),
     [publishableKey]
   )
   const [loadingIntent, setLoadingIntent] = useState(true)
-  const [clientSecret, setClientSecret] = useState('')
+  const [session, setSession] = useState(null)
   const [error, setError] = useState('')
+  const request = useRef(null)
 
   useEffect(() => {
     let mounted = true
     async function createIntent() {
-      if (!roId || !amount || Number(amount) <= 0) {
+      if (!roId || !stripePromise) {
         if (mounted) {
-          setError('A valid RO and amount are required to process payment.')
+          setError('A valid RO and payment configuration are required.')
           setLoadingIntent(false)
         }
         return
@@ -101,14 +86,16 @@ export default function PaymentModal({ roId, amount, onClose, onSuccess }) {
       setLoadingIntent(true)
       setError('')
       try {
-        const { data } = await api.post('/payments/create-intent', { roId, amount })
+        request.current ||= api.post('/payments/create-intent', { ro_id: roId })
+        const { data } = await request.current
+        const validated = validatePaymentSession(data)
         if (mounted) {
-          setClientSecret(data.clientSecret)
+          setSession(validated)
           setLoadingIntent(false)
         }
-      } catch (requestError) {
+      } catch {
         if (mounted) {
-          setError(requestError?.response?.data?.error || 'Unable to initialize payment.')
+          setError('Unable to initialize a valid payment session. Refresh the balance before trying again.')
           setLoadingIntent(false)
         }
       }
@@ -117,7 +104,7 @@ export default function PaymentModal({ roId, amount, onClose, onSuccess }) {
     return () => {
       mounted = false
     }
-  }, [roId, amount])
+  }, [roId, amount, stripePromise])
 
   const appearance = {
     theme: 'night',
@@ -161,8 +148,8 @@ export default function PaymentModal({ roId, amount, onClose, onSuccess }) {
               {error}
             </div>
           ) : (
-            <Elements stripe={stripePromise} options={{ clientSecret, appearance }}>
-              <CheckoutForm amount={amount} clientSecret={clientSecret} onSuccess={onSuccess} />
+            <Elements stripe={stripePromise} options={{ clientSecret: session.clientSecret, appearance }}>
+              <CheckoutForm amount={amount} session={session} onSuccess={onSuccess} />
             </Elements>
           )}
         </div>

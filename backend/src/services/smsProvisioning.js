@@ -1,6 +1,8 @@
 const { dbGet, dbRun } = require('../db');
 const { getTwilioConfigForShop, createTwilioClient } = require('./sms');
 
+const { inboundWebhookUrl: configuredWebhookUrl, CONFIG_ERROR } = require('./smsWebhookConfig');
+
 const STATE_AREA_CODES = {
   AL: ['205', '251', '334', '938'],
   AK: ['907'],
@@ -66,12 +68,10 @@ function areaCodeFromPhone(value) {
   return null;
 }
 
-function appBaseUrl() {
-  return (process.env.APP_URL || 'https://revvshop.app').replace(/\/+$/, '');
-}
-
 function inboundWebhookUrl() {
-  return (process.env.TWILIO_INBOUND_WEBHOOK_URL || `${appBaseUrl()}/api/sms/inbound`).trim();
+  const url = configuredWebhookUrl();
+  if (!url) throw new Error(CONFIG_ERROR);
+  return url;
 }
 
 async function ensureMessagingService(client, shop, requestedWebhookUrl) {
@@ -164,7 +164,12 @@ async function provisionSmsSenderForShop({ shopId, force = false, webhookUrl } =
     throw new Error('Twilio credentials are not configured on REVV server');
   }
   const client = createTwilioClient(config);
-  const desiredWebhook = webhookUrl || inboundWebhookUrl();
+  const desiredWebhook = inboundWebhookUrl();
+  // An override must still match the mounted, authenticated callback URL.
+  if ((webhookUrl && webhookUrl !== desiredWebhook)
+      || (process.env.TWILIO_INBOUND_WEBHOOK_URL && process.env.TWILIO_INBOUND_WEBHOOK_URL !== desiredWebhook)) {
+    throw new Error('[SMS Config] Inbound webhook override must match APP_URL/PUBLIC_URL plus /api/sms/webhook.');
+  }
 
   let messagingServiceSid = await ensureMessagingService(client, shop, desiredWebhook);
   let phoneNumber = shop.twilio_phone_number || null;

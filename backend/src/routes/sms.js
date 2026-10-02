@@ -6,6 +6,7 @@ const { requireAdmin } = require('../middleware/roles');
 const { sendSMS, getTwilioConfigForShop, smsEntitled } = require('../services/sms');
 const { maybeSendInboundAutoReply } = require('../services/smsAutoReply');
 const { dbAll, dbGet, dbRun } = require('../db');
+const { WEBHOOK_PATH, inboundWebhookUrl } = require('../services/smsWebhookConfig');
 
 // ── Status / test ────────────────────────────────────────────────────────────
 router.get('/status', auth, requireAdmin, async (req, res) => {
@@ -189,13 +190,12 @@ async function authenticatedInboundShop(req) {
       || Object.values(params).some(value => typeof value !== 'string')
       || !/^\+[1-9]\d{1,14}$/.test(params.To || '')
       || !/^AC[0-9a-f]{32}$/i.test(params.AccountSid || '')) return null;
-  const base = new URL(process.env.APP_URL || process.env.PUBLIC_URL || '');
-  if (!['https:', 'http:'].includes(base.protocol) || base.username || base.password
-      || base.search || base.hash) return null;
+  const webhookUrl = inboundWebhookUrl();
+  if (!webhookUrl) return null;
   const originalUrl = req.originalUrl;
-  if (typeof originalUrl !== 'string' || originalUrl.split('?')[0] !== '/api/sms/webhook') return null;
+  if (typeof originalUrl !== 'string' || originalUrl.split('?')[0] !== WEBHOOK_PATH) return null;
   const queryIndex = originalUrl.indexOf('?');
-  const url = `${base.href.replace(/\/+$/, '')}/api/sms/webhook${queryIndex < 0 ? '' : originalUrl.slice(queryIndex)}`;
+  const url = `${webhookUrl}${queryIndex < 0 ? '' : originalUrl.slice(queryIndex)}`;
   const shops = await dbAll(
     `SELECT id, name, twilio_account_sid, twilio_auth_token, twilio_phone_number,
             twilio_api_key, twilio_api_secret, plan, sms_comp
@@ -204,12 +204,14 @@ async function authenticatedInboundShop(req) {
   // Do not choose a tenant using attacker-supplied AccountSid to break a tie.
   if (shops.length !== 1) return null;
   const shop = shops[0];
-  if (!shop.id || shop.twilio_account_sid !== params.AccountSid) return null;
-  const token = shop.twilio_auth_token || (
-    process.env.TWILIO_ACCOUNT_SID === shop.twilio_account_sid
-      && process.env.TWILIO_PHONE_NUMBER === shop.twilio_phone_number
-      ? process.env.TWILIO_AUTH_TOKEN : null
-  );
+  if (!shop.id || shop.twilio_phone_number !== params.To) return null;
+  // The unique persisted destination owns the tenant. A platform account can
+  // provision multiple shop numbers; AccountSid alone never selects a shop.
+  const accountSid = shop.twilio_account_sid || process.env.TWILIO_ACCOUNT_SID;
+  if (!accountSid || accountSid !== params.AccountSid) return null;
+  const token = shop.twilio_account_sid && shop.twilio_auth_token
+    ? shop.twilio_auth_token
+    : accountSid === process.env.TWILIO_ACCOUNT_SID ? process.env.TWILIO_AUTH_TOKEN : null;
   if (typeof token !== 'string' || !token.trim() || !validateRequest(token, signature, url, params)) return null;
   return shop;
 }

@@ -333,9 +333,10 @@ function webhookHarness(options = {}) {
     async dbAll(sql, params) {
       state.reads.push({ sql, params });
       assert.match(sql, /FROM shops WHERE twilio_phone_number = \$1/);
-      assert.deepEqual(params, [SHOP.twilio_phone_number]);
+      assert.equal(params.length, 1);
+      assert.match(params[0], /^\+[1-9]\d{1,14}$/);
       if (options.lookupError) throw new Error(LEAK);
-      return options.shops || [SHOP];
+      return (options.shops || [SHOP]).filter(shop => shop.twilio_phone_number === params[0]);
     },
     async dbGet(sql, params) {
       if (options.roError) throw new Error(LEAK);
@@ -372,6 +373,7 @@ function webhookHarness(options = {}) {
   vm.runInThisContext(`(function(require,module,exports){${fs.readFileSync(filename, 'utf8')}\n})`, { filename })(name => {
     if (Object.hasOwn(mocks, name)) return mocks[name];
     if (['express', 'uuid', 'twilio'].includes(name)) return require(name);
+    if (name === '../services/smsWebhookConfig') return require(name);
     throw new Error(`Unexpected dependency: ${name}`);
   }, module, module.exports);
   const handler = module.exports.stack.find(l => l.route?.path === '/webhook').route.stack.at(-1).handle;
@@ -468,7 +470,7 @@ test('trusted URL ignores hostile host/protocol and includes signed query and ba
   });
 });
 
-test('environment token fallback is restricted to the resolved account AND recipient', async () => {
+test('environment token fallback uses the unique owned destination and matching account', async () => {
   const keys = ['TWILIO_ACCOUNT_SID', 'TWILIO_PHONE_NUMBER', 'TWILIO_AUTH_TOKEN'];
   const previous = keys.map(k => process.env[k]);
   Object.assign(process.env, { TWILIO_ACCOUNT_SID: SHOP.twilio_account_sid, TWILIO_PHONE_NUMBER: SHOP.twilio_phone_number, TWILIO_AUTH_TOKEN: SHOP.twilio_auth_token });
@@ -480,7 +482,9 @@ test('environment token fallback is restricted to the resolved account AND recip
       assert.equal((await webhookHarness(options).call()).statusCode, 403);
       process.env.TWILIO_ACCOUNT_SID = SHOP.twilio_account_sid;
       process.env.TWILIO_PHONE_NUMBER = FROM;
-      assert.equal((await webhookHarness(options).call()).statusCode, 403);
+      // Managed shop numbers can differ from the platform's default sender.
+      assert.equal((await webhookHarness(options).call()).statusCode, 200);
+      assert.equal((await webhookHarness(options).call({ params: { To: FROM } })).statusCode, 403);
     });
   } finally { keys.forEach((key, i) => { if (previous[i] === undefined) delete process.env[key]; else process.env[key] = previous[i]; }); }
 });
@@ -506,3 +510,144 @@ for (const fault of ['roError', 'writeError', 'autoError', 'sendError']) {
     if (fault === 'autoError') assert.equal(h.state.writes.length, 1);
   });
 }
+
+async function withEnv(values, fn) {
+  const previous = Object.fromEntries(Object.keys(values).map(key => [key, process.env[key]]));
+  Object.entries(values).forEach(([key, value]) => {
+    if (value === undefined) delete process.env[key]; else process.env[key] = value;
+  });
+  try { await fn(); } finally {
+    Object.entries(previous).forEach(([key, value]) => {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    });
+  }
+}
+
+const ENV_TOKEN = 'synthetic-platform-auth-token';
+const ENV_SHOP = { ...SHOP, twilio_account_sid: null, twilio_auth_token: null };
+const OTHER_SHOP = { ...ENV_SHOP, id: 'other-shop', twilio_phone_number: '+15550000002' };
+const ENV_CONFIG = { TWILIO_ACCOUNT_SID: SHOP.twilio_account_sid, TWILIO_AUTH_TOKEN: ENV_TOKEN,
+  TWILIO_PHONE_NUMBER: '+15550000003', PUBLIC_URL: undefined };
+
+test('real env-token signature without stored SID accepts STOP only for destination owner', async () => {
+  await withEnv(ENV_CONFIG, async () => {
+    const h = webhookHarness({ shops: [ENV_SHOP, OTHER_SHOP] });
+    const logs = await captureLogs(async () => {
+      assert.equal((await h.call({ body: 'STOP', token: ENV_TOKEN,
+        params: { shop_id: OTHER_SHOP.id } })).statusCode, 200);
+    });
+    assert.ok(!logs.includes(ENV_TOKEN));
+    assert.equal(h.state.optedOut, true);
+    assert.equal(h.state.customer.sms_consent, false);
+    assert.equal(h.state.autoCalls, 1);
+    assert.equal(h.state.sends.length, 0);
+    assert.ok(h.state.writes.every(write => !write.params.includes(OTHER_SHOP.id)));
+    assert.ok(h.state.writes.some(write => /INSERT INTO sms_opt_outs/.test(write.sql) && write.params[0] === SHOP.id));
+  });
+});
+
+for (const [label, options, request, env] of [
+  ['forged', {}, { token: 'forged' }],
+  ['missing signature', {}, { signature: '' }],
+  ['wrong account signed with platform token', {}, { params: { AccountSid: `AC${'c'.repeat(32)}` } }],
+  ['unowned destination and attacker tenant', {}, { params: { To: '+15550000004', shop_id: SHOP.id } }],
+  ['tampered destination after signing', {}, { params: { To: OTHER_SHOP.twilio_phone_number }, signature:
+    twilio.getExpectedTwilioSignature(ENV_TOKEN, WEBHOOK_URL, { From: FROM, To: SHOP.twilio_phone_number, Body: 'STOP', AccountSid: SHOP.twilio_account_sid }) }],
+  ['duplicate owned number', { shops: [ENV_SHOP, { ...ENV_SHOP, id: 'duplicate' }] }, {}],
+  ['stored foreign account', { shops: [{ ...ENV_SHOP, twilio_account_sid: `AC${'d'.repeat(32)}` }] }, {}],
+  ['missing public URL', {}, { base: '' }],
+  ['missing env SID', {}, {}, { TWILIO_ACCOUNT_SID: undefined }],
+  ['missing auth token with API key', {}, {}, { TWILIO_AUTH_TOKEN: undefined, TWILIO_API_KEY: 'synthetic-key', TWILIO_API_SECRET: 'synthetic-secret' }],
+]) {
+  test(`env webhook rejects ${label} before any writes/replies`, async () => {
+    await withEnv({ ...ENV_CONFIG, ...env }, async () => {
+      const h = webhookHarness({ shops: [ENV_SHOP, OTHER_SHOP], ...options });
+      const logs = await captureLogs(async () => assert.equal((await h.call({ body: 'STOP', token: ENV_TOKEN, ...request })).statusCode, 403));
+      assert.ok(!logs.includes(ENV_TOKEN));
+      assert.equal(h.state.writes.length, 0);
+      assert.equal(h.state.autoCalls, 0);
+      assert.equal(h.state.sends.length, 0);
+      assert.equal(h.state.customer.sms_consent, true);
+    });
+  });
+}
+
+function loadProvisioning(calls) {
+  const filename = require.resolve('../services/smsProvisioning');
+  const module = { exports: {} };
+  const services = () => ({ phoneNumbers: { create: async data => { calls.push(['attach', data]); } } });
+  services.create = async data => { calls.push(['service', data]); return { sid: 'MG_fixture' }; };
+  const client = { messaging: { v1: { services } },
+    availablePhoneNumbers: () => ({ local: { list: async () => [{ phoneNumber: SHOP.twilio_phone_number }] } }),
+    incomingPhoneNumbers: { create: async data => { calls.push(['number', data]); return { phoneNumber: data.phoneNumber, sid: 'PN_fixture' }; } } };
+  const mocks = {
+    '../db': { dbGet: async () => ({ id: SHOP.id, name: 'Fixture' }), dbRun: async () => {} },
+    './sms': { getTwilioConfigForShop: async () => ({ accountSid: SHOP.twilio_account_sid, authToken: ENV_TOKEN }), createTwilioClient: () => client },
+    './smsWebhookConfig': require('../services/smsWebhookConfig'),
+  };
+  vm.runInThisContext(`(function(require,module,exports){${fs.readFileSync(filename, 'utf8')}\n})`, { filename })(name => {
+    if (Object.hasOwn(mocks, name)) return mocks[name];
+    throw new Error(`Unexpected provisioning dependency: ${name}`);
+  }, module, module.exports);
+  return module.exports;
+}
+
+for (const config of [{ APP_URL: PUBLIC_BASE }, { APP_URL: `${PUBLIC_BASE}/prefix/` }, { PUBLIC_URL: PUBLIC_BASE }]) {
+  test(`provisioning callback equals actual mounted route for ${JSON.stringify(config)}`, async () => {
+    await withEnv({ APP_URL: undefined, PUBLIC_URL: undefined, TWILIO_INBOUND_WEBHOOK_URL: undefined, ...config }, async () => {
+      const calls = [];
+      const provisioning = loadProvisioning(calls);
+      const output = await provisioning.provisionSmsSenderForShop({ shopId: SHOP.id });
+      const mount = fs.readFileSync(require.resolve('../app'), 'utf8').match(/app.use\('([^']+)', require\('\.\/routes\/sms'\)\)/)[1];
+      const route = fs.readFileSync(require.resolve('../routes/sms'), 'utf8').match(/router.post\('([^']+)', express.urlencoded/)[1];
+      const expected = `${(config.APP_URL || config.PUBLIC_URL).replace(/\/+$/, '')}${mount}${route}`;
+      assert.equal(output.inbound_webhook_url, expected);
+      assert.equal(calls.find(([kind]) => kind === 'service')[1].inboundRequestUrl, expected);
+      assert.equal(calls.find(([kind]) => kind === 'number')[1].smsUrl, expected);
+    });
+  });
+}
+
+test('missing/invalid public base logs sanitized configuration error at module load without throwing', async () => {
+  const filename = require.resolve('../services/smsWebhookConfig');
+  for (const base of ['', `https://user:${ENV_TOKEN}@example.test`, `invalid-${PRIVATE_BODY}`]) {
+    await withEnv({ APP_URL: base, PUBLIC_URL: undefined }, async () => {
+      const module = { exports: {} };
+      const logs = await captureLogs(async () => {
+        assert.doesNotThrow(() => vm.runInThisContext(`(function(module){${fs.readFileSync(filename, 'utf8')}\n})`, { filename })(module));
+        assert.equal(module.exports.inboundWebhookUrl(), null);
+        assert.equal((await webhookHarness().call({ base })).statusCode, 403);
+        const calls = [];
+        await assert.rejects(loadProvisioning(calls).provisionSmsSenderForShop({ shopId: SHOP.id }), /configure APP_URL or PUBLIC_URL/);
+        assert.deepEqual(calls, []);
+      });
+      assert.match(logs, /Inbound SMS disabled: configure APP_URL or PUBLIC_URL/);
+      assert.ok(!logs.includes(ENV_TOKEN));
+      assert.ok(!logs.includes('example.test'));
+    });
+  }
+});
+
+test('PUBLIC_URL alone authenticates a signed environment webhook', async () => {
+  await withEnv({ ...ENV_CONFIG, PUBLIC_URL: PUBLIC_BASE }, async () => {
+    const h = webhookHarness({ shops: [ENV_SHOP] });
+    await captureLogs(async () => assert.equal((await h.call({ base: '', token: ENV_TOKEN, body: 'STOP' })).statusCode, 200));
+    assert.equal(h.state.customer.sms_consent, false);
+  });
+});
+
+test('provisioning rejects mismatched explicit callbacks before provider calls without exposing URLs', async () => {
+  for (const useEnv of [false, true]) {
+    const badUrl = `https://private.example.test/${ENV_TOKEN}`;
+    await withEnv({ APP_URL: PUBLIC_BASE, TWILIO_INBOUND_WEBHOOK_URL: useEnv ? badUrl : undefined }, async () => {
+      const calls = [];
+      await assert.rejects(loadProvisioning(calls).provisionSmsSenderForShop({ shopId: SHOP.id, webhookUrl: useEnv ? undefined : badUrl }), error => {
+        assert.match(error.message, /must match APP_URL\/PUBLIC_URL/);
+        assert.ok(!error.message.includes(badUrl));
+        assert.ok(!error.message.includes(ENV_TOKEN));
+        return true;
+      });
+      assert.deepEqual(calls, []);
+    });
+  }
+});

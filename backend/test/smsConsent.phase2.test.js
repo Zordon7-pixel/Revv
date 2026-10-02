@@ -97,6 +97,10 @@ function routes(h) {
   const common = {
     '../db': h.db, '../middleware/auth': noop,
     '../services/sms': h.sms,
+    '../services/smsWebhookConfig': {
+      WEBHOOK_PATH: '/api/sms/webhook',
+      inboundWebhookUrl: () => { throw new Error('Unexpected inbound authentication in outbound consent test'); },
+    },
     '../services/customerBilling': billing,
     '../services/notifications': { createNotification: async () => {} },
     'express-rate-limit': () => noop,
