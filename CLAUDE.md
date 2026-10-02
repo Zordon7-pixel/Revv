@@ -3811,3 +3811,43 @@ services/sms.js, smsAutoReply.js, partsNotifications.js;
 test/smsConsent.phase2.test.js. Safety-sensitive consent, staff exception and STOP
 revocation; over two files. No frontend, product switch, deletion, payment logic,
 P3 timeout work, readiness documents, provider calls or production data touched.
+
+## 2026-10-02 00:30 EDT / 04:30 UTC — t_3ead3bd0 Phase 3 implementation
+
+Phase 3 only on base `32bb393611538aed333cb53667a8edae1afc748d` in the
+panel-estimator worktree. See `docs/REMEDIATION-remy-15114f26.md` for exact
+behavior, switch operation, safe rollback and deferred work. Hermes retains
+lifecycle/gates/push/review/shipping. No board, agents, provider or production
+calls, secrets/.env edits, review requests, push or deployment performed.
+
+Customer create/edit and RO intake now require complete provenance before
+prechecking **Customer agreed to texts**, plus verbal/written method for new
+attestation. Unchanged consent is omitted; false revokes; server owns staff/time.
+New intake attests only on customer creation, not again on RO creation. Customer
+and OCR transitions reset attestation. Unrelated saves preserve email preferences.
+Server `PANEL_ESTIMATOR_ENABLED` defaults ON; false/0/off returns stable 503 on
+all estimator work routes. Authenticated availability uses the same startup value;
+restart required. Unknown/disabled/error availability hides the frontend tab/editor.
+Public issued approvals intentionally continue. Stored selected money, revisions,
+payments and approval audit are preserved. No database rollback is part of disable.
+
+Focused validation: Node v22.23.2, sanitized `env -i`, NODE_ENV=test, CI=1.
+Exact commands are in the remediation doc. Final backend command exit 0, tail:
+`tests 8; pass 8; fail 0; cancelled 0; skipped 0`.
+Final frontend command exit 0, tail:
+`Test Files 5 passed (5); Tests 50 passed (50)`.
+Logs: `/tmp/revv-phase3-backend.log`, `/tmp/revv-phase3-frontend.log`.
+`git diff --check` exit 0. These are focused working-tree checks, not final
+exact-SHA host gates, browser/live verification or a Spark/Grok verdict.
+
+Ten files: this log; remediation doc; estimator router; shared SmsConsentFields;
+AddROModal, Customers, EstimateBuilder; AddROModal.feedback test;
+ConsentAndAvailability.phase3 test; panelEstimator.switch test.
+Safety-sensitive consent provenance/timestamp and access enforcement; over two
+files. Deferred: ros/payments/deletion/P3 and broader old fixtures (including
+appraisal boolean-copy expectations), plus full host gates/build/review.
+
+Commit fallback: staging exited 128 because the sandbox cannot create the shared
+Git worktree `index.lock` under the canonical repository's `.git/worktrees/`.
+No new commit; HEAD remains `32bb393611538aed333cb53667a8edae1afc748d`.
+Hermes guard must stage/commit the ten-file diff, then run exact-SHA gates.

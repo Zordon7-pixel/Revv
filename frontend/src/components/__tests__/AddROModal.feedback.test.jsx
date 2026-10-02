@@ -10,6 +10,13 @@ vi.mock('../../lib/api', () => ({
   },
 }))
 
+vi.mock('../AppraisalQuickIntake', () => ({ default: ({ onApply }) => <button onClick={() => onApply({
+  fields: { customer_name: 'OCR Customer', customer_phone: '', customer_email: '', customer_address: '',
+    year: '2024', make: 'Toyota', model: 'Camry', vin: '', color: '', plate: '', mileage: '', claim_number: '',
+    policy_number: '', adjuster_name: '', adjuster_phone: '', adjuster_email: '', deductible: '',
+    sms_consent: true, sms_consent_method: 'written', sms_consent_by: 'untrusted' }, files: []
+})}>Apply OCR fixture</button> }))
+
 vi.mock('../../contexts/LanguageContext', () => ({
   useLanguage: () => ({
     t: (key) => ({
@@ -117,7 +124,7 @@ describe('AddROModal feedback handling', () => {
     expect(api.post).not.toHaveBeenCalled()
   })
 
-  const smsCheckbox = () => screen.getByLabelText(/Customer consents to receive SMS status updates/i)
+  const smsCheckbox = () => screen.getByLabelText(/Customer agreed to texts/i)
 
   async function saveManualRO(user) {
     await user.click(screen.getByRole('button', { name: /Next/i }))
@@ -141,22 +148,30 @@ describe('AddROModal feedback handling', () => {
     await user.click(screen.getByRole('button', { name: /^New$/i }))
     expect(smsCheckbox()).not.toBeChecked()
     await user.type(screen.getByPlaceholderText('John Smith'), 'Synthetic Customer')
-    if (consent) await user.click(smsCheckbox())
+    if (consent) {
+      await user.click(smsCheckbox())
+      await user.click(screen.getByRole('button', { name: /Next/i }))
+      expect(await screen.findByRole('alert')).toHaveTextContent('Choose verbal or written SMS consent.')
+      expect(api.post).not.toHaveBeenCalled()
+      await user.selectOptions(screen.getByLabelText('SMS consent method'), 'written')
+    }
     await saveManualRO(user)
     await waitFor(() => expect(onSaved).toHaveBeenCalled())
-    expect(api.post).toHaveBeenCalledWith('/customers', expect.objectContaining({ sms_consent: consent }))
-    expect(api.post).toHaveBeenCalledWith('/ros', expect.objectContaining({ sms_consent: consent }))
+    const payload = api.post.mock.calls.find(([url]) => url === '/customers')[1]
+    expect(payload).toEqual({ name: 'Synthetic Customer', phone: '', email: '', address: '', insurance_company: 'Progressive', policy_number: null, email_consent: false, preferred_contact_method: consent ? 'sms' : 'none', ...(consent ? { sms_consent: true, sms_consent_method: 'written' } : {}) })
+    const roPayload = api.post.mock.calls.find(([url]) => url === '/ros')[1]
+    expect(Object.keys(roPayload).filter(key => key.startsWith('sms_'))).toEqual([])
   })
 
   it('clears prior consent on New, Existing selection reset, and repeated New clicks', async () => {
     const user = userEvent.setup()
-    const customer = { id: 'existing', name: 'Synthetic Existing', sms_consent: true }
+    const customer = { id: 'existing', name: 'Synthetic Existing', sms_consent: true, sms_consent_method: 'verbal', sms_consent_at: '2026-10-01T12:00:00Z', sms_consent_by: 'staff-1' }
     api.get.mockImplementation(async url => ({ data: url === '/customers' ? { customers: [customer] } : { customer, vehicles: [] } }))
     render(<MemoryRouter><AddROModal onClose={vi.fn()} onSaved={vi.fn()} /></MemoryRouter>)
     await screen.findByRole('option', { name: /Synthetic Existing/ })
     await user.selectOptions(screen.getByRole('combobox'), 'existing')
     await waitFor(() => expect(smsCheckbox()).toBeChecked())
-    await user.selectOptions(screen.getByRole('combobox'), '')
+    await user.selectOptions(screen.getByRole('option', { name: '— select —' }).parentElement, '')
     expect(smsCheckbox()).not.toBeChecked()
     await user.click(screen.getByRole('button', { name: /^New$/i }))
     expect(smsCheckbox()).not.toBeChecked()
@@ -169,7 +184,7 @@ describe('AddROModal feedback handling', () => {
     expect(smsCheckbox()).not.toBeChecked()
   })
 
-  it.each([true, false, null, undefined, 'true'])('preserves stored boolean consent and leaves unknown consent unset (%s)', async stored => {
+  it.each([true, false, null, undefined, 'true'])('legacy consent stays unconfirmed and is omitted on unrelated intake (%s)', async stored => {
     const user = userEvent.setup()
     const customer = { id: 'existing', name: 'Synthetic Existing', sms_consent: stored }
     api.get.mockImplementation(async url => ({ data: url === '/customers' ? { customers: [customer] } : { customer, vehicles: [] } }))
@@ -179,13 +194,84 @@ describe('AddROModal feedback handling', () => {
     await screen.findByRole('option', { name: /Synthetic Existing/ })
     await user.selectOptions(screen.getByRole('combobox'), 'existing')
     await waitFor(() => expect(api.get).toHaveBeenCalledWith('/customers/existing/autofill'))
-    expect(smsCheckbox().checked).toBe(stored === true)
+    expect(smsCheckbox()).not.toBeChecked()
     await saveManualRO(user)
     await waitFor(() => expect(onSaved).toHaveBeenCalled())
     expect(api.post).not.toHaveBeenCalledWith('/customers', expect.anything())
-    expect(api.post).toHaveBeenCalledWith('/ros', expect.objectContaining({
-      sms_consent: typeof stored === 'boolean' ? stored : null,
-    }))
+    const payload = api.post.mock.calls.find(([url]) => url === '/ros')[1]
+    expect(Object.keys(payload).filter(key => key.startsWith('sms_'))).toEqual([])
+    expect(payload).not.toHaveProperty('email_consent')
+    expect(payload).not.toHaveProperty('preferred_contact_method')
+  })
+
+  it.each(['unchanged', 'revoke', 'method'])('confirmed intake: %s sends only intentional evidence', async action => {
+    const user = userEvent.setup()
+    const customer = { id: 'existing', name: 'Confirmed', sms_consent: true, sms_consent_at: '2026-10-01T12:00:00Z', sms_consent_method: 'verbal', sms_consent_by: 'staff-1' }
+    api.get.mockImplementation(async url => ({ data: url === '/customers' ? { customers: [customer] } : { customer, vehicles: [] } }))
+    mockSaves()
+    const onSaved = vi.fn()
+    render(<MemoryRouter><AddROModal onClose={vi.fn()} onSaved={onSaved} /></MemoryRouter>)
+    await screen.findByRole('option', { name: /Confirmed/ })
+    await user.selectOptions(screen.getByRole('combobox'), 'existing')
+    await waitFor(() => expect(api.get).toHaveBeenCalledWith('/customers/existing/autofill'))
+    expect(smsCheckbox()).toBeChecked()
+    if (action === 'revoke') await user.click(smsCheckbox())
+    if (action === 'method') await user.selectOptions(screen.getByLabelText('SMS consent method'), 'written')
+    await saveManualRO(user)
+    await waitFor(() => expect(onSaved).toHaveBeenCalled())
+    const payload = api.post.mock.calls.find(([url]) => url === '/ros')[1]
+    expect(Object.fromEntries(Object.entries(payload).filter(([key]) => key.startsWith('sms_')))).toEqual(
+      action === 'unchanged' ? {} : action === 'revoke' ? { sms_consent: false } : { sms_consent: true, sms_consent_method: 'written' })
+  })
+
+  it('OCR resets prior attestation and ignores evidence in extracted fields', async () => {
+    const user = userEvent.setup(); mockSaves()
+    const onSaved = vi.fn()
+    render(<MemoryRouter><AddROModal onClose={vi.fn()} onSaved={onSaved} /></MemoryRouter>)
+    await user.click(screen.getByRole('button', { name: 'New' }))
+    await user.click(smsCheckbox())
+    await user.selectOptions(screen.getByLabelText('SMS consent method'), 'verbal')
+    await user.click(screen.getByRole('tab', { name: 'Appraisal Quick Intake' }))
+    await user.click(screen.getByRole('button', { name: 'Apply OCR fixture' }))
+    expect(await screen.findByDisplayValue('OCR Customer')).toBeInTheDocument()
+    expect(smsCheckbox()).not.toBeChecked()
+    expect(screen.queryByLabelText('SMS consent method')).not.toBeInTheDocument()
+    await user.click(smsCheckbox())
+    expect(screen.getByLabelText('SMS consent method')).toHaveValue('')
+    await user.click(smsCheckbox())
+    await user.click(screen.getByRole('button', { name: /Next/i }))
+    await user.click(screen.getByRole('button', { name: /Next/i }))
+    await user.click(screen.getByRole('button', { name: 'Add Repair Order' }))
+    await waitFor(() => expect(onSaved).toHaveBeenCalled())
+    for (const [url, payload] of api.post.mock.calls.filter(([url]) => ['/customers', '/ros'].includes(url))) {
+      expect(Object.keys(payload).filter(key => key.startsWith('sms_')), url).toEqual([])
+    }
+  })
+
+  it('switching customers drops the prior method and preserves email preferences on unrelated save', async () => {
+    const user = userEvent.setup(); mockSaves()
+    const rows = [{ id: 'one', name: 'One', sms_consent: false }, { id: 'two', name: 'Two', sms_consent: true, email_consent: true, email: 'two@example.com' }]
+    api.get.mockImplementation(async url => ({ data: url === '/customers' ? { customers: rows } : { customer: url.includes('/two/') ? rows[1] : rows[0], vehicles: [] } }))
+    const onSaved = vi.fn()
+    render(<MemoryRouter><AddROModal onClose={vi.fn()} onSaved={onSaved} /></MemoryRouter>)
+    await screen.findByRole('option', { name: /One/ })
+    const select = screen.getByRole('combobox')
+    await user.selectOptions(select, 'one')
+    await user.click(smsCheckbox())
+    await user.selectOptions(screen.getByLabelText('SMS consent method'), 'written')
+    await user.selectOptions(select, 'two')
+    await waitFor(() => expect(screen.getByLabelText(/Customer consents to receive email/)).toBeChecked())
+    expect(smsCheckbox()).not.toBeChecked()
+    await user.click(smsCheckbox())
+    expect(screen.getByLabelText('SMS consent method')).toHaveValue('')
+    await user.click(smsCheckbox())
+    await saveManualRO(user)
+    await waitFor(() => expect(onSaved).toHaveBeenCalled())
+    const payload = api.post.mock.calls.find(([url]) => url === '/ros')[1]
+    expect(payload.customer_id).toBe('two')
+    expect(payload).not.toHaveProperty('sms_consent')
+    expect(payload).not.toHaveProperty('email_consent')
+    expect(payload).not.toHaveProperty('preferred_contact_method')
   })
 
   it('re-centers the focused field after the iPad landscape keyboard changes the visual viewport', () => {

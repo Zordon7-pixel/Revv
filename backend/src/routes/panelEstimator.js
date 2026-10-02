@@ -53,7 +53,12 @@ function createPanelEstimatorRouter({ database, authenticate } = {}) {
     if (body.scenario && Object.hasOwn(body.scenario, 'carrier_approved')) n.invalid();
     return n.publicSnapshot(body);
   }
-  const authorRoute = [noStore, authenticate, author];
+  // Resolve once per process/router startup. Environment changes require restart.
+  const enabled = !['false', '0', 'off'].includes(String(process.env.PANEL_ESTIMATOR_ENABLED ?? '').trim().toLowerCase());
+  const requireEnabled = (req, res, next) => enabled ? next()
+    : res.status(503).json({ error: 'PANEL_ESTIMATOR_DISABLED', code: 'PANEL_ESTIMATOR_DISABLED' });
+  router.get('/panel-estimator/availability', noStore, authenticate, (req, res) => res.json({ enabled }));
+  const authorRoute = [noStore, authenticate, requireEnabled, author];
   const privateRoute = [...authorRoute, privateAccess];
   router.get('/panel-presets', ...authorRoute, endpoint(async (req, res) => {
     res.json({ presets: await presets.list(actor(req)) });
