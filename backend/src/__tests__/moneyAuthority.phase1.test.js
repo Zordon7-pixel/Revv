@@ -3,6 +3,8 @@ const { Readable, Writable } = require('node:stream');
 const path = require('node:path');
 const test = require('node:test');
 const express = require('express');
+// Preserve the real pure decimal helper used transitively by panel approvals.
+const { exactMoney } = require('../services/roMoney');
 
 function installMock(relativePath, exportsValue) {
   const resolved = require.resolve(relativePath);
@@ -112,6 +114,7 @@ function installRosMocks({ paymentStatus = 'partial' } = {}) {
     requireTechnician: (_req, _res, next) => next(),
   });
   installMock('../services/roMoney', {
+    exactMoney,
     getRoMoneySummary: async () => ({ lineCount: 1, totalCents: 10000 }),
     isPaidStatus: (status) => String(status || '').toLowerCase() === 'paid',
   });
@@ -188,6 +191,7 @@ function installPaymentsMocks({ paidCents = 0, owedCents = 10000 } = {}) {
     }),
   });
   installMock('../services/roMoney', {
+    exactMoney,
     getRoMoneySummary: async () => ({ lineCount: 1, totalCents: owedCents }),
     getPaidCents: async () => paidCents,
     reconcilePaymentStatus: ({ paidCents: paid, owedCents: owed }) => (paid >= owed ? 'paid' : paid > 0 ? 'partial' : 'unpaid'),
