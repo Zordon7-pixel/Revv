@@ -92,6 +92,7 @@ test('L1 real PostgreSQL and mounted production lifecycle/payment handlers', { t
       CREATE TABLE notifications(id TEXT PRIMARY KEY, shop_id TEXT, user_id TEXT, type TEXT, title TEXT,
         body TEXT, message TEXT, ro_id TEXT, read BOOLEAN)`);
     await ensurePanelEstimator(raw);
+    await require('../src/db/paymentReservations').up(raw);
     const observed = (client, sql, params) => {
       const task = (async () => {
         if (hook) await hook(sql, params, 'before');
@@ -127,10 +128,11 @@ test('L1 real PostgreSQL and mounted production lifecycle/payment handlers', { t
       },
       constructWebhookEvent: (body, signature) => { assert.equal(signature, 'synthetic-signature'); return body; },
       getStripeClient: () => ({ checkout: { sessions: { create: async body => {
-        providerCalls.push({ checkout: body }); return { url: 'https://example.invalid/checkout', expires_at: 2000000000 };
+        providerCalls.push({ checkout: body }); return { id: `cs_test_${randomUUID()}`, url: 'https://example.invalid/checkout', expires_at: 2000000000 };
       } } } }),
     });
     // Real financial summaries, billing sibling, auth, role gates and all route SQL.
+    fresh('../src/services/roMoney'); fresh('../src/services/paymentReservations');
     fresh('../src/services/customerBilling'); fresh('../src/services/notifications'); fresh('../src/services/ownerActivity');
     process.env.JWT_SECRET = 'synthetic-panel-lifecycle-only';
     fresh('../src/middleware/auth');
@@ -190,7 +192,6 @@ test('L1 real PostgreSQL and mounted production lifecycle/payment handlers', { t
     const children = async scope => {
       await raw.query("INSERT INTO job_status_log(id,ro_id,note) VALUES ($1,$2,'Retain history')", [randomUUID(), scope.roId]);
       await raw.query("INSERT INTO ro_photos VALUES ($1,$2,'synthetic-photo')", [randomUUID(), scope.roId]);
-      await raw.query("INSERT INTO ro_payments(id,shop_id,ro_id,amount_cents,status) VALUES ($1,$2,$3,100,'paid')", [randomUUID(), scope.shopId, scope.roId]);
     };
 
     await t.test('DELETE preserves draft and accepted history byte-for-byte, and isolates tenants/auth', async () => {
@@ -226,7 +227,7 @@ test('L1 real PostgreSQL and mounted production lifecycle/payment handlers', { t
     });
 
     await t.test('failure after first dependent DELETE restores every row; paid guards preserve every row', async () => {
-      const dependentTables = ['job_status_log', 'ro_payments', 'ro_photos', 'estimate_line_items', 'parts_orders', 'portal_tokens'];
+      const dependentTables = ['job_status_log', 'ro_payments', 'ro_payment_attempts', 'ro_photos', 'estimate_line_items', 'parts_orders', 'portal_tokens'];
       const seed = async scope => {
         await children(scope);
         await raw.query("INSERT INTO estimate_line_items(id,ro_id,shop_id,type,description,unit_price) VALUES ($1,$2,$3,'parts','Synthetic',100)", [randomUUID(),scope.roId,scope.shopId]);
@@ -240,7 +241,7 @@ test('L1 real PostgreSQL and mounted production lifecycle/payment handlers', { t
       const scope = await newScope(), foreign = await newScope(otherShop);
       await seed(scope); await seed(foreign);
       const before = await snapshot(scope), foreignBefore = await snapshot(foreign);
-      // ro_payments is second: prove the first DELETE actually ran before raising.
+      // Fail a later nonfinancial child after the first DELETE actually ran.
       await raw.query(`CREATE FUNCTION reject_second_delete() RETURNS trigger LANGUAGE plpgsql AS $$
         BEGIN
           IF EXISTS (SELECT 1 FROM job_status_log WHERE ro_id=OLD.ro_id) THEN
@@ -248,7 +249,7 @@ test('L1 real PostgreSQL and mounted production lifecycle/payment handlers', { t
           END IF;
           RAISE EXCEPTION 'TEST_AFTER_FIRST_DELETE';
         END $$;
-        CREATE TRIGGER phase4_failure BEFORE DELETE ON ro_payments FOR EACH ROW EXECUTE FUNCTION reject_second_delete()`);
+        CREATE TRIGGER phase4_failure BEFORE DELETE ON portal_tokens FOR EACH ROW EXECUTE FUNCTION reject_second_delete()`);
       const errors = [];
       const originalQuery = raw.query.bind(raw);
       // Observe completion of the first real DELETE through the transaction adapter.
@@ -258,22 +259,26 @@ test('L1 real PostgreSQL and mounted production lifecycle/payment handlers', { t
         assert.deepEqual(errors, ['first-delete-completed']);
         assert.deepEqual(await snapshot(scope), before);
         assert.deepEqual(await snapshot(foreign), foreignBefore);
-      } finally { hook = null; await originalQuery('DROP TRIGGER phase4_failure ON ro_payments'); }
+      } finally { hook = null; await originalQuery('DROP TRIGGER phase4_failure ON portal_tokens'); }
       assert.equal((await request(roPath(scope), 'DELETE')).status, 200);
       assert.equal(await ro(scope), undefined);
       for (const table of dependentTables) assert.equal((await raw.query(`SELECT 1 FROM ${table} WHERE ro_id=$1`, [scope.roId])).rowCount, 0);
       assert.deepEqual(await snapshot(foreign), foreignBefore);
       for (const role of ['technician','employee','staff','tech','owner','admin','assistant','superadmin']) {
-        for (const fact of ['ledger','paid','partial','received','legacy','unpaid']) {
+        for (const fact of ['ledger','zeroSuccess','failed','reserved','paid','partial','received','legacy','unpaid']) {
           const item = await newScope(); await seed(item);
-          await raw.query("UPDATE ro_payments SET status=$1 WHERE ro_id=$2 AND shop_id=$3", [fact === 'ledger' ? 'succeeded' : 'failed',item.roId,item.shopId]);
+          if (['ledger','zeroSuccess','failed'].includes(fact)) await raw.query(
+            'INSERT INTO ro_payments(id,shop_id,ro_id,amount_cents,status) VALUES ($1,$2,$3,$4,$5)',
+            [randomUUID(),item.shopId,item.roId,fact==='zeroSuccess'?0:100,fact==='failed'?'failed':'succeeded']);
+          if (fact==='reserved') await raw.query(`INSERT INTO ro_payment_attempts(id,shop_id,ro_id,idempotency_key,amount_cents,kind)
+            VALUES ($1,$2,$3,$4,100,'intent')`,[randomUUID(),item.shopId,item.roId,randomUUID()]);
           await raw.query('UPDATE repair_orders SET payment_status=$1,payment_received=$2,amount_paid_cents=$3 WHERE id=$4 AND shop_id=$5',
             [fact === 'paid' || fact === 'partial' ? fact : 'unpaid',fact === 'received' ? 1 : 0,fact === 'legacy' ? 1 : 0,item.roId,item.shopId]);
           const prior = await snapshot(item);
-          const allowed = ['owner','admin','assistant','superadmin'].includes(role) || (fact === 'unpaid' && role !== 'tech');
+          const allowed = fact === 'unpaid' && role !== 'tech';
           assert.equal((await request(roPath(item),'DELETE',undefined,otherShop,role)).status, role === 'tech' ? 403 : 404);
           assert.deepEqual(await snapshot(item), prior);
-          assert.equal((await request(roPath(item),'DELETE',undefined,shopId,role)).status, allowed ? 200 : 403, `${role}/${fact}`);
+          assert.equal((await request(roPath(item),'DELETE',undefined,shopId,role)).status, role === 'tech' ? 403 : allowed ? 200 : 409, `${role}/${fact}`);
           if (!allowed) assert.deepEqual(await snapshot(item), prior);
           else { assert.equal(await ro(item), undefined); for (const table of dependentTables) assert.equal((await raw.query(`SELECT 1 FROM ${table} WHERE ro_id=$1`, [item.roId])).rowCount,0); }
         }
@@ -285,7 +290,7 @@ test('L1 real PostgreSQL and mounted production lifecycle/payment handlers', { t
         const scope = await newScope(); await children(scope);
         const locked = deferred(), release = deferred(), waiting = deferred(); let held = false;
         hook = async (sql, params, phase) => {
-          if (!/SELECT id.*FROM repair_orders.*FOR UPDATE/s.test(sql) || !params.includes(scope.roId)) return;
+          if (!/SELECT (?:id|\*).*FROM repair_orders.*FOR UPDATE/s.test(sql) || !params.includes(scope.roId)) return;
           if (phase === 'after' && !held) { held = true; locked.resolve(); await release.promise; }
           else if (phase === 'before' && held) waiting.resolve();
         };
@@ -358,7 +363,7 @@ test('L1 real PostgreSQL and mounted production lifecycle/payment handlers', { t
         assert.equal(result.body.amountOwedCents, index ? total - 1000 : total); assert.equal(result.body.clientSecret, 'synthetic-client-secret');
         const intent = providerCalls.find(call => call.id === result.body.paymentIntentId);
         assert.equal(intent.metadata.amountOwedCents, String(index ? total - 1000 : total));
-        assert.equal((await ro(scope)).amount_owed_cents, index ? total - 1000 : total);
+        assert.equal((await ro(scope)).amount_owed_cents, total); // Reservation does not rewrite quote gross.
         const event = { type: 'payment_intent.succeeded', data: { object: { ...intent, amount_received: amount } } };
         for (let replay = 0; replay < 2; replay++) {
           const webhook = await request('/api/payments/webhook', 'POST', event, shopId, null);
@@ -391,12 +396,20 @@ test('L1 real PostgreSQL and mounted production lifecycle/payment handlers', { t
       assert.equal(providerCalls.at(-1).checkout.line_items[0].price_data.unit_amount, selected.quote.totals.total_cents);
     });
 
-    await t.test('both intent aliases cap remaining selected money and ignore failed/pending/foreign payments', async () => {
+    await t.test('both intent aliases cap selected money, retain failed/pending capacity and isolate foreign payments', async () => {
       for (const alias of ['intent','create-intent']) {
         const scope = await newScope(), revision = await commit(scope);
         const total = revision.quote.totals.total_cents, before = await evidence(scope);
-        for (const [status,amount,tenant] of [['succeeded',1000,shopId],['paid',500,shopId],['failed',total,shopId],['pending',total,shopId],['succeeded',total,otherShop]]) {
+        for (const [status,amount,tenant] of [['succeeded',1000,shopId],['paid',500,shopId],['failed',total,otherShop],['pending',total,otherShop],['succeeded',total,otherShop]]) {
           await raw.query('INSERT INTO ro_payments(id,shop_id,ro_id,amount_cents,status) VALUES ($1,$2,$3,$4,$5)',[randomUUID(),tenant,scope.roId,amount,status]);
+        }
+        for (const status of ['failed','pending']) {
+          const held = await newScope(), quote = await commit(held);
+          await raw.query('INSERT INTO ro_payments(id,shop_id,ro_id,amount_cents,status) VALUES ($1,$2,$3,$4,$5)',
+            [randomUUID(),shopId,held.roId,quote.quote.totals.total_cents,status]);
+          const count = providerCalls.length;
+          assert.equal((await request(`/api/payments/${alias}`,'POST',{ro_id:held.roId})).status,409);
+          assert.equal(providerCalls.length,count);
         }
         const body = { [alias === 'intent' ? 'ro_id' : 'roId']:scope.roId };
         const count = providerCalls.length;
@@ -409,7 +422,7 @@ test('L1 real PostgreSQL and mounted production lifecycle/payment handlers', { t
         assert.equal(result.status,200,JSON.stringify(result.body));
         assert.equal(result.body.amountCents,total-1500);
         assert.equal(result.body.amountOwedCents,total-1500);
-        assert.equal((await ro(scope)).amount_owed_cents,total-1500);
+        assert.equal((await ro(scope)).amount_owed_cents,total);
         assert.equal(providerCalls.at(-1).metadata.amountOwedCents,String(total-1500));
         assert.equal(await evidence(scope),before);
         // Arbitrary amounts and financial rewrites remain rejected by the real guard.

@@ -220,7 +220,7 @@ function createAgreementsRouter(database = pool) {
       const ro = (await client.query(`SELECT ro.ro_number,c.name AS customer_name,c.email AS customer_email,s.name AS shop_name
         FROM repair_orders ro JOIN shops s ON s.id=ro.shop_id
         LEFT JOIN customers c ON c.id=ro.customer_id AND c.shop_id=ro.shop_id
-        WHERE ro.id::text=$1 AND ro.shop_id::text=$2`, [req.params.roId, req.user.shop_id])).rows[0];
+        WHERE ro.id::text=$1 AND ro.shop_id::text=$2 FOR UPDATE OF ro`, [req.params.roId, req.user.shop_id])).rows[0];
       if (!ro) throw inputError('Repair order not found.', 404);
       const template = (await client.query(`SELECT * FROM agreement_templates
         WHERE id::text=$1 AND shop_id=$2 AND archived=FALSE FOR SHARE`, [req.body.template_id, req.user.shop_id])).rows[0];

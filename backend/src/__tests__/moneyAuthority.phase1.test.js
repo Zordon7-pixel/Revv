@@ -79,6 +79,7 @@ function installRosMocks({ paymentStatus = 'partial' } = {}) {
     `middleware${path.sep}auth.js`,
     `middleware${path.sep}roles.js`,
     `services${path.sep}roMoney.js`,
+    `services${path.sep}paymentReservations.js`,
   ]);
 
   const calls = { dbRun: [] };
@@ -147,24 +148,24 @@ function installPaymentsMocks({ paidCents = 0, owedCents = 10000 } = {}) {
     `middleware${path.sep}roles.js`,
     `services${path.sep}stripe.js`,
     `services${path.sep}roMoney.js`,
+    `services${path.sep}paymentReservations.js`,
   ]);
 
   const state = { repairOrderUpdate: null, createIntentCalled: false };
+  const client = { release() {}, async query(sql, params = []) {
+    state.queries.push(String(sql));
+    if (/SELECT \* FROM repair_orders/.test(sql)) {
+      assert.match(sql, /shop_id = \$2 FOR UPDATE/);
+      return { rows: [{ id: params[0], shop_id: params[1], ro_number: 'RO-1', customer_id: null }] };
+    }
+    if (/UPDATE repair_orders/.test(sql)) state.repairOrderUpdate = { sql: String(sql), params };
+    return { rows: [], rowCount: 1 };
+  } };
+  state.queries = [];
   installMock('../db', {
-    async dbGet(sql, params = []) {
-      const text = String(sql);
-      if (/FROM repair_orders WHERE id = \$1 AND shop_id = \$2/.test(text)) {
-        return { id: params[0], shop_id: params[1], ro_number: 'RO-1', customer_id: null };
-      }
-      if (/SELECT id FROM ro_payments WHERE stripe_payment_intent_id/.test(text)) return { id: 'payment-1' };
-      if (/SELECT ro_number FROM repair_orders/.test(text)) return { ro_number: 'RO-1' };
-      return null;
-    },
-    async dbAll() { return []; },
-    async dbRun(sql, params = []) {
-      if (/UPDATE repair_orders/.test(String(sql))) state.repairOrderUpdate = { sql: String(sql), params };
-      return { rowCount: 1 };
-    },
+    pool: { connect: async () => client, query: () => { throw Error('Money escaped transaction'); } },
+    async dbGet() { return null; }, async dbAll() { return []; },
+    async dbRun() { throw Error('Payment write escaped transaction'); },
   });
   installMock('../middleware/auth', (req, _res, next) => {
     req.user = { id: 'user-1', role: 'admin', shop_id: 'shop-1' };
@@ -192,8 +193,11 @@ function installPaymentsMocks({ paidCents = 0, owedCents = 10000 } = {}) {
   });
   installMock('../services/roMoney', {
     exactMoney,
-    getRoMoneySummary: async () => ({ lineCount: 1, totalCents: owedCents }),
-    getPaidCents: async () => paidCents,
+    getRoMoneySummary: async (roId, shopId, usedClient) => {
+      assert.equal(usedClient, client); return { lineCount: 1, totalCents: owedCents };
+    },
+    // No prior ledger: the webhook adds this event's amount exactly once.
+    getPaidCents: async (roId, shopId, usedClient) => { assert.equal(usedClient, client); return 0; },
     reconcilePaymentStatus: ({ paidCents: paid, owedCents: owed }) => (paid >= owed ? 'paid' : paid > 0 ? 'partial' : 'unpaid'),
   });
   installMock('../services/notifications', { createNotification: async () => ({}) });
@@ -265,8 +269,10 @@ test('payment webhook reconciles partial and paid statuses from cents', async ()
   assert.equal(res.status, 200);
   assert.equal(setup.state.repairOrderUpdate.params[0], 'partial');
   assert.equal(setup.state.repairOrderUpdate.params[2], 0);
-  assert.equal(setup.state.repairOrderUpdate.params[7], 5000);
-  assert.equal(setup.state.repairOrderUpdate.params[8], 10000);
+  assert.equal(setup.state.repairOrderUpdate.params[6], 5000);
+  assert.equal(setup.state.repairOrderUpdate.params[7], 10000);
+  assert.equal(setup.state.queries.at(-1), 'COMMIT');
+  assert.deepEqual(setup.state.repairOrderUpdate.params.slice(8), ['ro-1', 'shop-1']);
 
   setup = installPaymentsMocks({ paidCents: 10000, owedCents: 10000 });
   res = await inject(setup.app, {
@@ -278,6 +284,8 @@ test('payment webhook reconciles partial and paid statuses from cents', async ()
   assert.equal(res.status, 200);
   assert.equal(setup.state.repairOrderUpdate.params[0], 'paid');
   assert.equal(setup.state.repairOrderUpdate.params[2], 1);
+  assert.equal(setup.state.repairOrderUpdate.params[6], 10000);
   assert.equal(setup.state.repairOrderUpdate.params[7], 10000);
-  assert.equal(setup.state.repairOrderUpdate.params[8], 10000);
+  assert.equal(setup.state.queries.at(-1), 'COMMIT');
+  assert.deepEqual(setup.state.repairOrderUpdate.params.slice(8), ['ro-1', 'shop-1']);
 });

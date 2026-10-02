@@ -18,9 +18,9 @@ function load(file, mocks) {
   }, module, module.exports);
   return module.exports;
 }
-async function invoke(router, route, body, role = 'owner', shop = 'shop') {
+async function invoke(router, route, body, role = 'owner', shop = 'shop', roId = 'ro') {
   const layer = router.stack.find(l => l.route?.path === route && (route !== '/:id' || l.route.methods.delete));
-  const req = { body, params: { id: 'ro', roId: 'ro' }, headers: { 'stripe-signature': 'mock' }, user: { id:'user', shop_id:shop, role } };
+  const req = { body, params: { id: roId, roId }, headers: { 'stripe-signature': 'mock' }, user: { id:'user', shop_id:shop, role } };
   const res = { statusCode:200, status(n) { this.statusCode=n; return this; }, json(value) { this.body=value; return this; } };
   let index=0; const pending=[];
   const next = () => { const result=layer.route.stack[index++]?.handle(req,res,next); if (result?.then) pending.push(result); return result; };
@@ -85,7 +85,7 @@ function fixture({ total=10000, paid=2500, ro: overrides={}, ledger=[], attempts
   const wrap = fn => async (...args) => { assert.equal(committed,true,'reservation commits before provider call'); return fn(...args); };
   const f = consumers(db,money, { intent:wrap(provider.intent || (async()=>({id:'pi_mock',client_secret:'mock'}))),
     checkout:wrap(provider.checkout || (async()=>({id:'cs_mock',url:'https://mock.invalid'}))) });
-  return {...f,writes,queries,attempts};
+  return {...f,writes,queries,attempts,db,money};
 }
 for (const alias of ['/intent','/create-intent']) {
   for (const [label,amount,partial,expected] of [
@@ -125,18 +125,8 @@ for (const alias of ['/intent','/create-intent']) {
   });
 }
 
-function deletionFixture(fact) {
-  const queries=[];
-  const query=async (sql,params=[])=> {
-    queries.push({sql,params});
-    if (/FOR UPDATE/.test(sql)) { assert.match(sql,/shop_id = \$2/); return {rows:params[1]==='shop'?[{id:'ro',payment_status:fact==='paid'||fact==='partial'?fact:'unpaid',payment_received:fact==='received'?1:0,amount_paid_cents:fact==='legacy'?1:0}]:[]}; }
-    if (/to_regclass/.test(sql)) return {rows:[{relation:params[0]==='ro_panel_estimator_drafts'?(fact==='draft'?'draft':null):params[0]}]};
-    if (/SUM\(amount_cents\)/.test(sql)) { assert.match(sql,/shop_id = \$2/); assert.match(sql,/IN \('paid', 'succeeded'\)/); return {rows:[{paid_cents:fact==='ledger'?1:0}]}; }
-    if (/SELECT 1 FROM ro_panel/.test(sql)) return {rows:[{}],rowCount:1};
-    if (/DELETE/.test(sql)) assert.match(sql,/shop_id = \$2/);
-    return {rows:[],rowCount:1};
-  };
-  const mocks={ '../db':{pool:{connect:async()=>({query,release:()=>{}})}},
+function rosRouter(db, reservations = {}) {
+  const mocks={ '../db':db, '../services/paymentReservations':reservations,
     '../middleware/auth':(req,res,next)=>next(), '../middleware/roles':roles,
     '../middleware/roLimitGuard':(req,res,next)=>next(),
     'express-rate-limit':()=> (req,res,next)=>next(),
@@ -144,23 +134,84 @@ function deletionFixture(fact) {
     '../services/panelEstimatorApproval':{panelPublicHandler:()=> (req,res,next)=>next(), publicRequestError:()=> (req,res,next)=>next(), noStore:(req,res,next)=>next()},
   };
   for (const name of ['customerConsent','panelEstimatorEconomics','profit','roMoney','sms','mailer','emailTemplates','ownerActivity','notifications','deliveryFees','customerBilling','quickbooks','customerOptInConfirmation']) mocks[`../services/${name}`]={};
-  return {router:load('routes/ros.js',mocks),queries};
+  mocks['../services/panelEstimatorEconomics']={selectedEconomics:async()=>new Map(),redactSelectedRO:r=>r};
+  mocks['../services/profit']={calculateProfit:()=>({})};
+  mocks['../services/customerBilling']={sendClosedPaidInvoiceEmail:async()=>{}};
+  return load('routes/ros.js',mocks);
 }
-for (const role of ['tech','technician','employee','staff','owner','admin','assistant','superadmin','customer']) {
-  for (const fact of ['ledger','paid','partial','received','legacy','unpaid','draft']) test(`DELETE ${role}/${fact}`,async()=> {
+const deletionStates = {
+  unpaid:{}, paid:{payment_status:'paid'}, succeeded:{payment_status:'succeeded'},
+  partial:{payment_status:'partial'}, pending:{payment_status:'pending'}, received:{payment_received:1},
+  receivedBoolean:{payment_received:true}, legacy:{amount_paid_cents:1}, paidAmount:{paid_amount:1},
+  paidAt:{paid_at:'2026-01-01'}, receivedAt:{payment_received_at:'2026-01-01'}, pointer:{stripe_payment_intent_id:'pi_old'},
+  approvedAt:{estimate_approved_at:'2026-01-01'}, approvedBy:{estimate_approved_by:'actor'},
+  approvedStatus:{estimate_status:'approved'}, signedStatus:{status:'signed'}, insurerApprovedZero:{insurance_approved_amount:0},
+  ledger:{}, zeroSuccess:{}, failedLedger:{}, reserved:{}, unknown:{}, settled:{}, approvedLink:{},
+  panelApproved:{}, carrierApproval:{}, claimPending:{}, signedAgreement:{}, staleSignature:{}, pendingAgreement:{}, voidedAgreement:{}, draft:{},
+};
+function deletionFixture(fact) {
+  const queries=[];
+  const evidenceTable = ['ledger','zeroSuccess','failedLedger'].includes(fact)?'ro_payments':
+    ['reserved','unknown','settled'].includes(fact)?'ro_payment_attempts':fact==='approvedLink'?'estimate_approval_links':
+    fact==='panelApproved'?'ro_panel_estimator_approval_events':['carrierApproval','claimPending'].includes(fact)?'claim_links':
+    ['signedAgreement','staleSignature','pendingAgreement','voidedAgreement'].includes(fact)?'agreement_requests':null;
+  const query=async (sql,params=[])=> {
+    queries.push({sql,params});
+    if (/FOR UPDATE/.test(sql)) { assert.match(sql,/shop_id = \$2/); return {rows:params[1]==='shop'?[{id:'ro',shop_id:'shop',payment_status:'unpaid',...deletionStates[fact]}]:[]}; }
+    if (/to_regclass/.test(sql)) return {rows:[{relation:params[0]==='ro_panel_estimator_drafts'?(fact==='draft'?'draft':null):params[0]}]};
+    if (/SELECT 1 FROM/.test(sql)) {
+      assert.match(sql,/shop_id = \$2/); assert.deepEqual(params,['ro','shop']);
+      const found = sql.includes(`FROM ${evidenceTable}\n`) || (fact==='draft' && sql.includes('FROM ro_panel_estimator_drafts'));
+      return {rows:found?[{}]:[],rowCount:found?1:0};
+    }
+    if (/DELETE/.test(sql)) { assert.match(sql,/shop_id(?:::text)? = \$2/); assert.doesNotMatch(sql,/DELETE FROM ro_payment/); }
+    return {rows:[],rowCount:1};
+  };
+  return {router:rosRouter({pool:{connect:async()=>({query,release:()=>{}})}}),queries};
+}
+for (const role of ['tech','technician','employee','staff','owner','admin','assistant','superadmin','customer','phantom']) {
+  for (const fact of Object.keys(deletionStates)) test(`DELETE ${role}/${fact}`,async()=> {
     const f=deletionFixture(fact), result=await invoke(f.router,'/:id',{},role);
     const admitted=roles.getRoleRank(role)>=roles.ROLE_RANK.technician;
-    const blockedPaid=roles.getRoleRank(role)<roles.ROLE_RANK.admin && !['unpaid','draft'].includes(fact);
-    const expected=!admitted||blockedPaid?403:fact==='draft'?409:200;
-    assert.equal(result.statusCode,expected);
+    const expected=!admitted?403:fact==='unpaid'?200:409;
+    assert.equal(result.statusCode,expected,JSON.stringify(result.body));
     const deletes=f.queries.filter(q=>/^DELETE/.test(q.sql));
     if (expected!==200) { assert.equal(deletes.length,0); if(admitted) assert.equal(f.queries.at(-1).sql,'ROLLBACK'); }
-    else { assert.equal(deletes.length,13); assert.equal(f.queries[0].sql,'BEGIN ISOLATION LEVEL READ COMMITTED'); assert.equal(f.queries.at(-1).sql,'COMMIT'); }
+    else { assert.equal(deletes.length,12); assert.equal(f.queries[0].sql,'BEGIN ISOLATION LEVEL READ COMMITTED'); assert.equal(f.queries.at(-1).sql,'COMMIT'); }
   });
 }
 test('DELETE cross-shop rolls back without writes',async()=> {
   const f=deletionFixture('ledger'); assert.equal((await invoke(f.router,'/:id',{},'technician','other')).statusCode,404);
   assert.equal(f.queries.at(-1).sql,'ROLLBACK'); assert.equal(f.queries.filter(q=>/^DELETE/.test(q.sql)).length,0);
+});
+for (const [label,config,expected] of [
+  ['partial ledger',{},200], ['unpaid',{paid:0},200], ['already paid',{ro:{payment_status:'paid'}},400],
+  ['legacy floor',{paid:0,ro:{amount_paid_cents:2000}},200],
+  ['reserved',{attempts:[{amount_cents:100,status:'reserved'}]},409],
+  ['unknown zero reservation',{attempts:[{amount_cents:0,status:'unknown'}]},409],
+  ['retryable',{attempts:[{amount_cents:100,status:'retryable'}]},409],
+  ['failed legacy zero',{ledger:[{amount_cents:0,status:'failed'}]},409],
+  ['dangling pointer',{ro:{stripe_payment_intent_id:'pi_missing'}},409],
+  ['unexplained pending',{ro:{payment_status:'pending'}},409],
+  ['invalid balance',{total:2000},400],
+  ['settled',{attempts:[{amount_cents:2500,status:'settled',stripe_payment_intent_id:'pi_paid'}],
+    ledger:[{amount_cents:2500,status:'succeeded',stripe_payment_intent_id:'pi_paid'}]},200],
+]) test(`manual mark-paid: ${label}`,async()=> {
+  const f=fixture(config), result=await invoke(rosRouter(f.db,f.reservations),'/:id/mark-paid',{});
+  assert.equal(result.statusCode,expected,JSON.stringify(result.body)); assert.equal(f.calls.length,0);
+  if(expected===200) {
+    assert.equal(f.queries.at(-1),'COMMIT');
+    assert.equal(f.writes.find(w=>/UPDATE repair_orders/.test(w.sql)).params[3],10000);
+    assert.ok(f.writes.some(w=>/INSERT INTO job_status_log/.test(w.sql)));
+  } else {assert.equal(f.queries.at(-1),'ROLLBACK');assert.equal(f.writes.length,0);}
+});
+
+test('manual payment preserves tenant and role boundaries before any write',async()=> {
+  for(const [role,shop,status] of [['owner','other',404],['tech','shop',403],['phantom','shop',403],['customer','shop',403]]){
+    const f=fixture(),result=await invoke(rosRouter(f.db,f.reservations),'/:id/mark-paid',{},role,shop);
+    assert.equal(result.statusCode,status);assert.equal(f.writes.length,0);
+    assert.equal(f.queries.length>0,role==='owner');
+  }
 });
 
 for (const [label, config, expected] of [
@@ -267,9 +318,14 @@ test('real PostgreSQL payment reservations, parallel creation and settlement (mo
         await raw.query(`CREATE TABLE shops(id ${identityType} PRIMARY KEY,tax_rate NUMERIC DEFAULT 0);
           CREATE TABLE repair_orders(id ${identityType} PRIMARY KEY,shop_id ${identityType} NOT NULL,ro_number TEXT,
             payment_status TEXT DEFAULT 'unpaid',payment_received INTEGER DEFAULT 0,stripe_payment_intent_id TEXT,
+            status TEXT DEFAULT 'estimate',estimate_approved_at TEXT,estimate_approved_by TEXT,estimate_status TEXT,insurance_approved_amount NUMERIC,
             payment_received_at TEXT,payment_method TEXT,paid_at ${identityType==='UUID'?'TIMESTAMPTZ':'TEXT'},paid_amount INTEGER,updated_at TIMESTAMPTZ DEFAULT NOW());
           CREATE TABLE estimate_line_items(id TEXT PRIMARY KEY,ro_id ${identityType},shop_id ${identityType},type TEXT,
-            total NUMERIC,taxable BOOLEAN DEFAULT FALSE)`);
+            total NUMERIC,taxable BOOLEAN DEFAULT FALSE);
+          CREATE TABLE job_status_log(id TEXT PRIMARY KEY,ro_id ${identityType},from_status TEXT,to_status TEXT,changed_by TEXT,note TEXT);
+          CREATE TABLE estimate_approval_links(id TEXT PRIMARY KEY,ro_id TEXT,shop_id TEXT,responded_at TEXT,decline_reason TEXT);
+          CREATE TABLE claim_links(id TEXT PRIMARY KEY,ro_id TEXT,shop_id TEXT,approved_labor NUMERIC,approved_parts NUMERIC,submitted_at TEXT);
+          CREATE TABLE agreement_requests(id TEXT PRIMARY KEY,ro_id TEXT,shop_id TEXT,status TEXT,customer_signature JSONB,shop_signature JSONB)`);
         if(identityType==='UUID') await raw.query(`CREATE TABLE ro_payments(id UUID PRIMARY KEY,shop_id UUID NOT NULL,
           ro_id UUID NOT NULL,stripe_payment_intent_id TEXT UNIQUE,amount_cents INTEGER NOT NULL,currency TEXT DEFAULT 'usd',
           status TEXT DEFAULT 'pending',payment_method TEXT,receipt_email TEXT,paid_at TEXT,failure_message TEXT,
@@ -282,8 +338,10 @@ test('real PostgreSQL payment reservations, parallel creation and settlement (mo
         const adapter={connect:async()=> {
           const c=await raw.connect();
           return {release:()=>c.release(),query:async(sql,args)=> {
-            if(hook) await hook(sql,args);
-            return c.query(sql,args);
+            if(hook) await hook(sql,args,'before');
+            const result=await c.query(sql,args);
+            if(hook) await hook(sql,args,'after');
+            return result;
           }};
         },query:()=>{throw Error('money query escaped locked client');}};
         const db={pool:adapter,dbGet:async(sql,args)=>(await raw.query(sql,args)).rows[0],
@@ -308,6 +366,111 @@ test('real PostgreSQL payment reservations, parallel creation and settlement (mo
           assert.ok(open+paid<=10000,`open ${open} + successful ${paid} exceeds total`);
           return {attempts,ledger,paid,open};
         };
+        const lifecycleDb={...db,dbGet:async(sql,args)=>
+          /row_to_json|quickbooks_sync_enabled/.test(sql)?null:db.dbGet(sql,args)};
+        for (const operation of ['reserve','settle','settleReserved','manual']) for (const deleteFirst of [true,false]) {
+          await t.test(`DELETE vs ${operation}, delete first=${deleteFirst}`,async()=> {
+            const ro=await makeRo(),f=consumers(db,money),router=rosRouter(lifecycleDb,f.reservations);
+            const reservation=operation==='settleReserved'?await f.reservations.reservePayment({roId:ro,shopId:shop,kind:'intent'}):null;
+            const entered=barrier(),release=barrier(),waiting=barrier(); let held=false;
+            hook=async(sql,args,phase)=> {
+              if(!/SELECT \* FROM repair_orders.*FOR UPDATE/.test(sql)||!args.includes(ro))return;
+              if(phase==='after'&&!held){held=true;entered.resolve();await release.promise;}
+              else if(phase==='before'&&held)waiting.resolve();
+            };
+            const deletion=()=>invoke(router,'/:id',{},'owner',shop,ro);
+            const work=()=>operation==='reserve'?f.reservations.reservePayment({roId:ro,shopId:shop,kind:'intent'}):
+              ['settle','settleReserved'].includes(operation)?f.reservations.settlePaymentEvent(event(`pi_${ro}`,
+                {roId:ro,shopId:shop,...(reservation?{paymentAttemptId:reservation.id}:{})},10000)):
+              invoke(router,'/:id/mark-paid',{},'owner',shop,ro);
+            const first=deleteFirst?deletion():work();
+            // Fail promptly if a route exits before the lock rather than hanging the fixture.
+            await Promise.race([entered.promise,first.then(r=>{throw Error(`No parent lock: ${JSON.stringify(r)}`);})]);
+            const second=deleteFirst?work():deletion(),outcomes=Promise.allSettled([first,second]);
+            try {await waiting.promise;} finally {hook=null;release.resolve();}
+            const [a,b]=await outcomes;
+            if(operation==='settleReserved') {
+              assert.equal((deleteFirst?a:b).value.statusCode,409);
+              assert.equal((deleteFirst?b:a).status,'fulfilled');
+              const state=await invariant(ro);assert.equal(state.paid,10000);assert.equal(state.open,0);
+              assert.equal(state.attempts.length,1);assert.equal(state.ledger.length,1);
+              assert.equal((await raw.query('SELECT 1 FROM repair_orders WHERE id=$1',[ro])).rowCount,1);
+            } else if(deleteFirst){
+              assert.equal(a.value.statusCode,200);
+              if(operation==='manual')assert.equal(b.value.statusCode,404);
+              else {assert.equal(b.status,'rejected');assert.equal(b.reason.status,404);}
+              assert.equal((await raw.query('SELECT 1 FROM repair_orders WHERE id=$1',[ro])).rowCount,0);
+              const state=await invariant(ro);assert.equal(state.attempts.length,0);assert.equal(state.ledger.length,0);
+            } else {
+              assert.equal(a.status,'fulfilled');if(operation==='manual')assert.equal(a.value.statusCode,200);
+              assert.equal(b.value.statusCode,409);
+              assert.equal((await raw.query('SELECT 1 FROM repair_orders WHERE id=$1',[ro])).rowCount,1);
+              const state=await invariant(ro);
+              if(operation==='reserve')assert.equal(state.open,10000);
+              if(operation==='settle')assert.equal(state.paid,10000);
+            }
+          });
+        }
+        for (const manualFirst of [true,false]) await t.test(`manual vs reserve, manual first=${manualFirst}`,async()=> {
+          const ro=await makeRo(),f=consumers(db,money),router=rosRouter(lifecycleDb,f.reservations);
+          const entered=barrier(),release=barrier(),waiting=barrier();let held=false;
+          hook=async(sql,args,phase)=> {
+            if(!/SELECT \* FROM repair_orders.*FOR UPDATE/.test(sql)||!args.includes(ro))return;
+            if(phase==='after'&&!held){held=true;entered.resolve();await release.promise;}
+            else if(phase==='before'&&held)waiting.resolve();
+          };
+          const manual=()=>invoke(router,'/:id/mark-paid',{},'owner',shop,ro);
+          const reserve=()=>createIntent(f,ro);
+          const first=manualFirst?manual():reserve();
+          await Promise.race([entered.promise,first.then(r=>{throw Error(`No parent lock: ${JSON.stringify(r)}`);})]);
+          const second=manualFirst?reserve():manual(),outcomes=Promise.all([first,second]);
+          try {await waiting.promise;} finally {hook=null;release.resolve();}
+          const [a,b]=await outcomes;assert.equal(a.statusCode,200);assert.equal(b.statusCode,manualFirst?400:409);
+          const stored=(await raw.query('SELECT * FROM repair_orders WHERE id=$1',[ro])).rows[0];
+          assert.equal(stored.amount_paid_cents,manualFirst?10000:0);
+          assert.equal((await invariant(ro)).open,manualFirst?0:10000);
+        });
+        await t.test('manual log failure rolls back payment and existing event bytes',async()=> {
+          const ro=await makeRo(),f=consumers(db,money),router=rosRouter(lifecycleDb,f.reservations);
+          const before=(await raw.query('SELECT to_jsonb(r) AS value FROM repair_orders r WHERE id=$1',[ro])).rows[0];
+          await raw.query(`CREATE FUNCTION reject_manual_log() RETURNS trigger LANGUAGE plpgsql AS $$
+            BEGIN RAISE EXCEPTION 'TEST_MANUAL_LOG'; END $$;
+            CREATE TRIGGER reject_manual_log BEFORE INSERT ON job_status_log FOR EACH ROW EXECUTE FUNCTION reject_manual_log()`);
+          try {
+            assert.equal((await invoke(router,'/:id/mark-paid',{},'owner',shop,ro)).statusCode,500);
+            assert.deepEqual((await raw.query('SELECT to_jsonb(r) AS value FROM repair_orders r WHERE id=$1',[ro])).rows[0],before);
+            assert.equal((await raw.query('SELECT 1 FROM job_status_log WHERE ro_id=$1',[ro])).rowCount,0);
+          } finally {await raw.query('DROP TRIGGER reject_manual_log ON job_status_log');}
+        });
+        await t.test('agreement signatures and legacy approval evidence survive stale RO state',async()=> {
+          const f=consumers(db,money),router=rosRouter(lifecycleDb,f.reservations);
+          for(const field of ['customer_signature','shop_signature']) for(const status of ['pending','voided','signed']){
+            const ro=await makeRo();
+            await raw.query(`INSERT INTO agreement_requests(id,ro_id,shop_id,status,${field}) VALUES ($1,$2,$3,$4,$5)`,
+              [randomUUID(),ro,shop,status,JSON.stringify({signed_at:'2026-01-01',name:'Synthetic'})]);
+            const before=(await raw.query('SELECT to_jsonb(a) AS value FROM agreement_requests a WHERE ro_id=$1',[ro])).rows;
+            assert.equal((await invoke(router,'/:id',{},'owner',shop,ro)).statusCode,409);
+            assert.deepEqual((await raw.query('SELECT to_jsonb(a) AS value FROM agreement_requests a WHERE ro_id=$1',[ro])).rows,before);
+          }
+          for(const declined of [false,true]){
+            const ro=await makeRo();
+            await raw.query('INSERT INTO estimate_approval_links VALUES ($1,$2,$3,$4,$5)',[randomUUID(),ro,shop,'2026-01-01',declined?'Change scope':null]);
+            assert.equal((await invoke(router,'/:id',{},'owner',shop,ro)).statusCode,declined?200:409);
+          }
+          for (const approved of [null,0,100]) {
+            const ro=await makeRo();
+            await raw.query('INSERT INTO claim_links(id,ro_id,shop_id,approved_labor) VALUES ($1,$2,$3,$4)',[randomUUID(),ro,shop,approved]);
+            assert.equal((await invoke(router,'/:id',{},'owner',shop,ro)).statusCode,409);
+            assert.equal((await raw.query('SELECT 1 FROM claim_links WHERE ro_id=$1',[ro])).rowCount,1);
+          }
+          // Foreign financial/signature rows never influence the owning tenant.
+          const ro=await makeRo();
+          await raw.query("INSERT INTO ro_payments(id,shop_id,ro_id,amount_cents,status) VALUES ($1,$2,$3,0,'succeeded')",[randomUUID(),other,ro]);
+          await raw.query("INSERT INTO agreement_requests(id,ro_id,shop_id,status) VALUES ($1,$2,$3,'signed')",[randomUUID(),ro,other]);
+          assert.equal((await invoke(router,'/:id',{},'owner',shop,ro)).statusCode,200);
+          assert.equal((await raw.query('SELECT 1 FROM ro_payments WHERE ro_id=$1 AND shop_id=$2',[ro,other])).rowCount,1);
+          assert.equal((await raw.query('SELECT 1 FROM agreement_requests WHERE ro_id=$1 AND shop_id=$2',[ro,other])).rowCount,1);
+        });
         for(const competitor of ['intent','checkout']) await t.test(`parallel intent vs ${competitor}; delayed webhook`,async()=> {
           const ro=await makeRo(),entered=barrier(),release=barrier(); let metadata,pi;
           const f=consumers(db,money,{intent:async(amount,currency,meta,key)=> {

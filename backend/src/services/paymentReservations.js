@@ -60,7 +60,8 @@ async function getPaymentBalance(client, ro) {
     }
   }
   if (!cents(occupiedCents)) fail();
-  return { money, paidCents, remainingCents, occupiedCents, availableCents: remainingCents - occupiedCents };
+  const hasOpenPayments = attempts.some(a => a.status !== 'settled') || ledger.some(p => !succeeded(p));
+  return { money, paidCents, remainingCents, occupiedCents, hasOpenPayments, availableCents: remainingCents - occupiedCents };
 }
 
 async function reservePayment({ roId, shopId, kind, amount, allowPartial = false }) {

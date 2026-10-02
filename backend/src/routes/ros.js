@@ -5,7 +5,8 @@ const auth = require('../middleware/auth');
 const { selectedEconomics, redactSelectedRO, redactROs, redactRO, summarizeEconomics, aggregateMetadata } = require('../services/panelEstimatorEconomics');
 const { ROLE_RANK, getRoleRank, requireAdmin, requireTechnician } = require('../middleware/roles');
 const { calculateProfit, calculateTrueProfit } = require('../services/profit');
-const { getRoMoneySummary, isPaidStatus, roundToIntCents, dollarsToCents } = require('../services/roMoney');
+const { isPaidStatus, roundToIntCents, dollarsToCents } = require('../services/roMoney');
+const { withLockedRo, getPaymentBalance, PaymentError } = require('../services/paymentReservations');
 const { sendSMS, isConfiguredForShop } = require('../services/sms');
 const { sendMail } = require('../services/mailer');
 const { statusChangeEmail } = require('../services/emailTemplates');
@@ -2585,11 +2586,12 @@ router.patch('/:id', auth, requireTechnician, async (req, res) => {
 
 router.post('/:id/approve-estimate', auth, requireTechnician, async (req, res) => {
   try {
-    const ro = await dbGet('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
-    if (!ro) return res.status(404).json({ error: 'Not found' });
-    const now = new Date().toISOString();
-    await dbRun('UPDATE repair_orders SET estimate_approved_at = $1, estimate_approved_by = $2, updated_at = $3 WHERE id = $4 AND shop_id = $5', [now, req.user.id, now, req.params.id, req.user.shop_id]);
-    const updatedRO = await dbGet('SELECT * FROM repair_orders WHERE id = $1', [req.params.id]);
+    const ro = await withLockedRo(req.params.id, req.user.shop_id, async (client, lockedRo) => {
+      const now = new Date().toISOString();
+      await client.query('UPDATE repair_orders SET estimate_approved_at = $1, estimate_approved_by = $2, updated_at = $3 WHERE id = $4 AND shop_id = $5', [now, req.user.id, now, req.params.id, req.user.shop_id]);
+      return lockedRo;
+    });
+    const updatedRO = await dbGet('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
     res.json(await enrichRO(updatedRO));
 
     setImmediate(async () => {
@@ -2608,40 +2610,34 @@ router.post('/:id/approve-estimate', auth, requireTechnician, async (req, res) =
       }
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err instanceof PaymentError ? err.status : 500).json({ error: err instanceof PaymentError ? err.message : 'Could not approve repair order' });
   }
 });
 
 router.post('/:id/mark-paid', auth, requireTechnician, async (req, res) => {
   try {
     const { payment_method } = req.body || {};
-    const ro = await dbGet('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
-    if (!ro) return res.status(404).json({ error: 'Not found' });
-
-    const now = new Date().toISOString();
     const method = payment_method || 'cash';
-    const money = await getRoMoneySummary(req.params.id, req.user.shop_id);
-
-    // Mark payment received only — do NOT auto-close the RO.
-    // Admin/owner can manually close when ready.
-    await dbRun(
-      `UPDATE repair_orders
-       SET payment_received = 1,
-           payment_received_at = $1,
-           payment_method = $2,
-           payment_status = $3,
-           amount_paid_cents = $4,
-           amount_owed_cents = $5,
-           updated_at = $6
-       WHERE id = $7 AND shop_id = $8`,
-      [now, method, 'paid', money.totalCents, money.totalCents, now, req.params.id, req.user.shop_id]
-    );
-
-    // Log payment event (no status change)
-    await dbRun(
-      'INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by, note) VALUES ($1, $2, $3, $4, $5, $6)',
-      [uuidv4(), req.params.id, ro.status, ro.status, req.user.id, `Payment received (${method})`]
-    );
+    const ro = await withLockedRo(req.params.id, req.user.shop_id, async (client, lockedRo) => {
+      const balance = await getPaymentBalance(client, lockedRo);
+      if (balance.hasOpenPayments || balance.occupiedCents > 0) {
+        throw new PaymentError('Cannot mark paid while a payment is open or requires reconciliation', 409);
+      }
+      const now = new Date().toISOString();
+      // The money and event commit together; provider reservations use this lock too.
+      await client.query(
+        `UPDATE repair_orders
+         SET payment_received = 1, payment_received_at = $1, payment_method = $2,
+             payment_status = $3, amount_paid_cents = $4, amount_owed_cents = $5, updated_at = $6
+         WHERE id = $7 AND shop_id = $8`,
+        [now, method, 'paid', balance.money.totalCents, balance.money.totalCents, now, req.params.id, req.user.shop_id]
+      );
+      await client.query(
+        'INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by, note) VALUES ($1, $2, $3, $4, $5, $6)',
+        [uuidv4(), req.params.id, lockedRo.status, lockedRo.status, req.user.id, `Payment received (${method})`]
+      );
+      return lockedRo;
+    });
     notifyUsersByRole(
       req.user.shop_id,
       ['owner'],
@@ -2651,7 +2647,7 @@ router.post('/:id/mark-paid', auth, requireTechnician, async (req, res) => {
       req.params.id
     ).catch(() => {});
 
-    const updatedRO = await dbGet('SELECT * FROM repair_orders WHERE id = $1', [req.params.id]);
+    const updatedRO = await dbGet('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
     res.json(await enrichRO(updatedRO));
 
     // Send paid invoice email immediately on payment
@@ -2660,7 +2656,9 @@ router.post('/:id/mark-paid', auth, requireTechnician, async (req, res) => {
     queueQuickBooksSync(req.params.id, req.user.shop_id);
     // Review email and closed-status email fire only when RO is actually closed (via status change)
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err instanceof PaymentError ? err.status : 500).json({
+      error: err instanceof PaymentError ? err.message : 'Could not mark repair order paid',
+    });
   }
 });
 
@@ -2672,23 +2670,40 @@ router.delete('/:id', auth, requireTechnician, async (req, res) => {
     const params = [req.params.id, req.user.shop_id];
     // Serialize with draft saves, revision commits and approval decisions.
     const ro = (await client.query(
-      'SELECT id, payment_status, payment_received, amount_paid_cents FROM repair_orders WHERE id = $1 AND shop_id = $2 FOR UPDATE', params
+      'SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2 FOR UPDATE', params
     )).rows[0];
     if (!ro) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Not found' });
     }
     const exists = async table => (await client.query('SELECT to_regclass($1) AS relation', [table])).rows[0].relation;
-    if (getRoleRank(req.user.role) < ROLE_RANK.admin) {
-      const paid = await exists('ro_payments') ? (await client.query(
-        `SELECT COALESCE(SUM(amount_cents), 0) AS paid_cents FROM ro_payments
-         WHERE ro_id = $1 AND shop_id = $2 AND LOWER(COALESCE(status, '')) IN ('paid', 'succeeded')`, params
-      )).rows[0].paid_cents : 0;
-      if (Number(paid) > 0 || ['paid', 'partial'].includes(String(ro.payment_status || '').toLowerCase()) ||
-          ro.payment_received === true || Number(ro.payment_received) > 0 || Number(ro.amount_paid_cents) > 0) {
-        await client.query('ROLLBACK');
-        return res.status(403).json({ error: 'Admin access required to delete a paid or partially paid repair order' });
+    // Evidence, not the actor's rank or a positive payment sum, decides deletability.
+    // SELECT * tolerates the optional legacy approval/payment columns on TEXT/UUID ROs.
+    let protectedHistory = ['paid', 'succeeded', 'partial', 'pending'].includes(String(ro.payment_status || '').trim().toLowerCase()) ||
+      ro.payment_received === true || Number(ro.payment_received) > 0 || Number(ro.amount_paid_cents) > 0 ||
+      Number(ro.paid_amount) > 0 || !!ro.paid_at || !!ro.payment_received_at || !!ro.stripe_payment_intent_id ||
+      !!ro.estimate_approved_at || !!ro.estimate_approved_by || ro.insurance_approved_amount != null ||
+      ['approved', 'accepted', 'signed'].includes(String(ro.estimate_status || '').trim().toLowerCase()) ||
+      ['approved', 'signed'].includes(String(ro.status || '').trim().toLowerCase());
+    for (const [table, predicate] of [
+      ['ro_payments', 'TRUE'], // Includes zero successes, failures and all financial history.
+      ['ro_payment_attempts', 'TRUE'], // Never discard even a failed/settled reservation.
+      ['estimate_approval_links', "responded_at IS NOT NULL AND COALESCE(decline_reason, '') = ''"],
+      ['ro_panel_estimator_approval_events', "kind = 'decision' AND decision = 'approve'"],
+      ['claim_links', 'TRUE'], // Issued carrier assessments can carry approved money.
+      // Retain every issued agreement, including pending signatures and voided history.
+      // Agreement signing locks its own request; refusing all requests closes that race.
+      ['agreement_requests', 'TRUE'],
+    ]) {
+      if (await exists(table)) {
+        const evidence = await client.query(`SELECT 1 FROM ${table}
+          WHERE ro_id = $1 AND shop_id = $2 AND (${predicate}) LIMIT 1`, params);
+        protectedHistory ||= evidence.rowCount > 0;
       }
+    }
+    if (protectedHistory) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Cannot delete a repair order with payment history, a payment reservation, approval or claim history, or an issued or signed agreement' });
     }
     if (await exists('ro_panel_estimator_drafts')) {
       const draft = (await client.query(
@@ -2703,7 +2718,7 @@ router.delete('/:id', auth, requireTechnician, async (req, res) => {
     // Fixed table names only. Optional absent tables are checked before SQL, never
     // ignored after an error that would leave PostgreSQL's transaction aborted.
     for (const [table, tenantColumn] of [
-      ['job_status_log', false], ['ro_payments', true], ['estimate_approval_links', true],
+      ['job_status_log', false], ['estimate_approval_links', true],
       ['ro_comms', true], ['portal_tokens', true], ['sms_messages', true],
       ['ro_internal_notes', true], ['ro_supplements', true], ['ro_photos', false],
       ['estimate_line_items', true], ['parts_requests', false], ['parts_orders', true],
@@ -2711,7 +2726,7 @@ router.delete('/:id', auth, requireTechnician, async (req, res) => {
       if (!await exists(table)) continue;
       await client.query(`DELETE FROM ${table} WHERE ro_id = $1
         ${tenantColumn ? 'AND shop_id = $2' : ''}
-        AND ro_id IN (SELECT id FROM repair_orders WHERE id = $1 AND shop_id = $2)`, params);
+        AND ro_id::text IN (SELECT id::text FROM repair_orders WHERE id::text = $1::text AND shop_id::text = $2::text)`, params);
     }
     await client.query('DELETE FROM repair_orders WHERE id = $1 AND shop_id = $2', params);
     await client.query('COMMIT');

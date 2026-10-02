@@ -4073,3 +4073,124 @@ git diff --check
 Final status: exactly ten changed paths, no staged changes, HEAD unchanged at
 `78891080a121e189968983c1cd1390f5551f62ef`. Final mocked tail: tests 143,
 pass 143, fail 0, cancelled 0, skipped 0. DB execution remains host-blocked above.
+
+## 2026-10-02 02:39 EDT / 06:39 UTC — t_6f27a266 Phase C
+
+Started clean at `7eb8a87f783f34ceb4f74adf6c8620cdfc73bfa6`, on assigned branch
+`codex/revv-panel-estimator-20261001` and worktree. Seven changed paths, left
+unstaged/uncommitted. Hermes retains lifecycle, commits, exact clean SHA host gates,
+push and packet. No agents, board calls, reviews, provider calls, production DB,
+secrets/.env, canonical/main/readiness changes, deployment, rebase or amend.
+`release_authorized=false`.
+
+**Historical evidence, not rerun:** Phase A is complete per the Phase B task
+handoff; its implementation receipt records 82/82 mocked backend and 30/30 frontend,
+with local DB EPERM. No additional numeric Phase A host receipt was supplied here.
+Phase B host result supplied for this dispatch is **167/167 pass, zero skips**,
+including real PostgreSQL parallel tests (`phase-b-host.log` in the Hermes artifact
+folder). That host receipt supersedes Phase B's earlier local EPERM note; it is not
+Phase C verification. Original finding source: `REMY-FAIL-5ab183e7.md`, item 3.
+
+**Implemented individual-RO deletion/manual-payment protection:**
+- DELETE `ros/:id` retains tenant-scoped READ COMMITTED / parent FOR UPDATE. Every
+  admitted role (owner/admin/assistant/superadmin/technician/employee/staff) now gets
+  409 for protected history; unknown/phantom roles, including `tech`, remain 403.
+- Evidence checks do not sum payments. ANY ledger row (zero-valued success, failed,
+  pending, etc.) or reservation (including settled/unknown/retryable) refuses
+  deletion. Legacy paid flags/amounts/timestamps/provider pointers also refuse.
+  Neither `ro_payments` nor `ro_payment_attempts` is ever a dependent DELETE target.
+- Legacy estimate approval fields/status, responded non-declined approval links,
+  panel approval decisions and carrier approval amounts are inspected. Issued
+  carrier claim links and every issued agreement are conservatively retained.
+  This includes voided/pending agreement rows and signature evidence independent
+  of status. Agreement signing locks its request; retaining all issued requests
+  prevents deletion racing a signature. Agreement creation now locks the parent
+  with `FOR UPDATE OF ro` before issuing its request, matching DELETE lock order.
+- Existing draft/selected revision protection remains. Ordinary unpaid, unapproved
+  ROs with no protected history still delete atomically. Optional table existence
+  checks retain SQL error propagation. Dependent ownership checks cast IDs only in
+  the parent subquery, supporting legacy TEXT children with fresh UUID parents.
+  No RO void/cancel workflow was found or invented; the response simply refuses.
+- Manual mark-paid and staff approve-estimate now use the shared tenant parent
+  transaction. Manual total/ledger/reservation queries use that same client;
+  occupied/unknown capacity refuses before money writes. A separate open-history
+  flag also refuses malformed zero-valued holds/failed legacy records. Payment
+  update and job status event commit or roll back together; notifications follow
+  commit. Paid/invalid balances remain rejected by the shared balance validator.
+- Runtime money/status mutation scan found manual mark-paid and the shared webhook
+  settlement as the direct payment writers. Generic RO field/status edits do not
+  admit paid flags or amount_paid_cents. Startup normalization is unchanged.
+
+**Required follow-up / no app-wide invariant claimed:**
+1. Mutable money remains outside this coherent deletion/manual slice. Existing
+   panel guards prevent unauthorized selected-row rewrites and already serialize
+   parent access, but authorized `panelEstimatorRevisions.commit` can still select
+   a lower total without checking paid plus reserved capacity. Unselected
+   `estimateLineItems` row/metadata/import updates and shop tax-rate changes also
+   need a consistent floor and transaction treatment. Approval/authority workflows
+   must not reduce total below paid plus reservations. No trigger was weakened or
+   a new total-capacity guarantee asserted. This is a required subsequent phase.
+2. The final source scan found additional bulk RO deletion entry points:
+   `routes/settings.js` `resetRos` (including all-data reset) and
+   `routes/market.js` DELETE `/demo-data`. They delete children before bulk parent
+   deletion, outside this transaction/history guard. They remain untouched under
+   the no-routing-tweaks scope, and are release blockers for an app-wide ANY-role
+   deletion guarantee. They need guarded, atomic bulk handling, including child
+   history retention. This phase's deletion guarantee is for DELETE `ros/:id`.
+3. Phase B's unidentified historical Checkout links and reconciliation-only holds
+   remain limitations. No cancellation, reservation release or financial-history
+   deletion was added. Agreement creation's new lock and all real SQL/race cases
+   below still require host execution; sandbox mock results are not DB proof.
+
+Changed paths (7):
+- CLAUDE.md
+- backend/src/routes/ros.js
+- backend/src/routes/agreements.js
+- backend/src/services/paymentReservations.js
+- backend/test/payments.phase4.test.js
+- backend/test/panelEstimator.lifecycle.test.js
+- backend/src/__tests__/moneyAuthority.phase1.test.js
+
+**Verification actually executed:** Node v22.23.2; scrubbed `env -i`, NODE_ENV=test,
+CI=1, no .env loading. All provider behavior mocked. The scoped mock command
+explicitly excludes the named PostgreSQL case; it is NOT a full-suite pass:
+```sh
+env -i PATH=/opt/homebrew/opt/node@22/bin:/usr/bin:/bin NODE_ENV=test CI=1 NODE_OPTIONS=--require=/tmp/revv-phaseB-no-network.cjs /opt/homebrew/opt/node@22/bin/node --test --test-skip-pattern='real PostgreSQL' backend/test/payments.phase4.test.js backend/src/__tests__/moneyAuthority.phase1.test.js backend/src/__tests__/roMoney.unit.test.js backend/test/agreements.test.js
+```
+Exit 0; tail: **tests 420, pass 420, fail 0, cancelled 0, skipped 0**.
+Log `/tmp/revv-phaseC-mocked.log`. The reused Phase B preload rejects dotenv,
+socket connections and fetch. The suite contains the full role/state DELETE
+matrix, stale flags, approval/history conflicts, zero-valued ledger evidence,
+manual capacity and tenant/role boundaries. The phase1 money mocks now enforce
+transaction-client reads/writes, clear reservation-helper cache and assert current
+settlement parameters, tenant binding and COMMIT without weakening balance checks.
+
+No-filter focused command, including real PostgreSQL and mounted lifecycle tests:
+```sh
+env -i PATH=/opt/homebrew/opt/node@22/bin:/usr/bin:/bin NODE_ENV=test CI=1 NODE_OPTIONS=--require=/tmp/revv-phaseC-loopback-only.cjs PANEL_ESTIMATOR_TEST_DATABASE_URL=postgresql://revv_panel@127.0.0.1:55459/revv_panel_test /opt/homebrew/opt/node@22/bin/node --test backend/test/payments.phase4.test.js backend/test/panelEstimator.lifecycle.test.js backend/src/__tests__/moneyAuthority.phase1.test.js backend/src/__tests__/roMoney.unit.test.js backend/test/agreements.test.js
+```
+Exit 1; tail: **tests 425, pass 421, fail 4, cancelled 0, skipped 0**.
+Log `/tmp/revv-phaseC-full-focused.log`. Three DB connection failures (lifecycle,
+TEXT, UUID) are `connect EPERM 127.0.0.1:55459`, plus the failed payment-suite parent.
+They occur before schema creation. No bypass attempted. This preload rejects
+`dotenv`; fetch permits only HTTP 127.0.0.1 for mounted synthetic handlers. DB
+fixtures require the exact dedicated loopback URL. No full host gate is claimed.
+
+Pending real tests cover deletion vs reserve, manual payment, untracked settlement
+and existing-reservation settlement in both lock orders; manual vs reservation;
+zero successes and all-role history retention; stale agreement signatures and
+legacy approvals; foreign evidence isolation; manual event-insert rollback; and
+late dependent-delete rollback now injected on `portal_tokens`, not payments.
+Lifecycle fixtures install the existing reservation migration, retain selected
+accounting/evidence checks, and assert failed/pending capacity remains held.
+
+Static command (exit 0 for all six JS files), followed by `git diff --check` exit 0:
+```sh
+for file in backend/src/routes/ros.js backend/src/routes/agreements.js backend/src/services/paymentReservations.js backend/test/payments.phase4.test.js backend/test/panelEstimator.lifecycle.test.js backend/src/__tests__/moneyAuthority.phase1.test.js; do
+  env -i PATH=/opt/homebrew/opt/node@22/bin:/usr/bin:/bin NODE_ENV=test CI=1 /opt/homebrew/opt/node@22/bin/node --check "$file" || exit $?
+done
+git diff --check
+```
+Safety-sensitive finance, approvals/signatures, tenant isolation, timestamps and
+data-loss prevention; over two files. Hermes owns all further lifecycle/reporting,
+commits/gates/push/packet. No Spark/Grok verdict or release authorization claimed.
