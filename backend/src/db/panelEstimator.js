@@ -147,8 +147,10 @@ async function ensureRevisions(client, types) {
   await client.query(`CREATE OR REPLACE FUNCTION panel_estimator_guard_ro() RETURNS trigger
     LANGUAGE plpgsql AS $$ DECLARE k TEXT; BEGIN
       IF TG_OP='DELETE' THEN PERFORM panel_estimator_guard_owner(OLD.shop_id::text,OLD.id::text); RETURN OLD; END IF;
+      -- Operational workflow is authorized by the lifecycle routes, independently
+      -- of customer quote decisions. Financial and approval fields remain guarded.
       FOREACH k IN ARRAY ARRAY['id','shop_id','parts_cost','labor_cost','sublet_cost','tax','total','estimate_amount',
-        'true_profit','deductible','deductible_waived','referral_fee','goodwill_repair_cost','status',
+        'true_profit','deductible','deductible_waived','referral_fee','goodwill_repair_cost',
         'estimate_status','estimate_approved_at','estimate_approved_by','estimate_token','payment_type',
         'insurance_approved_amount','total_insurer_owed','supplement_amount','supplement_status',
         'claim_number','insurer','insurance_claim_number','insurance_company','adjuster_name',

@@ -96,7 +96,7 @@ for (const type of ['TEXT', 'UUID']) test(`real PostgreSQL revisions ${type}: se
       CREATE TABLE repair_orders(id ${type} PRIMARY KEY, shop_id ${type} NOT NULL REFERENCES shops(id),
         parts_cost NUMERIC DEFAULT 0, labor_cost NUMERIC DEFAULT 0, sublet_cost NUMERIC DEFAULT 0,
         tax NUMERIC DEFAULT 0, total NUMERIC DEFAULT 123.45, estimate_amount NUMERIC DEFAULT 123.45,
-        true_profit NUMERIC DEFAULT 987.65, deductible NUMERIC DEFAULT 0, deductible_waived NUMERIC DEFAULT 0,
+        true_profit NUMERIC DEFAULT 987.65, amount_owed_cents INTEGER DEFAULT 0, deductible NUMERIC DEFAULT 0, deductible_waived NUMERIC DEFAULT 0,
         referral_fee NUMERIC DEFAULT 0, goodwill_repair_cost NUMERIC DEFAULT 0, status TEXT DEFAULT 'estimate',
         estimate_status TEXT, estimate_approved_at TEXT, estimate_approved_by TEXT, estimate_token TEXT,
         insurance_company TEXT, updated_at TIMESTAMPTZ DEFAULT NOW());
@@ -164,6 +164,7 @@ for (const type of ['TEXT', 'UUID']) test(`real PostgreSQL revisions ${type}: se
       assert.equal(state.ro_panel_estimator_revisions.length, 1);
       assert.equal(state.ro_panel_estimator_revision_costs.length, 1);
       assert.equal(state.ro_panel_estimator_drafts[0].active_revision_id, first.revision_id);
+      assert.equal(Number(state.ro[0].amount_owed_cents), 44000);
       assert.equal(Number(state.ro[0].total), 440); assert.equal(Number(state.ro[0].true_profit), 987.65);
       assert.equal(state.estimate_metadata[0].adjuster_totals.insurer, 'Original reference');
       assert.equal(state.estimate_line_items.reduce((s, l) => s + Math.round(Number(l.total) * 100), 0), 40000);
@@ -238,6 +239,32 @@ for (const type of ['TEXT', 'UUID']) test(`real PostgreSQL revisions ${type}: se
       }
     });
 
+    await t.test('shared job scope survives representative changes without duplicate billing', async () => {
+      const scope = await newScope();
+      const scan = { key: 'scan', scope: 'job', category: 'sublet', quantity: 1,
+        unit_price_cents: 1200, taxable: true };
+      const hood = panel({ extras: [scan] });
+      const first = await commit(scope, draft({ assessments: [hood] }));
+      const bumper = panel({ panel_id: 'front_bumper', extras: [scan] });
+      const added = await commit(scope, draft({ assessments: [hood, bumper] }));
+      const scans = added.quote.lines.filter(l => l.operation_id === 'extra:scan');
+      assert.equal(scans.length, 1); assert.equal(scans[0].panel_id, 'front_bumper');
+      const scanRows = (await snapshot(scope)).estimate_line_items.filter(l => l.panel_source_key.includes('extra:job:scan'));
+      assert.equal(scanRows.length, 1);
+      // Unchanged job scope is charged once in each independently priced revision.
+      assert.equal(added.quote.buckets.filter(b => b.id === scans[0].id).length, 1);
+      assert.equal(added.quote.buckets.find(b => b.id === scans[0].id).gross_cents, 1200);
+      assert.deepEqual(await revisions.getQuote({ ...scope, revisionId: first.revision_id }), first);
+      const before = await snapshot(scope);
+      for (const changed of [[], [{ ...scan, key: 'other_scan' }], [{ ...scan, scope: 'other_job' }],
+        [{ ...scan, category: 'materials' }], [{ ...scan, quantity: 0.5 }]]) {
+        await assert.rejects(commit(scope, draft({ assessments: [
+          { ...hood, extras: changed }, { ...bumper, extras: changed },
+        ] })), errorCode('SCOPE_RECONCILIATION_REQUIRED'));
+        assert.deepEqual(await snapshot(scope), before);
+      }
+    });
+
     await t.test('direct service: required scope decrease conflicts; same payer revision captures all differences', async () => {
       const before = await snapshot(main);
       for (const patch of [{ body_hours: 1 }, { refinish: false }, { operation: 'paint-only' }]) {
@@ -294,6 +321,7 @@ for (const type of ['TEXT', 'UUID']) test(`real PostgreSQL revisions ${type}: se
     await t.test('database guards: legacy financial/approval/metadata/line writes blocked, normal RO works', async () => {
       const before = await snapshot(main);
       const queries = [
+        [`UPDATE repair_orders SET amount_owed_cents=1 WHERE id=$1 AND shop_id=$2`, [main.roId, shopId]],
         [`UPDATE repair_orders SET total=1 WHERE id=$1 AND shop_id=$2`, [main.roId, shopId]],
         [`UPDATE repair_orders SET status='approval',estimate_approved_at='now' WHERE id=$1`, [main.roId]],
         [`UPDATE repair_orders SET insurance_company='Replaced' WHERE id=$1 AND shop_id=$2`, [main.roId,shopId]],
@@ -635,4 +663,37 @@ test('comparison changes pair operations and discounts by stable IDs, including 
     assert.ok(changes.some(d => d.path.endsWith(suffix)), suffix);
   assert.ok(changes.every(d => d.label && typeof d.before !== 'object' && typeof d.after !== 'object'));
   assert.deepEqual(differences(after,{ ...after, adjustments: { discounts: [...after.adjustments.discounts].reverse() } }),[]);
+});
+
+test('shared scope reconciliation uses semantic identity and retains quantity/category/scope guards', () => {
+  const { requirePreservedScope } = require('../src/services/panelEstimatorRevisions');
+  const old = { id: 'hood:extra:job:scan', panel_id: 'hood', operation_id: 'extra:scan',
+    shared_key: 'extra:job', category: 'sublet', quantity: '1.00' };
+  const previous = { lines: [old], scope: { assessments: [] } };
+  const moved = { ...old, id: 'front_bumper:extra:job:scan', panel_id: 'front_bumper' };
+  const quote = line => ({ lines: line ? [line] : [], scope: { assessments: [] } });
+  assert.doesNotThrow(() => requirePreservedScope(previous, quote(moved)));
+  for (const patch of [{ operation_id: 'extra:other' }, { shared_key: 'extra:other-job' },
+    { category: 'materials' }, { quantity: '0.50' }, { shared_key: null }]) {
+    assert.throws(() => requirePreservedScope(previous, quote({ ...moved, ...patch })), errorCode('SCOPE_RECONCILIATION_REQUIRED'));
+  }
+  assert.throws(() => requirePreservedScope(previous, quote(null)), errorCode('SCOPE_RECONCILIATION_REQUIRED'));
+});
+
+test('assembled shared scan remains one charge when front bumper becomes representative', () => {
+  const { assembleDraft } = require('../src/services/panelEstimatorDraft');
+  const { publicSnapshot, privateSnapshot } = require('../src/services/panelEstimatorStore');
+  const { requirePreservedScope } = require('../src/services/panelEstimatorRevisions');
+  const scan = { key: 'scan', scope: 'job', category: 'sublet', quantity: 1, unit_price_cents: 1200, taxable: true };
+  const hood = panel({ extras: [scan] }), bumper = panel({ panel_id: 'front_bumper', extras: [scan] });
+  const assemble = assessments => assembleDraft({ draft: publicSnapshot(draft({ assessments })),
+    costs: privateSnapshot({}), taxRateBps: 1000, paidCents: 0 }).sell;
+  const before = assemble([hood]), after = assemble([hood, bumper]);
+  assert.equal(before.complete, true); assert.equal(after.complete, true);
+  assert.equal(before.lines.find(l => l.operation_id === 'extra:scan').panel_id, 'hood');
+  const scans = after.lines.filter(l => l.operation_id === 'extra:scan');
+  assert.equal(scans.length, 1); assert.equal(scans[0].panel_id, 'front_bumper');
+  assert.equal(after.buckets.find(b => b.id === scans[0].id).gross_cents, 1200);
+  assert.doesNotThrow(() => requirePreservedScope(before, after));
+  assert.throws(() => requirePreservedScope(after, assemble([hood])), errorCode('SCOPE_RECONCILIATION_REQUIRED'));
 });

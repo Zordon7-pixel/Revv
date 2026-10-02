@@ -88,7 +88,10 @@ function requirePreservedScope(previous, quote) {
   for (const old of previous.lines) {
     if (Number(old.quantity) <= 0) continue;
     if (quote.scope.assessments.some(p => p.panel_id === old.panel_id && p.deferral)) continue;
-    const next = quote.lines.find(l => l.id === old.id && l.operation_id === old.operation_id);
+    // Shared work is identified by scope, operation and category. Its panel-specific
+    // representative can change when a lexically earlier panel is added.
+    const next = quote.lines.find(l => l.operation_id === old.operation_id && l.category === old.category &&
+      (old.shared_key ? l.shared_key === old.shared_key : !l.shared_key && l.id === old.id));
     if (!next || Number(next.quantity) < Number(old.quantity)) conflict('SCOPE_RECONCILIATION_REQUIRED');
   }
   requirePreservedAssessments(previous.scope.assessments, quote.scope.assessments);
@@ -190,9 +193,16 @@ function createPanelEstimatorRevisions(database) {
           VALUES ($1,$2,$3,$4,$5,1,$6,$7,$8,$9,$10,$11)`,
         [line.id,input.shopId,input.roId,line.type,line.description,line.unit_price,line.taxable,line.sort_order,revisionId,line.panel_source_key,line.panel_fingerprint]);
       }
-      await client.query(`UPDATE repair_orders SET parts_cost=$3,labor_cost=$4,sublet_cost=$5,tax=$6,total=$7,estimate_amount=$7,updated_at=NOW()
+      // Production has owed cents; minimal standalone schemas may deliberately omit it.
+      // Check before writing, rather than catching an error in an aborted transaction.
+      const hasOwed = (await client.query(`SELECT EXISTS (SELECT 1 FROM pg_attribute
+        WHERE attrelid='repair_orders'::regclass AND attname='amount_owed_cents'
+          AND attnum > 0 AND NOT attisdropped) AS present`)).rows[0].present;
+      await client.query(`UPDATE repair_orders SET parts_cost=$3,labor_cost=$4,sublet_cost=$5,tax=$6,total=$7,estimate_amount=$7,
+        ${hasOwed ? 'amount_owed_cents=$8,' : ''}updated_at=NOW()
         WHERE shop_id=$1 AND id=$2`, [input.shopId,input.roId,dollars(money.partsCents),dollars(money.laborCents),
-        dollars(money.subletCents + money.otherCents),dollars(money.taxCents),dollars(money.totalCents)]);
+        dollars(money.subletCents + money.otherCents),dollars(money.taxCents),dollars(money.totalCents),
+        ...(hasOwed ? [money.totalCents] : [])]);
       await client.query(`UPDATE ro_panel_estimator_drafts SET active_revision_id=$3 WHERE shop_id=$1 AND ro_id=$2`, [input.shopId,input.roId,revisionId]);
       await revokePendingApprovalLinks(client, input.shopId, input.roId, revisionId);
       await client.query('COMMIT');

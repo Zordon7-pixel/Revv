@@ -2628,47 +2628,53 @@ router.post('/:id/mark-paid', auth, requireTechnician, async (req, res) => {
 });
 
 router.delete('/:id', auth, requireTechnician, async (req, res) => {
+  let client;
   try {
-    const { id } = req.params;
-    const ro = await dbGet(
-      'SELECT id, status, shop_id FROM repair_orders WHERE id = $1 AND shop_id = $2',
-      [id, req.user.shop_id]
-    );
-    if (!ro) return res.status(404).json({ error: 'Not found' });
-    if (ro.shop_id !== req.user.shop_id) return res.status(403).json({ error: 'Forbidden' });
+    client = await pool.connect();
+    await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
+    const params = [req.params.id, req.user.shop_id];
+    // Serialize with draft saves, revision commits and approval decisions.
+    const ro = (await client.query(
+      'SELECT id FROM repair_orders WHERE id = $1 AND shop_id = $2 FOR UPDATE', params
+    )).rows[0];
+    if (!ro) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Not found' });
+    }
+    const exists = async table => (await client.query('SELECT to_regclass($1) AS relation', [table])).rows[0].relation;
+    if (await exists('ro_panel_estimator_drafts')) {
+      const draft = (await client.query(
+        'SELECT 1 FROM ro_panel_estimator_drafts WHERE ro_id = $1 AND shop_id = $2', params
+      )).rowCount;
+      if (draft) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'PANEL_REVISION_CONFLICT' });
+      }
+    }
 
-    // Delete child records that lack CASCADE to avoid FK violations
-    await dbRun(
-      `DELETE FROM job_status_log
-       WHERE ro_id = $1
-         AND ro_id IN (SELECT id FROM repair_orders WHERE id = $1 AND shop_id = $2)`,
-      [id, req.user.shop_id]
-    );
-    await dbRun('DELETE FROM ro_payments WHERE ro_id = $1 AND shop_id = $2', [id, req.user.shop_id]).catch(() => {});
-    await dbRun('DELETE FROM estimate_approval_links WHERE ro_id = $1 AND shop_id = $2', [id, req.user.shop_id]).catch(() => {});
-    await dbRun('DELETE FROM ro_comms WHERE ro_id = $1 AND shop_id = $2', [id, req.user.shop_id]).catch(() => {});
-    await dbRun('DELETE FROM portal_tokens WHERE ro_id = $1 AND shop_id = $2', [id, req.user.shop_id]).catch(() => {});
-    await dbRun('DELETE FROM sms_messages WHERE ro_id = $1 AND shop_id = $2', [id, req.user.shop_id]).catch(() => {});
-    await dbRun('DELETE FROM ro_internal_notes WHERE ro_id = $1 AND shop_id = $2', [id, req.user.shop_id]).catch(() => {});
-    await dbRun('DELETE FROM ro_supplements WHERE ro_id = $1 AND shop_id = $2', [id, req.user.shop_id]).catch(() => {});
-    await dbRun(
-      `DELETE FROM ro_photos
-       WHERE ro_id = $1
-         AND ro_id IN (SELECT id FROM repair_orders WHERE id = $1 AND shop_id = $2)`,
-      [id, req.user.shop_id]
-    ).catch(() => {});
-    await dbRun('DELETE FROM estimate_line_items WHERE ro_id = $1 AND shop_id = $2', [id, req.user.shop_id]).catch(() => {});
-    await dbRun(
-      `DELETE FROM parts_requests
-       WHERE ro_id = $1
-         AND ro_id IN (SELECT id FROM repair_orders WHERE id = $1 AND shop_id = $2)`,
-      [id, req.user.shop_id]
-    ).catch(() => {});
-    await dbRun('DELETE FROM parts_orders WHERE ro_id = $1 AND shop_id = $2', [id, req.user.shop_id]).catch(() => {});
-    await dbRun('DELETE FROM repair_orders WHERE id = $1 AND shop_id = $2', [id, req.user.shop_id]);
+    // Fixed table names only. Optional absent tables are checked before SQL, never
+    // ignored after an error that would leave PostgreSQL's transaction aborted.
+    for (const [table, tenantColumn] of [
+      ['job_status_log', false], ['ro_payments', true], ['estimate_approval_links', true],
+      ['ro_comms', true], ['portal_tokens', true], ['sms_messages', true],
+      ['ro_internal_notes', true], ['ro_supplements', true], ['ro_photos', false],
+      ['estimate_line_items', true], ['parts_requests', false], ['parts_orders', true],
+    ]) {
+      if (!await exists(table)) continue;
+      await client.query(`DELETE FROM ${table} WHERE ro_id = $1
+        ${tenantColumn ? 'AND shop_id = $2' : ''}
+        AND ro_id IN (SELECT id FROM repair_orders WHERE id = $1 AND shop_id = $2)`, params);
+    }
+    await client.query('DELETE FROM repair_orders WHERE id = $1 AND shop_id = $2', params);
+    await client.query('COMMIT');
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (client) {
+      try { await client.query('ROLLBACK'); } catch (rollbackError) { err.rollbackError = rollbackError; }
+    }
+    res.status(500).json({ error: 'Could not delete repair order' });
+  } finally {
+    if (client) client.release();
   }
 });
 
