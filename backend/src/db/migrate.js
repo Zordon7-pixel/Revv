@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { ensureShopTwilioNumber, SHOP_TWILIO_SCHEMA_REQUIRED } = require('./shopTwilioNumber');
 
 async function runMigrations() {
   if (!process.env.DATABASE_URL) {
@@ -30,6 +31,7 @@ async function runMigrations() {
       console.log('PostgreSQL schema already exists; running idempotent column additions.');
     }
 
+    await ensureShopTwilioNumber({ query });
     await require('./customerConsent').up({ query });
     await require('./paymentReservations').up(require('./postgres').pool);
 
@@ -608,6 +610,7 @@ async function runMigrations() {
 
     console.log('[migrate] All idempotent migrations complete.');
   } catch (err) {
+    if (err.code === SHOP_TWILIO_SCHEMA_REQUIRED) throw err;
     console.error('[migrate] Fatal migration error:', err.message);
   }
 }

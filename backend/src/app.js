@@ -225,6 +225,7 @@ initDb()
         const { runMigrations } = require('./db/migrate');
         await runMigrations();
       } catch (e) {
+        if (e.code === 'SHOP_TWILIO_SCHEMA_REQUIRED') throw e;
         console.error('[migrate] Migration error:', e.message);
       }
     }

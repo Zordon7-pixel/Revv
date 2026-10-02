@@ -14,7 +14,7 @@ function load(file, mocks) {
   const local = createRequire(filename);
   vm.runInThisContext(`(function(require,module,exports,__dirname){${fs.readFileSync(filename,'utf8')}\n})`, { filename })(name => {
     if (Object.hasOwn(mocks, name)) return mocks[name];
-    if (['express','uuid','node:crypto','path'].includes(name)) return local(name);
+    if (['express','uuid','node:crypto','path','../db/shopTwilioNumber'].includes(name)) return local(name);
     throw Error(`Unmocked dependency ${name}`);
   }, module, module.exports, path.dirname(filename));
   return module.exports;

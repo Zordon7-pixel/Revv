@@ -4,6 +4,7 @@ const path = require('path');
 const multer = require('multer');
 const { v4: uuidv4 } = require('uuid');
 const { dbGet, dbAll, dbRun } = require('../db');
+const { SHOP_TWILIO_NUMBER_UNIQUE } = require('../db/shopTwilioNumber');
 const { withLockedShopDeletion, PaymentError } = require('../services/paymentReservations');
 const auth = require('../middleware/auth');
 const { requireAdmin } = require('../middleware/roles');
@@ -152,10 +153,28 @@ router.delete('/shop/logo', auth, requireAdmin, async (req, res) => {
   }
 });
 
-router.put('/shop', auth, async (req, res) => {
+// This route owns credentials and inbound routing. Shared requireAdmin also
+// admits assistant/superadmin, which must not grant access here.
+function requireShopOwnerOrAdmin(req, res, next) {
+  if (!['owner', 'admin'].includes(req.user?.role)) {
+    return res.status(403).json({ error: 'Only shop owners and admins can update shop settings.' });
+  }
+  return next();
+}
+
+router.put('/shop', auth, requireShopOwnerOrAdmin, async (req, res) => {
   try {
     const ALLOWED_MARKET_FIELDS = ['state','labor_rate','paint_rate','parts_markup','name','phone','twilio_account_sid','twilio_auth_token','twilio_phone_number','twilio_api_key','twilio_api_secret','address','city','zip','tax_rate','lat','lng','geofence_radius','tracking_api_key','monthly_revenue_target'];
     const updates = Object.fromEntries(Object.entries(req.body).filter(([k]) => ALLOWED_MARKET_FIELDS.includes(k)));
+    if (updates.twilio_phone_number !== undefined && updates.twilio_phone_number !== null) {
+      if (typeof updates.twilio_phone_number !== 'string') {
+        return res.status(400).json({ error: 'SMS phone number must use E.164 format (such as +15551234567), or be empty.' });
+      }
+      updates.twilio_phone_number = updates.twilio_phone_number.trim();
+      if (updates.twilio_phone_number && !/^\+[1-9]\d{1,14}$/.test(updates.twilio_phone_number)) {
+        return res.status(400).json({ error: 'SMS phone number must use E.164 format (such as +15551234567), or be empty.' });
+      }
+    }
     const {
       name, phone, address, city, state, zip, labor_rate, paint_rate, parts_markup, tax_rate,
       lat, lng, geofence_radius, tracking_api_key, twilio_account_sid, twilio_auth_token,
@@ -201,6 +220,9 @@ router.put('/shop', auth, async (req, res) => {
     const smsConfig = await getTwilioConfigForShop(req.user.shop_id);
     res.json({ ...updated, sms_configured: await isConfiguredForShop(req.user.shop_id), sms_phone: smsConfig?.phoneNumber || null });
   } catch (err) {
+    if (err.code === '23505' && err.constraint === SHOP_TWILIO_NUMBER_UNIQUE) {
+      return res.status(409).json({ error: 'SMS phone number is already assigned. Choose a different number or contact support.' });
+    }
     res.status(500).json({ error: err.message });
   }
 });

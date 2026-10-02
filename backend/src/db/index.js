@@ -1,5 +1,6 @@
 require('dotenv').config();
 const { Pool } = require('pg');
+const { ensureShopTwilioNumber } = require('./shopTwilioNumber');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -391,6 +392,9 @@ async function initDb() {
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     );
   `);
+
+  // Required routing protection: failure rejects initDb before the server listens.
+  await ensureShopTwilioNumber(pool);
 
   await pool.query(`ALTER TABLE ro_supplements ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT ''`);
   await pool.query(`ALTER TABLE ro_supplements ADD COLUMN IF NOT EXISTS amount NUMERIC(12,2) NOT NULL DEFAULT 0`);
