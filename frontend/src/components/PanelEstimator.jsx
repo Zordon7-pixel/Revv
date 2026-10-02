@@ -28,6 +28,7 @@ function configured(panel) {
 const status = panel => panel.deferral ? 'Deferred — retained' : !configured(panel) || panel.operation === 'inspection-required' ? 'Incomplete' : panel.reviewed ? 'Reviewed' : 'Configured'
 const warnings = new Set(['incomplete_insurance_allocation', 'missing_posted_payments'])
 const messages = {
+  RO_FINANCIAL_HOLD: 'The estimate total cannot fall below payments already received plus amounts reserved for pending payments. Raise or restore the estimate total, or reconcile pending payments before trying again. Your local edits are preserved.',
   VERSION_CONFLICT: 'This draft changed on the server. Reload before saving; your local edits are still here.',
   PREVIEW_CONFLICT: 'Calculation inputs changed on the server. Reload and calculate a fresh preview. Local edits are retained.',
   SCOPE_RECONCILIATION_REQUIRED: 'Required or previously selected work cannot be removed or reduced. Restore its scope or retain an eligible, previously committed cosmetic assessment with its acknowledgement. Local edits are retained.',
