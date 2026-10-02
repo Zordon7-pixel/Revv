@@ -198,8 +198,11 @@ function createPanelEstimatorRevisions(database) {
       const hasOwed = (await client.query(`SELECT EXISTS (SELECT 1 FROM pg_attribute
         WHERE attrelid='repair_orders'::regclass AND attname='amount_owed_cents'
           AND attnum > 0 AND NOT attisdropped) AS present`)).rows[0].present;
+      const hasProfit = (await client.query(`SELECT EXISTS (SELECT 1 FROM pg_attribute
+        WHERE attrelid='repair_orders'::regclass AND attname='true_profit'
+          AND attnum > 0 AND NOT attisdropped) AS present`)).rows[0].present;
       await client.query(`UPDATE repair_orders SET parts_cost=$3,labor_cost=$4,sublet_cost=$5,tax=$6,total=$7,estimate_amount=$7,
-        ${hasOwed ? 'amount_owed_cents=$8,' : ''}updated_at=NOW()
+        ${hasOwed ? 'amount_owed_cents=$8,' : ''}${hasProfit ? 'true_profit=NULL,' : ''}updated_at=NOW()
         WHERE shop_id=$1 AND id=$2`, [input.shopId,input.roId,dollars(money.partsCents),dollars(money.laborCents),
         dollars(money.subletCents + money.otherCents),dollars(money.taxCents),dollars(money.totalCents),
         ...(hasOwed ? [money.totalCents] : [])]);

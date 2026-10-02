@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const { dbGet, dbAll } = require('../db');
 const auth = require('../middleware/auth');
+const { periodEconomics, aggregateMetadata } = require('../services/panelEstimatorEconomics');
 const { requireTechnician } = require('../middleware/roles');
 const { dollarsToCents } = require('../services/roMoney');
 
@@ -59,10 +60,12 @@ router.get('/instruments', auth, requireOwnerAdminOnly, async (req, res) => {
     ]);
 
     const revenueMtdCents = dollarsToCents(moneyRow?.revenue_mtd);
-    const trueProfitCents = dollarsToCents(moneyRow?.true_profit_mtd);
+    const economics = await periodEconomics(shopId, req.user.role,
+      " AND COALESCE(NULLIF(billing_month, ''), TO_CHAR(created_at, 'YYYY-MM')) = TO_CHAR(NOW(), 'YYYY-MM')");
+    const trueProfitCents = economics ? economics.profit_cents : dollarsToCents(moneyRow?.true_profit_mtd);
     const revenueGoalCents = dollarsToCents(goalRow?.revenue_goal);
     const supplementOpportunityCents = dollarsToCents(supplementRow?.total_supplement_opportunity);
-    const marginBasisPoints = revenueMtdCents > 0
+    const marginBasisPoints = trueProfitCents === null ? null : revenueMtdCents > 0
       ? Math.round((trueProfitCents * 10000) / revenueMtdCents)
       : 0;
 
@@ -70,7 +73,8 @@ router.get('/instruments', auth, requireOwnerAdminOnly, async (req, res) => {
       revenue_mtd_cents: revenueMtdCents,
       revenue_goal_cents: revenueGoalCents,
       true_profit_cents: trueProfitCents,
-      profit_margin_percent: marginBasisPoints / 100,
+      profit_margin_percent: marginBasisPoints === null ? null : marginBasisPoints / 100,
+      ...aggregateMetadata(economics),
       supplement_opportunity_cents: supplementOpportunityCents,
       supplement_ro_count: Number(supplementRow?.ro_count || 0),
       ro_count: Number(moneyRow?.ro_count || 0),

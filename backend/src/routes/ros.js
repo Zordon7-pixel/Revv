@@ -1,9 +1,10 @@
 const router = require('express').Router();
 const { pool, dbGet, dbAll, dbRun } = require('../db');
 const auth = require('../middleware/auth');
+const { selectedEconomics, redactSelectedRO, redactROs, redactRO, summarizeEconomics, aggregateMetadata } = require('../services/panelEstimatorEconomics');
 const { ROLE_RANK, getRoleRank, requireAdmin, requireTechnician } = require('../middleware/roles');
 const { calculateProfit, calculateTrueProfit } = require('../services/profit');
-const { getRoMoneySummary, isPaidStatus, roundToIntCents } = require('../services/roMoney');
+const { getRoMoneySummary, isPaidStatus, roundToIntCents, dollarsToCents } = require('../services/roMoney');
 const { sendSMS, isConfiguredForShop } = require('../services/sms');
 const { sendMail } = require('../services/mailer');
 const { statusChangeEmail } = require('../services/emailTemplates');
@@ -852,7 +853,8 @@ async function enrichRO(ro) {
      WHERE ro.id = $1`,
     [ro.id]
   );
-  const profit   = calculateProfit(ro);
+  const selected = await selectedEconomics(ro.shop_id, [ro.id]);
+  const profit = selected.has(String(ro.id)) ? null : calculateProfit(ro);
   const assigned_tech = enriched?.assigned_tech || null;
   const vehicle = enriched?.vehicle || null;
   const customer = enriched?.customer
@@ -863,7 +865,7 @@ async function enrichRO(ro) {
   if (customer) {
     customer.has_portal_access = !!enriched?.has_portal_access;
   }
-  return { ...ro, vehicle, customer, log, parts, profit, assigned_tech };
+  return redactSelectedRO({ ...ro, vehicle, customer, log, parts, profit, assigned_tech }, selected);
 }
 
 router.get('/', auth, async (req, res) => {
@@ -969,7 +971,7 @@ router.get('/', auth, async (req, res) => {
       WHERE ${where.join('\n        AND ')}
       ORDER BY ro.created_at DESC
     `, params);
-    res.json({ ros });
+    res.json({ ros: await redactROs(ros, req.user.shop_id) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1139,7 +1141,7 @@ router.put('/:id/revenue-period', auth, requireAdmin, async (req, res) => {
     }
 
     const updated = await dbGet('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
-    return res.json({ ok: true, ro: updated });
+    return res.json({ ok: true, ro: await redactRO(updated, req.user.shop_id) });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
@@ -1164,14 +1166,19 @@ router.get('/job-cost/summary', auth, requireAdmin, async (req, res) => {
       ORDER BY ro.created_at DESC
     `, params);
 
+    const selected = await selectedEconomics(req.user.shop_id, rows.map(row => row.id), req.user.role);
+    const economics = summarizeEconomics(rows, selected, req.user.role);
     const totalJobs = rows.length;
-    const totalRevenue = rows.reduce((s, r) => s + parseFloat(r.total || 0), 0);
-    const totalCost = rows.reduce((s, r) => s + parseFloat(r.parts_cost || 0) + parseFloat(r.labor_cost || 0) + parseFloat(r.sublet_cost || 0), 0);
-    const grossProfit = rows.reduce((s, r) => s + parseFloat(r.true_profit || 0), 0);
-    const profitableCount = rows.filter(r => parseFloat(r.true_profit || 0) > 0).length;
-    const avgMargin = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0;
-
-    res.json({ totalJobs, totalRevenue, totalCost, grossProfit, avgMargin, profitableCount, rows });
+    const totalRevenue = rows.reduce((sum, row) => sum + BigInt(dollarsToCents(row.total)), 0n);
+    const revenueCents = Number(totalRevenue);
+    if (!Number.isSafeInteger(revenueCents)) throw new Error('Revenue exceeds safe integer range');
+    const grossProfit = economics.profit_cents === null ? null : economics.profit_cents / 100;
+    const avgMargin = grossProfit === null ? null : revenueCents > 0
+      ? Math.round(economics.profit_cents * 10000 / revenueCents) / 100 : 0;
+    res.json({ totalJobs, totalRevenue: revenueCents / 100,
+      totalCost: economics.cost_cents === null ? null : economics.cost_cents / 100,
+      grossProfit, avgMargin, profitableCount: economics.profitable_count,
+      ...aggregateMetadata(economics), rows: rows.map(row => redactSelectedRO(row, selected)) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1326,7 +1333,11 @@ router.get('/:id', auth, async (req, res) => {
     const payload = await enrichRO(ro);
     const actorRole = String(req.user.role || '').toLowerCase();
 
-    if (['owner', 'admin'].includes(actorRole)) {
+    if (payload.panel_estimator_selected) {
+      const selected = await selectedEconomics(req.user.shop_id, [ro.id], actorRole);
+      const economics = selected.get(String(ro.id))?.panel_economics;
+      if (economics) payload.panel_economics = economics;
+    } else if (['owner', 'admin'].includes(actorRole)) {
       try {
         const [costProfile, laborHoursRow] = await Promise.all([
           dbGet(
@@ -2271,7 +2282,10 @@ router.put('/:id', auth, requireTechnician, async (req, res) => {
     const statusChanged = Object.prototype.hasOwnProperty.call(updates, 'status') && updates.status !== ro.status;
     if (Object.keys(updates).length > 0) {
       // If true_profit is explicitly provided, use it as a manual override — skip auto-calculation
-      if (!Object.prototype.hasOwnProperty.call(body, 'true_profit')) {
+      if ((await selectedEconomics(req.user.shop_id, [ro.id])).has(String(ro.id))) {
+        // Selected economics are immutable; generic edits cannot restore manual profit.
+        delete updates.true_profit;
+      } else if (!Object.prototype.hasOwnProperty.call(body, 'true_profit')) {
         const profit = calculateProfit({ ...ro, ...updates });
         updates.true_profit = profit.trueProfit;
       }

@@ -165,7 +165,7 @@ for (const type of ['TEXT', 'UUID']) test(`real PostgreSQL revisions ${type}: se
       assert.equal(state.ro_panel_estimator_revision_costs.length, 1);
       assert.equal(state.ro_panel_estimator_drafts[0].active_revision_id, first.revision_id);
       assert.equal(Number(state.ro[0].amount_owed_cents), 44000);
-      assert.equal(Number(state.ro[0].total), 440); assert.equal(Number(state.ro[0].true_profit), 987.65);
+      assert.equal(Number(state.ro[0].total), 440); assert.equal(state.ro[0].true_profit, null);
       assert.equal(state.estimate_metadata[0].adjuster_totals.insurer, 'Original reference');
       assert.equal(state.estimate_line_items.reduce((s, l) => s + Math.round(Number(l.total) * 100), 0), 40000);
       for (const line of state.estimate_line_items) { assert.equal(line.quantity, '1.00'); assert.match(line.panel_fingerprint, /^[a-f0-9]{64}$/); }
