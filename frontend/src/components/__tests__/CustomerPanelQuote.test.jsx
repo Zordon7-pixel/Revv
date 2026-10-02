@@ -20,8 +20,8 @@ it('renders the real projection scope, separate expected allocations/payments, a
   expect(screen.getByLabelText('Repair scope')).toHaveTextContent('Hood · Repair · Refinish included in scope')
   expect(screen.getByText(/Imported carrier estimate/)).toHaveTextContent('approval status not implied')
   expect(screen.getByText('Estimated customer responsibility: Unknown')).toBeInTheDocument()
-  expect(screen.getByText('Posted payments: Unknown')).toBeInTheDocument()
-  expect(screen.getByText('Remaining repair balance: Unknown')).toBeInTheDocument()
+  expect(screen.getByText('Posted payments: $25.00')).toBeInTheDocument()
+  expect(screen.getByText('Remaining repair balance: $470.00')).toBeInTheDocument()
   expect(screen.getByText(/Vehicle supplied by the repair-order screen/)).toBeInTheDocument()
   expect(screen.getByText(/Only this selected revision drives billing/)).toBeInTheDocument()
 })
@@ -31,8 +31,8 @@ it('renders actual historical projections and per-field panel, operation, rate a
   const fields = q => ({ scope: q.scope, scenario: q.scenario, adjustments: q.adjustments, totals: q.totals, allocation: q.allocation })
   current.comparisons = [{ ...historicalQuote({ id: 'r0', version: 1, quote_hash: old.quote_hash, public_snapshot: old }), differences: differences(fields(old), fields(current)) }]
   render(<CustomerPanelQuote quote={current} />)
-  const history = within(screen.getByRole('region', { name: 'Historical revision r0' }))
-  expect(history.getByText('Customer Pay · Historical revision r0 · Version 1')).toBeInTheDocument()
+  const history = within(screen.getByRole('region', { name: 'Historical revision 1' }))
+  expect(history.getByText('Customer Pay · Historical · Revision 1')).toBeInTheDocument()
   expect(history.getByText(/Body labor rate: \$100.00 → \$120.00/)).toBeInTheDocument()
   expect(history.getByText(/Operation: Repair → Replacement/)).toBeInTheDocument()
   expect(history.getByText('Price adjustments / Discount: $50.00 → $10.00')).toBeInTheDocument()
@@ -83,4 +83,48 @@ it('shows known posted payments independently of complete insurance contribution
   expect(screen.getByText('Estimated customer responsibility: $100.00')).toBeInTheDocument()
   expect(screen.getByText('Posted payments: $25.00')).toBeInTheDocument()
   expect(screen.getByText('Remaining repair balance: $470.00')).toBeInTheDocument()
+})
+
+it('renders real decimal-string quantities and unique panel/category/operation labels', () => {
+  const value = quote()
+  expect(value.lines.find(line => line.category === 'body').quantity).toBe('2.00')
+  expect(value.lines.find(line => line.category === 'refinish').quantity).toBe('1.00')
+  render(<CustomerPanelQuote quote={value} />)
+  const charges = within(screen.getByLabelText('Reviewed estimate charges'))
+  expect(charges.getByText('2.00 × $100.00')).toBeInTheDocument()
+  expect(charges.getAllByText('1.00 × $100.00')).toHaveLength(2)
+  expect(charges.getByText('Hood · Body labor · Repair')).toBeInTheDocument()
+  expect(charges.getByText('Hood · Refinish labor')).toBeInTheDocument()
+  expect(charges.getByText('Hood · Parts')).toBeInTheDocument()
+})
+it.each([2, 1.25, 0, '0.00', '1000000.00'])('displays valid quantity %s without changing totals', quantity => {
+  const value = quote(); value.lines = [{ ...value.lines[0], quantity }]
+  render(<CustomerPanelQuote quote={value} />)
+  expect(screen.getByText(`${quantity} × $100.00`)).toBeInTheDocument()
+  expect(screen.getByLabelText('Quote totals')).toHaveTextContent('$495.00')
+})
+it.each([null, undefined, '', ' ', ' 2.00 ', '1e2', '0x10', '02', '1.001', '-1', 'Infinity', '<script>alert(1)</script>', true, {}, [], NaN, Infinity, -1, -0, 1000001, '9007199254740993'])('keeps malformed or missing quantity %s unknown', quantity => {
+  const value = quote(); value.lines = [{ ...value.lines[0], quantity }]
+  const { container } = render(<CustomerPanelQuote quote={value} />)
+  expect(screen.getByText('Unknown × $100.00')).toBeInTheDocument()
+  expect(container.querySelector('script')).toBeNull()
+})
+it('retains distinct descriptions and explicit shared operation indication', () => {
+  const value = quote(); value.lines = [{ ...value.lines[0], description: 'Frame measurement', shared_key: 'whole-car', operation_id: 'extra:measure' }]
+  render(<CustomerPanelQuote quote={value} />)
+  expect(screen.getByText('Hood · Frame measurement · Body labor · Measure')).toBeInTheDocument()
+  expect(screen.getByText('2.00 × $100.00 · Shared operation')).toBeInTheDocument()
+})
+it('uses immutable versions for current and historical labels with honest missing-identity wording', () => {
+  const value = quote({}, { revision: '3f1b86db-c1bb-4346-af86-213584792157' })
+  value.comparisons = [{ revision_id: 'c4d9c306-f362-458b-a5cb-6a5167d59171', version: 3 }]
+  const { container, rerender } = render(<CustomerPanelQuote quote={value} version={7} />)
+  expect(screen.getByText('Vehicle details not provided · Revision 7')).toBeInTheDocument()
+  expect(screen.getByRole('region', { name: 'Historical revision 3' })).toBeInTheDocument()
+  expect(container.textContent).not.toContain(value.revision_id)
+  expect(container.innerHTML).not.toContain(value.comparisons[0].revision_id)
+  for (const version of [undefined, null, 0, -1, 1.5, '7', Number.MAX_SAFE_INTEGER + 1]) {
+    rerender(<CustomerPanelQuote quote={value} version={version} />)
+    expect(screen.getByText('Vehicle details not provided · Reviewed revision')).toBeInTheDocument()
+  }
 })

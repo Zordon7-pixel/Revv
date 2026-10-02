@@ -64,16 +64,28 @@ test('PDF pure mixed package scoped discounts and minimum buckets are charged on
   assert.equal(bucketLabel(value.quote, { kind: 'panel_minimum', panel_id: 'hood' }), 'Hood - Minimum charge adjustment');
 });
 test('PDF pure unknown allocation/provenance, posted payments and retained deferral acknowledgements', async () => {
-  const value = dto(draft({ adjustments: {}, scenario: { payer: 'insurance', provenance: 'imported_carrier' }, assessments: [panel({
+  const input = draft({ adjustments: {}, scenario: { payer: 'insurance', provenance: 'imported_carrier' }, assessments: [panel({
     operation: 'paint-only', body_hours: 0, parts_sell_cents: 0, optional_cosmetic: true,
     deferral: { reason: 'Paint postponed', estimator_acknowledged: true, customer_acknowledged: true,
-      customer_acknowledgement_reference: 'Conversation on work order' } })] }), 2000);
-  const pdf = await parsed(value);
+      customer_acknowledgement_reference: 'Conversation on work order' } })] });
+  const value = dto(input, 0);
+  const pdf = await parsed(value); safe(pdf.text);
   for (const text of ['Estimated customer responsibility: Unknown', 'Estimated carrier contribution: Unknown',
-    'Posted payments: Unknown', 'Imported carrier estimate', 'approval status not implied',
+    'Posted payments: $0.00', 'Remaining repair balance: $0.00', 'Imported carrier estimate', 'approval status not implied',
     'DEFERRED', 'Paint postponed', 'Customer acknowledged: Yes', 'Conversation on work order']) assert.ok(pdf.text.includes(text), text);
   assert.match(pdf.text, /Repair total: \$0.00/);
+  assert.throws(() => dto(input, 2000), { name: 'RangeError', message: 'Insurance allocation does not reconcile' });
   assert.match((await parsed(dto(draft(), 2000))).text, /Posted payments: \$20.00/);
+});
+test('PDF pure billed insurance with absent coverage preserves posted payments and exact remaining balance', async () => {
+  const value = dto(draft({ scenario: { payer: 'insurance', provenance: 'imported_carrier' } }), 2000);
+  assert.equal(value.quote.totals.total_cents, 44000);
+  assert.equal(value.quote.allocation.balance_cents, value.quote.totals.total_cents - 2000);
+  const pdf = await parsed(value); safe(pdf.text);
+  for (const text of ['Repair total: $440.00', 'Posted payments: $20.00', 'Remaining repair balance: $420.00',
+    'Estimated customer responsibility: Unknown', 'Estimated carrier contribution: Unknown',
+    'Imported carrier estimate', 'approval status not implied']) assert.ok(pdf.text.includes(text), text);
+  assert.doesNotMatch(pdf.text, /Estimated (?:customer responsibility|carrier contribution): \$/);
 });
 test('PDF pure comparison projection is nonrecursive and private safe; all differences are specific scalars', async () => {
   const old = dto(), next = dto(draft({ assessments: [panel({ body_rate_cents: 12000, parts_sell_cents: 15000 })],

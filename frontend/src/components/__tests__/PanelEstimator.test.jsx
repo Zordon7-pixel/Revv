@@ -63,14 +63,16 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 it('opens the first saved assessment, focuses selection, reopens SVG selection and confirms explicit removal', async () => {
   const { container } = await mounted()
   expect(screen.getByLabelText('Body hours')).toHaveValue(2)
-  const choice = screen.getByRole('button', { name: 'Hood Reviewed' }); choice.focus(); fireEvent.click(choice)
+  const choice = screen.getByRole('button', { name: 'Hood Editing Reviewed' }); choice.focus(); fireEvent.click(choice)
   await waitFor(() => expect(screen.getByRole('heading', { name: /2. Configure panel work/ })).toHaveFocus())
+  expect(choice).toHaveAttribute('aria-current', 'true')
   click('Close panel editor'); expect(choice).toHaveFocus()
+  expect(choice).not.toHaveAttribute('aria-current'); expect(choice).toHaveTextContent('Reviewed'); expect(choice).not.toHaveTextContent('Editing')
   fireEvent.click(container.querySelector('svg [aria-label="Hood"]'))
   expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument(); expect(screen.getByLabelText('Body hours')).toHaveValue(2)
   const remove = screen.getByRole('button', { name: 'Remove selected panel' }); remove.focus(); fireEvent.click(remove)
   expect(screen.getByRole('button', { name: 'Keep editing' })).toHaveFocus(); click('Keep editing'); expect(remove).toHaveFocus()
-  expect(screen.getByRole('button', { name: 'Hood Reviewed' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Hood Editing Reviewed' })).toBeInTheDocument()
 })
 it('preserves the legacy diagram toggle contract and keyboard selection', async () => {
   const onChange = vi.fn(); const { container, unmount } = render(<VehicleDiagram value={['hood']} onChange={onChange} />)
@@ -126,7 +128,7 @@ it('locks controlled edits and retains an archived historical application withou
 })
 it.each(['incomplete_insurance_allocation', 'missing_posted_payments'])('permits complete warning-only %s while sending the server-reviewed hash', async code => {
   await mounted(state([panel()])); api.post.mockImplementation(async (url, body) => url.endsWith('/preview') ? { data: { ...previewOf(body), quote: { ...previewOf(body).quote, review_flags: [{ panel_id: null, code }], complete: true } } } : { data: { revision_id: 'r1', version: 2 } })
-  await calculate(); check('I reviewed this calculated draft'); expect(screen.getByRole('button', { name: 'Commit reviewed draft' })).not.toBeDisabled(); click('Commit reviewed draft'); await screen.findByText(/Reviewed revision saved/)
+  await calculate(); check('I reviewed this calculated draft'); expect(screen.getByRole('button', { name: 'Commit reviewed draft' })).not.toBeDisabled(); click('Commit reviewed draft'); await screen.findByText(/Reviewed revision saved\. Customer response/)
   expect(api.post.mock.calls.at(-1)[1]).toMatchObject({ reviewed: true, input_hash: expect.stringMatching(/^[a-f0-9]{64}$/), expected_version: 1 })
 })
 it.each([{ code: 'unreviewed', complete: true }, { code: 'new_server_block', complete: true }, { code: 'incomplete_insurance_allocation', complete: false }])('blocks server flag/completeness $code $complete', async ({ code, complete }) => {
@@ -186,15 +188,15 @@ it('blocks duplicate submits and reuses commit idempotency after ambiguous failu
   await mounted(); await calculate(); check('I reviewed this calculated draft'); let rejectCommit
   api.post.mockImplementation(() => new Promise((resolve, reject) => { rejectCommit = reject })); click('Commit reviewed draft'); click('Commit reviewed draft'); const commitCalls = api.post.mock.calls.filter(([url]) => url.endsWith('/commit')); expect(commitCalls).toHaveLength(1); const key = commitCalls[0][1].idempotency_key
   await act(async () => rejectCommit(new Error('Network'))); expect(await screen.findByRole('alert')).toHaveTextContent('local edits are preserved')
-  api.post.mockResolvedValue({ data: { revision_id: 'r1', version: 2 } }); click('Retry'); await screen.findByText(/Reviewed revision saved/); expect(api.post.mock.calls.at(-1)[1].idempotency_key).toBe(key)
-  click('Preview customer quote'); expect(await screen.findByRole('article', { name: 'Customer quote' })).toHaveTextContent('Revision r1'); expect(api.get).toHaveBeenLastCalledWith(`${base}/quote?revision_id=r1`)
+  api.post.mockResolvedValue({ data: { revision_id: 'r1', version: 2 } }); click('Retry'); await screen.findByText(/Reviewed revision saved\. Customer response/); expect(api.post.mock.calls.at(-1)[1].idempotency_key).toBe(key)
+  click('Preview customer quote'); expect(await screen.findByRole('article', { name: 'Customer quote' })).toHaveTextContent('Revision 1'); expect(api.get).toHaveBeenLastCalledWith(`${base}/quote?revision_id=r1`)
 })
 it('retains edits on version conflict and discards only after explicit reload confirmation', async () => {
   await mounted(); change('Body hours', '5'); api.put.mockRejectedValue({ response: { status: 409, data: { error: 'VERSION_CONFLICT' } } }); click('Save draft'); expect(await screen.findByRole('alert')).toHaveTextContent('changed on the server'); click('Reload saved draft'); click('Keep editing'); expect(screen.getByLabelText('Body hours')).toHaveValue(5); click('Reload saved draft'); click('Discard and reload'); await waitFor(() => expect(screen.getByLabelText('Body hours')).toHaveValue(2))
 })
 it('retries load errors without synthetic state and drops late responses from the previous RO', async () => {
   api.get.mockRejectedValueOnce(new Error('Unavailable')); const { rerender } = render(<PanelEstimator roId="ro-1" />); expect(await screen.findByRole('alert')).toHaveTextContent('service may be unavailable'); expect(screen.queryByText('1. Select damaged panels')).not.toBeInTheDocument(); click('Retry'); await screen.findByText('1. Select damaged panels')
-  let resolveOld; api.get.mockImplementation(url => url.includes('ro-2') ? new Promise(resolve => { resolveOld = resolve }) : Promise.resolve({ data: state() })); rerender(<PanelEstimator roId="ro-2" />); rerender(<PanelEstimator roId="ro-3" />); await screen.findByText('1. Select damaged panels'); await act(async () => resolveOld({ data: state([panel()]) })); expect(screen.queryByRole('button', { name: 'Hood Reviewed' })).not.toBeInTheDocument()
+  let resolveOld; api.get.mockImplementation(url => url.includes('ro-2') ? new Promise(resolve => { resolveOld = resolve }) : Promise.resolve({ data: state() })); rerender(<PanelEstimator roId="ro-2" />); rerender(<PanelEstimator roId="ro-3" />); await screen.findByText('1. Select damaged panels'); await act(async () => resolveOld({ data: state([panel()]) })); expect(screen.queryByRole('button', { name: 'Hood Editing Reviewed' })).not.toBeInTheDocument()
 })
 it('does not unlock preset pricing or read private config for an assistant', async () => {
   getRole.mockReturnValue('assistant'); const item = preset(); await mounted({ ...state([panel()]), presets: [item] }); change('Shop preset', item.id)
@@ -285,7 +287,7 @@ it('clears quote/link binding on a new commit and never permits a second in-flig
   await savedRevision(); let finish; api.post.mockImplementationOnce(() => new Promise(resolve => { finish = resolve })); click('Seek customer approval'); click('Seek customer approval'); expect(api.post).toHaveBeenCalledTimes(1)
   await act(async () => finish({ data: linkResponse() })); change('Customer-visible notes', 'New reviewed scope'); expect(screen.queryByLabelText('Private approval link')).not.toBeInTheDocument()
   api.post.mockImplementation(async (url, body) => ({ data: url.endsWith('/preview') ? previewOf(body) : { revision_id: 'r2', version: 3, quote_hash: 'c'.repeat(64) } }))
-  check('I reviewed this panel’s inputs and applicability'); await calculate(); check('I reviewed this calculated draft'); click('Commit reviewed draft'); await screen.findByText(/Reviewed revision saved/)
+  check('I reviewed this panel’s inputs and applicability'); await calculate(); check('I reviewed this calculated draft'); click('Commit reviewed draft'); await screen.findByText(/Reviewed revision saved\. Customer response/)
   expect(screen.getByRole('button', { name: 'Seek customer approval' })).toBeDisabled(); expect(screen.queryByRole('article')).not.toBeInTheDocument()
 })
 it('blocks actions and ignores a late link while catalog edits change the owner context', async () => {
@@ -293,4 +295,36 @@ it('blocks actions and ignores a late link while catalog edits change the owner 
   let finish; api.post.mockImplementationOnce(() => new Promise(resolve => { finish = resolve })); click('Seek customer approval')
   click('Create preset from current panel settings'); change('Preset name', 'Unsaved catalog change'); await act(async () => finish({ data: linkResponse() }))
   expect(screen.queryByLabelText('Private approval link')).not.toBeInTheDocument(); expect(screen.getByRole('button', { name: 'Download quote PDF' })).toBeDisabled()
+})
+
+it('keeps editing selection separate from Reviewed and Configured status', async () => {
+  await mounted(state([panel(), panel({ panel_id: 'roof', label: 'Roof', reviewed: false })]))
+  const hood = screen.getByRole('button', { name: 'Hood Editing Reviewed' })
+  const roof = screen.getByRole('button', { name: 'Roof Configured' })
+  expect(hood).toHaveAttribute('aria-current', 'true'); expect(roof).not.toHaveAttribute('aria-current')
+  fireEvent.click(roof)
+  expect(roof).toHaveAttribute('aria-current', 'true'); expect(roof).toHaveTextContent('Editing'); expect(roof).toHaveTextContent('Configured')
+  expect(hood).not.toHaveAttribute('aria-current'); expect(hood).not.toHaveTextContent('Editing'); expect(hood).toHaveTextContent('Reviewed')
+})
+it('uses panel singular/plural in the compact diagram and retains generic zone wording elsewhere', () => {
+  const { rerender } = render(<VehicleDiagram compact value={['hood']} onChange={() => {}} />)
+  expect(screen.getByText(/1 panel selected/)).toBeInTheDocument()
+  rerender(<VehicleDiagram compact value={['hood', 'roof']} onChange={() => {}} />)
+  expect(screen.getByText(/2 panels selected/)).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'Interior (0)' }))
+  expect(screen.getByText(/2 panels selected/)).toBeInTheDocument()
+  rerender(<VehicleDiagram value={['hood']} onChange={() => {}} />)
+  expect(screen.getByText(/1 zone selected/)).toBeInTheDocument()
+})
+it.each([3, undefined])('labels the saved revision from the immutable quote binding (%s), never draft version', async version => {
+  const { container } = await mounted({ ...state([panel()]), version: 19, active_revision_id: 'r1' })
+  expect(screen.getByText('Reviewed revision saved')).toBeInTheDocument()
+  expect(container.textContent).not.toContain('Revision 19')
+  api.get.mockResolvedValueOnce({ data: { revision_id: 'r1', quote_hash: 'a'.repeat(64), version, quote: { ...previewOf().quote, revision_id: 'r1', quote_hash: 'a'.repeat(64) } } })
+  click('Preview customer quote'); await screen.findByRole('article')
+  expect(screen.getByText(version ? 'Revision 3' : 'Reviewed revision saved')).toBeInTheDocument()
+  api.post.mockResolvedValueOnce({ data: linkResponse() }); click('Seek customer approval'); await screen.findByLabelText('Private approval link')
+  expect(screen.getByRole('region', { name: 'Approval link' })).toHaveTextContent(`${version ? 'Revision 3' : 'Reviewed revision saved'} · Approval link`)
+  expect(api.post).toHaveBeenCalledWith(`${base}/approval-link`, { revision_id: 'r1', quote_hash: 'a'.repeat(64) })
+  expect(container.textContent).not.toContain('Revision r1'); expect(container.textContent).not.toContain('Revision 19')
 })

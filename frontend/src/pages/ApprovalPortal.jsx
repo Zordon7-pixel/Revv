@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { CheckCircle2, Loader2, ShieldCheck, XCircle } from 'lucide-react'
 import api from '../lib/api'
-import CustomerPanelQuote, { downloadQuotePdf } from '../components/CustomerPanelQuote'
+import CustomerPanelQuote, { downloadQuotePdf, reviewedRevisionLabel } from '../components/CustomerPanelQuote'
 import { useLanguage } from '../contexts/LanguageContext'
 import { Logo, Money, Panel, StatusBadge, dollarsToCents } from '../components/ui'
 
@@ -253,9 +253,9 @@ function PanelApproval({ token, data, reload }) {
     <ApprovalHeader />
     {(!valid || blocked) ? <Panel className="space-y-4 p-5"><p role="alert">{error || unavailable}</p><button className={panelButton} type="button" onClick={reload}>Reload approval link</button></Panel> : <>
       <CustomerPanelQuote quote={data.quote} version={data.version} />
-      <Panel title="Quote disclosure"><div className="space-y-3 p-5"><p>{data.disclosure.text}</p><p className="text-sm text-muted">Disclosure version: {data.disclosure.version} · Revision {data.revision_id}</p><button type="button" className={panelButton} disabled={busy || !!retryBody} onClick={pdf}>Download quote PDF</button></div></Panel>
+      <Panel title="Quote disclosure"><div className="space-y-3 p-5"><p>{data.disclosure.text}</p><p className="text-sm text-muted">{reviewedRevisionLabel(data.version)}</p><button type="button" className={panelButton} disabled={busy || !!retryBody} onClick={pdf}>Download quote PDF</button></div></Panel>
       {error && <p role="alert" className="text-gold">{error}</p>}
-      {receipt ? <Panel title="Recorded decision"><div className="space-y-2 p-5" role="status"><p>{receipt.decision === 'approve' ? 'Approved' : 'Declined'} by {receipt.actor_name}</p><p>Recorded at: {receipt.responded_at}</p><p>Decision revision: {receipt.revision_id} · Matches the current selected quote loaded here.</p>{receipt.reason && <p>Requested changes: {receipt.reason}</p>}<p>This immutable receipt applies only to this revision. Later changes require a new quote and approval; this is not approval of a future revision.</p><p>No shop notification was sent by this response. It does not establish carrier approval, take payment or change the repair workflow.</p></div></Panel> : <Panel title="Your response"><div className="space-y-4 p-5">
+      {receipt ? <Panel title="Recorded decision"><div className="space-y-2 p-5" role="status"><p>{receipt.decision === 'approve' ? 'Approved' : 'Declined'} by {receipt.actor_name}</p><p>Recorded at: {receipt.responded_at}</p><p>Decision for: {reviewedRevisionLabel(data.version)} · Matches the current selected quote loaded here.</p>{receipt.reason && <p>Requested changes: {receipt.reason}</p>}<p>This immutable receipt applies only to this revision. Later changes require a new quote and approval; this is not approval of a future revision.</p><p>No shop notification was sent by this response. It does not establish carrier approval, take payment or change the repair workflow.</p></div></Panel> : <Panel title="Your response"><div className="space-y-4 p-5">
         <fieldset disabled={busy || !!retryBody} className="space-y-4"><label className="block">Your full name<input className="mt-1 min-h-11 w-full rounded-instrument border border-line-2 bg-void p-2" aria-label="Your full name" maxLength={200} value={actor} onChange={event => setActor(event.target.value)} /></label>
           <label className="flex min-h-11 items-start gap-3"><input className="mt-1" type="checkbox" checked={ack} onChange={event => setAck(event.target.checked)} />I have read the displayed scope, price, revision and disclosure and acknowledge that my response applies only to this quote.</label>
           <label className="block">Change request reason (required to decline)<textarea className="mt-1 w-full rounded-instrument border border-line-2 bg-void p-2" aria-label="Change request reason" rows={4} maxLength={4000} value={reason} onChange={event => setReason(event.target.value)} /></label>

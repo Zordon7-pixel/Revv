@@ -121,12 +121,18 @@ function allocateInsurance(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new TypeError('Invalid insurance allocation');
   const keys = ['total_cents', 'covered_cents', 'deductible_cents', 'uncovered_cents', 'adjustment_cents', 'paid_cents'];
   const amounts = keys.map(key => input[key] == null ? null : scaledDecimal(input[key], 0, key));
-  if (amounts.some(value => value === null)) {
-    return { complete: false, carrier_cents: null, customer_cents: null, paid_cents: null, balance_cents: null };
-  }
   const [total, covered, deductible, uncovered, adjustment, paid] = amounts;
-  if (covered + uncovered + adjustment !== total || deductible > covered || paid > total) {
+  // Validate each relationship as soon as its inputs are known, even when the
+  // remaining coverage details are incomplete. Payments are independent of them.
+  if ((total !== null && paid !== null && paid > total) ||
+      (covered !== null && deductible !== null && deductible > covered) ||
+      ([total, covered, uncovered, adjustment].every(value => value !== null) && covered + uncovered + adjustment !== total)) {
     throw new RangeError('Insurance allocation does not reconcile');
+  }
+  if (amounts.some(value => value === null)) {
+    return { complete: false, carrier_cents: null, customer_cents: null,
+      paid_cents: paid === null ? null : checkedCents(paid),
+      balance_cents: total === null || paid === null ? null : checkedCents(total - paid) };
   }
   return {
     complete: true,

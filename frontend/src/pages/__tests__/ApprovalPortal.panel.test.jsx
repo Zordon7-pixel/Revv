@@ -11,11 +11,11 @@ const require = createRequire(import.meta.url)
 const n = require('../../../../backend/src/services/panelEstimatorStore.js')
 const { assembleDraft, hashInputs } = require('../../../../backend/src/services/panelEstimatorDraft.js')
 const { DISCLOSURE } = require('../../../../backend/src/services/panelEstimatorApproval.js')
-function projection(revision = 'r1') {
+function projection(revision = 'r1', version = 2) {
   const draft = n.publicSnapshot({ assessments: [{ panel_id: 'hood', label: 'Hood', body_style: 'sedan', severity: 'light', operation: 'repair', refinish: false, body_hours: 2, body_rate_cents: 10000, parts_sell_cents: 0, materials_sell_cents: 0, sublet_sell_cents: 0, taxable: { body: true, refinish: true, parts: true, materials: true, sublet: true }, reviewed: true }] })
   const quote = { ...assembleDraft({ draft, costs: n.privateSnapshot({}), taxRateBps: 1000, paidCents: 0 }).sell, revision_id: revision, reviewed: true, reviewed_at: '2026-10-01T12:00:00Z', comparisons: [] }
   quote.quote_hash = hashInputs(quote)
-  return { kind: 'panel_estimator', revision_id: revision, quote_hash: quote.quote_hash, version: 2, quote, disclosure: DISCLOSURE, expires_at: '2026-10-08T12:00:00Z', receipt: null }
+  return { kind: 'panel_estimator', revision_id: revision, quote_hash: quote.quote_hash, version, quote, disclosure: DISCLOSURE, expires_at: '2026-10-08T12:00:00Z', receipt: null }
 }
 const makeReceipt = (dto, body = {}) => ({ id: 'event-1', revision_id: dto.revision_id, quote_hash: dto.quote_hash, disclosure_version: DISCLOSURE.version, decision: 'approve', actor_name: 'Synthetic Customer', acknowledged: true, reason: null, responded_at: '2026-10-01T13:00:00Z', ...body })
 const click = name => fireEvent.click(screen.getByRole('button', { name, exact: true }))
@@ -82,16 +82,16 @@ it('retries failed GET and refuses a receipt whose immutable binding does not ma
 })
 it('discards a late GET from a previous token and clears displayed quote immediately on token change', async () => {
   let finish; api.get.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
-  const { rerender } = render(<ApprovalPortal />); const old = dto; dto = projection('r2'); route.token = `pe_${'2'.repeat(64)}`; rerender(<ApprovalPortal />)
-  await screen.findByRole('article', { name: 'Customer quote' }); expect(screen.getByRole('article')).toHaveTextContent('Revision r2'); await act(async () => finish({ data: old }))
-  expect(screen.queryByText(/Revision r1/)).not.toBeInTheDocument()
+  const { rerender } = render(<ApprovalPortal />); const old = dto; dto = projection('r2', 3); route.token = `pe_${'2'.repeat(64)}`; rerender(<ApprovalPortal />)
+  await screen.findByRole('article', { name: 'Customer quote' }); expect(screen.getByRole('article')).toHaveTextContent('Revision 3'); await act(async () => finish({ data: old }))
+  expect(screen.queryByText(/Revision 2/)).not.toBeInTheDocument()
   api.get.mockImplementation(() => new Promise(() => {})); route.token = `pe_${'3'.repeat(64)}`; rerender(<ApprovalPortal />)
   expect(screen.queryByRole('article')).not.toBeInTheDocument(); expect(screen.getByText('Loading')).toBeInTheDocument()
 })
 it('discards a late POST receipt from a previous token', async () => {
   const { rerender } = await mount(); change('Your full name', 'Synthetic Customer'); acknowledge(); const old = dto; let finish
   api.post.mockImplementation(() => new Promise(resolve => { finish = resolve })); click('Approve this revision')
-  dto = projection('r2'); route.token = `pe_${'2'.repeat(64)}`; rerender(<ApprovalPortal />); await screen.findByRole('article')
+  dto = projection('r2', 3); route.token = `pe_${'2'.repeat(64)}`; rerender(<ApprovalPortal />); await screen.findByRole('article')
   await act(async () => finish({ data: { ...old, receipt: makeReceipt(old) } }))
   expect(screen.queryByText('Approved by Synthetic Customer')).not.toBeInTheDocument(); expect(screen.getByLabelText('Your full name')).toHaveValue('')
 })
@@ -100,7 +100,7 @@ it('downloads guarded PDF as a blob, revokes its URL, and suppresses late PDF si
   api.get.mockResolvedValueOnce({ data: blob }); click('Download quote PDF'); await waitFor(() => expect(URL.createObjectURL).toHaveBeenCalledWith(blob))
   expect(api.get).toHaveBeenLastCalledWith(`/approval/${route.token}/pdf`, { responseType: 'blob' }); expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:quote')
   let finish; api.get.mockImplementationOnce(() => new Promise(resolve => { finish = resolve })); click('Download quote PDF')
-  route.token = `pe_${'2'.repeat(64)}`; dto = projection('r2'); rerender(<ApprovalPortal />); await screen.findByRole('article')
+  route.token = `pe_${'2'.repeat(64)}`; dto = projection('r2', 3); rerender(<ApprovalPortal />); await screen.findByRole('article')
   await act(async () => finish({ data: blob })); expect(URL.createObjectURL).toHaveBeenCalledTimes(1)
 })
 it('removes response controls when the server rejects PDF access', async () => {
@@ -125,4 +125,20 @@ it('refuses missing hash bindings and a nonmatching successful response receipt'
   dto = validDto; await mount(); change('Your full name', 'Synthetic Customer'); acknowledge()
   api.post.mockResolvedValueOnce({ data: { ...dto, receipt: makeReceipt(dto, { decision: 'decline', reason: 'A different decision' }) } }); click('Approve this revision')
   expect(await screen.findByRole('alert')).toHaveTextContent('did not return a matching decision receipt'); expect(screen.queryByText('Approved by Synthetic Customer')).not.toBeInTheDocument()
+})
+
+it.each([4, undefined])('uses immutable version (%s) in disclosure and receipt while retaining exact UUID/hash binding', async version => {
+  const revision = '3f1b86db-c1bb-4346-af86-213584792157'
+  dto = { ...projection(revision), version }
+  const { container } = await mount()
+  const label = version ? 'Revision 4' : 'Reviewed revision'
+  expect(screen.getByText(label, { exact: true })).toBeInTheDocument()
+  expect(screen.getByRole('article')).toHaveTextContent(label)
+  expect(container.textContent).not.toContain(revision)
+  expect(container.textContent).not.toContain(dto.quote_hash)
+  change('Your full name', 'Synthetic Customer'); acknowledge(); click('Approve this revision')
+  await screen.findByText('Approved by Synthetic Customer')
+  expect(screen.getByText(`Decision for: ${label} · Matches the current selected quote loaded here.`)).toBeInTheDocument()
+  expect(container.textContent).not.toContain(revision)
+  expect(api.post).toHaveBeenCalledWith(`/approval/${route.token}/respond`, { decision: 'approve', actor_name: 'Synthetic Customer', acknowledged: true, revision_id: revision, quote_hash: dto.quote_hash, disclosure_version: DISCLOSURE.version })
 })

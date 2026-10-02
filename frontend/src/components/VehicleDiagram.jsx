@@ -229,8 +229,8 @@ export default function VehicleDiagram({ value = [], onChange, readOnly = false,
       {!readOnly && (
         <p className="text-center text-xs text-faint">
           {mode === 'interior'
-            ? `Mark interior damage for steering column, ignition switch, dash, console, and seats • ${selected.length} zone${selected.length !== 1 ? 's' : ''} selected`
-            : `Mark exterior damage, including undercarriage, tires, and rims • ${selected.length} zone${selected.length !== 1 ? 's' : ''} selected`}
+            ? `Mark interior damage for steering column, ignition switch, dash, console, and seats • ${selected.length} ${compact ? 'panel' : 'zone'}${selected.length !== 1 ? 's' : ''} selected`
+            : `Mark exterior damage, including undercarriage, tires, and rims • ${selected.length} ${compact ? 'panel' : 'zone'}${selected.length !== 1 ? 's' : ''} selected`}
         </p>
       )}
     </div>

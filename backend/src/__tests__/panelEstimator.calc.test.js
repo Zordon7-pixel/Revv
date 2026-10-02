@@ -63,14 +63,15 @@ test('F2 reconciliation and deposits stay separate from payer responsibility', (
     { complete: true, carrier_cents: 110000, customer_cents: 71000, paid_cents: 0, balance_cents: 181000 });
 });
 
-test('every missing/null insurance field gives unknown; invalid and mismatched allocations fail', () => {
+test('every missing/null insurance field preserves independent payment facts; invalid allocations fail', () => {
   for (const key of Object.keys(insurance())) {
     for (const value of [null, undefined]) {
       const result = allocateInsurance({ ...insurance(), [key]: value });
       assert.equal(result.complete, false);
       assert.equal(result.carrier_cents, null);
       assert.equal(result.customer_cents, null);
-      assert.equal(result.balance_cents, null);
+      assert.equal(result.paid_cents, key === 'paid_cents' ? null : 0);
+      assert.equal(result.balance_cents, ['total_cents', 'paid_cents'].includes(key) ? null : 180000);
     }
     for (const value of [true, false, NaN, Infinity, -1, 0.1, '', '1.0', Number.MAX_SAFE_INTEGER + 1]) {
       assert.throws(() => allocateInsurance({ ...insurance(), [key]: value }));
@@ -80,6 +81,43 @@ test('every missing/null insurance field gives unknown; invalid and mismatched a
     assert.throws(() => allocateInsurance({ ...insurance(), ...overrides }), /reconcile/);
   }
   assert.throws(() => allocateInsurance({ ...insurance(), covered_cents: null, paid_cents: true }));
+});
+
+test('incomplete insurance preserves the host fixture payment and full repair balance without mutating inputs', () => {
+  const input = { total_cents: 83600, covered_cents: 70000, deductible_cents: null,
+    uncovered_cents: 13600, adjustment_cents: 0, paid_cents: 3000 };
+  const before = JSON.stringify(input);
+  assert.deepEqual(allocateInsurance(input), { complete: false, carrier_cents: null,
+    customer_cents: null, paid_cents: 3000, balance_cents: 80600 });
+  for (const missing of Object.keys(input)) {
+    const result = allocateInsurance({ ...input, [missing]: undefined });
+    assert.equal(result.paid_cents, missing === 'paid_cents' ? null : 3000);
+    assert.equal(result.balance_cents, ['paid_cents', 'total_cents'].includes(missing) ? null : 80600);
+    assert.equal(result.complete, false);
+  }
+  assert.deepEqual(allocateInsurance({ paid_cents: '3000' }), { complete: false,
+    carrier_cents: null, customer_cents: null, paid_cents: 3000, balance_cents: null });
+  assert.deepEqual(allocateInsurance({ total_cents: 83600 }), { complete: false,
+    carrier_cents: null, customer_cents: null, paid_cents: null, balance_cents: null });
+  assert.deepEqual(allocateInsurance({}), { complete: false,
+    carrier_cents: null, customer_cents: null, paid_cents: null, balance_cents: null });
+  assert.equal(allocateInsurance({ total_cents: 0, paid_cents: 0 }).balance_cents, 0);
+  assert.equal(allocateInsurance({ total_cents: '9999999999', paid_cents: 0 }).balance_cents, 9999999999);
+  assert.equal(JSON.stringify(input), before);
+});
+
+test('incomplete allocations still reject every invalid known input and every checkable contradiction', () => {
+  for (const key of Object.keys(insurance())) {
+    for (const value of [true, false, NaN, Infinity, -Infinity, -1, -0, 0.1, '', ' ', '1.0', '1e2', {}, [], '10000000000', Number.MAX_SAFE_INTEGER + 1]) {
+      assert.throws(() => allocateInsurance({ [key]: value }), /Invalid/);
+    }
+  }
+  for (const missing of ['covered_cents', 'deductible_cents', 'uncovered_cents', 'adjustment_cents']) {
+    assert.throws(() => allocateInsurance({ ...insurance(), [missing]: null, paid_cents: 180001 }), /reconcile/);
+  }
+  assert.throws(() => allocateInsurance({ covered_cents: 10, deductible_cents: 11 }), /reconcile/);
+  assert.throws(() => allocateInsurance({ ...insurance(), paid_cents: null, total_cents: 1 }), /reconcile/);
+  assert.throws(() => allocateInsurance({ ...insurance(), deductible_cents: null, total_cents: 1 }), /reconcile/);
 });
 
 test('exact fractional quantity extension rounds half up for sell and cost', () => {
