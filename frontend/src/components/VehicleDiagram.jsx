@@ -63,9 +63,11 @@ function fallbackLabel(id) {
     .join(' ')
 }
 
+export const vehiclePanelOptions = [...EXTERIOR_PANELS, ...INTERIOR_PANELS].map(panel => [panel.id, panel.label])
+
 export const vehiclePanelLabel = id => [...EXTERIOR_PANELS, ...INTERIOR_PANELS].find(panel => panel.id === id)?.label || fallbackLabel(id)
 
-export default function VehicleDiagram({ value = [], onChange, readOnly = false }) {
+export default function VehicleDiagram({ value = [], onChange, readOnly = false, onPanelSelect, compact = false }) {
   const [hovered, setHovered] = useState(null)
   const selected = Array.isArray(value) ? value : []
   const [mode, setMode] = useState(() => (
@@ -77,8 +79,9 @@ export default function VehicleDiagram({ value = [], onChange, readOnly = false 
   const selectedExteriorCount = selected.filter((id) => !INTERIOR_PANEL_IDS.has(id)).length
   const selectedInteriorCount = selected.filter((id) => INTERIOR_PANEL_IDS.has(id)).length
 
-  function toggle(id) {
+  function toggle(id, remove = false, trigger) {
     if (readOnly) return
+    if (onPanelSelect && selected.includes(id) && !remove) { onPanelSelect(id, trigger); return }
     const next = selected.includes(id)
       ? selected.filter((panelId) => panelId !== id)
       : [...selected, id]
@@ -110,7 +113,14 @@ export default function VehicleDiagram({ value = [], onChange, readOnly = false 
       strokeWidth: isSelected ? 2 : 1,
       opacity: 0.95,
       style: { cursor: readOnly ? 'default' : 'pointer', transition: 'fill 0.15s ease' },
-      onClick: () => toggle(panel.id),
+      'aria-label': panel.label,
+      role: readOnly ? undefined : 'button',
+      tabIndex: readOnly ? undefined : 0,
+      'aria-pressed': readOnly ? undefined : isSelected,
+      onClick: event => toggle(panel.id, false, event.currentTarget),
+      onKeyDown: event => {
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggle(panel.id, false, event.currentTarget) }
+      },
       onMouseEnter: () => setHovered(panel.id),
       onMouseLeave: () => setHovered(null),
     }
@@ -175,14 +185,14 @@ export default function VehicleDiagram({ value = [], onChange, readOnly = false 
       )}
 
       <div className="relative">
-        <svg viewBox="0 0 320 460" width="240" height="345" className="max-w-full" style={{ display: 'block' }}>
+        <svg aria-label="Vehicle damage map" viewBox="0 0 320 460" width={compact ? "200" : "240"} height={compact ? "288" : "345"} className="max-w-full" style={{ display: 'block' }}>
           {mode === 'interior' ? renderInteriorCanvas() : renderExteriorCanvas()}
         </svg>
 
         {hovered && (
-          <div className="pointer-events-none absolute left-1/2 top-2 z-10 -translate-x-1/2 whitespace-nowrap rounded-lg border border-line-2 bg-void px-2 py-1 text-xs text-ink">
+          <div className={`pointer-events-none absolute left-1/2 top-2 z-10 -translate-x-1/2 rounded-lg border border-line-2 bg-void px-2 py-1 text-xs text-ink ${compact ? 'w-full whitespace-normal text-center' : 'whitespace-nowrap'}`}>
             {panelMap[hovered]?.label || fallbackLabel(hovered)}
-            {selected.includes(hovered) ? ' — click to remove' : ' — click to mark damaged'}
+            {selected.includes(hovered) ? (onPanelSelect ? ' — open editor' : ' — click to remove') : ' — click to mark damaged'}
           </div>
         )}
       </div>
@@ -198,7 +208,7 @@ export default function VehicleDiagram({ value = [], onChange, readOnly = false 
               {!readOnly && (
                 <button
                   type="button"
-                  onClick={() => toggle(id)}
+                  onClick={() => toggle(id, true)}
                   className="ml-0.5 leading-none text-crit transition-opacity hover:opacity-70"
                   aria-label={`Remove ${panelMap[id]?.label || fallbackLabel(id)}`}
                 >
@@ -213,7 +223,7 @@ export default function VehicleDiagram({ value = [], onChange, readOnly = false 
       {!readOnly && <details className="w-full max-w-sm rounded-instrument border border-line-2 p-3">
         <summary className="cursor-pointer text-sm text-brand">Select panels with keyboard</summary>
         <div className="mt-3 grid grid-cols-1 gap-1 sm:grid-cols-2">{activePanels.map(panel => <label key={panel.id} className="flex min-h-11 items-center gap-2 text-sm text-ink">
-          <input type="checkbox" checked={selected.includes(panel.id)} onChange={() => toggle(panel.id)} />{panel.label}
+          <input type="checkbox" checked={selected.includes(panel.id)} onChange={() => toggle(panel.id, true)} />{panel.label}
         </label>)}</div>
       </details>}
       {!readOnly && (
