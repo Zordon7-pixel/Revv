@@ -2,7 +2,7 @@ import { useId } from 'react'
 import { vehiclePanelOptions } from './VehicleDiagram'
 
 export const inputClass = 'mt-1 min-h-11 w-full min-w-0 rounded-lg border border-line-2 bg-raised px-3 py-2 text-ink'
-export const buttonClass = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-line-2 bg-raised px-4 py-2 text-sm font-medium text-ink disabled:opacity-40'
+export const buttonClass = 'inline-flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-lg border border-line-2 bg-raised px-4 py-2 text-sm font-medium text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:opacity-40'
 export const categories = ['body', 'refinish', 'parts', 'materials', 'sublet']
 export const sellFields = ['body_hours', 'refinish_hours', 'body_rate_cents', 'refinish_rate_cents', 'parts_sell_cents', 'materials_sell_cents', 'sublet_sell_cents']
 export const costFields = ['body_cost_rate_cents', 'refinish_cost_rate_cents', 'parts_cost_cents', 'materials_cost_cents', 'sublet_cost_cents']
@@ -23,8 +23,11 @@ export function TextField({ name, value, onChange, maxLength = 200, multiline = 
   const Tag = multiline ? 'textarea' : 'input'
   return <label className="block min-w-0 text-sm text-muted">{name}<Tag className={inputClass} maxLength={maxLength} value={value ?? ''} onChange={e => onChange(e.target.value)} /></label>
 }
-export function Choice({ name, value, onChange, options, empty = 'Not supplied' }) {
-  return <label className="block min-w-0 text-sm text-muted">{name}<select className={inputClass} value={value ?? ''} onChange={e => onChange(e.target.value || null)}>{empty !== false && <option value="">{empty}</option>}{options.map(option => { const [id, label] = Array.isArray(option) ? option : [option, human(option)]; return <option key={id} value={id}>{label}</option> })}</select></label>
+export function Choice({ name, value, onChange, options, empty = 'Not supplied', describeSelection = false }) {
+  const id = useId()
+  const choices = options.map(option => Array.isArray(option) ? option : [option, human(option)])
+  const selectedLabel = choices.find(([key]) => key === value)?.[1] || empty
+  return <div className="min-w-0 text-sm text-muted"><label htmlFor={id} className="block">{name}</label><select id={id} aria-describedby={describeSelection ? `${id}-description` : undefined} className={inputClass} value={value ?? ''} onChange={e => onChange(e.target.value || null)}>{empty !== false && <option value="">{empty}</option>}{choices.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>{describeSelection && <p id={`${id}-description`} className="mt-2 whitespace-normal break-words text-sm leading-relaxed text-ink">{selectedLabel}</p>}</div>
 }
 export function TaxField({ name, value, onChange, mixed = false }) {
   return <Choice name={name} value={value == null ? '' : String(value)} onChange={value => onChange(value === null ? null : value === 'true')} empty={mixed ? 'Use explicit category allocation' : 'Required — choose tax treatment'} options={[[ 'true', 'Taxable' ], [ 'false', 'Not taxable' ]]} />

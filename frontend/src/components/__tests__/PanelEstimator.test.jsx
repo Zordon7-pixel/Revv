@@ -302,9 +302,86 @@ it('keeps editing selection separate from Reviewed and Configured status', async
   const hood = screen.getByRole('button', { name: 'Hood Editing Reviewed' })
   const roof = screen.getByRole('button', { name: 'Roof Configured' })
   expect(hood).toHaveAttribute('aria-current', 'true'); expect(roof).not.toHaveAttribute('aria-current')
+  expect(hood).toHaveClass('min-h-11', 'min-w-11', 'flex-col', 'items-stretch')
+  expect(hood.style.borderColor).toBe('var(--brand)'); expect(hood.style.borderLeftWidth).toBe('4px')
+  const editing = within(hood).getByText('Editing'), reviewed = within(hood).getByText('Reviewed')
+  expect(editing).toHaveClass('bg-brand', 'rounded-md'); expect(reviewed).toHaveClass('bg-good/10', 'rounded-full', 'self-start')
+  expect(editing.parentElement).not.toBe(reviewed.parentElement)
   fireEvent.click(roof)
   expect(roof).toHaveAttribute('aria-current', 'true'); expect(roof).toHaveTextContent('Editing'); expect(roof).toHaveTextContent('Configured')
   expect(hood).not.toHaveAttribute('aria-current'); expect(hood).not.toHaveTextContent('Editing'); expect(hood).toHaveTextContent('Reviewed')
+  expect(hood.style.borderLeftWidth).toBe(''); expect(roof.style.borderLeftWidth).toBe('4px')
+  expect(screen.getByText('Draft estimate')).toBeInTheDocument()
+})
+it('keeps compact orientation labels outside SVG scaling and outlines visible in both modes', () => {
+  const onChange = vi.fn()
+  const { container } = render(<VehicleDiagram compact value={[]} onChange={onChange} />)
+  for (const mode of ['exterior', 'interior']) {
+    if (mode === 'interior') click('Interior (0)')
+    const svg = screen.getByLabelText('Vehicle damage map')
+    expect(svg).toHaveClass('w-full', 'h-auto', 'min-w-0')
+    expect(svg.parentElement).toHaveClass('w-full', 'min-w-0', 'text-xs', 'text-ink')
+    for (const name of mode === 'exterior' ? ['FRONT', 'REAR', 'LEFT', 'RIGHT'] : ['DASH / FRONT', 'REAR CABIN', 'LEFT', 'RIGHT']) {
+      const label = screen.getByText(name)
+      expect(label.closest('svg')).toBeNull(); expect(label.parentElement).toBe(svg.parentElement)
+    }
+    const shapes = container.querySelectorAll('svg [role="button"]')
+    expect(shapes.length).toBe(mode === 'exterior' ? 24 : 10)
+    for (const shape of shapes) {
+      expect(shape).toHaveAttribute('stroke', 'var(--muted)')
+      expect(shape).toHaveAttribute('stroke-width', '2'); expect(shape).toHaveAttribute('vector-effect', 'non-scaling-stroke')
+      expect(shape).toHaveAttribute('tabindex', '0'); expect(shape).toHaveClass('focus-visible:outline-2')
+    }
+  }
+  fireEvent.keyDown(screen.getByRole('button', { name: 'Ignition Switch' }), { key: 'Enter' })
+  expect(onChange).toHaveBeenLastCalledWith(['interior_ignition_switch'])
+})
+it('offers 44px mode, removal and checkbox-list targets for small diagram regions', async () => {
+  const onChange = vi.fn()
+  render(<VehicleDiagram compact value={['left_front_rim']} onChange={onChange} />)
+  for (const name of ['Exterior (1)', 'Interior (0)', 'Remove LF Rim']) {
+    expect(screen.getByRole('button', { name })).toHaveClass('min-h-11', 'min-w-11')
+  }
+  expect(screen.getByRole('button', { name: 'Exterior (1)' })).toHaveAttribute('aria-pressed', 'true')
+  const summary = screen.getByText('Select panels with keyboard')
+  expect(summary).toHaveClass('min-h-11', 'focus-visible:outline-2')
+  expect(screen.getByText(/checkbox list above for larger touch targets/)).toBeVisible()
+  fireEvent.click(summary)
+  for (const checkbox of screen.getAllByRole('checkbox')) expect(checkbox.closest('label')).toHaveClass('min-h-11')
+  const rim = screen.getByRole('checkbox', { name: 'LF Rim', exact: true })
+  expect(rim).toBeChecked(); rim.focus(); await userEvent.keyboard(' ')
+  expect(onChange).toHaveBeenLastCalledWith([])
+  click('Remove LF Rim'); expect(onChange).toHaveBeenLastCalledWith([])
+})
+it('shows the full selected provenance as wrapping accessible text and preserves its saved contract', async () => {
+  await mounted()
+  const select = screen.getByLabelText('Estimate provenance')
+  const description = document.getElementById(select.getAttribute('aria-describedby'))
+  expect(description.tagName).toBe('P')
+  expect(description).toHaveClass('whitespace-normal', 'break-words', 'text-sm')
+  expect(description).toBeVisible(); expect(select).toHaveAccessibleDescription('Shop-prepared — not insurer-approved')
+  change('Estimate provenance', 'imported_carrier')
+  expect(description).toHaveTextContent('Imported carrier estimate — approval not implied')
+  expect(select).toHaveAccessibleDescription('Imported carrier estimate — approval not implied')
+  await saveDraft(); expect(saved.scenario.provenance).toBe('imported_carrier')
+})
+it('keeps readable preset name/version visible and source identity in keyboard-accessible details', async () => {
+  const item = { ...preset(), id: 'a'.repeat(64), family_id: 'b'.repeat(64) }
+  await mounted({ ...state([panel()]), presets: [item] }); change('Shop preset', item.id)
+  expect(screen.getByText('Hood refinish · Version 1', { selector: 'p' })).toBeVisible()
+  const summary = screen.getByText('Preset source details'), details = summary.closest('details')
+  expect(summary.tagName).toBe('SUMMARY'); expect(summary).toHaveClass('min-h-11', 'focus-visible:outline-2')
+  // happy-dom does not implement the browser's native summary Enter action.
+  expect(details).not.toHaveAttribute('open'); await userEvent.click(summary)
+  expect(details).toHaveAttribute('open')
+  for (const label of ['Source version ID', 'Family']) {
+    const term = within(details).getByText(label)
+    expect(term.tagName).toBe('DT'); expect(term).not.toHaveClass('break-all')
+  }
+  expect(within(details).getByText(item.id)).toHaveClass('break-all')
+  expect(within(details).getByText(item.family_id)).toHaveClass('break-all')
+  await saveDraft(); expect(saved.assessments[0].preset_version_id).toBe(item.id)
+  expect(saved.assessments[0].application_snapshot.family_id).toBe(item.family_id)
 })
 it('uses panel singular/plural in the compact diagram and retains generic zone wording elsewhere', () => {
   const { rerender } = render(<VehicleDiagram compact value={['hood']} onChange={() => {}} />)
