@@ -44,7 +44,7 @@ beforeEach(() => {
   vi.clearAllMocks(); getRole.mockReturnValue('owner'); vi.stubGlobal('confirm', vi.fn(() => false))
   privateSaved = n.privateSnapshot({ lines: [], target_margin_bps: null, overhead_cents: null })
   saved = state([panel()])
-  api.get.mockImplementation(async url => ({ data: url.endsWith('/cost-summary') ? privateResult() : url.includes('/quote?') ? { revision_id: 'r1', version: saved.version, quote: { ...previewOf().quote, revision_id: 'r1', reviewed: true } } : url === '/estimate-items/panel-presets' ? { presets: saved.presets } : saved }))
+  api.get.mockImplementation(async url => ({ data: url.endsWith('/cost-summary') ? privateResult() : url.includes('/quote?') ? { revision_id: 'r1', quote_hash: 'a'.repeat(64), version: saved.version, quote: { ...previewOf().quote, revision_id: 'r1', quote_hash: 'a'.repeat(64), reviewed: true } } : url === '/estimate-items/panel-presets' ? { presets: saved.presets } : saved }))
   api.put.mockImplementation(async (url, body) => {
     if (body.expected_version !== saved.version) throw { response: { status: 409, data: { error: 'VERSION_CONFLICT' } } }
     if (url.endsWith('/cost-settings')) { privateSaved = n.privateSnapshot(body); saved = { ...saved, version: saved.version + 1 }; return { data: { version: saved.version } } }
@@ -236,4 +236,61 @@ it('cancels native BrowserRouter back without dropping local fields or adding a 
 
 it('discloses the server minimum adjustment and its tax without adding client charges', async () => {
   await mounted(state([panel({ taxable: { body: true, refinish: true, parts: true, materials: true, sublet: true } })])); change('Estimate minimum ($)', '500'); await calculate(); expect(screen.getByLabelText('Calculated adjustments')).toHaveTextContent('Estimate minimum adjustment: $50.00 · Tax $5.00 · Already included in totals')
+})
+
+const linkResponse = () => ({ link_id: 'link-1', revision_id: 'r1', quote_hash: 'a'.repeat(64), disclosure_version: 'panel-quote-v1', expires_at: '2026-10-08T12:00:00Z', link: `/approve/pe_${'b'.repeat(64)}` })
+async function savedRevision() { await mounted({ ...state([panel()]), active_revision_id: 'r1' }); click('Preview customer quote'); await screen.findByRole('article', { name: 'Customer quote' }) }
+it('issues the exact loaded revision/hash, supports manual copy/open, and revokes the exact link', async () => {
+  await savedRevision(); const response = linkResponse()
+  api.post.mockResolvedValueOnce({ data: response }); click('Seek customer approval'); const link = await screen.findByLabelText('Private approval link')
+  expect(api.post).toHaveBeenCalledWith(`${base}/approval-link`, { revision_id: 'r1', quote_hash: 'a'.repeat(64) })
+  expect(link).toHaveValue(response.link); const open = screen.getByRole('link', { name: 'Open approval link' }); expect(open).toHaveAttribute('href', response.link); expect(open).toHaveAttribute('rel', 'noopener noreferrer')
+  expect(screen.getByRole('button', { name: 'Seek customer approval' })).toBeDisabled()
+  const write = vi.fn().mockResolvedValue(); Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: write } })
+  click('Copy approval link'); await screen.findByText(/Link copied/); expect(write).toHaveBeenCalledWith(new URL(response.link, window.location.origin).href)
+  api.post.mockResolvedValueOnce({ data: { link_id: response.link_id, revoked_at: '2026-10-01T13:00:00Z' } }); click('Revoke this approval link')
+  await screen.findByText(/This approval link was revoked/); expect(api.post).toHaveBeenLastCalledWith(`${base}/approval-link/link-1/revoke`, {}); expect(screen.queryByLabelText('Private approval link')).not.toBeInTheDocument()
+  expect(api.post.mock.calls.some(([url]) => /sms|email|send/.test(url))).toBe(false)
+})
+it('blocks customer actions with public or private edits and never mixes edited scope into the saved hash', async () => {
+  await savedRevision(); change('Customer-visible notes', 'New scope not committed')
+  for (const name of ['Seek customer approval', 'Download quote PDF', 'Preview customer quote']) expect(screen.getByRole('button', { name })).toBeDisabled()
+  expect(screen.queryByRole('article', { name: 'Customer quote' })).not.toBeInTheDocument(); click('Seek customer approval'); expect(api.post).not.toHaveBeenCalled()
+  await saveDraft(); expect(screen.getByRole('button', { name: 'Seek customer approval' })).toBeDisabled()
+  click('Preview customer quote'); await screen.findByRole('article'); click('Owner cost drawer'); await screen.findByLabelText('Private cost audit reason'); change('Private estimate notes', 'Unsaved private note')
+  for (const name of ['Seek customer approval', 'Download quote PDF', 'Preview customer quote']) expect(screen.getByRole('button', { name })).toBeDisabled()
+  expect(screen.getByLabelText('Customer-visible notes')).toHaveValue('New scope not committed')
+})
+it('downloads authenticated PDF and revokes the blob URL without navigating to an API URL', async () => {
+  await savedRevision(); const blob = new Blob(['%PDF synthetic']); vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:owner-quote'); vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {}); const clickAnchor = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+  api.get.mockResolvedValueOnce({ data: blob }); click('Download quote PDF'); await waitFor(() => expect(URL.createObjectURL).toHaveBeenCalledWith(blob))
+  expect(api.get).toHaveBeenLastCalledWith(`${base}/quote.pdf?revision_id=r1`, { responseType: 'blob' }); expect(clickAnchor).toHaveBeenCalledTimes(1); expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:owner-quote')
+})
+it('rejects unsafe or incorrectly bound returned links and gives a safe stale-hash error', async () => {
+  await savedRevision(); api.post.mockResolvedValueOnce({ data: { ...linkResponse(), link: 'https://outside.invalid/secret' } }); click('Seek customer approval')
+  expect(await screen.findByRole('alert')).toHaveTextContent('failed'); expect(screen.queryByRole('link', { name: 'Open approval link' })).not.toBeInTheDocument()
+  api.post.mockRejectedValueOnce({ response: { status: 409, data: { error: 'APPROVAL_REVISION_CONFLICT' } } }); click('Seek customer approval')
+  expect(await screen.findByRole('alert')).toHaveTextContent('revision or quote hash changed'); expect(screen.getByLabelText('Body hours')).toHaveValue(2)
+})
+it('drops late quote/link/PDF responses after an RO change', async () => {
+  const { rerender } = await mounted({ ...state([panel()]), active_revision_id: 'r1' }); let finish
+  api.get.mockImplementationOnce(() => new Promise(resolve => { finish = resolve })); click('Preview customer quote'); rerender(<PanelEstimator roId="ro-2" />); await screen.findByText('1. Select damaged panels')
+  await act(async () => finish({ data: { revision_id: 'r1', quote_hash: 'a'.repeat(64), quote: { ...previewOf().quote, revision_id: 'r1', quote_hash: 'a'.repeat(64) } } })); expect(screen.queryByRole('article')).not.toBeInTheDocument()
+  cleanup(); await savedRevision(); api.post.mockImplementationOnce(() => new Promise(resolve => { finish = resolve })); click('Seek customer approval'); cleanup(); await mounted({ ...state([panel()]), active_revision_id: 'r1' })
+  await act(async () => finish({ data: linkResponse() })); expect(screen.queryByLabelText('Private approval link')).not.toBeInTheDocument()
+  vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:late'); api.get.mockImplementationOnce(() => new Promise(resolve => { finish = resolve })); click('Download quote PDF'); cleanup(); await mounted()
+  await act(async () => finish({ data: new Blob() })); expect(URL.createObjectURL).not.toHaveBeenCalled()
+})
+it('clears quote/link binding on a new commit and never permits a second in-flight issue request', async () => {
+  await savedRevision(); let finish; api.post.mockImplementationOnce(() => new Promise(resolve => { finish = resolve })); click('Seek customer approval'); click('Seek customer approval'); expect(api.post).toHaveBeenCalledTimes(1)
+  await act(async () => finish({ data: linkResponse() })); change('Customer-visible notes', 'New reviewed scope'); expect(screen.queryByLabelText('Private approval link')).not.toBeInTheDocument()
+  api.post.mockImplementation(async (url, body) => ({ data: url.endsWith('/preview') ? previewOf(body) : { revision_id: 'r2', version: 3, quote_hash: 'c'.repeat(64) } }))
+  check('I reviewed this panel’s inputs and applicability'); await calculate(); check('I reviewed this calculated draft'); click('Commit reviewed draft'); await screen.findByText(/Reviewed revision saved/)
+  expect(screen.getByRole('button', { name: 'Seek customer approval' })).toBeDisabled(); expect(screen.queryByRole('article')).not.toBeInTheDocument()
+})
+it('blocks actions and ignores a late link while catalog edits change the owner context', async () => {
+  await savedRevision(); click('Manage owner presets'); await screen.findByRole('button', { name: 'Create preset from current panel settings' }); await waitFor(() => expect(screen.queryByText('Load catalog…')).not.toBeInTheDocument())
+  let finish; api.post.mockImplementationOnce(() => new Promise(resolve => { finish = resolve })); click('Seek customer approval')
+  click('Create preset from current panel settings'); change('Preset name', 'Unsaved catalog change'); await act(async () => finish({ data: linkResponse() }))
+  expect(screen.queryByLabelText('Private approval link')).not.toBeInTheDocument(); expect(screen.getByRole('button', { name: 'Download quote PDF' })).toBeDisabled()
 })

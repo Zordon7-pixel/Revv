@@ -3,7 +3,7 @@ import { UNSAFE_NavigationContext } from 'react-router-dom'
 import api from '../lib/api'
 import { getRole } from '../lib/auth'
 import VehicleDiagram, { vehiclePanelLabel } from './VehicleDiagram'
-import CustomerPanelQuote, { quoteMoney } from './CustomerPanelQuote'
+import CustomerPanelQuote, { downloadQuotePdf, quoteMoney } from './CustomerPanelQuote'
 import PanelPresetManager from './PanelPresetManager'
 import PanelWorkFields, { blankCosts, buttonClass, categories, Choice, clone, CostPolicyFields, human, MatchFields, NumericField, PrivateCostFields, safeSell, TextField } from './PanelWorkFields'
 
@@ -38,6 +38,8 @@ const messages = {
   FORBIDDEN: 'Your role cannot perform this action. Local edits are retained.',
   INVALID_INPUT: 'Some inputs are invalid. Check package allocations, operation identities, quantities, tax choices and acknowledgements. Local edits are retained.',
   INVALID_PACKAGE: 'Review the package inclusions, tax treatment and explicit sell allocation. Local edits are retained.',
+  APPROVAL_REVISION_CONFLICT: 'The selected revision or quote hash changed. Reload the saved draft and customer quote before seeking approval. Your local edits are retained.',
+  APPROVAL_DISCLOSURE_CONFLICT: 'The approval disclosure changed. Reload the current quote before continuing. Your local edits are retained.',
   REVIEW_REQUIRED: 'The server requires a complete reviewed scope before commit. Review the calculation flags.',
 }
 
@@ -91,14 +93,19 @@ function EstimatorSession({ roId, vehicle, photos = [] }) {
   const [active, setActive] = useState(null), [busy, setBusy] = useState('Loading estimator'), [error, setError] = useState(null), [notice, setNotice] = useState('')
   const [dirty, setDirty] = useState(false), [preview, setPreview] = useState(null), [targets, setTargets] = useState(null), [reviewed, setReviewed] = useState(false)
   const [quote, setQuote] = useState(null), [revision, setRevision] = useState(null), [warning, setWarning] = useState(null)
+  const [quoteBinding, setQuoteBinding] = useState(null), [approvalLink, setApprovalLink] = useState(null)
+  const quoteEpoch = useRef(0), currentQuoteContext = useRef(null)
   const [costs, setCosts] = useState(null), [costHash, setCostHash] = useState(null), [costOpen, setCostOpen] = useState(false), [costDraft, setCostDraft] = useState(null), [costDirty, setCostDirty] = useState(false)
   const [catalogOpen, setCatalogOpen] = useState(false), [catalogDirty, setCatalogDirty] = useState(false), [catalogBusy, setCatalogBusy] = useState(false)
   const lock = useRef(false), alive = useRef(true), identity = useRef(null), retry = useRef(null), editor = useRef(null), returnFocus = useRef(null), warningFocus = useRef(null), warningButton = useRef(null)
   const panel = panels.find(item => item.panel_id === active)
   const allDirty = dirty || costDirty || catalogDirty
+  currentQuoteContext.current = { revision, version: state?.version, dirty: allDirty, catalogBusy, epoch: quoteEpoch.current }
+  const quoteDisabled = !!busy || catalogBusy || allDirty || !revision || readOnly
   useDirtyNavigation(allDirty || !!busy || catalogBusy)
   const draft = { expected_version: state?.version, assessments: panels, scenario, adjustments }
-  function invalidate() { setError(null); retry.current = null; setPreview(null); setReviewed(false); setQuote(null); identity.current = null; setNotice('') }
+  function resetQuote() { quoteEpoch.current += 1; setQuote(null); setQuoteBinding(null); setApprovalLink(null) }
+  function invalidate() { resetQuote(); setError(null); retry.current = null; setPreview(null); setReviewed(false); setQuote(null); identity.current = null; setNotice('') }
   function edit(next) { invalidate(); setPanels(next); setDirty(true) }
   function patchPanel(patch, preserveReview = false) { edit(panels.map(item => item.panel_id === active ? { ...item, ...patch, reviewed: preserveReview ? item.reviewed : patch.reviewed ?? false } : item)) }
   function selectPanel(id, trigger = document.activeElement) { returnFocus.current = trigger; setActive(id); requestAnimationFrame(() => editor.current?.focus()) }
@@ -139,10 +146,58 @@ function EstimatorSession({ roId, vehicle, photos = [] }) {
     const signature = JSON.stringify({ ...draft, input_hash: preview.input_hash })
     if (identity.current?.signature !== signature) identity.current = { signature, key: crypto.randomUUID() }
     const { data } = await api.post(`${base}/commit`, { ...draft, input_hash: preview.input_hash, idempotency_key: identity.current.key, reviewed: true })
-    if (alive.current) { setRevision(data.revision_id); setState(previous => ({ ...previous, version: data.version })); setPreview(null); setReviewed(false); setDirty(false); setNotice('Reviewed revision saved. Customer response is separate from carrier authorization, billing status and payment.') }
+    if (alive.current) { resetQuote(); setRevision(data.revision_id); setState(previous => ({ ...previous, version: data.version })); setPreview(null); setReviewed(false); setDirty(false); setNotice('Reviewed revision saved. Customer response is separate from carrier authorization, billing status and payment.') }
   })
   const loadPhotos = () => run('Load repair-order photos', async () => { const { data } = await api.get(`/photos/${encodeURIComponent(roId)}`); if (alive.current) setAvailablePhotos(data.photos || []) })
-  const getQuote = () => run('Load customer quote', async () => { const { data } = await api.get(`${base}/quote?revision_id=${encodeURIComponent(revision)}`); if (!data.quote) throw new Error('Invalid quote envelope'); if (alive.current) setQuote(data.quote) })
+  function quoteContext() { return { ...currentQuoteContext.current, epoch: quoteEpoch.current } }
+  function isCurrent(context) {
+    const now = currentQuoteContext.current
+    return alive.current && !now.dirty && !now.catalogBusy && context.epoch === quoteEpoch.current && context.revision === now.revision && context.version === now.version
+  }
+  function quoteAction(name, task) {
+    if (quoteDisabled) return
+    const context = quoteContext()
+    run(name, async () => { if (isCurrent(context)) await task(context) })
+  }
+  const getQuote = () => quoteAction('Load customer quote', async context => {
+    const { data } = await api.get(`${base}/quote?revision_id=${encodeURIComponent(context.revision)}`)
+    if (!isCurrent(context)) return
+    if (!data.quote || data.revision_id !== context.revision || data.quote.revision_id !== context.revision || !/^[a-f0-9]{64}$/.test(data.quote_hash) || data.quote.quote_hash !== data.quote_hash) throw new Error('Invalid quote envelope')
+    setQuote(data.quote); setQuoteBinding({ revision_id: data.revision_id, quote_hash: data.quote_hash, version: data.version })
+  })
+  const getPdf = () => quoteAction('Download quote PDF', async context => {
+    const { data } = await api.get(`${base}/quote.pdf?revision_id=${encodeURIComponent(context.revision)}`, { responseType: 'blob' })
+    if (isCurrent(context)) downloadQuotePdf(data, context.revision)
+  })
+  const seekApproval = () => {
+    if (!quoteBinding || quoteBinding.revision_id !== revision || approvalLink) return
+    quoteAction('Create approval link', async context => {
+      const { data } = await api.post(`${base}/approval-link`, { revision_id: quoteBinding.revision_id, quote_hash: quoteBinding.quote_hash })
+      if (!isCurrent(context)) return
+      if (data.revision_id !== context.revision || data.quote_hash !== quoteBinding.quote_hash || typeof data.link_id !== 'string' || !/^\/approve\/pe_[a-f0-9]{64}$/.test(data.link)) throw new Error('Invalid approval link response')
+      setApprovalLink(data); setNotice('Approval link created. Deliver it manually to the intended customer. No message was sent.')
+    })
+  }
+  const revokeApproval = () => {
+    if (!approvalLink) return
+    const linkId = approvalLink.link_id
+    quoteAction('Revoke approval link', async context => {
+      const { data } = await api.post(`${base}/approval-link/${encodeURIComponent(linkId)}/revoke`, {})
+      if (!isCurrent(context)) return
+      if (data.link_id !== linkId || !data.revoked_at) throw new Error('Invalid revocation response')
+      setApprovalLink(null); setNotice('This approval link was revoked. No message was sent.')
+    })
+  }
+  const copyApproval = () => {
+    if (!approvalLink) return
+    quoteAction('Copy approval link', async context => {
+      try {
+        await navigator.clipboard.writeText(new URL(approvalLink.link, window.location.origin).href)
+        if (isCurrent(context)) setNotice('Link copied. Deliver it manually to the intended customer. No message was sent.')
+      } catch { if (isCurrent(context)) setNotice('Clipboard unavailable. Select and copy the link below for manual delivery.') }
+    })
+  }
+
   const getCosts = () => {
     if (!owner) return
     run('Load private costs', async () => {
@@ -229,13 +284,19 @@ function EstimatorSession({ roId, vehicle, photos = [] }) {
           </aside>
         </div>
       </fieldset>
-      <div className="flex flex-wrap gap-3"><button type="button" className={buttonClass} disabled={!!busy || !revision || dirty || costDirty} onClick={getQuote}>Preview customer quote</button>{owner && <><button type="button" className={buttonClass} disabled={!!busy} onClick={() => costDraft ? setCostOpen(true) : getCosts()}>Owner cost drawer</button><button type="button" className={buttonClass} disabled={!!busy} onClick={() => setCatalogOpen(true)}>Manage owner presets</button></>}</div>
-      {owner && catalogOpen && <><button type="button" className={buttonClass} disabled={catalogBusy} onClick={() => { if (!catalogDirty || window.confirm('Discard unsaved catalog inputs and close?')) { setCatalogOpen(false); setCatalogDirty(false) } }}>Close preset catalog</button><PanelPresetManager panel={panel} onCatalogChange={setCatalog} onDirtyChange={setCatalogDirty} onBusyChange={setCatalogBusy} /></>}
+      <div className="flex flex-wrap gap-3"><button type="button" className={buttonClass} disabled={quoteDisabled} onClick={getQuote}>Preview customer quote</button><button type="button" className={buttonClass} disabled={quoteDisabled} onClick={getPdf}>Download quote PDF</button><button type="button" className={buttonClass} disabled={quoteDisabled || !quoteBinding || !!approvalLink} onClick={seekApproval}>Seek customer approval</button>{owner && <><button type="button" className={buttonClass} disabled={!!busy} onClick={() => costDraft ? setCostOpen(true) : getCosts()}>Owner cost drawer</button><button type="button" className={buttonClass} disabled={!!busy} onClick={() => setCatalogOpen(true)}>Manage owner presets</button></>}</div>
+      {owner && catalogOpen && <><button type="button" className={buttonClass} disabled={catalogBusy} onClick={() => { if (!catalogDirty || window.confirm('Discard unsaved catalog inputs and close?')) { setCatalogOpen(false); setCatalogDirty(false) } }}>Close preset catalog</button><PanelPresetManager panel={panel} onCatalogChange={setCatalog} onDirtyChange={value => { setCatalogDirty(value); if (value) { resetQuote(); retry.current = null } }} onBusyChange={setCatalogBusy} /></>}
       {owner && costOpen && costDraft && <section aria-label="Private owner costs" className="min-w-0 space-y-4 rounded-instrument border border-line-2 bg-panel p-5"><div className="flex flex-wrap justify-between gap-2"><h3 className="font-semibold">Private owner / admin cost settings</h3><button type="button" className={buttonClass} disabled={!!busy} onClick={() => { setCostOpen(false); setNotice(costDirty ? 'Private cost edits remain unsaved and retained in the closed drawer.' : '') }}>Close cost drawer</button></div><p className="text-sm text-muted">Costs apply to the saved repair-order draft. Catalog private costs never automatically replace these settings.</p>{costDirty && <p className="text-gold">Unsaved private cost changes</p>}
         {costs ? <div className="space-y-2"><p className="text-muted">Saved server calculation{dirty || costDirty ? ' — local edits are not included' : ''}</p><p className="text-sm text-muted">Last saved cost audit reason: {costs.settings?.reason || 'Not supplied'}</p><p>Estimated direct cost: {quoteMoney(costs.direct_cost_cents)} · Known subtotal: {quoteMoney(costs.known_subtotal_cents)}</p><p className="text-gold">{costs.complete === true ? 'Cost inputs complete' : 'Cost inputs incomplete — no complete estimate claimed'}</p><ul>{(costs.missing || []).map((item, index) => <li key={index}>{item.id ? item.id.split(':').map(human).join(' · ') : 'Estimate'}: {human(item.reason)}</li>)}</ul><p>Gross contribution: {quoteMoney(costs.contribution_cents)} · Gross margin: {costs.margin_bps == null ? 'Unknown' : `${(costs.margin_bps / 100).toFixed(2)}%`}</p><p>Allocated overhead: {quoteMoney(costs.overhead_cents)} · After allocated overhead: {quoteMoney(costs.after_overhead_cents)}</p><p>Target price / floor: {quoteMoney(costs.target_revenue_cents)} · {costs.include_overhead_in_target ? 'Includes overhead' : 'Excludes overhead'}</p>{preview?.input_hash === costHash && preview.quote.totals?.net_cents != null && costs.target_revenue_cents != null ? <p className="text-gold">{preview.quote.totals.net_cents < costs.target_revenue_cents ? 'Selling price is below the target floor.' : 'Selling price meets the target floor.'}</p> : <p className="text-sm text-muted">Calculate a matching current preview to compare selling price with the floor.</p>}</div> : <p>Reload the saved server cost result after saving.</p>}
         <fieldset disabled={!!busy} className="min-w-0 space-y-4">{costDraft.lines.map((line, index) => <fieldset key={line.panel_id} className="min-w-0 space-y-3 rounded-lg border border-line-2 p-3"><legend>{vehiclePanelLabel(line.panel_id)}</legend><PrivateCostFields value={line} extras={panels.find(item => item.panel_id === line.panel_id)?.extras || []} onChange={patch => changeCosts({ lines: costDraft.lines.map((item, i) => i === index ? { ...item, ...patch } : item) })} /></fieldset>)}<CostPolicyFields value={costDraft} onChange={changeCosts} /><TextField name="Private estimate notes" multiline maxLength={4000} value={costDraft.private_notes} onChange={private_notes => changeCosts({ private_notes })} /><TextField name="Private cost audit reason" multiline maxLength={4000} value={costDraft.reason} onChange={reason => changeCosts({ reason })} /><div className="flex flex-wrap gap-2"><button type="button" className={buttonClass} disabled={!costDraft.reason.trim()} onClick={saveCosts}>Save private cost settings</button><button type="button" className={buttonClass} onClick={() => { if (!costDirty || window.confirm('Discard unsaved private cost edits and reload saved costs? Public edits are retained.')) getCosts() }}>Reload private costs</button></div></fieldset>
       </section>}
-      {quote && <CustomerPanelQuote quote={quote} />}
+      {revision && <p className="text-sm text-muted">Approval and PDF use the saved selected revision only. Load the customer quote before seeking approval. Save all public, private and catalog edits first; commit a new reviewed revision to change the quoted scope.</p>}
+      {approvalLink && !allDirty && <section aria-label="Approval link" className="space-y-3 rounded-instrument border border-line-2 bg-panel p-4" data-sentry-mask>
+        <p>Approval for revision {approvalLink.revision_id} · Expires {approvalLink.expires_at}</p><p>Deliver this private link manually to the intended customer. No email or SMS was sent.</p>
+        <label className="block">Private approval link<input aria-label="Private approval link" className="mt-1 min-h-11 w-full rounded-lg border border-line-2 bg-void p-2" readOnly value={approvalLink.link} onFocus={event => event.target.select()} /></label>
+        <div className="flex flex-wrap gap-3"><button type="button" className={buttonClass} disabled={quoteDisabled} onClick={copyApproval}>Copy approval link</button>{!quoteDisabled && <a className={buttonClass} href={approvalLink.link} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">Open approval link</a>}<button type="button" className={buttonClass} disabled={quoteDisabled} onClick={revokeApproval}>Revoke this approval link</button></div>
+      </section>}
+      {quote && !allDirty && <CustomerPanelQuote quote={quote} vehicle={vehicle} version={quoteBinding?.version} />}
     </>}
   </section>
 }
