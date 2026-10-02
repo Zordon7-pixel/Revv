@@ -1,3 +1,4 @@
+const { hasConfirmedSmsConsent, consentMutation } = require('../services/customerConsent');
 const router = require('express').Router();
 const { pool, dbGet, dbAll, dbRun } = require('../db');
 const auth = require('../middleware/auth');
@@ -154,11 +155,12 @@ function queueStatusSMS(roId, shopId, toStatus) {
         `SELECT ro.id, ro.ro_number, ro.payment_status, ro.payment_received,
                 v.year, v.make, v.model,
                 c.phone AS customer_phone, c.email AS customer_email, c.name AS customer_name,
+                c.sms_consent, c.sms_consent_at, c.sms_consent_method, c.sms_consent_by,
                 s.name AS shop_name,
                 COALESCE(s.sms_notifications_enabled, TRUE) AS sms_notifications_enabled
          FROM repair_orders ro
          LEFT JOIN vehicles v ON v.id = ro.vehicle_id
-         LEFT JOIN customers c ON c.id = ro.customer_id
+         LEFT JOIN customers c ON c.id = ro.customer_id AND c.shop_id = ro.shop_id
          LEFT JOIN shops s ON s.id = ro.shop_id
          WHERE ro.id = $1 AND ro.shop_id = $2`,
         [roId, shopId]
@@ -166,6 +168,11 @@ function queueStatusSMS(roId, shopId, toStatus) {
 
       if (!ro?.customer_phone) {
         console.warn(`${tag} skipped — no customer phone on record`);
+        return;
+      }
+
+      if (!hasConfirmedSmsConsent(ro)) {
+        console.log(`${tag} skipped — no confirmed SMS consent`);
         return;
       }
 
@@ -206,15 +213,15 @@ function queueStatusSMS(roId, shopId, toStatus) {
         return;
       }
 
-      console.log(`${tag} sending to ${ro.customer_phone}`);
+      console.log(`${tag} sending`);
       const result = await sendSMS(ro.customer_phone, message, { shopId });
       if (result.ok) {
-        console.log(`${tag} sent OK (sid: ${result.sid})`);
+        console.log(`${tag} sent OK`);
       } else {
-        console.error(`${tag} failed — ${result.reason}`);
+        console.warn(`${tag} not sent`);
       }
     } catch (err) {
-      console.error(`[SMS] RO ${roId} → ${toStatus}: unexpected error —`, err.message);
+      console.error(`[SMS] RO ${roId} status notification failed`);
     }
   });
 }
@@ -1846,7 +1853,8 @@ router.use('/approval', publicRequestError(publicTokenLimiter));
 
 router.post('/', auth, requireTechnician, roLimitGuard, async (req, res) => {
   try {
-    const { customer_id, vehicle_id, job_type, payment_type, claim_number, policy_number, insurer, adjuster_name, adjuster_phone, adjuster_email, deductible, notes, estimated_delivery, damaged_panels, sms_consent, email_consent, preferred_contact_method } = req.body;
+    const consent = consentMutation(req.body, req.user.id);
+    const { customer_id, vehicle_id, job_type, payment_type, claim_number, policy_number, insurer, adjuster_name, adjuster_phone, adjuster_email, deductible, notes, estimated_delivery, damaged_panels, email_consent, preferred_contact_method } = req.body;
     if (!customer_id || !vehicle_id) {
       return res.status(400).json({ error: 'customer_id and vehicle_id are required' });
     }
@@ -1860,10 +1868,12 @@ router.post('/', auth, requireTechnician, roLimitGuard, async (req, res) => {
       [vehicle_id, req.user.shop_id, customer_id]
     );
     if (!vehicle) return res.status(400).json({ error: 'Invalid vehicle_id for this customer/shop' });
-    if (typeof sms_consent === 'boolean') {
+    if (consent) {
       await dbRun(
-        'UPDATE customers SET sms_consent = $1 WHERE id = $2 AND shop_id = $3',
-        [sms_consent, customer_id, req.user.shop_id]
+        `UPDATE customers SET sms_consent = $1, sms_consent_at = $2,
+           sms_consent_method = $3, sms_consent_by = $4 WHERE id = $5 AND shop_id = $6`,
+        [consent.sms_consent, consent.sms_consent_at, consent.sms_consent_method,
+          consent.sms_consent_by, customer_id, req.user.shop_id]
       );
     }
     if (typeof email_consent === 'boolean' || preferred_contact_method) {
@@ -1975,14 +1985,18 @@ router.post('/', auth, requireTechnician, roLimitGuard, async (req, res) => {
         // Get customer and shop info
         const roContext = await dbGet(`
           SELECT ro.*, c.phone as customer_phone, c.name as customer_name,
+                 c.sms_consent, c.sms_consent_at, c.sms_consent_method, c.sms_consent_by,
                  s.name as shop_name, s.twilio_phone_number
           FROM repair_orders ro
-          LEFT JOIN customers c ON c.id = ro.customer_id
+          LEFT JOIN customers c ON c.id = ro.customer_id AND c.shop_id = ro.shop_id
           LEFT JOIN shops s ON s.id = ro.shop_id
-          WHERE ro.id = $1
-        `, [roId]);
+          WHERE ro.id = $1 AND ro.shop_id = $2
+        `, [roId, req.user.shop_id]);
         
-        if (!roContext?.customer_phone) return;
+        if (!roContext?.customer_phone || !hasConfirmedSmsConsent(roContext)) {
+          console.log('[Auto-Track] SMS skipped: missing phone or confirmed consent');
+          return;
+        }
         
         const token = await ensureTrackingToken(roId, req.user.shop_id);
         
@@ -1991,11 +2005,11 @@ router.post('/', auth, requireTechnician, roLimitGuard, async (req, res) => {
           const baseUrl = process.env.APP_URL || process.env.PUBLIC_URL || 'https://revvshop.app';
           const trackingUrl = `${baseUrl}/track/${token}`;
           const message = `Hi ${roContext.customer_name || 'there'}! Track your vehicle repair at ${roContext.shop_name}:\n${trackingUrl}`;
-          await sendSMS(roContext.customer_phone, message, { shopId: req.user.shop_id });
-          console.log(`[Auto-Track] Tracking link SMS sent for RO ${roNumber}`);
+          const result = await sendSMS(roContext.customer_phone, message, { shopId: req.user.shop_id });
+          console.log(result.ok ? '[Auto-Track] SMS sent' : '[Auto-Track] SMS not sent');
         }
       } catch (err) {
-        console.error('[Auto-Track] Failed to send tracking SMS:', err.message);
+        console.error('[Auto-Track] Tracking SMS failed');
       }
     });
 
@@ -2025,7 +2039,7 @@ router.post('/', auth, requireTechnician, roLimitGuard, async (req, res) => {
     }
     res.status(201).json(enriched);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({ error: err.message });
   }
 });
 
@@ -2041,7 +2055,9 @@ async function importEstimateHandler(req, res) {
 
     const customerName = cleanText(customer.name || body.customer_name, 160) || 'Imported Estimate Customer';
     const customerPhone = cleanText(customer.phone || body.customer_phone, 50);
-    const customerSmsConsent = body.sms_consent === true || customer.sms_consent === true;
+    // Only the explicit top-level staff attestation can consent; OCR/nested evidence is ignored.
+    const consent = consentMutation(body, req.user.id);
+    const customerSmsConsent = consent?.sms_consent === true;
     const vehicleYear = cleanYear(vehicle.year || body.vehicle_year);
     const vehicleMake = cleanText(vehicle.make || body.vehicle_make, 80);
     const vehicleModel = cleanText(vehicle.model || body.vehicle_model, 120);
@@ -2072,8 +2088,8 @@ async function importEstimateHandler(req, res) {
     await client.query('BEGIN');
 
     await txRun(
-      `INSERT INTO customers (id, shop_id, name, phone, sms_consent, email, address, insurance_company, policy_number)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      `INSERT INTO customers (id, shop_id, name, phone, sms_consent, email, address, insurance_company, policy_number, sms_consent_at, sms_consent_method, sms_consent_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
       [
         customerId,
         req.user.shop_id,
@@ -2084,6 +2100,7 @@ async function importEstimateHandler(req, res) {
         cleanText(customer.address || body.customer_address, 255),
         insuranceCompany,
         cleanText(insurance.policy_number || body.policy_number, 120),
+        consent?.sms_consent_at || null, consent?.sms_consent_method || null, consent?.sms_consent_by || null,
       ]
     );
 
@@ -2234,6 +2251,7 @@ async function importEstimateHandler(req, res) {
         console.error('[RO Import Estimate] Rollback error:', rollbackErr?.message || rollbackErr);
       }
     }
+    if (err.status === 400 || err.status === 401) return res.status(err.status).json({ error: err.message });
     console.error('[RO Import Estimate] Error:', err?.message || err);
     return res.status(500).json({ error: 'Internal server error' });
   } finally {

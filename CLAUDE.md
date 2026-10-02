@@ -3758,3 +3758,56 @@ Focused tests: loopback PostgreSQL blocked by sandbox EPERM; host execution stil
 Files: this log; db/index.js, db/migrate.js, db/customerConsent.js;
 services/customerConsent.js; routes/customers.js; customerConsent.integration.test.js;
 customerOptInConfirmation.test.js. No broader fixture updates or complete gates performed.
+
+
+## 2026-10-02 00:20 EDT / 04:20 UTC — t_3ead3bd0 Phase 2 implementation
+
+Scope: outbound customer SMS provenance and RO intake only, on Phase 1 base
+4662ac9948e2de69138aa5b5d22b1dc958efec80. Hermes owns lifecycle, host gates,
+commit fallback, push and release. No review or deployment receipt is claimed.
+
+The provider boundary resolves all customers matching the shop and normalized phone
+and requires hasConfirmedSmsConsent for every match; missing/ambiguous/unconfirmed
+or lookup failure suppresses sending. Customer-facing and skip-opt-out JSON flags
+cannot bypass checks. Staff timeclock alerts use a separate staff-ID lookup and
+private capability, still honoring STOP. Queue/status, RO tracking, portal tracking,
+parts delivery, direct SMS and opt-in confirmations all reach this boundary.
+Approval link creation and the existing approval status template remain non-sending.
+RO create and import validate consentMutation before writes, record authenticated
+staff/server time/method, and ignore nested OCR consent and client provenance.
+STOP clears customer consent/evidence and keeps the opt-out record; reconfirmation
+never removes it. START can remove the opt-out but does not create consent evidence.
+STOP/HELP retain no-REVV-reply behavior; there is no compliance bypass in sendSMS.
+Tracking logs and portal responses no longer claim a suppressed SMS was sent.
+
+Validation used the Node 22 executable and scrubbed ENV defined by the existing
+host-gates.py (read only; its lifecycle executor was not invoked). Focused command:
+`node --test --test-skip-pattern='real PostgreSQL' backend/test/smsConsent.phase2.test.js backend/src/__tests__/customerOptInConfirmation.test.js`
+Exit 0; tail: tests 24, pass 24, fail 0, skipped 0. The named real PostgreSQL test
+was explicitly excluded from this mocked run. Positive cases call mocked Twilio
+messages.create; negative cases assert zero calls. Seven changed JS files pass
+node --check; git diff --check passes. Routes run actual handlers with isolated
+mocked dependencies, without a listening socket or any external provider.
+
+The unfiltered Phase 2 test command exited 1 because the real PostgreSQL case hit
+`connect EPERM 127.0.0.1:55459`; mocked cases passed. No sandbox bypass attempted.
+Hermes host command (dedicated local test DB, temporary tables rolled back):
+```sh
+env -i PATH=/opt/homebrew/opt/node@22/bin:/opt/homebrew/bin:/usr/bin:/bin NODE_ENV=test CI=1 CUSTOMER_CONSENT_TEST_DATABASE_URL=postgresql://revv_panel@127.0.0.1:55459/revv_customer_consent_test /opt/homebrew/opt/node@22/bin/node --test backend/test/smsConsent.phase2.test.js backend/src/__tests__/customerOptInConfirmation.test.js
+```
+Logs: /tmp/revv-phase2-mocked.log and /tmp/revv-phase2-host-env.log.
+Full suite remains Hermes's final job. Later fixture updates required:
+- src/__tests__/smsTierGate.test.js and notificationLogging.privacy.test.js need
+  dbAll customer responses with complete provenance for provider-positive cases.
+- test/partsNotifications.test.js needs complete provenance in its eligible fixture.
+- test/partsDelivery.integration.test.js needs provenance columns and confirmed rows.
+- test/estimateImport.test.js must stop expecting nested TRUE or top-level TRUE
+  without a method to create consent; only explicit top-level staff attestation qualifies.
+Paths above are under backend/. Existing smsAutoReply mocks should also model STOP's
+customer revocation to verify that state, beyond their existing opt-out assertions.
+
+Eight files changed: this log; routes/ros.js, portal.js, timeclock.js;
+services/sms.js, smsAutoReply.js, partsNotifications.js;
+test/smsConsent.phase2.test.js. Safety-sensitive consent, staff exception and STOP
+revocation; over two files. No frontend, product switch, deletion, payment logic,
+P3 timeout work, readiness documents, provider calls or production data touched.

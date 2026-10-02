@@ -1,6 +1,6 @@
 const { v4: uuidv4 } = require('uuid');
 const { dbGet, dbRun } = require('../db');
-const { sendSMS, smsEntitled } = require('./sms');
+const { sendSMS, smsEntitled, phoneKey, phoneMatchSql } = require('./sms');
 
 const INBOUND_AUTO_REPLY_TEMPLATE = 'Thanks — ${shopName} received your message. A team member will review it and follow up during business hours.';
 
@@ -72,6 +72,13 @@ async function maybeSendInboundAutoReply({
          ON CONFLICT (shop_id, phone) DO UPDATE SET created_at = NOW()`,
         [shopId, inboundFrom]
       );
+      await database.run(
+        `UPDATE customers SET sms_consent = FALSE, sms_consent_at = NULL,
+           sms_consent_method = NULL, sms_consent_by = NULL
+         WHERE shop_id = $1 AND ${phoneMatchSql('phone')}`,
+        [shopId, phoneKey(inboundFrom)]
+      );
+      // Twilio handles keyword compliance replies; REVV sends no ordinary SMS.
       return { action: 'opt_out', reason: 'stop_keyword' };
     }
     if (classification === 'start') {
@@ -123,8 +130,8 @@ async function maybeSendInboundAutoReply({
 
     const message = autoReplyBodyForShop(shop);
     const result = await send(inboundFrom, message, { shopId, customerFacing: true });
-    if (result?.ok === false) {
-      return { action: 'suppressed', reason: result.reason || 'send_failed', result };
+    if (result?.ok !== true) {
+      return { action: 'suppressed', reason: result?.reason || 'send_failed', result };
     }
 
     await database.run(
@@ -135,7 +142,7 @@ async function maybeSendInboundAutoReply({
 
     return { action: 'auto_reply', result };
   } catch (error) {
-    console.error('[SMS Auto Reply] Error:', error?.message || error);
+    console.error('[SMS Auto Reply] Processing failed');
     return { action: 'suppressed', reason: 'error', error };
   }
 }
