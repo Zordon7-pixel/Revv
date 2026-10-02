@@ -173,6 +173,7 @@ function installPaymentsMocks({ paidCents = 0, owedCents = 10000 } = {}) {
   });
   installMock('../middleware/roles', { requireTechnician: (_req, _res, next) => next() });
   installMock('../services/stripe', {
+    getStripeClient: () => ({}),
     createPaymentIntent: async (...args) => {
       state.createIntentCalled = true;
       return { id: 'pi_1', client_secret: 'secret', currency: 'usd', status: 'requires_payment_method', args };

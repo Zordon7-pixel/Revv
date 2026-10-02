@@ -39,7 +39,7 @@ function consumers(db, money, provider = {}) {
     } } } }),
     constructWebhookEvent: body => body,
   };
-  const reservations = load('services/paymentReservations.js', { '../db': db, './roMoney': money });
+  const reservations = load('services/paymentReservations.js', { '../db': db, './roMoney': money, './stripe': stripe });
   const billing = load('services/customerBilling.js', { '../db': db, './stripe': stripe, './roMoney': money,
     './paymentReservations': reservations, './mailer': {}, './emailTemplates': {} });
   const router = load('routes/payments.js', {
@@ -71,7 +71,9 @@ function fixture({ total=10000, paid=2500, ro: overrides={}, ledger=[], attempts
     if (/UPDATE ro_payment_attempts/.test(sql)) {
       if (failPersistence) throw Error('private persistence detail');
       const row=attempts.find(a=>a.id===params[3]);
-      Object.assign(row,{stripe_payment_intent_id:params[0],stripe_checkout_session_id:params[1],status:params[2]});
+      if (/SET status = \$1/.test(sql)) {
+        const target=attempts.find(a=>a.id===params[1]); if(target) target.status=params[0];
+      } else Object.assign(row,{stripe_payment_intent_id:params[0],stripe_checkout_session_id:params[1],status:params[2]});
     }
     return {rows:[]};
   } };
@@ -203,7 +205,10 @@ for (const [label,config,expected] of [
     assert.equal(f.queries.at(-1),'COMMIT');
     assert.equal(f.writes.find(w=>/UPDATE repair_orders/.test(w.sql)).params[3],10000);
     assert.ok(f.writes.some(w=>/INSERT INTO job_status_log/.test(w.sql)));
-  } else {assert.equal(f.queries.at(-1),'ROLLBACK');assert.equal(f.writes.length,0);}
+  } else {
+    assert.equal(f.queries.at(-1),'COMMIT');
+    assert.equal(f.writes.some(w=>/UPDATE repair_orders|INSERT INTO job_status_log/.test(w.sql)),false);
+  }
 });
 
 test('manual payment preserves tenant and role boundaries before any write',async()=> {
@@ -361,7 +366,7 @@ test('real PostgreSQL payment reservations, parallel creation and settlement (mo
           const attempts=(await raw.query('SELECT * FROM ro_payment_attempts WHERE ro_id=$1 AND shop_id=$2',[id,shop])).rows;
           const ledger=(await raw.query('SELECT * FROM ro_payments WHERE ro_id=$1 AND shop_id=$2',[id,shop])).rows;
           const paid=ledger.filter(p=>['succeeded','paid'].includes(p.status)).reduce((n,p)=>n+Number(p.amount_cents),0);
-          const open=attempts.filter(a=>a.status!=='settled').reduce((n,a)=>n+Number(a.amount_cents),0)+
+          const open=attempts.filter(a=>!['settled','released'].includes(a.status)).reduce((n,a)=>n+Number(a.amount_cents),0)+
             ledger.filter(p=>!['succeeded','paid'].includes(p.status)&&!attempts.some(a=>a.stripe_payment_intent_id===p.stripe_payment_intent_id)).reduce((n,p)=>n+Number(p.amount_cents),0);
           assert.ok(open+paid<=10000,`open ${open} + successful ${paid} exceeds total`);
           return {attempts,ledger,paid,open};
@@ -541,7 +546,7 @@ test('real PostgreSQL payment reservations, parallel creation and settlement (mo
           if(behavior!=='webhook before response') {
             assert.equal((await invariant(ro)).open,10000);
             await f.reservations.settlePaymentEvent(event(pi,metadata,10000,'payment_intent.payment_failed'));
-            assert.equal((await invariant(ro)).attempts[0].status,'retryable');
+            assert.equal((await invariant(ro)).attempts[0].status,'unknown');
             assert.equal((await createIntent(f,ro)).statusCode,409);
           }
           await f.reservations.settlePaymentEvent(event(pi,metadata,10000));

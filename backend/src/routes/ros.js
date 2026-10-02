@@ -6,7 +6,7 @@ const { selectedEconomics, redactSelectedRO, redactROs, redactRO, summarizeEcono
 const { ROLE_RANK, getRoleRank, requireAdmin, requireTechnician } = require('../middleware/roles');
 const { calculateProfit, calculateTrueProfit } = require('../services/profit');
 const { isPaidStatus, roundToIntCents, dollarsToCents } = require('../services/roMoney');
-const { withLockedRo, getPaymentBalance, PaymentError } = require('../services/paymentReservations');
+const { withLockedRo, getPaymentBalance, reconcileLocked, PaymentError } = require('../services/paymentReservations');
 const { sendSMS, isConfiguredForShop } = require('../services/sms');
 const { sendMail } = require('../services/mailer');
 const { statusChangeEmail } = require('../services/emailTemplates');
@@ -259,7 +259,7 @@ function queueStatusEmail(roId, shopId, toStatus) {
                 v.year, v.make, v.model,
                 COALESCE(s.email_notifications_enabled, TRUE) AS email_notifications_enabled
          FROM repair_orders ro
-         LEFT JOIN customers c ON c.id = ro.customer_id
+         LEFT JOIN customers c ON c.id = ro.customer_id AND c.shop_id = ro.shop_id
          LEFT JOIN shops s ON s.id = ro.shop_id
          LEFT JOIN vehicles v ON v.id = ro.vehicle_id
          WHERE ro.id = $1 AND ro.shop_id = $2`,
@@ -282,7 +282,8 @@ function queueStatusEmail(roId, shopId, toStatus) {
       });
 
       let finalHtml = html;
-      if (toStatus === 'ready' && !['paid', 'succeeded'].includes(normalizedPaymentStatus(emailContext.payment_status, emailContext.payment_received))) {
+      // The status API and ready-for-pickup email template use delivery.
+      if (['delivery', 'ready'].includes(toStatus) && !['paid', 'succeeded'].includes(normalizedPaymentStatus(emailContext.payment_status, emailContext.payment_received))) {
         const linkResult = await createPaymentCheckoutLinkForRo({
           roId,
           shopId,
@@ -2619,9 +2620,12 @@ router.post('/:id/mark-paid', auth, requireTechnician, async (req, res) => {
     const { payment_method } = req.body || {};
     const method = payment_method || 'cash';
     const ro = await withLockedRo(req.params.id, req.user.shop_id, async (client, lockedRo) => {
-      const balance = await getPaymentBalance(client, lockedRo);
+      await reconcileLocked(client, lockedRo, { actorId: req.user.id, reason: 'mark_paid' });
+      let balance;
+      try { balance = await getPaymentBalance(client, lockedRo); }
+      catch (error) { if (error instanceof PaymentError) return error; throw error; }
       if (balance.hasOpenPayments || balance.occupiedCents > 0) {
-        throw new PaymentError('Cannot mark paid while a payment is open or requires reconciliation', 409);
+        return new PaymentError('Cannot mark paid while a payment is open or requires reconciliation', 409);
       }
       const now = new Date().toISOString();
       // The money and event commit together; provider reservations use this lock too.

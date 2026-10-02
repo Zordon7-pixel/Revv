@@ -83,7 +83,7 @@ async function sendClosedPaidInvoiceEmail({ roId, shopId, force = false }) {
     `SELECT ro.id, ro.shop_id, ro.ro_number, ro.status, ro.payment_status, ro.payment_received,
             ro.invoice_emailed_at, c.email AS customer_email, c.name AS customer_name, s.name AS shop_name
      FROM repair_orders ro
-     LEFT JOIN customers c ON c.id = ro.customer_id
+     LEFT JOIN customers c ON c.id = ro.customer_id AND c.shop_id = ro.shop_id
      LEFT JOIN shops s ON s.id = ro.shop_id
      WHERE ro.id = $1 AND ro.shop_id = $2`,
     [roId, shopId]

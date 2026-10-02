@@ -26,6 +26,24 @@ async function up(pool) {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`);
     await client.query('CREATE INDEX IF NOT EXISTS ro_payment_attempts_ro ON ro_payment_attempts(shop_id, ro_id)');
+    await client.query('ALTER TABLE ro_payment_attempts DROP CONSTRAINT IF EXISTS ro_payment_attempts_status_check');
+    await client.query(`ALTER TABLE ro_payment_attempts ADD CONSTRAINT ro_payment_attempts_status_check
+      CHECK (status IN ('reserved','open','unknown','retryable','settled','released'))`);
+    await client.query(`CREATE TABLE IF NOT EXISTS ro_payment_attempt_audit (
+      id TEXT PRIMARY KEY, shop_id TEXT NOT NULL, ro_id TEXT NOT NULL, attempt_id TEXT NOT NULL,
+      actor_id TEXT, action TEXT NOT NULL, prior_state TEXT NOT NULL, outcome TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`);
+    await client.query(`CREATE OR REPLACE FUNCTION revv_guard_payment_audit() RETURNS trigger
+      LANGUAGE plpgsql AS $$ BEGIN
+        RAISE EXCEPTION 'RO_HISTORY_PROTECTED' USING ERRCODE='23514';
+      END $$`);
+    await client.query(`DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid='ro_payment_attempt_audit'::regclass AND tgname='revv_audit_immutable') THEN
+        CREATE TRIGGER revv_audit_immutable BEFORE UPDATE OR DELETE OR TRUNCATE ON ro_payment_attempt_audit
+          FOR EACH STATEMENT EXECUTE FUNCTION revv_guard_payment_audit();
+      END IF;
+    END $$`);
     await ensureFinancialGuards(client);
     await client.query('COMMIT');
   } catch (error) {

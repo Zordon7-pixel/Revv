@@ -3,11 +3,11 @@ const { dbGet, dbAll } = require('../db');
 const auth = require('../middleware/auth');
 const { requireTechnician } = require('../middleware/roles');
 const { createNotification } = require('../services/notifications');
-const { createPaymentIntent, constructWebhookEvent } = require('../services/stripe');
+const { getStripeClient, createPaymentIntent, constructWebhookEvent } = require('../services/stripe');
 const { sendMail } = require('../services/mailer');
 const { paymentConfirmationEmail } = require('../services/emailTemplates');
 const { createPaymentCheckoutLinkForRo, sendClosedPaidInvoiceEmail } = require('../services/customerBilling');
-const { PaymentError, reservePayment, metadataFor, recordProviderResult, settlePaymentEvent } = require('../services/paymentReservations');
+const { PaymentError, reconcileReservations, reservePayment, metadataFor, recordProviderResult, settlePaymentEvent } = require('../services/paymentReservations');
 
 const router = express.Router();
 
@@ -21,6 +21,7 @@ async function handleCreateIntent(req, res) {
   try {
     const { ro_id: roId, amount, allow_partial } = req.body || {};
     if (!roId) return res.status(400).json({ error: 'ro_id is required' });
+    if (!getStripeClient()) return res.status(503).json({ error: 'Stripe payments are not configured' });
     const attempt = await reservePayment({ roId, shopId: req.user.shop_id, kind: 'intent', amount, allowPartial: allow_partial });
     const paymentIntent = await createPaymentIntent(attempt.amountCents, 'usd', metadataFor(attempt), attempt.idempotencyKey);
     if (!paymentIntent) return res.status(503).json({ error: 'Stripe payments are not configured' });
@@ -32,6 +33,20 @@ async function handleCreateIntent(req, res) {
       error: err instanceof PaymentError ? err.message : 'Failed to create payment intent' });
   }
 }
+
+// Exact roles: the shared rank guard also admits assistants and superadmins.
+router.post('/reconcile/:roId', auth, (req, res, next) => {
+  if (!['owner', 'admin'].includes(req.user?.role)) return res.status(403).json({ error: 'Owner or admin access required' });
+  return next();
+}, async (req, res) => {
+  try {
+    const result = await reconcileReservations({ roId: req.params.roId, shopId: req.user.shop_id, actorId: req.user.id });
+    return res.json(result);
+  } catch (error) {
+    return res.status(error instanceof PaymentError ? error.status : 500).json({
+      error: error instanceof PaymentError ? error.message : 'Could not reconcile payments' });
+  }
+});
 
 router.post('/intent', auth, requireTechnician, handleCreateIntent);
 
@@ -50,7 +65,7 @@ router.post('/link/:roId', auth, requireTechnician, async (req, res) => {
     const ro = await dbGet(
       `SELECT ro.id, ro.shop_id, ro.ro_number, c.email AS customer_email, c.name AS customer_name
        FROM repair_orders ro
-       LEFT JOIN customers c ON c.id = ro.customer_id
+       LEFT JOIN customers c ON c.id = ro.customer_id AND c.shop_id = ro.shop_id
        WHERE ro.id = $1 AND ro.shop_id = $2`,
       [req.params.roId, req.user.shop_id]
     );
