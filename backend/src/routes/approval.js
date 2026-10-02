@@ -57,6 +57,8 @@ async function ensureTables() {
   await dbRun(`UPDATE ro_comms SET summary = COALESCE(summary, notes, '')`).catch(() => {});
 }
 
+router.get('/:token/pdf', panelPublicHandler(pool, 'pdf'), (req, res) => res.status(404).json({ error: 'NOT_FOUND' }));
+
 router.get('/:token', panelPublicHandler(pool, 'get'), async (req, res) => {
   try {
     await ensureTables();

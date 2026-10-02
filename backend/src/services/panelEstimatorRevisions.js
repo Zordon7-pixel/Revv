@@ -1,5 +1,6 @@
 'use strict';
 const { randomUUID } = require('node:crypto');
+const { historicalQuote, humanLabel, displayValue, bucketLabel } = require('./panelEstimatorQuotePdf');
 const { revokePendingApprovalLinks } = require('./panelEstimatorApproval');
 const n = require('./panelEstimatorStore');
 const { createPanelEstimatorDraft, hashInputs, canonical } = require('./panelEstimatorDraft');
@@ -12,30 +13,46 @@ const author = input => {
 const resultDTO = row => ({ revision_id: row.id, quote_hash: row.quote_hash,
   version: Number(row.version), quote: row.public_snapshot });
 
-// Compare every safe input field, including scope, operations, prices, presets,
-// discounts and payer provenance. This makes no carrier/equivalence inference.
-function differences(before, after, path = '') {
+// Stable identities pair arrays across reorder/add/remove. Every leaf is a
+// renderable scalar; paths remain machine-readable and labels serve JSON/UI/PDF.
+function differences(before, after, path = '', label = '') {
   if (canonical(before) === canonical(after)) return [];
-  if (before && after && typeof before === 'object' && typeof after === 'object' &&
-      !Array.isArray(before) && !Array.isArray(after)) {
-    return [...new Set([...Object.keys(before), ...Object.keys(after)])].sort().flatMap(key =>
-      differences(before[key] ?? null, after[key] ?? null, path ? `${path}.${key}` : key));
+  const object = value => value && typeof value === 'object' && !Array.isArray(value);
+  const field = path.split('.').at(-1);
+  if (Array.isArray(before) || Array.isArray(after)) {
+    const identity = value => object(value) ? value.id ?? (value.key ? `${value.scope}:${value.key}` :
+      value.operation_id ? `${value.panel_id}:${value.operation_id}` : value.panel_id) : value;
+    const map = values => new Map((values ?? []).map((value, index) => [String(identity(value) ?? index), value]));
+    const left = map(before), right = map(after);
+    return [...new Set([...left.keys(), ...right.keys()])].sort().flatMap(id => {
+      const old = left.get(id), next = right.get(id), item = next ?? old;
+      const name = object(item) ? item.label || item.description || item.name || humanLabel(id) : humanLabel(id);
+      const itemPath = `${path}[${JSON.stringify(id)}]`, itemLabel = `${label} / ${name}`;
+      if (object(item)) return differences(old ?? {}, next ?? {}, itemPath, itemLabel);
+      return [{ path: itemPath, label: itemLabel, before: old == null ? 'Not included' : displayValue(old, field),
+        after: next == null ? 'Not included' : displayValue(next, field) }];
+    });
   }
-  return [{ path, before: before ?? null, after: after ?? null }];
+  if (object(before) || object(after)) {
+    return [...new Set([...Object.keys(before ?? {}), ...Object.keys(after ?? {})])].sort().flatMap(key =>
+      differences(before?.[key] ?? null, after?.[key] ?? null, path ? `${path}.${key}` : key,
+        label ? `${label} / ${humanLabel(key)}` : humanLabel(key)));
+  }
+  return [{ path, label: label || humanLabel(field), before: displayValue(before, field), after: displayValue(after, field) }];
 }
+const comparisonInputs = quote => ({ scope: quote.scope, scenario: quote.scenario,
+  adjustments: quote.adjustments, totals: quote.totals, allocation: quote.allocation });
 
 function billingRows(quote, revisionId) {
   return quote.buckets.map((bucket, index) => {
     const line = quote.lines.find(l => l.id === bucket.id);
-    const pkg = quote.packages.find(p => p.id === (bucket.package_id ?? bucket.id));
     // B1 allocation buckets materialize once per category, preserving explicit
     // taxability and accounting classification. Legacy whole packages stay other.
     const category = bucket.kind === 'package_allocation' ? bucket.category : line?.category;
     const type = ['body', 'refinish'].includes(category) ? 'labor' :
       ['parts', 'sublet'].includes(category) ? category : 'other';
     const value = { id: randomUUID(), type,
-      description: bucket.kind === 'package_allocation' ? `${pkg.name} — ${bucket.category}` :
-        bucket.kind === 'package' ? pkg.name : bucket.kind === 'panel_minimum' ? `${bucket.panel_id} — Minimum charge adjustment` : bucket.kind === 'minimum' ? 'Minimum charge adjustment' : `${line.description} — ${line.operation_id}`,
+      description: bucketLabel(quote, bucket),
       quantity: '1.00', unit_price: dollars(bucket.net_cents), total: dollars(bucket.net_cents),
       taxable: bucket.taxable, sort_order: index, panel_revision_id: revisionId,
       panel_source_key: `${bucket.kind}:${bucket.id}` };
@@ -133,7 +150,7 @@ function createPanelEstimatorRevisions(database) {
       if (!preview.sell.complete || preview.sell.inspection_required ||
         preview.sell.review_flags.some(f => !warnings.has(f.code)) || !preview.draft.scenario.provenance) conflict('REVIEW_REQUIRED');
       const activeId = await selected(scope);
-      const history = (await client.query(`SELECT id, public_snapshot, accounting_snapshot FROM ro_panel_estimator_revisions
+      const history = (await client.query(`SELECT id, version, quote_hash, public_snapshot, accounting_snapshot FROM ro_panel_estimator_revisions
         WHERE shop_id=$1 AND ro_id=$2 ORDER BY version`, [input.shopId, input.roId])).rows;
       const previous = history.find(r => r.id === activeId);
       if (activeId && !previous) throw n.error('INVALID_REVISION', 500);
@@ -149,10 +166,11 @@ function createPanelEstimatorRevisions(database) {
       const reviewedAt = (await client.query('SELECT clock_timestamp() AS now')).rows[0].now.toISOString();
       const quote = { ...preview.sell, revision_id: revisionId, reviewed: true, reviewed_at: reviewedAt,
         scenario_key: `${saved.scenario.payer}:${saved.scenario.provenance}`,
-        comparisons: history.map(r => ({ revision_id: r.id, scenario: r.public_snapshot.scenario,
-          differences: differences({ scope: r.public_snapshot.scope, scenario: r.public_snapshot.scenario,
-            adjustments: r.public_snapshot.adjustments, totals: r.public_snapshot.totals },
-          { scope: preview.sell.scope, scenario: preview.sell.scenario, adjustments: preview.sell.adjustments, totals: preview.sell.totals }) })) };
+        comparisons: history.map(row => {
+          const historical = historicalQuote(row);
+          return { ...historical, differences: differences(comparisonInputs(historical), comparisonInputs(preview.sell)) };
+        }) };
+
       // Hash the entire public snapshot excluding its own hash field.
       const quoteHash = hashInputs(quote);
       quote.quote_hash = quoteHash;

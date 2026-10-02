@@ -29,7 +29,9 @@ function noPrivate(value, path = '') {
     // Comparison arrays carry the exact same assessment DTO at before/after.
     const assessmentComparison = /^(?:quote\.)?comparisons\.\d+\.differences\.\d+$/.test(path) &&
       value.path === 'scope.assessments' && ['before', 'after'].includes(key);
-    const childPath = assessmentComparison ? 'scope.assessments' : path ? `${path}.${key}` : key;
+    const nestedPath = path ? `${path}.${key}` : key;
+    const childPath = assessmentComparison ? 'scope.assessments' :
+      nestedPath.replace(/^(?:quote\.)?comparisons\.\d+\.scope\./, 'scope.');
     if (!/^(?:quote\.)?(?:scope\.)?assessments\.\d+\.(?:preset_override|deferral)\.reason$/.test(childPath))
       assert.doesNotMatch(key, /cost|private|margin|target|reason|reviewed_by/);
     noPrivate(child, childPath);
@@ -47,8 +49,16 @@ test('revision comparisons enumerate all changed safe inputs without equivalence
   const before = { scope: { assessments: [panel()] }, scenario: draft().scenario, adjustments: draft().adjustments };
   const after = { scope: { assessments: [panel({ body_rate_cents: 9000, operation: 'replace' }), panel({ panel_id: 'roof' })] },
     scenario: { payer: 'insurance', provenance: 'imported_carrier' }, adjustments: { discount_cents: 1, minimum_cents: 5 } };
-  assert.deepEqual(differences(before, after).map(d => d.path),
-    ['adjustments.discount_cents', 'adjustments.minimum_cents', 'scenario.payer', 'scenario.provenance', 'scope.assessments']);
+  const changes = differences(before, after);
+  for (const path of ['adjustments.discount_cents', 'adjustments.minimum_cents', 'scenario.payer',
+    'scenario.provenance', 'scope.assessments["hood"].body_rate_cents', 'scope.assessments["hood"].operation',
+    'scope.assessments["roof"].parts_sell_cents']) assert.ok(changes.some(d => d.path === path), path);
+  assert.deepEqual(changes.find(d => d.path === 'scope.assessments["hood"].body_rate_cents'), {
+    path: 'scope.assessments["hood"].body_rate_cents', label: 'Repair scope / Panels / Hood / Body labor rate',
+    before: '$100.00', after: '$90.00' });
+  assert.ok(changes.every(d => d.label && ['string','number','boolean'].includes(typeof d.before) &&
+    ['string','number','boolean'].includes(typeof d.after)));
+  assert.deepEqual(differences(after, { ...after, scope: { assessments: [...after.scope.assessments].reverse() } }), []);
   assert.deepEqual(differences(before, before), []);
 });
 test('revision test guard refuses any other database', () => {
@@ -237,7 +247,15 @@ for (const type of ['TEXT', 'UUID']) test(`real PostgreSQL revisions ${type}: se
       const next = await commit(main, draft({ assessments: [panel({ body_rate_cents: 12000 }), panel({ panel_id: 'roof' })],
         adjustments: { discount_cents: 4000, minimum_cents: 0 } }));
       assert.notEqual(next.revision_id, first.revision_id); assert.equal(next.quote.scenario.payer, 'cash');
-      assert.ok(next.quote.comparisons[0].differences.some(d => d.path === 'scope.assessments'));
+      const historical = next.quote.comparisons[0];
+      assert.ok(historical.differences.some(d => d.path === 'scope.assessments["hood"].body_rate_cents' &&
+        d.label.endsWith('Body labor rate') && d.before === '$100.00' && d.after === '$120.00'));
+      assert.equal(historical.historical, true);
+      assert.equal(historical.version, first.version); assert.equal(historical.quote_hash, first.quote_hash);
+      assert.deepEqual(historical.totals, first.quote.totals); assert.deepEqual(historical.allocation, first.quote.allocation);
+      assert.deepEqual(historical.scope, first.quote.scope); assert.deepEqual(historical.scenario, first.quote.scenario);
+      assert.equal(historical.comparisons, undefined);
+      assert.equal(historical.accounting_snapshot, undefined);
       assert.ok(next.quote.comparisons[0].differences.some(d => d.path === 'adjustments.discount_cents'));
       assert.deepEqual(await revisions.getQuote({ ...main, revisionId: first.revision_id }), first);
       assert.deepEqual(await revisions.commit({ ...main, body: firstRequest }), first);
@@ -601,4 +619,20 @@ test('B2 scope reconciliation compares decimal quantities numerically, including
   const deferred = { lines: [], scope: { assessments: [{ ...assessment, deferral: {}, extras: [] }] } };
   assert.throws(() => requirePreservedScope(deferred, { lines: [],
     scope: { assessments: [{ ...assessment, body_hours: 2, extras: [] }] } }), errorCode('SCOPE_RECONCILIATION_REQUIRED'));
+});
+
+test('comparison changes pair operations and discounts by stable IDs, including adds/removals and target changes', () => {
+  const extra = { key: 'scan', scope: 'job', category: 'sublet', description: 'Vehicle scan', quantity: 1, unit_price_cents: 1200 };
+  const before = { scope: { assessments: [panel({ extras: [extra] })] }, adjustments: { discounts: [
+    { id: 'offer', amount_cents: 100, line_ids: ['hood:parts'] }, { id: 'old', amount_cents: 50 }] } };
+  const after = { scope: { assessments: [panel({ extras: [{ ...extra, quantity: 2, unit_price_cents: 1500 },
+    { ...extra, key: 'setup', description: 'Setup' }] })] }, adjustments: { discounts: [
+    { id: 'new', amount_cents: 20 }, { id: 'offer', amount_cents: 200, line_ids: ['hood:materials'] }] } };
+  const changes = differences(before,after);
+  for (const suffix of ['extras["job:scan"].quantity','extras["job:scan"].unit_price_cents',
+    'extras["job:setup"].description','discounts["offer"].amount_cents','discounts["old"].amount_cents',
+    'discounts["new"].amount_cents','line_ids["hood:parts"]','line_ids["hood:materials"]'])
+    assert.ok(changes.some(d => d.path.endsWith(suffix)), suffix);
+  assert.ok(changes.every(d => d.label && typeof d.before !== 'object' && typeof d.after !== 'object'));
+  assert.deepEqual(differences(after,{ ...after, adjustments: { discounts: [...after.adjustments.discounts].reverse() } }),[]);
 });

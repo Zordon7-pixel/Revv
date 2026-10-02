@@ -34,7 +34,9 @@ function noPrivate(value, path = '') {
     // Comparison arrays carry the exact same assessment DTO at before/after.
     const assessmentComparison = /^(?:quote\.)?comparisons\.\d+\.differences\.\d+$/.test(path) &&
       value.path === 'scope.assessments' && ['before', 'after'].includes(key);
-    const childPath = assessmentComparison ? 'scope.assessments' : path ? `${path}.${key}` : key;
+    const nestedPath = path ? `${path}.${key}` : key;
+    const childPath = assessmentComparison ? 'scope.assessments' :
+      nestedPath.replace(/^(?:quote\.)?comparisons\.\d+\.scope\./, 'scope.');
     if (!/^(?:quote\.)?(?:scope\.)?assessments\.\d+\.(?:preset_override|deferral)\.reason$/.test(childPath))
       assert.doesNotMatch(key, /cost|private|margin|target|reason|created_by/);
     noPrivate(child, childPath);
@@ -529,4 +531,22 @@ test('B2 scope acknowledgements, eligibility and disclosure privacy are conserva
     assert.throws(() => noPrivate({ scope: { assessments: [{ deferral: { [path]: 'PRIVATE sentinel' } }] } }));
   }
   assert.throws(() => noPrivate({ application_snapshot: { reason: 'Private catalog reason' } }));
+});
+
+test('A2 customer comparison privacy accepts only public reasons in historical scope and scalar changes', () => {
+  const { historicalQuote } = require('../src/services/panelEstimatorQuotePdf');
+  const { differences } = require('../src/services/panelEstimatorRevisions');
+  const input = draft({ assessments: [panel({ preset_override: { reason: 'Customer rate reviewed' } })] });
+  const quote = calculate(input).sell;
+  const historical = historicalQuote({ id: 'historical', version: 1, quote_hash: 'a'.repeat(64), public_snapshot: quote });
+  historical.differences = differences({ scope: historical.scope }, { scope: calculate(draft()).sell.scope });
+  noPrivate({ quote: { comparisons: [historical] } });
+  // Preserve the old array-comparison privacy guard for legacy stored snapshots.
+  noPrivate({ quote: { comparisons: [{ differences: [{ path: 'scope.assessments',
+    before: quote.scope.assessments, after: [] }] }] } });
+  for (const injected of [
+    { ...historical, private_notes: 'PRIVATE comparison' },
+    { ...historical, scope: { ...historical.scope, assessments: [{ ...historical.scope.assessments[0], reason: 'Private reason' }] } },
+    { ...historical, differences: [{ label: 'Any', before: { costs: 4 }, after: null }] },
+  ]) assert.throws(() => noPrivate({ quote: { comparisons: [injected] } }));
 });

@@ -1,5 +1,6 @@
 'use strict';
 const express = require('express');
+const { sendQuotePdf } = require('../services/panelEstimatorQuotePdf');
 const n = require('../services/panelEstimatorStore');
 const { createPanelEstimatorApproval } = require('../services/panelEstimatorApproval');
 const { createPanelEstimatorDraft } = require('../services/panelEstimatorDraft');
@@ -102,6 +103,9 @@ function createPanelEstimatorRouter({ database, authenticate } = {}) {
   }));
   router.post(`${base}/commit`, ...authorRoute, endpoint(async (req, res) => {
     res.json(await revisions.commit({ ...scope(req), ...actor(req), body: req.body }));
+  }));
+  router.get(`${base}/quote.pdf`, ...authorRoute, endpoint(async (req, res) => {
+    await sendQuotePdf(res, await revisions.getQuote({ ...scope(req), revisionId: req.query.revision_id }));
   }));
   router.get(`${base}/quote`, ...authorRoute, endpoint(async (req, res) => {
     res.json(await revisions.getQuote({ ...scope(req), ...actor(req), revisionId: req.query.revision_id }));

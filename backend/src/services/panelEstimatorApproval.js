@@ -4,6 +4,7 @@ const n = require('./panelEstimatorStore');
 const { canonical, hashInputs } = require('./panelEstimatorDraft');
 const Sentry = require('@sentry/node');
 const rateLimit = require('express-rate-limit');
+const { sendQuotePdf } = require('./panelEstimatorQuotePdf');
 
 // Pure filter for bearer-bearing telemetry copies. Request suppression below
 // is scoped before parsing, never registered as a global event processor.
@@ -216,7 +217,11 @@ function panelPublicHandler(database, method) {
     // The app's request-scoped Sentry handler precedes these routes. Do not send
     // bearer URLs, decision names or payloads to telemetry, even on later errors.
     Sentry.configureScope(scope => scope.addEventProcessor(() => null));
-    try { res.json(await (method === 'get' ? service.get(req.params.token) : service.respond(req.params.token,req.body))); }
+    try {
+      const result = await (method === 'respond' ? service.respond(req.params.token,req.body) : service.get(req.params.token));
+      if (method === 'pdf') return await sendQuotePdf(res, result);
+      return res.json(result);
+    }
     catch (err) { publicError(res,err); }
   };
 }

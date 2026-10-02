@@ -1777,6 +1777,9 @@ router.post('/:id/approval-link', auth, requireTechnician, async (req, res) => {
 
 router.use('/approval', publicRequestError(publicTokenLimiter));
 
+router.get('/approval/:token/pdf', approvalNoStore, publicTokenLimiter,
+  panelPublicHandler(pool, 'pdf'), (req, res) => res.status(404).json({ error: 'NOT_FOUND' }));
+
 router.get('/approval/:token', approvalNoStore, publicTokenLimiter, panelPublicHandler(pool, 'get'), async (req, res) => {
   try {
     await ensureApprovalLinksTable();
