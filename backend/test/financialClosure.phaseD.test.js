@@ -132,6 +132,8 @@ test('real PostgreSQL Phase D financial mutation and bulk deletion closure', {ti
           taxable: f=>['UPDATE estimate_line_items SET taxable=FALSE WHERE id=$1 AND shop_id=$2',[f.line,f.shop]],
           authority: f=>['UPDATE repair_orders SET total=50,estimate_amount=50 WHERE id=$1 AND shop_id=$2',[f.ro,f.shop]],
           metadata: f=>["UPDATE estimate_metadata SET adjuster_totals='{\"total\":50}' WHERE ro_id=$1 AND shop_id=$2",[f.ro,f.shop]],
+          increase: f=>['UPDATE estimate_line_items SET unit_price=120 WHERE id=$1 AND shop_id=$2',[f.line,f.shop]],
+          taxIncrease: f=>['UPDATE shops SET tax_rate=0.2 WHERE id=$1',[f.shop]],
           tax: f=>['UPDATE shops SET tax_rate=0 WHERE id=$1',[f.shop]],
         };
         const snapshot=async f=> {
@@ -174,7 +176,8 @@ test('real PostgreSQL Phase D financial mutation and bulk deletion closure', {ti
               results=Promise.allSettled([second]);
               await blockedBy(pid); await c.query('COMMIT');
               const [outcome]=await results;
-              if(paymentFirst) {assert.equal(outcome.status,'rejected');assert.match(outcome.reason.message,/RO_FINANCIAL_HOLD/);}
+              if(paymentFirst && !['authority','metadata','increase','taxIncrease'].includes(name)) {assert.equal(outcome.status,'rejected');assert.match(outcome.reason.message,/RO_FINANCIAL_HOLD/);}
+              else if(paymentFirst) { assert.equal(outcome.status,'fulfilled'); assert.equal((await money.getRoMoneySummary(f.ro,f.shop,raw)).totalCents,name==='increase'?13200:name==='taxIncrease'?12000:11000); }
               else if(name==='remove') {assert.equal(outcome.status,'rejected');assert.equal(outcome.reason.status,400);}
               else {assert.equal(outcome.status,'fulfilled');assert.equal(outcome.value.amountCents,(await money.getRoMoneySummary(f.ro,f.shop,raw)).totalCents);}
               const total=(await money.getRoMoneySummary(f.ro,f.shop,raw)).totalCents;
@@ -183,20 +186,136 @@ test('real PostgreSQL Phase D financial mutation and bulk deletion closure', {ti
             } finally {await c.query('ROLLBACK');c.release();if(results)await results;}
           });
         }
-        for(const fact of ['manual','paid','failed','zero','reserved','open','retryable','unknown','settled']) await t.test(`hold preserves ${fact} evidence and operational edits`,async()=> {
+        for(const fact of ['manual','paid','failed','zero','reserved','open','retryable','unknown','settled','released']) await t.test(`floor permits repricing and retains ${fact} history`,async()=> {
           const f=await fixture();
           if(fact==='manual') await raw.query('UPDATE repair_orders SET amount_paid_cents=3000 WHERE id=$1 AND shop_id=$2',[f.ro,f.shop]);
           else if(['paid','failed','zero'].includes(fact)) await raw.query('INSERT INTO ro_payments(id,shop_id,ro_id,amount_cents,status) VALUES ($1,$2,$3,$4,$5)',[randomUUID(),f.shop,f.ro,fact==='zero'?0:3000,fact==='failed'?'failed':'succeeded']);
           else await raw.query('INSERT INTO ro_payment_attempts(id,shop_id,ro_id,idempotency_key,amount_cents,kind,status) VALUES ($1,$2,$3,$4,3000,\'intent\',$5)',[randomUUID(),f.shop,f.ro,randomUUID(),fact]);
+          const protectedMoney=!['zero','settled','released'].includes(fact);
           const before=await snapshot(f);
-          for(const statement of Object.values(mutations)) await assert.rejects(raw.query(...statement(f)),/RO_FINANCIAL_HOLD/);
+          if(protectedMoney) {
+            await assert.rejects(raw.query('UPDATE estimate_line_items SET unit_price=1 WHERE id=$1',[f.line]),/RO_FINANCIAL_HOLD/);
+            await assert.rejects(raw.query(...mutations.remove(f)),/RO_FINANCIAL_HOLD/);
+            assert.deepEqual(await snapshot(f),before);
+          }
           await assert.rejects(raw.query('DELETE FROM repair_orders WHERE id=$1 AND shop_id=$2',[f.ro,f.shop]),/RO_HISTORY_PROTECTED/);
           if(fact!=='manual') {
             const table=['paid','failed','zero'].includes(fact)?'ro_payments':'ro_payment_attempts';
             await assert.rejects(raw.query(`DELETE FROM ${table} WHERE ro_id=$1 AND shop_id=$2`,[f.ro,f.shop]),/RO_HISTORY_PROTECTED/);
           }
           assert.deepEqual(await snapshot(f),before);
+          for(const [name,statement] of Object.entries(mutations)) if(!['remove','increase','taxIncrease'].includes(name)) await raw.query(...statement(f));
+          assert.equal((await money.getRoMoneySummary(f.ro,f.shop,raw)).totalCents,5000);
+          await raw.query('UPDATE estimate_line_items SET unit_price=120 WHERE id=$1',[f.line]);
+          if(!protectedMoney) await raw.query(...mutations.remove(f));
           await raw.query("UPDATE repair_orders SET status='repair' WHERE id=$1 AND shop_id=$2",[f.ro,f.shop]);
+        });
+        const transaction=async work=> {
+          const c=await raw.connect();
+          try {await c.query('BEGIN');await work(c);await c.query('COMMIT');}
+          catch(error){await c.query('ROLLBACK');throw error;}finally{c.release();}
+        };
+        for(const kind of ['deposit','checkout']) await t.test(`supplement, safe decrease/delete, metadata and atomic replacement after ${kind}`,async()=> {
+          const f=await fixture();
+          const a=await payments.reservePayment({roId:f.ro,shopId:f.shop,kind:kind==='deposit'?'intent':'checkout',amount:3000,allowPartial:true});
+          if(kind==='deposit') await payments.settlePaymentEvent({type:'payment_intent.succeeded',data:{object:{
+            id:`pi_${randomUUID()}`,metadata:payments.metadataFor(a),amount_received:3000,currency:'usd'}}});
+          const extra=randomUUID();
+          await raw.query("INSERT INTO estimate_line_items(id,shop_id,ro_id,type,unit_price) VALUES ($1,$2,$3,'parts',25)",[extra,f.shop,f.ro]);
+          await raw.query('UPDATE estimate_line_items SET unit_price=50 WHERE id=$1',[f.line]);
+          await raw.query(...mutations.metadata(f));
+          await raw.query('DELETE FROM estimate_line_items WHERE id=$1',[extra]);
+          assert.equal((await money.getRoMoneySummary(f.ro,f.shop,raw)).totalCents,5500);
+          // Temporary zero is legal within a replacement transaction.
+          await transaction(async c=> {
+            await c.query('DELETE FROM estimate_line_items WHERE ro_id=$1 AND shop_id=$2',[f.ro,f.shop]);
+            await c.query("INSERT INTO estimate_line_items(id,shop_id,ro_id,type,unit_price) VALUES ($1,$2,$3,'parts',40),($4,$2,$3,'labor',10)",[f.line,f.shop,f.ro,extra]);
+          });
+          const before=await snapshot(f);
+          await assert.rejects(transaction(async c=> {
+            await c.query(...mutations.metadata(f));
+            await c.query('DELETE FROM estimate_line_items WHERE ro_id=$1 AND shop_id=$2',[f.ro,f.shop]);
+            await c.query("INSERT INTO estimate_line_items(id,shop_id,ro_id,type,unit_price) VALUES ($1,$2,$3,'parts',1)",[f.line,f.shop,f.ro]);
+          }),/RO_FINANCIAL_HOLD/);
+          assert.deepEqual(await snapshot(f),before);
+          await assert.rejects(raw.query('DELETE FROM repair_orders WHERE id=$1',[f.ro]),/RO_HISTORY_PROTECTED/);
+        });
+        await t.test('manual paid plus active reservation is the floor; metadata/parent totals cannot replace authority',async()=> {
+          const f=await fixture();
+          await raw.query('UPDATE repair_orders SET amount_paid_cents=3000 WHERE id=$1',[f.ro]);
+          await payments.reservePayment({roId:f.ro,shopId:f.shop,kind:'checkout',amount:4000,allowPartial:true});
+          await raw.query('UPDATE estimate_line_items SET unit_price=70,taxable=FALSE WHERE id=$1',[f.line]);
+          await raw.query('UPDATE repair_orders SET total=9999,estimate_amount=9999 WHERE id=$1',[f.ro]);
+          await raw.query(...mutations.metadata(f));
+          const before=await snapshot(f);
+          await assert.rejects(raw.query('UPDATE estimate_line_items SET unit_price=69.99 WHERE id=$1',[f.line]),/RO_FINANCIAL_HOLD/);
+          assert.deepEqual(await snapshot(f),before);
+          assert.equal((await money.getRoMoneySummary(f.ro,f.shop,raw)).totalCents,7000);
+        });
+        await t.test('tax increase and safe decrease recompute live totals; unsafe reduction rolls back whole shop',async()=> {
+          const f=await fixture();
+          await payments.reservePayment({roId:f.ro,shopId:f.shop,kind:'checkout',amount:10500,allowPartial:true});
+          const sibling=randomUUID();
+          await raw.query('INSERT INTO repair_orders(id,shop_id) VALUES ($1,$2)',[sibling,f.shop]);
+          await raw.query("INSERT INTO estimate_line_items(id,shop_id,ro_id,type,unit_price) VALUES ($1,$2,$3,'parts',200)",[randomUUID(),f.shop,sibling]);
+          for(const rate of [0.2,0.05]) {
+            await raw.query('UPDATE shops SET tax_rate=$2 WHERE id=$1',[f.shop,rate]);
+            for(const ro of [f.ro,sibling]) {
+              const summary=await money.getRoMoneySummary(ro,f.shop,raw);
+              const row=(await raw.query('SELECT total,estimate_amount,amount_owed_cents FROM repair_orders WHERE id=$1',[ro])).rows[0];
+              assert.equal(Number(row.total)*100,summary.totalCents);
+              assert.equal(Number(row.estimate_amount)*100,summary.totalCents);
+              assert.equal(row.amount_owed_cents,summary.totalCents);
+            }
+          }
+          const before=await snapshot(f);
+          await assert.rejects(raw.query('UPDATE shops SET tax_rate=0.0499 WHERE id=$1',[f.shop]),/RO_FINANCIAL_HOLD/);
+          assert.deepEqual(await snapshot(f),before);
+          assert.equal(Number((await raw.query('SELECT tax_rate FROM shops WHERE id=$1',[f.shop])).rows[0].tax_rate),0.05);
+        });
+        await t.test('released failed history permits repricing but cannot be erased; ambiguous failure stays held',async()=> {
+          const f=await fixture(),intent=`pi_${randomUUID()}`;
+          const a=await payments.reservePayment({roId:f.ro,shopId:f.shop,kind:'intent',amount:3000,allowPartial:true});
+          await raw.query("UPDATE ro_payment_attempts SET stripe_payment_intent_id=$2,status='unknown' WHERE id=$1",[a.id,intent]);
+          await raw.query("INSERT INTO ro_payments(id,shop_id,ro_id,amount_cents,status,stripe_payment_intent_id) VALUES ($1,$2,$3,3000,'failed',$4)",[randomUUID(),f.shop,f.ro,intent]);
+          await assert.rejects(raw.query(...mutations.remove(f)),/RO_FINANCIAL_HOLD/);
+          // Terminal cancellation persistence, the same state Phase A writes.
+          await raw.query("UPDATE ro_payment_attempts SET status='released' WHERE id=$1",[a.id]);
+          await raw.query(...mutations.remove(f));
+          assert.equal((await money.getRoMoneySummary(f.ro,f.shop,raw)).totalCents,0);
+          for(const table of ['ro_payment_attempts','ro_payments']) {
+            await assert.rejects(raw.query(`DELETE FROM ${table} WHERE ro_id=$1`,[f.ro]),/RO_HISTORY_PROTECTED/);
+            await assert.rejects(raw.query(`UPDATE ${table} SET amount_cents=1 WHERE ro_id=$1`,[f.ro]),/RO_HISTORY_PROTECTED/);
+          }
+          await assert.rejects(raw.query('DELETE FROM repair_orders WHERE id=$1',[f.ro]),/RO_HISTORY_PROTECTED/);
+        });
+        await t.test('moving lines protects both parents and requires exact tenant ownership',async()=> {
+          const a=await fixture(),b=await fixture();
+          await reserve(a); const before=await snapshot(a);
+          await assert.rejects(raw.query('UPDATE estimate_line_items SET ro_id=$2,shop_id=$3 WHERE id=$1',[a.line,b.ro,b.shop]),/RO_FINANCIAL_HOLD/);
+          assert.deepEqual(await snapshot(a),before);
+          await assert.rejects(raw.query('UPDATE estimate_line_items SET shop_id=$2 WHERE id=$1',[a.line,b.shop]),/RO_NOT_FOUND/);
+          const discount=await fixture();
+          await raw.query('UPDATE estimate_line_items SET unit_price=-10 WHERE id=$1',[discount.line]);
+          await assert.rejects(raw.query('UPDATE estimate_line_items SET ro_id=$2,shop_id=$3 WHERE id=$1',[discount.line,a.ro,a.shop]),/RO_FINANCIAL_HOLD/);
+          assert.equal((await raw.query('SELECT ro_id FROM estimate_line_items WHERE id=$1',[discount.line])).rows[0].ro_id,discount.ro);
+          await raw.query('UPDATE estimate_line_items SET ro_id=$2,shop_id=$3 WHERE id=$1',[b.line,a.ro,a.shop]);
+          assert.equal((await money.getRoMoneySummary(a.ro,a.shop,raw)).totalCents,22000);
+        });
+        await t.test('DB authoritative money matches roMoney rounding, aggregate order and optional snapshots',async()=> {
+          const f=await fixture();
+          for(const [price,qty,rate] of [['1.005','1','0.075'],['0.005','1','0.1'],['-0.005','1','0.5'],['2.675','3','0.0725'],['0.29','1','0.5'],['12345.67','1.23','0.06625']]) {
+            await raw.query('UPDATE estimate_line_items SET unit_price=$2,quantity=$3 WHERE id=$1',[f.line,price,qty]);
+            await raw.query('UPDATE shops SET tax_rate=$2 WHERE id=$1',[f.shop,rate]);
+            const expected=await money.getRoMoneySummary(f.ro,f.shop,raw);
+            const actual=(await raw.query('SELECT revv_authoritative_money($1,$2) AS money',[f.shop,f.ro])).rows[0].money;
+            assert.equal(actual.totalCents,expected.totalCents || 0);assert.equal(actual.taxCents,expected.taxCents || 0);
+          }
+          await raw.query('UPDATE estimate_line_items SET unit_price=0.004,quantity=1 WHERE id=$1',[f.line]);
+          await raw.query("INSERT INTO estimate_line_items(id,shop_id,ro_id,type,unit_price) VALUES ($1,$2,$3,'parts',0.004)",[randomUUID(),f.shop,f.ro]);
+          const expected=await money.getRoMoneySummary(f.ro,f.shop,raw);
+          const actual=(await raw.query('SELECT revv_authoritative_money($1,$2) AS money',[f.shop,f.ro])).rows[0].money;
+          assert.equal(expected.totalCents,1);assert.equal(actual.totalCents,expected.totalCents);
         });
         await t.test('success bookkeeping works after reservation and ledger triggers, including manual floor',async()=> {
           const f=await fixture();

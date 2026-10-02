@@ -29,6 +29,9 @@ function createPanelEstimatorRouter({ database, authenticate } = {}) {
   const endpoint = fn => async (req, res) => {
     try { await fn(req, res); }
     catch (err) {
+      if (err.code === '23514' && err.message === 'RO_FINANCIAL_HOLD') {
+        return res.status(409).json({ error: 'RO_FINANCIAL_HOLD' });
+      }
       if (['40P01', '40001'].includes(err.code) || (err.code === 'P0001' && err.message === 'PANEL_REVISION_CONFLICT')) {
         return res.status(409).json({ error: 'VERSION_CONFLICT' });
       }

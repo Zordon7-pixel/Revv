@@ -311,8 +311,7 @@ for (const type of ['TEXT', 'UUID']) {
           assert.equal(missingTax.body.quote.totals.total_cents, null);
           assert.ok(missingTax.body.review_flags.some(f => f.code === 'missing_shop_tax_rate'));
         } finally { await pool.query('UPDATE shops SET tax_rate=0.1 WHERE id=$1', [shop]); }
-        // Payment history holds shop tax permanently; give F2 its own tenant
-        // instead of repricing a paid shop to clean up this fixture.
+        // Keep this payment-authority fixture isolated from the preview tax inputs.
         const paidShop = id(), paidRO = id(), paidBase = `/${paidRO}/panel-estimator`;
         await pool.query('INSERT INTO shops VALUES ($1,0)', [paidShop]);
         await pool.query('INSERT INTO repair_orders VALUES ($1,$2)', [paidRO, paidShop]);
@@ -332,11 +331,21 @@ for (const type of ['TEXT', 'UUID']) {
         assert.equal(unknown.status, 200);
         assert.equal(unknown.body.quote.allocation.customer_cents, null);
         const held = await state();
-        for (const tax of [null, 0.1]) await assert.rejects(
-          pool.query('UPDATE shops SET tax_rate=$2 WHERE id=$1', [paidShop, tax]),
-          e => e.code === '23514' && e.message === 'RO_FINANCIAL_HOLD');
-        assert.equal(Number((await pool.query('SELECT tax_rate FROM shops WHERE id=$1', [paidShop])).rows[0].tax_rate), 0);
-        assert.deepEqual(await state(), held);
+        // Minimal schema with no lines still fails closed below the monetary floor.
+        await assert.rejects(pool.query('UPDATE shops SET tax_rate=0.1 WHERE id=$1',[paidShop]),
+          e=>e.code==='23514' && e.message==='RO_FINANCIAL_HOLD');
+        assert.deepEqual(await state(),held);
+        await pool.query(`CREATE TABLE estimate_line_items(id TEXT,shop_id TEXT,ro_id TEXT,type TEXT,total NUMERIC,taxable BOOLEAN)`);
+        await ensurePanelEstimator(pool);
+        await pool.query("INSERT INTO estimate_line_items(id,shop_id,ro_id,type,total,taxable) VALUES ($1,$2,$3,'labor',3000,TRUE)",[id(),paidShop,paidRO]);
+        for(const tax of [0.1,0,null]) await pool.query('UPDATE shops SET tax_rate=$2 WHERE id=$1',[paidShop,tax]);
+        assert.equal((await pool.query('SELECT tax_rate FROM shops WHERE id=$1',[paidShop])).rows[0].tax_rate,null);
+        const repriced=await state();
+        await assert.rejects(pool.query('UPDATE estimate_line_items SET total=1 WHERE ro_id=$1',[paidRO]),
+          e=>e.code==='23514' && e.message==='RO_FINANCIAL_HOLD');
+        assert.deepEqual(await state(),repriced);
+        assert.equal(Number((await pool.query('SELECT total FROM estimate_line_items WHERE ro_id=$1',[paidRO])).rows[0].total),3000);
+
       });
       await t.test('presets strict writes, private authorization, immutable versions and explicit application snapshots', async () => {
         assert.equal((await request('/panel-presets', { role: 'assistant', method: 'POST', body: preset() })).status, 403);

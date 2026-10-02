@@ -140,9 +140,14 @@ async function ensureRevisions(client, types) {
       END IF;
     END $$`);
   await client.query(`CREATE OR REPLACE FUNCTION panel_estimator_guard_child() RETURNS trigger
-    LANGUAGE plpgsql AS $$ BEGIN
-      IF TG_OP <> 'INSERT' THEN PERFORM panel_estimator_guard_owner(OLD.shop_id::text, OLD.ro_id::text); END IF;
-      IF TG_OP <> 'DELETE' THEN PERFORM panel_estimator_guard_owner(NEW.shop_id::text, NEW.ro_id::text); RETURN NEW; END IF;
+    LANGUAGE plpgsql AS $$ DECLARE parent RECORD; BEGIN
+      FOR parent IN SELECT DISTINCT s,r FROM (VALUES
+        (CASE WHEN TG_OP<>'INSERT' THEN OLD.shop_id::text END,CASE WHEN TG_OP<>'INSERT' THEN OLD.ro_id::text END),
+        (CASE WHEN TG_OP<>'DELETE' THEN NEW.shop_id::text END,CASE WHEN TG_OP<>'DELETE' THEN NEW.ro_id::text END)) v(s,r)
+        WHERE s IS NOT NULL AND r IS NOT NULL ORDER BY r,s LOOP
+        PERFORM panel_estimator_guard_owner(parent.s,parent.r);
+      END LOOP;
+      IF TG_OP <> 'DELETE' THEN RETURN NEW; END IF;
       RETURN OLD;
     END $$`);
   await client.query(`CREATE OR REPLACE FUNCTION panel_estimator_guard_ro() RETURNS trigger

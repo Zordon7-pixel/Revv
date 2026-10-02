@@ -60,7 +60,7 @@ test('L1 real PostgreSQL and mounted production lifecycle/payment handlers', { t
       CREATE TABLE users(id TEXT PRIMARY KEY, shop_id TEXT, role TEXT, name TEXT, customer_id TEXT,
         revoke_all_before TIMESTAMPTZ);
       CREATE TABLE revoked_tokens(id TEXT PRIMARY KEY, token_jti TEXT);
-      CREATE TABLE customers(id TEXT PRIMARY KEY, name TEXT, email TEXT, email_consent BOOLEAN,
+      CREATE TABLE customers(id TEXT PRIMARY KEY, shop_id TEXT REFERENCES shops(id), name TEXT, email TEXT, email_consent BOOLEAN,
         preferred_contact_method TEXT);
       CREATE TABLE vehicles(id TEXT PRIMARY KEY, year INTEGER, make TEXT, model TEXT);
       CREATE TABLE repair_orders(id TEXT PRIMARY KEY, shop_id TEXT NOT NULL REFERENCES shops(id),
@@ -446,9 +446,9 @@ test('L1 real PostgreSQL and mounted production lifecycle/payment handlers', { t
       }
     });
 
-    for (const paymentFirst of [false,true]) await t.test(`selected revision vs reservation, payment first=${paymentFirst}`, async () => {
+    for (const increase of [false,true]) for (const paymentFirst of [false,true]) await t.test(`selected revision vs reservation, increase=${increase}, payment first=${paymentFirst}`, async () => {
       const scope = await newScope(), first = await commit(scope);
-      const changed = draft(); changed.assessments[0].body_rate_cents = 5000;
+      const changed = draft(); changed.assessments[0].body_rate_cents = increase ? 11000 : 5000;
       const body = await prepare(scope, changed);
       const { reservePayment } = require('../src/services/paymentReservations');
       const reached = deferred(), resume = deferred(), waiting = deferred(); let held=false;
@@ -471,21 +471,30 @@ test('L1 real PostgreSQL and mounted production lifecycle/payment handlers', { t
       assert.equal(a.status,'fulfilled');
       const { getRoMoneySummary } = require('../src/services/roMoney');
       const money = await getRoMoneySummary(scope.roId,scope.shopId);
-      if (paymentFirst) {
+      if (paymentFirst && !increase) {
         assert.equal(b.status,'rejected'); assert.match(b.reason.message,/RO_FINANCIAL_HOLD/);
         assert.equal(money.totalCents,first.quote.totals.total_cents);
         assert.equal((await raw.query('SELECT count(*)::int AS n FROM ro_panel_estimator_revisions WHERE shop_id=$1 AND ro_id=$2',[scope.shopId,scope.roId])).rows[0].n,1);
       } else {
-        assert.equal(b.status,'fulfilled');assert.equal(b.value.amountCents,a.value.quote.totals.total_cents);
-        assert.ok(money.totalCents < first.quote.totals.total_cents);
+        assert.equal(b.status,'fulfilled');
+        if(paymentFirst) assert.equal(a.value.amountCents,first.quote.totals.total_cents);
+        else assert.equal(b.value.amountCents,a.value.quote.totals.total_cents);
+        assert.equal(money.totalCents,(paymentFirst?b:a).value.quote.totals.total_cents);
+        if(increase) assert.ok(money.totalCents > first.quote.totals.total_cents);
+        else assert.ok(money.totalCents < first.quote.totals.total_cents);
       }
-      // The server panel capability never bypasses the financial hold on a pointer.
+      // Even the scoped server capability cannot commit a below-floor replacement.
+      // Evaluate at COMMIT, after both pointer and lines have been changed.
       const c = await raw.connect();
       try {
         await c.query('BEGIN');
         await c.query("SELECT set_config('revv.panel_commit', jsonb_build_array($1::text,$2::text)::text,true)",[scope.shopId,scope.roId]);
-        await assert.rejects(c.query('UPDATE ro_panel_estimator_drafts SET active_revision_id=NULL WHERE shop_id=$1 AND ro_id=$2',[scope.shopId,scope.roId]),/RO_FINANCIAL_HOLD/);
+        await c.query('UPDATE ro_panel_estimator_drafts SET active_revision_id=NULL WHERE shop_id=$1 AND ro_id=$2',[scope.shopId,scope.roId]);
+        await c.query('DELETE FROM estimate_line_items WHERE shop_id=$1 AND ro_id=$2',[scope.shopId,scope.roId]);
+        await assert.rejects(c.query('COMMIT'),/RO_FINANCIAL_HOLD/);
       } finally {await c.query('ROLLBACK');c.release();}
+      assert.deepEqual(await getRoMoneySummary(scope.roId,scope.shopId),money);
+      assert.deepEqual(await revisions.getQuote({...scope,revisionId:first.revision_id}),first);
     });
 
     await t.test('summary readers observe old or new committed selection; stale owed overwrite remains rejected', async () => {

@@ -16,9 +16,8 @@ async function withLockedRo(roId, shopId, work) {
   let result;
   try {
     await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
-    // Freeze the tax input before reading money. SHARE conflicts with tax updates
-    // but lets payments on different ROs proceed concurrently.
-    await client.query('SELECT id FROM shops WHERE id = $1 FOR SHARE', [shopId]);
+    // Tax mutation locks the affected parents in id order before recomputing.
+    // Take only the RO lock here: shop-after-RO would invert that order.
     const ro = (await client.query('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2 FOR UPDATE', [roId, shopId])).rows[0];
     if (!ro) fail('Repair order not found', 404);
     result = await work(client, ro);

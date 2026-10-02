@@ -341,8 +341,7 @@ for (const type of ['TEXT','UUID']) test(`A2 PostgreSQL ${type}: real JWT HTTP P
       for (const family of families) assert.equal((await request(publicPath(family,undecided))).body.error,'APPROVAL_REVOKED');
     });
     await t.test('historical JSON/PDF stays frozen after tax/payments; comparisons remain safe and nonrecursive', async () => {
-      // Paid history prevents subsequent tax changes and selected-money commits.
-      // Build alternatives first, then settle in a tenant isolated from later tests.
+      // Isolate live defaults while proving issued evidence survives paid repricing.
       const historyShop = id();
       await raw.query('INSERT INTO shops(id,tax_rate) VALUES ($1,0.1)', [historyShop]);
       const scope = await newScope(historyShop);
@@ -382,15 +381,29 @@ for (const type of ['TEXT','UUID']) test(`A2 PostgreSQL ${type}: real JWT HTTP P
       assert.equal(paidPreview.sell.allocation.paid_cents,2000);
       assert.equal(paidPreview.sell.allocation.balance_cents,third.quote.totals.total_cents-2000);
       assert.equal(third.quote.allocation.paid_cents,0);
-      const financialHold = e => e.code === '23514' && e.message === 'RO_FINANCIAL_HOLD';
-      await assert.rejects(raw.query('UPDATE shops SET tax_rate=0.1 WHERE id=$1',[historyShop]),financialHold);
-      await assert.rejects(commit(scope),financialHold);
+      await raw.query('UPDATE shops SET tax_rate=0.1 WHERE id=$1',[historyShop]);
       assert.deepEqual(await heldState(),held);
-      assert.equal(Number((await raw.query('SELECT tax_rate FROM shops WHERE id=$1',[historyShop])).rows[0].tax_rate),0.2);
-      assert.equal((await parsePdf((await authorRequest(url)).body)).text,before);
-      assert.deepEqual(await revisions.getQuote({ ...scope,revisionId: first.revision_id }),first);
       assert.deepEqual((await request(publicPath(families[0],link,''))).body.quote,third.quote);
       assert.equal((await parsePdf((await request(publicPath(families[0],link))).body)).text,pdf.text);
+      const thirdUrl=`${authorPath(scope)}/quote.pdf?revision_id=${third.revision_id}`;
+      const thirdBefore=(await parsePdf((await authorRequest(thirdUrl)).body)).text;
+      const fourth=await commit(scope);
+      assert.notEqual(fourth.revision_id,third.revision_id);
+      assert.equal(fourth.quote.allocation.paid_cents,2000);
+      assert.equal(third.quote.allocation.paid_cents,0);
+      assert.equal(Number((await raw.query('SELECT tax_rate FROM shops WHERE id=$1',[historyShop])).rows[0].tax_rate),0.1);
+      assert.equal((await parsePdf((await authorRequest(url)).body)).text,before);
+      assert.deepEqual(await revisions.getQuote({ ...scope,revisionId:first.revision_id }),first);
+      assert.deepEqual(await revisions.getQuote({ ...scope,revisionId:third.revision_id }),third);
+      // Historical public quote content is immutable; the old bearer retains the
+      // existing revocation rule when a newer revision becomes current.
+      for(const family of families) assert.equal((await request(publicPath(family,link))).body.error,'APPROVAL_REVOKED');
+      const fourthLink=await issue(scope,fourth);
+      assert.deepEqual((await request(publicPath(families[0],fourthLink,''))).body.quote,fourth.quote);
+      const thirdAuthorPdf=await parsePdf((await authorRequest(`${authorPath(scope)}/quote.pdf?revision_id=${third.revision_id}`)).body);
+      assert.match(thirdAuthorPdf.text,/Historical repair total: \$440.00/);
+      assert.equal(thirdAuthorPdf.text,thirdBefore);
+
     });
     await t.test('real HTTP mixed package and long strings preserve parsed net/tax without double charging', async () => {
       const scope = await newScope();

@@ -519,6 +519,9 @@ router.post('/:roId/import-financials', auth, async (req, res) => {
       financials,
     });
   } catch (err) {
+    if (err.code === '23514' && err.message === 'RO_FINANCIAL_HOLD') {
+      return res.status(409).json({ error: 'Total cannot be less than paid and reserved payments' });
+    }
     if ((err.code === 'P0001' && err.message === 'PANEL_REVISION_CONFLICT') || err.code === '40P01') {
       return res.status(409).json({ error: 'PANEL_REVISION_CONFLICT' });
     }
@@ -618,6 +621,9 @@ router.post('/:roId', auth, async (req, res) => {
     await syncRepairOrderFinancials(req.params.roId, req.user.shop_id, summary);
     return res.status(201).json({ success: true, item: inserted, summary });
   } catch (err) {
+    if (err.code === '23514' && err.message === 'RO_FINANCIAL_HOLD') {
+      return res.status(409).json({ error: 'Total cannot be less than paid and reserved payments' });
+    }
     if ((err.code === 'P0001' && err.message === 'PANEL_REVISION_CONFLICT') || err.code === '40P01') {
       return res.status(409).json({ error: 'PANEL_REVISION_CONFLICT' });
     }
@@ -675,6 +681,9 @@ router.put('/:roId/:itemId', auth, async (req, res) => {
     await syncRepairOrderFinancials(req.params.roId, req.user.shop_id, summary);
     return res.json({ success: true, item: updated, summary });
   } catch (err) {
+    if (err.code === '23514' && err.message === 'RO_FINANCIAL_HOLD') {
+      return res.status(409).json({ error: 'Total cannot be less than paid and reserved payments' });
+    }
     if ((err.code === 'P0001' && err.message === 'PANEL_REVISION_CONFLICT') || err.code === '40P01') {
       return res.status(409).json({ error: 'PANEL_REVISION_CONFLICT' });
     }
@@ -701,6 +710,9 @@ router.delete('/:roId/:itemId', auth, async (req, res) => {
     await syncRepairOrderFinancials(req.params.roId, req.user.shop_id, summary);
     return res.json({ success: true, deleted_id: removed.id, summary });
   } catch (err) {
+    if (err.code === '23514' && err.message === 'RO_FINANCIAL_HOLD') {
+      return res.status(409).json({ error: 'Total cannot be less than paid and reserved payments' });
+    }
     if ((err.code === 'P0001' && err.message === 'PANEL_REVISION_CONFLICT') || err.code === '40P01') {
       return res.status(409).json({ error: 'PANEL_REVISION_CONFLICT' });
     }
@@ -791,6 +803,9 @@ router.post('/metadata/:roId', auth, async (req, res) => {
 
     return res.json({ success: true, metadata });
   } catch (err) {
+    if (err.code === '23514' && err.message === 'RO_FINANCIAL_HOLD') {
+      return res.status(409).json({ error: 'Total cannot be less than paid and reserved payments' });
+    }
     if ((err.code === 'P0001' && err.message === 'PANEL_REVISION_CONFLICT') || err.code === '40P01') {
       return res.status(409).json({ error: 'PANEL_REVISION_CONFLICT' });
     }

@@ -203,7 +203,7 @@ for (const type of ['TEXT', 'UUID']) test(`real PostgreSQL revisions ${type}: se
       assert.equal((await snapshot(scope)).ro_panel_estimator_revisions.length, 1);
     });
     await t.test('direct service: changed posted payments invalidate preview, changed private settings invalidate version', async () => {
-      // Isolate payment history from later unpaid-shop tax-freeze coverage.
+      // A ledger without authoritative lines cannot support a tax change yet.
       const paidShop = id();
       await pool.query('INSERT INTO shops VALUES ($1,0.1)', [paidShop]);
       const scope = await newScope(paidShop), request = await prepare(scope);
@@ -215,6 +215,40 @@ for (const type of ['TEXT', 'UUID']) test(`real PostgreSQL revisions ${type}: se
       await store.saveCosts({ ...scope, ...costs(), expectedVersion: 0 });
       await assert.rejects(revisions.commit({ ...scope, body: fresh }), errorCode('VERSION_CONFLICT'));
       assert.equal((await snapshot(scope)).ro_panel_estimator_revisions.length, 0);
+    });
+
+    for (const paymentKind of ['deposit','pending link']) await t.test(`selected replacement after ${paymentKind} respects final floor and immutable snapshots`, async () => {
+      const shop = id(); await pool.query('INSERT INTO shops VALUES ($1,0.1)', [shop]);
+      const scope = await newScope(shop), first = await commit(scope);
+      // Exercise an optional-schema deployment with no amount_paid_cents column.
+      await pool.query(`CREATE TABLE IF NOT EXISTS ro_payment_attempts(id TEXT PRIMARY KEY,shop_id TEXT,ro_id TEXT,
+        idempotency_key TEXT,amount_cents BIGINT,kind TEXT,status TEXT,stripe_payment_intent_id TEXT)`);
+      await require('../src/db/paymentReservations').ensureFinancialGuards(pool);
+      const floor = first.quote.totals.total_cents - 100;
+      if (paymentKind === 'deposit') await pool.query("INSERT INTO ro_payments VALUES ($1,$2,$3,$4,'paid')", [randomUUID(),shop,scope.roId,floor]);
+      else await pool.query("INSERT INTO ro_payment_attempts VALUES ($1,$2,$3,$4,$5,'checkout','open',NULL)", [randomUUID(),shop,scope.roId,randomUUID(),floor]);
+      const replacement = await commit(scope, draft({ adjustments: { discount_cents: 5050 } }));
+      assert.notEqual(replacement.revision_id,first.revision_id);
+      assert.deepEqual(await revisions.getQuote({ ...scope,revisionId:first.revision_id }),first);
+      const before=await snapshot(scope);
+      // Payment history permits previewing a smaller quote but must reject its
+      // commit after all line replacements, preserving every original row.
+      await assert.rejects(
+        commit(scope,draft({ adjustments:{discount_cents:6000} })),
+        e=>e.code==='23514' && e.message==='RO_FINANCIAL_HOLD');
+      assert.deepEqual(await snapshot(scope),before);
+      await pool.query('UPDATE shops SET tax_rate=0.2 WHERE id=$1',[shop]);
+      await pool.query('UPDATE shops SET tax_rate=0 WHERE id=$1',[shop]);
+      assert.deepEqual(await snapshot(scope),before);
+      const guarded = [
+        ['UPDATE repair_orders SET total=999999 WHERE id=$1 AND shop_id=$2',[scope.roId,shop]],
+        ["INSERT INTO estimate_metadata(id,ro_id,shop_id,adjuster_totals) VALUES ($1,$2,$3,'{\"total\":999999}')",[randomUUID(),scope.roId,shop]],
+      ];
+      for(const [sql,args] of guarded) await assert.rejects(pool.query(sql,args),errorCode('P0001'));
+      assert.deepEqual(await snapshot(scope),before);
+      for(const table of ['ro_panel_estimator_revisions','ro_panel_estimator_revision_costs']) {
+        await assert.rejects(pool.query(`DELETE FROM ${table} WHERE shop_id=$1 AND ro_id=$2`,[shop,scope.roId]),/Immutable preset version/);
+      }
     });
 
     await t.test('direct service: forced late rollback restores draft, pointer, history, private snapshots, lines and RO', async () => {
