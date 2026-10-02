@@ -72,6 +72,7 @@ async function ensurePanelEstimator(pool) {
       END IF;
     END $$`);
     await ensureRevisions(client, types);
+    await ensureApprovals(client, types);
     await client.query('COMMIT');
   } catch (error) {
     try { await client.query('ROLLBACK'); } catch (rollbackError) { error.rollbackError = rollbackError; }
@@ -185,6 +186,71 @@ async function ensureRevisions(client, types) {
     await client.query(`DO $$ BEGIN
       IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid='${table}'::regclass AND tgname='panel_estimator_guard') THEN
         CREATE TRIGGER panel_estimator_guard BEFORE ${events} ON ${table} FOR EACH ROW EXECUTE FUNCTION ${fn}();
+      END IF;
+    END $$`);
+  }
+}
+
+async function ensureApprovals(client, types) {
+  await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS panel_revision_quote_owner
+    ON ro_panel_estimator_revisions(shop_id, ro_id, id, quote_hash)`);
+  await client.query(`CREATE TABLE IF NOT EXISTS ro_panel_estimator_approval_links (
+    shop_id ${types.shops} NOT NULL, ro_id ${types.repair_orders} NOT NULL,
+    id TEXT NOT NULL, revision_id TEXT NOT NULL, quote_hash TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE CHECK (token_hash ~ '^[a-f0-9]{64}$'),
+    disclosure_version TEXT NOT NULL CHECK (disclosure_version = 'panel-quote-v1'),
+    created_by TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP + INTERVAL '168 hours',
+    revoked_at TIMESTAMPTZ,
+    CHECK (expires_at = created_at + INTERVAL '168 hours'),
+    CHECK (revoked_at IS NULL OR revoked_at >= created_at),
+    PRIMARY KEY (shop_id, ro_id, id),
+    UNIQUE (shop_id, ro_id, id, revision_id, quote_hash, disclosure_version),
+    FOREIGN KEY (shop_id, ro_id, revision_id, quote_hash)
+      REFERENCES ro_panel_estimator_revisions(shop_id, ro_id, id, quote_hash)
+  )`);
+  await client.query(`CREATE TABLE IF NOT EXISTS ro_panel_estimator_approval_events (
+    shop_id ${types.shops} NOT NULL, ro_id ${types.repair_orders} NOT NULL,
+    id TEXT NOT NULL, link_id TEXT NOT NULL, revision_id TEXT NOT NULL, quote_hash TEXT NOT NULL,
+    disclosure_version TEXT NOT NULL, kind TEXT NOT NULL CHECK (kind IN ('issued','revoked','decision')),
+    occurred_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(), actor_id TEXT,
+    decision TEXT, actor_name TEXT, acknowledged BOOLEAN, reason TEXT,
+    CHECK ((kind = 'decision' AND decision IS NOT NULL AND decision IN ('approve','decline')
+      AND actor_name IS NOT NULL AND length(btrim(actor_name)) BETWEEN 1 AND 200
+      AND acknowledged IS TRUE AND
+      ((decision = 'approve' AND reason IS NULL) OR
+       (decision = 'decline' AND reason IS NOT NULL AND length(btrim(reason)) BETWEEN 1 AND 4000)))
+      OR (kind <> 'decision' AND decision IS NULL AND actor_name IS NULL AND acknowledged IS NULL AND reason IS NULL)),
+    PRIMARY KEY (shop_id, ro_id, id), UNIQUE (shop_id, ro_id, link_id, kind),
+    FOREIGN KEY (shop_id, ro_id, revision_id, quote_hash)
+      REFERENCES ro_panel_estimator_revisions(shop_id, ro_id, id, quote_hash),
+    FOREIGN KEY (shop_id, ro_id, link_id, revision_id, quote_hash, disclosure_version)
+      REFERENCES ro_panel_estimator_approval_links(shop_id, ro_id, id, revision_id, quote_hash, disclosure_version)
+  )`);
+  // One decision per revision, even if an author issues multiple links.
+  await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS panel_approval_revision_decision
+    ON ro_panel_estimator_approval_events(shop_id, ro_id, revision_id) WHERE kind='decision'`);
+  await client.query(`CREATE OR REPLACE FUNCTION panel_approval_link_immutable() RETURNS trigger
+    LANGUAGE plpgsql AS $$ BEGIN
+      IF TG_OP <> 'UPDATE' THEN
+        RAISE EXCEPTION 'Immutable approval link' USING ERRCODE='23514';
+      END IF;
+      IF (to_jsonb(OLD) - 'revoked_at') IS DISTINCT FROM (to_jsonb(NEW) - 'revoked_at')
+        OR OLD.revoked_at IS NOT NULL OR NEW.revoked_at IS NULL THEN
+        RAISE EXCEPTION 'Immutable approval link' USING ERRCODE='23514';
+      END IF;
+      RETURN NEW;
+    END $$`);
+  for (const [table, fn] of [
+    ['ro_panel_estimator_approval_links', 'panel_approval_link_immutable'],
+    ['ro_panel_estimator_approval_events', 'panel_estimator_immutable_version'],
+  ]) {
+    await client.query(`DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid='${table}'::regclass AND tgname='panel_approval_immutable') THEN
+        CREATE TRIGGER panel_approval_immutable BEFORE UPDATE OR DELETE ON ${table}
+          FOR EACH ROW EXECUTE FUNCTION ${fn}();
+        CREATE TRIGGER panel_approval_no_truncate BEFORE TRUNCATE ON ${table}
+          FOR EACH STATEMENT EXECUTE FUNCTION panel_estimator_immutable_version();
       END IF;
     END $$`);
   }

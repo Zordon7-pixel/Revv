@@ -1,8 +1,8 @@
 const router = require('express').Router();
 const rateLimit = require('express-rate-limit');
-const { dbGet, dbAll, dbRun } = require('../db');
-const { v4: uuidv4 } = require('uuid');
-const { createNotification } = require('../services/notifications');
+const { pool, dbGet, dbRun } = require('../db');
+
+const { panelPublicHandler, noStore, publicError, publicRequestError, respondLegacyApproval } = require('../services/panelEstimatorApproval');
 
 const publicApprovalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -12,15 +12,9 @@ const publicApprovalLimiter = rateLimit({
   message: { error: 'Too many requests. Try again in 15 minutes.' },
 });
 
+router.use(publicRequestError(publicApprovalLimiter));
+router.use(noStore);
 router.use(publicApprovalLimiter);
-
-async function notifyOwnersAndAdmins(shopId, roId, title, body) {
-  const users = await dbAll(
-    'SELECT id FROM users WHERE shop_id = $1 AND role = ANY($2::text[])',
-    [shopId, ['owner', 'admin']]
-  );
-  await Promise.all(users.map((user) => createNotification(shopId, user.id, 'approval', title, body, roId)));
-}
 
 async function ensureTables() {
   await dbRun(`
@@ -63,7 +57,7 @@ async function ensureTables() {
   await dbRun(`UPDATE ro_comms SET summary = COALESCE(summary, notes, '')`).catch(() => {});
 }
 
-router.get('/:token', async (req, res) => {
+router.get('/:token', panelPublicHandler(pool, 'get'), async (req, res) => {
   try {
     await ensureTables();
     const link = await dbGet('SELECT * FROM estimate_approval_links WHERE token = $1', [req.params.token]);
@@ -92,60 +86,17 @@ router.get('/:token', async (req, res) => {
       shop,
     });
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    return publicError(res, err);
   }
 });
 
-router.post('/:token/respond', async (req, res) => {
+router.post(['/:token', '/:token/respond'], panelPublicHandler(pool, 'respond'), async (req, res) => {
   try {
-    await ensureTables();
-    const link = await dbGet('SELECT * FROM estimate_approval_links WHERE token = $1', [req.params.token]);
-    if (!link) return res.status(404).json({ error: 'Link not found' });
-    if (link.responded_at) return res.status(400).json({ error: 'Response already submitted' });
-
-    const ro = await dbGet('SELECT * FROM repair_orders WHERE id = $1', [link.ro_id]);
-    if (!ro) return res.status(404).json({ error: 'Repair order not found' });
-
-    const { decision, reason } = req.body || {};
-    if (!['approve', 'decline'].includes(decision)) {
-      return res.status(400).json({ error: 'Invalid decision' });
-    }
-
-    const now = new Date().toISOString();
-    if (decision === 'approve') {
-      const fromStatus = ro.status;
-      await dbRun('UPDATE repair_orders SET status = $1, estimate_approved_at = $2, updated_at = $3 WHERE id = $4', ['approval', now, now, ro.id]);
-      await dbRun(
-        'INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by, note) VALUES ($1, $2, $3, $4, $5, $6)',
-        [uuidv4(), ro.id, fromStatus, 'approval', null, 'Estimate approved by customer via public approval link']
-      );
-      await dbRun('UPDATE estimate_approval_links SET responded_at = $1 WHERE token = $2', [now, req.params.token]);
-      await notifyOwnersAndAdmins(
-        ro.shop_id,
-        ro.id,
-        'Estimate Approved',
-        `Customer approved estimate for RO #${ro.ro_number || 'N/A'}.`
-      );
-      return res.json({ ok: true, decision: 'approve' });
-    }
-
-    if (!reason?.trim()) return res.status(400).json({ error: 'Reason is required when requesting changes' });
-    await dbRun(
-      `INSERT INTO ro_comms (id, ro_id, shop_id, user_id, channel, direction, summary)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [uuidv4(), ro.id, ro.shop_id, null, 'email', 'inbound', `Estimate change request: ${reason.trim()}`]
-    );
-    await dbRun('UPDATE estimate_approval_links SET responded_at = $1, decline_reason = $2 WHERE token = $3', [now, reason.trim(), req.params.token]);
-    await notifyOwnersAndAdmins(
-      ro.shop_id,
-      ro.id,
-      'Estimate Declined',
-      `Customer declined estimate for RO #${ro.ro_number || 'N/A'}: ${reason.trim()}`
-    );
-    return res.json({ ok: true, decision: 'decline' });
-  } catch (err) {
-    return res.status(500).json({ error: err.message });
-  }
+    const { decision } = await respondLegacyApproval(pool, req.params.token, req.body, 'approval');
+    return res.json({ ok: true, decision });
+  } catch (err) { return publicError(res, err); }
 });
+
+router.use(publicRequestError(publicApprovalLimiter));
 
 module.exports = router;

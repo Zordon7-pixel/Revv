@@ -33,6 +33,7 @@ const STATUS_SMS_LABELS = {
   delivery: 'Ready for Pickup',
 };
 const SMS_STATUSES = new Set(Object.keys(STATUS_SMS_LABELS));
+const { panelPublicHandler, noStore: approvalNoStore, publicError: approvalError, publicRequestError, respondLegacyApproval } = require('../services/panelEstimatorApproval');
 const publicTokenLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20,
@@ -1774,7 +1775,9 @@ router.post('/:id/approval-link', auth, requireTechnician, async (req, res) => {
   }
 });
 
-router.get('/approval/:token', publicTokenLimiter, async (req, res) => {
+router.use('/approval', publicRequestError(publicTokenLimiter));
+
+router.get('/approval/:token', approvalNoStore, publicTokenLimiter, panelPublicHandler(pool, 'get'), async (req, res) => {
   try {
     await ensureApprovalLinksTable();
     const link = await dbGet('SELECT * FROM estimate_approval_links WHERE token = $1', [req.params.token]);
@@ -1807,56 +1810,20 @@ router.get('/approval/:token', publicTokenLimiter, async (req, res) => {
       shop,
     });
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    return approvalError(res, err);
   }
 });
 
-router.post('/approval/:token/respond', publicTokenLimiter, async (req, res) => {
+router.post(['/approval/:token', '/approval/:token/respond'], approvalNoStore, publicTokenLimiter,
+  panelPublicHandler(pool, 'respond'), async (req, res) => {
   try {
-    await ensureApprovalLinksTable();
-    await ensureRoCommsTable();
-    const link = await dbGet('SELECT * FROM estimate_approval_links WHERE token = $1', [req.params.token]);
-    if (!link) return res.status(404).json({ error: 'Link not found' });
-    if (link.responded_at) return res.status(400).json({ error: 'Response already submitted' });
-
-    const ro = await dbGet('SELECT * FROM repair_orders WHERE id = $1', [link.ro_id]);
-    if (!ro) return res.status(404).json({ error: 'Repair order not found' });
-
-    const { decision, reason } = req.body || {};
-    if (!['approve', 'decline'].includes(decision)) {
-      return res.status(400).json({ error: 'Invalid decision' });
-    }
-
-    const now = new Date().toISOString();
-    if (decision === 'approve') {
-      const fromStatus = ro.status;
-      // Public endpoint — no req.user/shop_id available. Ownership is enforced by the approval
-      // token (uuidv4, cryptographically unguessable). ro.id is derived from the token lookup,
-      // so only the holder of the valid token can trigger this update. No shop_id needed here.
-      await dbRun('UPDATE repair_orders SET status = $1, estimate_approved_at = $2, updated_at = $3 WHERE id = $4', ['approval', now, now, ro.id]);
-      await dbRun(
-        'INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by, note) VALUES ($1, $2, $3, $4, $5, $6)',
-        [uuidv4(), ro.id, fromStatus, 'approval', null, 'Estimate approved by customer via public approval link']
-      );
-      notifyStatusChange(ro.shop_id, ro, 'approval');
-      queueStatusSMS(ro.id, ro.shop_id, 'approval');
-      await dbRun('UPDATE estimate_approval_links SET responded_at = $1 WHERE token = $2', [now, req.params.token]);
-      return res.json({ ok: true, decision: 'approve' });
-    }
-
-    if (!reason?.trim()) return res.status(400).json({ error: 'Reason is required when requesting changes' });
-
-    await dbRun(
-      `INSERT INTO ro_comms (id, ro_id, shop_id, user_id, channel, direction, summary)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [uuidv4(), ro.id, ro.shop_id, null, 'email', 'inbound', `Estimate change request: ${reason.trim()}`]
-    );
-    await dbRun('UPDATE estimate_approval_links SET responded_at = $1, decline_reason = $2 WHERE token = $3', [now, reason.trim(), req.params.token]);
-    return res.json({ ok: true, decision: 'decline' });
-  } catch (err) {
-    return res.status(500).json({ error: err.message });
-  }
+    const { ro, decision } = await respondLegacyApproval(pool, req.params.token, req.body, 'status');
+    if (decision === 'approve') queueStatusSMS(ro.id, ro.shop_id, 'approval');
+    return res.json({ ok: true, decision });
+  } catch (err) { return approvalError(res, err); }
 });
+
+router.use('/approval', publicRequestError(publicTokenLimiter));
 
 router.post('/', auth, requireTechnician, roLimitGuard, async (req, res) => {
   try {

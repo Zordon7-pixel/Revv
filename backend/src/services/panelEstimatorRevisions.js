@@ -1,5 +1,6 @@
 'use strict';
 const { randomUUID } = require('node:crypto');
+const { revokePendingApprovalLinks } = require('./panelEstimatorApproval');
 const n = require('./panelEstimatorStore');
 const { createPanelEstimatorDraft, hashInputs, canonical } = require('./panelEstimatorDraft');
 
@@ -175,6 +176,7 @@ function createPanelEstimatorRevisions(database) {
         WHERE shop_id=$1 AND id=$2`, [input.shopId,input.roId,dollars(money.partsCents),dollars(money.laborCents),
         dollars(money.subletCents + money.otherCents),dollars(money.taxCents),dollars(money.totalCents)]);
       await client.query(`UPDATE ro_panel_estimator_drafts SET active_revision_id=$3 WHERE shop_id=$1 AND ro_id=$2`, [input.shopId,input.roId,revisionId]);
+      await revokePendingApprovalLinks(client, input.shopId, input.roId, revisionId);
       await client.query('COMMIT');
       return { revision_id: revisionId, quote_hash: quoteHash, version: saved.version, quote };
     } catch (err) {

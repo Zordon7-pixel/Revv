@@ -1,6 +1,7 @@
 'use strict';
 const express = require('express');
 const n = require('../services/panelEstimatorStore');
+const { createPanelEstimatorApproval } = require('../services/panelEstimatorApproval');
 const { createPanelEstimatorDraft } = require('../services/panelEstimatorDraft');
 const { createPanelEstimatorPresets } = require('../services/panelEstimatorPresets');
 const { createPanelEstimatorRevisions } = require('../services/panelEstimatorRevisions');
@@ -12,7 +13,7 @@ function createPanelEstimatorRouter({ database, authenticate } = {}) {
   const router = express.Router();
   const store = n.createPanelEstimatorStore(pool);
   const drafts = createPanelEstimatorDraft(pool), presets = createPanelEstimatorPresets(pool);
-  const revisions = createPanelEstimatorRevisions(pool);
+  const revisions = createPanelEstimatorRevisions(pool), approvals = createPanelEstimatorApproval(pool);
   const noStore = (req, res, next) => { res.set('Cache-Control', 'no-store'); next(); };
   const author = (req, res, next) => ['owner', 'admin', 'assistant'].includes(req.user?.role)
     ? next() : res.status(403).json({ error: 'FORBIDDEN' });
@@ -21,7 +22,7 @@ function createPanelEstimatorRouter({ database, authenticate } = {}) {
   const scope = req => ({ shopId: req.user.shop_id, roId: req.params.roId, role: req.user.role, actorId: req.user.id });
   const actor = req => ({ shopId: req.user.shop_id, actorId: req.user.id, role: req.user.role });
   const safeCodes = new Set(['INVALID_INPUT', 'INVALID_REFERENCE', 'PRESET_INCOMPATIBLE', 'INVALID_PACKAGE',
-    'NOT_FOUND', 'FORBIDDEN', 'VERSION_CONFLICT', 'PRESET_ARCHIVED', 'IDEMPOTENCY_CONFLICT',
+    'APPROVAL_REVISION_CONFLICT', 'NOT_FOUND', 'FORBIDDEN', 'VERSION_CONFLICT', 'PRESET_ARCHIVED', 'IDEMPOTENCY_CONFLICT',
     'PRESET_LOCKED', 'PRESET_OVERRIDE_REQUIRED', 'PREVIEW_CONFLICT', 'REVIEW_REQUIRED', 'SCOPE_RECONCILIATION_REQUIRED', 'LINE_RECONCILIATION_REQUIRED']);
   // Neither database errors nor request payloads are logged or returned.
   const endpoint = fn => async (req, res) => {
@@ -70,6 +71,13 @@ function createPanelEstimatorRouter({ database, authenticate } = {}) {
     res.json(await presets.getPrivate({ ...actor(req), id: req.params.id }));
   }));
   const base = '/:roId/panel-estimator';
+  router.post(`${base}/approval-link`, ...authorRoute, endpoint(async (req, res) => {
+    res.status(201).json(await approvals.issue({ ...scope(req), body: req.body }));
+  }));
+  router.post(`${base}/approval-link/:linkId/revoke`, ...authorRoute, endpoint(async (req, res) => {
+    n.keys(req.body, []);
+    res.json(await approvals.revoke({ ...scope(req), linkId: req.params.linkId }));
+  }));
   router.get(base, ...authorRoute, endpoint(async (req, res) => {
     const draft = await store.getDraft(scope(req));
     const catalog = await presets.list(actor(req));
