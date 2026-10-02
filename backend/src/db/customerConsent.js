@@ -17,6 +17,15 @@ CREATE TABLE IF NOT EXISTS customer_consent_resets (
   reset_revision BIGINT NOT NULL, reset_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   reason TEXT NOT NULL, restored_at TIMESTAMPTZ, PRIMARY KEY(customer_id)
 );
+-- Independent of the superadmin audit_log migration; supports TEXT/UUID customers
+-- and retains masked evidence through customer removal and migration rollback.
+CREATE TABLE IF NOT EXISTS customer_consent_phone_changes (
+  id BIGSERIAL PRIMARY KEY, customer_id TEXT NOT NULL, shop_id TEXT NOT NULL,
+  old_phone_masked TEXT NOT NULL CHECK (old_phone_masked ~ '^[*]{3}([0-9]{4})?$'),
+  new_phone_masked TEXT NOT NULL CHECK (new_phone_masked ~ '^[*]{3}([0-9]{4})?$'),
+  staff_id TEXT NOT NULL, changed_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+  reason TEXT NOT NULL CHECK (reason = 'phone_changed')
+);
 CREATE OR REPLACE FUNCTION advance_customer_consent_revision() RETURNS trigger AS $$
 BEGIN
   NEW.sms_consent_revision := OLD.sms_consent_revision + 1;

@@ -218,10 +218,19 @@ router.post('/', auth, requireTechnician, async (req, res) => {
   }
 });
 
+// Same punctuation/US-country-prefix normalization as the SMS recipient guard.
+function normalizedPhone(phone) {
+  const digits = String(phone || '').replace(/[^0-9]/g, '');
+  return digits.length === 10 ? `1${digits}` : digits;
+}
+function maskedPhone(phone) {
+  const digits = normalizedPhone(phone);
+  return digits.length >= 7 ? `***${digits.slice(-4)}` : '***';
+}
+
 router.put('/:id', auth, requireTechnician, async (req, res) => {
   let client;
   try {
-    const mutation = consentMutation(req.body, req.user.id);
     client = await pool.connect();
     await client.query('BEGIN');
     const existing = (await client.query('SELECT * FROM customers WHERE id=$1 AND shop_id=$2 FOR UPDATE',
@@ -230,6 +239,11 @@ router.put('/:id', auth, requireTechnician, async (req, res) => {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Not found' });
     }
+    const phoneChanged = Object.hasOwn(req.body, 'phone')
+      && normalizedPhone(req.body.phone) !== normalizedPhone(existing.phone);
+    // A phone edit cannot also attest to the new number, even with TRUE in the
+    // same payload. A later explicit submission must supply fresh evidence.
+    const mutation = consentMutation(phoneChanged ? { sms_consent: false } : req.body, req.user.id);
     const changes = {};
     for (const field of ['name', 'phone', 'email', 'address', 'insurance_company', 'policy_number']) {
       if (Object.hasOwn(req.body, field)) changes[field] = req.body[field];
@@ -250,6 +264,12 @@ router.put('/:id', auth, requireTechnician, async (req, res) => {
     const result = await client.query(`UPDATE customers SET ${fields.map((f, i) => `${f}=$${i + 1}`).join(', ')}
       WHERE id=$${fields.length + 1} AND shop_id=$${fields.length + 2} RETURNING *`,
     [...Object.values(changes), req.params.id, req.user.shop_id]);
+    if (phoneChanged) {
+      await client.query(`INSERT INTO customer_consent_phone_changes
+        (customer_id, shop_id, old_phone_masked, new_phone_masked, staff_id, reason)
+        VALUES ($1, $2, $3, $4, $5, 'phone_changed')`,
+      [existing.id, req.user.shop_id, maskedPhone(existing.phone), maskedPhone(next.phone), req.user.id]);
+    }
     await client.query('COMMIT');
     res.json(result.rows[0]);
   } catch (err) {

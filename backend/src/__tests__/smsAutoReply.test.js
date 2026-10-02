@@ -1,5 +1,14 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const twilio = require('twilio');
+// Never initialize the application DB or dotenv in these isolated tests.
+const dbPath = require.resolve('../db');
+require.cache[dbPath] = { id: dbPath, filename: dbPath, loaded: true, exports: {
+  dbGet: async () => { throw new Error('Unexpected application DB access'); },
+  dbRun: async () => { throw new Error('Unexpected application DB access'); },
+} };
 
 const {
   INBOUND_AUTO_REPLY_TEMPLATE,
@@ -11,7 +20,7 @@ const SHOP = {
   id: 'shop-1',
   name: 'Miles Collision',
   plan: 'pro',
-  twilio_account_sid: 'AC123',
+  twilio_account_sid: `AC${'a'.repeat(32)}`,
   twilio_auth_token: 'token',
   twilio_phone_number: '+18668259523',
 };
@@ -312,110 +321,188 @@ test('decision never throws on missing shop/from/body', async () => {
   });
 });
 
-test('webhook saves inbound and returns empty TwiML 200 when auto-reply throws', async () => {
-  const routePath = require.resolve('../routes/sms');
-  const dbPath = require.resolve('../db');
-  const smsPath = require.resolve('../services/sms');
-  const autoReplyPath = require.resolve('../services/smsAutoReply');
-  const authPath = require.resolve('../middleware/auth');
-  const rolesPath = require.resolve('../middleware/roles');
-  const originals = {
-    route: require.cache[routePath],
-    db: require.cache[dbPath],
-    sms: require.cache[smsPath],
-    autoReply: require.cache[autoReplyPath],
-    auth: require.cache[authPath],
-    roles: require.cache[rolesPath],
+const PUBLIC_BASE = 'https://sms.example.test';
+const WEBHOOK_URL = `${PUBLIC_BASE}/api/sms/webhook`;
+const PRIVATE_BODY = 'private customer body marker';
+const LEAK = `${FROM} ${SHOP.twilio_phone_number} ${PRIVATE_BODY}`;
+
+function webhookHarness(options = {}) {
+  const state = { writes: [], reads: [], sends: [], autoCalls: 0, optedOut: Boolean(options.optedOut),
+    customer: { sms_consent: true, sms_consent_method: 'written', sms_consent_by: 'staff', sms_consent_at: NOW } };
+  const db = {
+    async dbAll(sql, params) {
+      state.reads.push({ sql, params });
+      assert.match(sql, /FROM shops WHERE twilio_phone_number = \$1/);
+      assert.deepEqual(params, [SHOP.twilio_phone_number]);
+      if (options.lookupError) throw new Error(LEAK);
+      return options.shops || [SHOP];
+    },
+    async dbGet(sql, params) {
+      if (options.roError) throw new Error(LEAK);
+      if (/FROM repair_orders/.test(sql)) return { id: 'ro-1' };
+      if (/FROM sms_opt_outs/.test(sql)) return state.optedOut ? { exists: 1 } : null;
+      return null;
+    },
+    async dbRun(sql, params) {
+      if (options.writeError) throw new Error(LEAK);
+      state.writes.push({ sql, params });
+      if (/INSERT INTO sms_opt_outs/.test(sql)) state.optedOut = true;
+      if (/DELETE FROM sms_opt_outs/.test(sql)) state.optedOut = false;
+      if (/UPDATE customers/.test(sql)) Object.assign(state.customer,
+        { sms_consent: false, sms_consent_at: null, sms_consent_method: null, sms_consent_by: null });
+    },
   };
-  const dbRuns = [];
-
-  try {
-    delete require.cache[routePath];
-    require.cache[dbPath] = {
-      id: dbPath,
-      filename: dbPath,
-      loaded: true,
-      exports: {
-        dbAll: async () => [],
-        dbGet: async (sql) => {
-          if (/FROM shops/.test(sql)) return SHOP;
-          if (/FROM repair_orders/.test(sql)) return { id: 'ro-1' };
-          return null;
-        },
-        dbRun: async (sql, params) => {
-          dbRuns.push({ sql, params });
-          return { rowCount: 1 };
-        },
-      },
-    };
-    require.cache[smsPath] = {
-      id: smsPath,
-      filename: smsPath,
-      loaded: true,
-      exports: {
-        sendSMS: async () => ({ ok: true }),
-        isConfiguredForShop: async () => true,
-        getTwilioConfigForShop: async () => ({ phoneNumber: SHOP.twilio_phone_number }),
-      },
-    };
-    require.cache[autoReplyPath] = {
-      id: autoReplyPath,
-      filename: autoReplyPath,
-      loaded: true,
-      exports: {
-        maybeSendInboundAutoReply: async () => {
-          throw new Error('auto reply failed');
-        },
-      },
-    };
-    require.cache[authPath] = {
-      id: authPath,
-      filename: authPath,
-      loaded: true,
-      exports: (req, res, next) => next(),
-    };
-    require.cache[rolesPath] = {
-      id: rolesPath,
-      filename: rolesPath,
-      loaded: true,
-      exports: { requireAdmin: (req, res, next) => next() },
-    };
-
-    const router = require('../routes/sms');
-    const webhook = router.stack.find((layer) => (
-      layer.route?.path === '/webhook' && layer.route?.methods?.post
-    )).route.stack.at(-1).handle;
-    const req = { body: { From: FROM, To: SHOP.twilio_phone_number, Body: 'Hello' } };
-    const res = {
-      statusCode: null,
-      sent: null,
-      contentType: null,
-      type(value) {
-        this.contentType = value;
-        return this;
-      },
-      status(code) {
-        this.statusCode = code;
-        return this;
-      },
-      send(payload) {
-        this.sent = payload;
-        return this;
-      },
-    };
-
-    await webhook(req, res);
-
-    assert.equal(dbRuns.length, 1);
-    assert.match(dbRuns[0].sql, /INSERT INTO sms_messages/);
-    assert.equal(res.contentType, 'text/xml');
-    assert.equal(res.statusCode, 200);
-    assert.equal(res.sent, '<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
-  } finally {
-    for (const [key, cacheEntry] of Object.entries(originals)) {
-      const path = { route: routePath, db: dbPath, sms: smsPath, autoReply: autoReplyPath, auth: authPath, roles: rolesPath }[key];
-      delete require.cache[path];
-      if (cacheEntry) require.cache[path] = cacheEntry;
+  const mocks = {
+    '../db': db,
+    '../middleware/auth': (_req, _res, next) => next(),
+    '../middleware/roles': { requireAdmin: (_req, _res, next) => next() },
+    '../services/sms': {},
+    '../services/smsAutoReply': { maybeSendInboundAutoReply: async args => {
+      state.autoCalls++;
+      if (options.autoError) throw new Error(LEAK);
+      return maybeSendInboundAutoReply({ ...args, send: async (...sendArgs) => {
+        state.sends.push(sendArgs);
+        if (options.sendError) throw new Error(LEAK);
+        return { ok: true, sid: `SM${'b'.repeat(32)}` };
+      } });
+    } },
+  };
+  const filename = require.resolve('../routes/sms');
+  const module = { exports: {} };
+  vm.runInThisContext(`(function(require,module,exports){${fs.readFileSync(filename, 'utf8')}\n})`, { filename })(name => {
+    if (Object.hasOwn(mocks, name)) return mocks[name];
+    if (['express', 'uuid', 'twilio'].includes(name)) return require(name);
+    throw new Error(`Unexpected dependency: ${name}`);
+  }, module, module.exports);
+  const handler = module.exports.stack.find(l => l.route?.path === '/webhook').route.stack.at(-1).handle;
+  async function call({ body = PRIVATE_BODY, signature, signedUrl = WEBHOOK_URL, originalUrl = '/api/sms/webhook',
+    params = {}, token = SHOP.twilio_auth_token, base = PUBLIC_BASE, headers = {} } = {}) {
+    const oldBase = process.env.APP_URL;
+    process.env.APP_URL = base;
+    const form = { From: FROM, To: SHOP.twilio_phone_number, Body: body, AccountSid: SHOP.twilio_account_sid, ...params };
+    const signed = signature === undefined ? twilio.getExpectedTwilioSignature(token, signedUrl, form) : signature;
+    const req = { body: form, originalUrl, protocol: 'http', get: name =>
+      name.toLowerCase() === 'x-twilio-signature' ? signed : headers[name.toLowerCase()] };
+    const res = { statusCode: 200, status(n) { this.statusCode = n; return this; },
+      type(v) { this.contentType = v; return this; }, send(v) { this.sent = v; return this; } };
+    try { await handler(req, res); } finally {
+      if (oldBase === undefined) delete process.env.APP_URL; else process.env.APP_URL = oldBase;
     }
+    return res;
   }
+  return { state, call };
+}
+
+async function captureLogs(fn) {
+  const messages = [];
+  const originals = {};
+  for (const key of ['log', 'warn', 'error', 'info', 'debug']) {
+    originals[key] = console[key]; console[key] = (...args) => messages.push(args);
+  }
+  try { await fn(); } finally { Object.assign(console, originals); }
+  const text = JSON.stringify(messages);
+  for (const value of [FROM, FROM.slice(1), SHOP.twilio_phone_number, SHOP.twilio_phone_number.slice(1), PRIVATE_BODY, SHOP.twilio_auth_token]) {
+    assert.ok(!text.includes(value), 'Captured logs must exclude private input and tokens');
+  }
+  return text;
+}
+
+test('genuine Twilio signature accepts form and safely logs inbound and auto-reply', async () => {
+  const h = webhookHarness();
+  const logs = await captureLogs(async () => {
+    const res = await h.call();
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.contentType, 'text/xml');
+    assert.equal(res.sent, '<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+  });
+  assert.match(logs, /Inbound saved/);
+  assert.equal(h.state.writes.length, 2);
+  assert.equal(h.state.sends.length, 1);
 });
+
+for (const body of ['STOP', 'START']) {
+  test(`forged ${body} cannot change consent, opt-out history, messages or replies`, async () => {
+    const h = webhookHarness({ optedOut: body === 'START' });
+    const before = structuredClone(h.state);
+    await captureLogs(async () => assert.equal((await h.call({ body, token: 'forged-token' })).statusCode, 403));
+    assert.deepEqual(h.state.customer, before.customer);
+    assert.equal(h.state.optedOut, before.optedOut);
+    assert.equal(h.state.writes.length, 0);
+    assert.equal(h.state.autoCalls, 0);
+    assert.equal(h.state.sends.length, 0);
+  });
+}
+
+for (const [label, options, request] of [
+  ['missing signature', {}, { signature: '' }],
+  ['tampered body after signing', {}, { signature: twilio.getExpectedTwilioSignature(SHOP.twilio_auth_token, WEBHOOK_URL, { From: FROM, To: SHOP.twilio_phone_number, AccountSid: SHOP.twilio_account_sid, Body: 'different message' }) }],
+  ['unresolved recipient', { shops: [] }, {}],
+  ['ambiguous recipient even across accounts', { shops: [SHOP, { ...SHOP, id: 'shop-2', twilio_account_sid: `AC${'c'.repeat(32)}` }] }, {}],
+  ['missing token despite API credentials', { shops: [{ ...SHOP, twilio_auth_token: null, twilio_api_key: 'key', twilio_api_secret: 'secret' }] }, {}],
+  ['account mismatch even with valid signature', {}, { params: { AccountSid: `AC${'c'.repeat(32)}` } }],
+  ['missing account', {}, { params: { AccountSid: '' } }],
+  ['ambiguous form value', {}, { params: { From: [FROM, FROM] } }],
+  ['lookup exception', { lookupError: true }, {}],
+  ['missing public base', {}, { base: '' }],
+  ['invalid public base', {}, { base: 'invalid' }],
+  ['public base includes credentials', {}, { base: 'https://user:pass@sms.example.test' }],
+  ['spoofed host URL', {}, { signedUrl: 'https://attacker.test/api/sms/webhook', headers: { host: 'attacker.test', 'x-forwarded-host': 'attacker.test', 'x-forwarded-proto': 'https' } }],
+  ['wrong path', {}, { signedUrl: `${PUBLIC_BASE}/api/sms/inbound` }],
+  ['unsigned query alteration', {}, { originalUrl: '/api/sms/webhook?route=changed' }],
+]) {
+  test(`webhook rejects ${label} before writes or replies without log leaks`, async () => {
+    const h = webhookHarness(options);
+    await captureLogs(async () => assert.equal((await h.call(request)).statusCode, 403));
+    assert.equal(h.state.writes.length, 0);
+    assert.equal(h.state.autoCalls, 0);
+    assert.equal(h.state.sends.length, 0);
+    assert.equal(h.state.customer.sms_consent, true);
+  });
+}
+
+test('trusted URL ignores hostile host/protocol and includes signed query and base prefix', async () => {
+  const h = webhookHarness();
+  await captureLogs(async () => {
+    assert.equal((await h.call({ headers: { host: 'evil.test', 'x-forwarded-host': 'evil.test' } })).statusCode, 200);
+    assert.equal((await h.call({ base: `${PUBLIC_BASE}/prefix/`, signedUrl: `${PUBLIC_BASE}/prefix/api/sms/webhook?x=1`, originalUrl: '/api/sms/webhook?x=1' })).statusCode, 200);
+  });
+});
+
+test('environment token fallback is restricted to the resolved account AND recipient', async () => {
+  const keys = ['TWILIO_ACCOUNT_SID', 'TWILIO_PHONE_NUMBER', 'TWILIO_AUTH_TOKEN'];
+  const previous = keys.map(k => process.env[k]);
+  Object.assign(process.env, { TWILIO_ACCOUNT_SID: SHOP.twilio_account_sid, TWILIO_PHONE_NUMBER: SHOP.twilio_phone_number, TWILIO_AUTH_TOKEN: SHOP.twilio_auth_token });
+  try {
+    await captureLogs(async () => {
+      const options = { shops: [{ ...SHOP, twilio_auth_token: null }] };
+      assert.equal((await webhookHarness(options).call()).statusCode, 200);
+      process.env.TWILIO_ACCOUNT_SID = `AC${'c'.repeat(32)}`;
+      assert.equal((await webhookHarness(options).call()).statusCode, 403);
+      process.env.TWILIO_ACCOUNT_SID = SHOP.twilio_account_sid;
+      process.env.TWILIO_PHONE_NUMBER = FROM;
+      assert.equal((await webhookHarness(options).call()).statusCode, 403);
+    });
+  } finally { keys.forEach((key, i) => { if (previous[i] === undefined) delete process.env[key]; else process.env[key] = previous[i]; }); }
+});
+
+test('signed STOP clears evidence; signed START leaves consent unconfirmed', async () => {
+  const h = webhookHarness();
+  await captureLogs(async () => {
+    assert.equal((await h.call({ body: 'STOP' })).statusCode, 200);
+    assert.equal(h.state.optedOut, true);
+    assert.deepEqual(h.state.customer, { sms_consent: false, sms_consent_at: null, sms_consent_method: null, sms_consent_by: null });
+    assert.equal((await h.call({ body: 'START' })).statusCode, 200);
+    assert.equal(h.state.optedOut, false);
+    assert.equal(h.state.customer.sms_consent, false);
+  });
+  assert.equal(h.state.sends.length, 0);
+});
+
+for (const fault of ['roError', 'writeError', 'autoError', 'sendError']) {
+  test(`authenticated ${fault} keeps raw exceptions out of webhook/auto-reply logs`, async () => {
+    const h = webhookHarness({ [fault]: true });
+    const logs = await captureLogs(async () => assert.equal((await h.call()).statusCode, 200));
+    assert.match(logs, /failed/);
+    if (fault === 'autoError') assert.equal(h.state.writes.length, 1);
+  });
+}

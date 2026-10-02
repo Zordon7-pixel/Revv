@@ -3926,3 +3926,43 @@ Git worktree index.lock (Operation not permitted). Chained commit did not run;
 no staging or new SHA. HEAD remains `05153fb000b4fb8aa8feee222ad180622c0ec875`.
 No bypass attempted. Hermes must inspect/commit on top and run full exact-SHA gates;
 completion/block is reported here for t_3ead3bd0 without a prohibited board call.
+
+## 2026-10-02 02:03 EDT / 06:03 UTC — t_6f27a266 Phase A
+
+Started clean at `5ab183e7e816ec9a34bb5b8544bab4083253fb10`, assigned
+`codex/revv-panel-estimator-20261001` worktree/branch. Implemented findings
+1, 2, 6, 7 only: Twilio signature/account/recipient validation before mutations;
+static webhook logs; phone-change consent reset under row lock with transactional
+masked audit and subsequent explicit UI attestation; explicit flag-off link
+revocation operator instructions. Payments/deletion remain outside Phase A.
+
+Exactly ten changed paths:
+- backend/src/routes/sms.js
+- backend/src/routes/customers.js
+- backend/src/db/customerConsent.js
+- backend/src/__tests__/smsAutoReply.test.js
+- backend/test/consentPhone.phaseA.test.js
+- backend/test/customerConsent.integration.test.js
+- frontend/src/pages/Customers.jsx
+- frontend/src/pages/__tests__/ConsentAndAvailability.phase3.test.jsx
+- docs/REMEDIATION-remy-15114f26.md
+- CLAUDE.md
+
+Exact commands/config and receipts are in the remediation document's Phase A
+section. Node v22.23.2, env -i, NODE_ENV=test CI=1, no ambient credentials/.env.
+Focused backend exit 0: 82/82, no skips; frontend exit 0: 30/30 in 2 files.
+The backend command excludes the separately named real PostgreSQL Phase 2 case.
+Consent DB attempt exit 1: 2 non-DB passes, 6 connection failures (EPERM loopback
+127.0.0.1:55459), no skips. Real SQL/migration/rollback execution remains for Hermes.
+Logs: /tmp/revv-phaseA-{backend,frontend,db}.log. No sandbox bypass or host-gate
+runner invocation. No final host gate, review, production or release pass claimed.
+
+Safety-sensitive authentication, consent, audit and timestamps; over two files.
+No agents/board/review requests, providers, production DB, secrets/.env, unrelated
+worktree edits, staging/commit, push/deploy, amend/rebase. Hermes owns lifecycle,
+commits, host gates, push and UNSENT packet. HEAD remains the required base;
+changes are left uncommitted for Hermes. Static verification is recorded below.
+
+Static verification: Node22 --check passed for all six changed backend JS files;
+git diff --check exit 0. Final status confirms exactly ten changed paths, no staged
+files, and unchanged base HEAD. These are working-tree checks only.

@@ -184,6 +184,50 @@ for (const idType of ['UUID', 'TEXT']) {
         assert.equal(response.body.preferred_contact_method, 'none');
         response = await call('put', '/:id', { sms_consent: true, sms_consent_method: 'verbal' }, created.id);
         assert.ok(hasConfirmedSmsConsent(response.body));
+        // Real phone mutation/audit SQL, in both TEXT/UUID and fresh/legacy schemas.
+        const resetHistory = (await client.query('SELECT * FROM customer_consent_resets ORDER BY customer_id')).rows;
+        await client.query(`CREATE TABLE sms_opt_outs (shop_id TEXT, phone TEXT)`);
+        await client.query('INSERT INTO sms_opt_outs VALUES ($1,$2)', [shopId, '+15557654321']);
+        response = await call('put', '/:id', { phone: '+15557654321', sms_consent: true,
+          sms_consent_method: 'written', sms_consent_by: 'spoof', sms_consent_at: '1900-01-01' }, created.id);
+        assert.equal(response.statusCode, 200);
+        assert.equal(response.body.sms_consent, false);
+        assert.equal(response.body.sms_consent_at, null);
+        assert.equal(response.body.sms_consent_by, null);
+        assert.equal(response.body.sms_consent_method, null);
+        const phoneAudit = (await client.query('SELECT * FROM customer_consent_phone_changes')).rows;
+        assert.equal(phoneAudit.length, 1);
+        assert.deepEqual({ ...phoneAudit[0], id: undefined, changed_at: undefined }, {
+          id: undefined, changed_at: undefined, customer_id: created.id, shop_id: shopId,
+          old_phone_masked: '***', new_phone_masked: '***4321', staff_id: 'authenticated-staff', reason: 'phone_changed',
+        });
+        assert.ok(phoneAudit[0].changed_at instanceof Date);
+        assert.ok(phoneAudit[0].changed_at.getFullYear() >= 2026);
+        const cleared = response.body;
+        response = await call('put', '/:id', { phone: '(555) 765-4321' }, created.id);
+        assert.equal(response.body.sms_consent_revision, cleared.sms_consent_revision);
+        assert.equal(response.body.sms_consent, false);
+        response = await call('put', '/:id', { sms_consent: true, sms_consent_method: 'verbal' }, created.id);
+        assert.ok(hasConfirmedSmsConsent(response.body));
+        const reconfirmed = response.body;
+        response = await call('put', '/:id', { phone: '+1 (555) 765-4321' }, created.id);
+        assert.equal(response.body.sms_consent_revision, reconfirmed.sms_consent_revision);
+        assert.deepEqual(response.body.sms_consent_at, reconfirmed.sms_consent_at);
+        await migration.up(client);
+        await migration.down(client);
+        assert.deepEqual((await client.query('SELECT * FROM customer_consent_phone_changes')).rows, phoneAudit);
+        assert.deepEqual((await client.query('SELECT * FROM customer_consent_resets ORDER BY customer_id')).rows, resetHistory);
+        assert.deepEqual((await client.query('SELECT * FROM sms_opt_outs')).rows, [{ shop_id: shopId, phone: '+15557654321' }]);
+        const beforeFailure = (await client.query('SELECT * FROM customers WHERE id=$1', [created.id])).rows[0];
+        await client.query(`CREATE FUNCTION fail_phone_audit() RETURNS trigger AS $$
+          BEGIN RAISE EXCEPTION 'Injected audit failure'; END; $$ LANGUAGE plpgsql;
+          CREATE TRIGGER fail_phone_audit BEFORE INSERT ON customer_consent_phone_changes
+          FOR EACH ROW EXECUTE FUNCTION fail_phone_audit()`);
+        response = await call('put', '/:id', { phone: '+15559876543' }, created.id);
+        assert.equal(response.statusCode, 500);
+        assert.deepEqual((await client.query('SELECT * FROM customers WHERE id=$1', [created.id])).rows[0], beforeFailure);
+        assert.deepEqual((await client.query('SELECT * FROM customer_consent_phone_changes')).rows, phoneAudit);
+        await client.query('DROP TRIGGER fail_phone_audit ON customer_consent_phone_changes');
         response = await call('put', '/:id', { sms_consent: false }, created.id, id('other-shop'));
         assert.equal(response.statusCode, 404);
         response = await call('post', '/', { name: 'Null consent', sms_consent: null, preferred_contact_method: 'sms' });

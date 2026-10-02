@@ -63,7 +63,12 @@ separate public router, including reading/signing an already-issued quote. This
 switch stops staff estimation/new quote and new link creation; it does not invalidate
 issued approvals or roll back signed records. Existing expiry/revocation/conflict
 rules remain in force. Staff link revocation on the guarded estimator router is also
-unavailable while OFF. No public approval or financial service was changed here.
+unavailable while OFF: **staff cannot revoke issued estimator links while
+PANEL_ESTIMATOR_ENABLED is off**. To revoke one, briefly re-enable the flag and
+restart all backend processes, revoke via the existing authenticated staff endpoint,
+then disable the flag and restart all backend processes again. Public links continue
+working during the OFF period unless expired, revoked or blocked by existing conflict
+rules. No public approval or financial service was changed here.
 
 ## Phase 3 historical verification and remaining scope
 
@@ -299,3 +304,75 @@ The chained commit did not run. No files were staged, no new SHA was created,
 and HEAD remains `05153fb000b4fb8aa8feee222ad180622c0ec875`. No bypass attempted.
 Hermes must inspect these ten files, commit on top without amend/rebase, and run
 final gates against that exact clean full SHA. No board write was made, as directed.
+
+## t_6f27a266 Phase A — 2026-10-02
+
+Scope is Remy findings **1, 2, 6 and 7 only**, from clean base
+`5ab183e7e816ec9a34bb5b8544bab4083253fb10`. Payment and deletion findings remain
+for subsequent work. Hermes owns commits, lifecycle, host gates, push and the
+UNSENT packet. No review or final-gate result is claimed here.
+
+`POST /api/sms/webhook` now uses installed Twilio **5.12.2** `validateRequest`
+with every form parameter, a server-resolved recipient and the account auth token.
+The account SID must match the sole shop owning that exact Twilio recipient number;
+duplicate matches reject even if only one account matches. API key/secret alone
+cannot validate inbound signatures. A missing shop token can use the environment
+auth token only when both the environment account SID and phone match that shop.
+No token, missing/invalid signature, unresolved/ambiguous recipient or lookup/config
+failure returns **403 before writes, consent changes or auto-replies**.
+
+The signed URL is the configured `APP_URL` (fallback `PUBLIC_URL`) base plus
+`/api/sms/webhook` and the incoming query string. A base must be explicitly configured;
+missing/invalid bases reject. Credentials, query and fragment are forbidden in the
+base. Host, forwarded host/protocol and request protocol never set the verification
+origin. Configure Twilio to use that exact public webhook URL; this change does not
+change provisioning or add an `/inbound` alias. Webhook logs are static event names,
+including authentication, lookup, persistence and auto-reply failures. Existing
+SMS provider logs retain validated references/codes and no phone/body/exception text.
+
+Customer PUT detects normalized phone changes under its existing tenant row lock.
+Punctuation and optional US country prefix do not count as changes. A changed or
+cleared number resets consent and all provenance even if the same request sends
+TRUE (including TRUE without a method). Only a subsequent explicit verbal/written
+attestation can restore confirmation; STOP records are preserved. Unchanged phone
+and omitted consent preserve evidence/revision. The edit form explains that staff
+must save the number and reopen Edit Customer before fresh attestation.
+
+`customerConsent.up` idempotently creates `customer_consent_phone_changes` in both
+startup/migration paths, independent of the later superadmin audit schema. Each phone
+change inserts customer/shop IDs, old/new masks, authenticated staff, database time
+and `phone_changed` in the same transaction. A failed insert rolls back the edit.
+Mask constraints prohibit raw numbers; short/empty numbers use `***`. TEXT IDs support
+fresh UUID and legacy TEXT customer schemas without destructive conversion or
+cascading deletion. `down` retains this table; existing reset/STOP/reconfirmation
+revision protection remains. No production migration was run.
+
+Focused commands actually executed (Node **v22.23.2**, repository root unless noted):
+
+```sh
+env -i PATH=/opt/homebrew/opt/node@22/bin:/usr/bin:/bin NODE_ENV=test CI=1 NODE_OPTIONS=--require=/tmp/revv-phaseA-no-network.cjs /opt/homebrew/opt/node@22/bin/node --test --test-skip-pattern='real PostgreSQL' backend/src/__tests__/smsAutoReply.test.js backend/test/consentPhone.phaseA.test.js backend/src/__tests__/notificationLogging.privacy.test.js backend/src/__tests__/customerOptInConfirmation.test.js backend/test/smsConsent.phase2.test.js
+# From frontend/:
+env -i PATH=/opt/homebrew/opt/node@22/bin:/usr/bin:/bin NODE_ENV=test CI=1 NODE_OPTIONS=--require=/tmp/revv-phaseA-no-network.cjs /opt/homebrew/opt/node@22/bin/node node_modules/vitest/vitest.mjs run --config /tmp/revv-phaseA-vitest.config.mjs src/pages/__tests__/ConsentAndAvailability.phase3.test.jsx src/pages/__tests__/Customers.mobile.test.jsx
+# From repository root, dedicated disposable loopback DB only:
+env -i PATH=/opt/homebrew/opt/node@22/bin:/usr/bin:/bin NODE_ENV=test CI=1 CUSTOMER_CONSENT_TEST_DATABASE_URL=postgresql://revv_panel@127.0.0.1:55459/revv_customer_consent_test /opt/homebrew/opt/node@22/bin/node --test backend/test/customerConsent.integration.test.js
+```
+
+The temporary preload rejects dotenv, socket connections and unmocked fetch. The
+Vitest wrapper imports the existing config with `envDir` set to the empty
+`/tmp/revv-phaseA-empty-env`. Neither mocked run loads .env, binds a listener or
+contacts a provider. Backend exit **0: 82 tests, 82 pass, 0 fail, 0 skipped**;
+the named Phase 2 real-PostgreSQL case is explicitly excluded, not a DB pass.
+Frontend exit **0: 2 files, 30 tests passed**. Logs:
+`/tmp/revv-phaseA-backend.log`, `/tmp/revv-phaseA-frontend.log`.
+The earlier combined backend attempt had 9 fixture dependency-load failures;
+scoping the Twilio validator import to webhook authentication resolved those,
+with the existing Phase 2 tests unchanged.
+
+DB command exit **1: 8 tests, 2 pass, 6 fail, 0 skipped**. All six fresh/legacy
+UUID/TEXT cases hit `connect EPERM 127.0.0.1:55459` before schema creation.
+Log: `/tmp/revv-phaseA-db.log`. No bypass attempted. Hermes must run this command
+on the host to verify SQL, repeated migration/up/down history retention, masked audit
+and injected audit-failure rollback; mocked checks do not establish those DB results.
+The lifecycle host-gate runner was not invoked. No staging/commit was attempted;
+Hermes retains the ten-file working tree for its commit and subsequent gates.
+Safety-sensitive signature/auth, consent/audit/timestamps; exceeds two changed files.

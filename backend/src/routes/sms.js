@@ -178,65 +178,83 @@ router.post('/send-status', auth, async (req, res) => {
   }
 });
 
-// ── POST /api/sms/webhook — Twilio inbound SMS (no auth — Twilio signature) ──
+// Authenticate the complete form against the recipient's server-held auth token.
+// API-key secrets cannot validate Twilio webhooks. Never derive the public URL
+// from Host, forwarded headers, or the request's protocol.
+async function authenticatedInboundShop(req) {
+  const { validateRequest } = require('twilio');
+  const signature = req.get('X-Twilio-Signature');
+  const params = req.body;
+  if (typeof signature !== 'string' || !signature || !params
+      || Object.values(params).some(value => typeof value !== 'string')
+      || !/^\+[1-9]\d{1,14}$/.test(params.To || '')
+      || !/^AC[0-9a-f]{32}$/i.test(params.AccountSid || '')) return null;
+  const base = new URL(process.env.APP_URL || process.env.PUBLIC_URL || '');
+  if (!['https:', 'http:'].includes(base.protocol) || base.username || base.password
+      || base.search || base.hash) return null;
+  const originalUrl = req.originalUrl;
+  if (typeof originalUrl !== 'string' || originalUrl.split('?')[0] !== '/api/sms/webhook') return null;
+  const queryIndex = originalUrl.indexOf('?');
+  const url = `${base.href.replace(/\/+$/, '')}/api/sms/webhook${queryIndex < 0 ? '' : originalUrl.slice(queryIndex)}`;
+  const shops = await dbAll(
+    `SELECT id, name, twilio_account_sid, twilio_auth_token, twilio_phone_number,
+            twilio_api_key, twilio_api_secret, plan, sms_comp
+     FROM shops WHERE twilio_phone_number = $1`, [params.To]
+  );
+  // Do not choose a tenant using attacker-supplied AccountSid to break a tie.
+  if (shops.length !== 1) return null;
+  const shop = shops[0];
+  if (!shop.id || shop.twilio_account_sid !== params.AccountSid) return null;
+  const token = shop.twilio_auth_token || (
+    process.env.TWILIO_ACCOUNT_SID === shop.twilio_account_sid
+      && process.env.TWILIO_PHONE_NUMBER === shop.twilio_phone_number
+      ? process.env.TWILIO_AUTH_TOKEN : null
+  );
+  if (typeof token !== 'string' || !token.trim() || !validateRequest(token, signature, url, params)) return null;
+  return shop;
+}
+
+// POST /api/sms/webhook — verified Twilio signature replaces staff authentication.
 router.post('/webhook', express.urlencoded({ extended: false }), async (req, res) => {
+  let shop;
   try {
-    const from = req.body?.From || null;
-    const to   = req.body?.To   || null;
-    const body = req.body?.Body || '';
-
-    console.log(`[SMS Webhook] Inbound from ${from || 'unknown'}: ${body}`);
-
+    shop = await authenticatedInboundShop(req);
+  } catch {
+    // Lookup/configuration/validation failures must fail closed without PII.
+  }
+  if (!shop) {
+    console.warn('[SMS Webhook] Authentication rejected');
+    return res.status(403).send('Forbidden');
+  }
+  try {
+    const { From: from, To: to, Body: body } = req.body;
+    console.log('[SMS Webhook] Authenticated inbound');
     if (from && body) {
-      // Find the shop that owns this Twilio number
-      const shop = await dbGet(
-        `SELECT id, name, twilio_account_sid, twilio_auth_token, twilio_phone_number, twilio_api_key, twilio_api_secret,
-                plan, sms_comp
-         FROM shops
-         WHERE twilio_phone_number = $1`,
-        [to]
+      const ro = await dbGet(
+        `SELECT ro.id
+         FROM repair_orders ro
+         LEFT JOIN customers c ON c.id = ro.customer_id
+         WHERE ro.shop_id = $1
+           AND regexp_replace(COALESCE(c.phone, ''), '[^0-9]', '', 'g') = regexp_replace($2, '[^0-9]', '', 'g')
+         ORDER BY ro.created_at DESC LIMIT 1`,
+        [shop.id, from]
       );
-
-      if (shop) {
-        // Find most recent RO associated with this customer phone number
-        const ro = await dbGet(
-          `SELECT ro.id
-           FROM repair_orders ro
-           LEFT JOIN customers c ON c.id = ro.customer_id
-           WHERE ro.shop_id = $1
-             AND regexp_replace(COALESCE(c.phone, ''), '[^0-9]', '', 'g') = regexp_replace($2, '[^0-9]', '', 'g')
-           ORDER BY ro.created_at DESC LIMIT 1`,
-          [shop.id, from]
-        );
-
-        await dbRun(
-          `INSERT INTO sms_messages (id, shop_id, ro_id, direction, from_phone, to_phone, body, status)
-           VALUES ($1, $2, $3, 'inbound', $4, $5, $6, 'received')`,
-          [uuidv4(), shop.id, ro?.id || null, from, to || '', body]
-        );
-
-        console.log(`[SMS Webhook] Saved inbound from ${from} → shop ${shop.id}, ro ${ro?.id || 'unmatched'}`);
-
-        try {
-          await maybeSendInboundAutoReply({
-            shop,
-            from,
-            to,
-            body,
-            db: { dbGet, dbRun },
-          });
-        } catch (autoReplyErr) {
-          console.error('[SMS Webhook] Auto-reply error:', autoReplyErr?.message || autoReplyErr);
-        }
-      } else {
-        console.warn(`[SMS Webhook] No shop found for Twilio number ${to}`);
+      await dbRun(
+        `INSERT INTO sms_messages (id, shop_id, ro_id, direction, from_phone, to_phone, body, status)
+         VALUES ($1, $2, $3, 'inbound', $4, $5, $6, 'received')`,
+        [uuidv4(), shop.id, ro?.id || null, from, to, body]
+      );
+      console.log('[SMS Webhook] Inbound saved');
+      try {
+        await maybeSendInboundAutoReply({ shop, from, to, body, db: { dbGet, dbRun } });
+      } catch {
+        console.error('[SMS Webhook] Auto-reply failed');
       }
     }
-  } catch (err) {
-    console.error('[SMS Webhook] Error:', err.message);
+  } catch {
+    console.error('[SMS Webhook] Processing failed');
   }
-
-  // Always return empty TwiML so Twilio doesn't retry
+  // Preserve empty TwiML acknowledgement only for authenticated requests.
   res.type('text/xml');
   return res.status(200).send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
 });
