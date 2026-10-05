@@ -50,11 +50,12 @@ test('real PostgreSQL Phase B isolated TEXT/UUID routing uniqueness and update r
         id ${type} PRIMARY KEY, name TEXT, phone TEXT, logo_url TEXT, address TEXT, city TEXT,
         state TEXT, zip TEXT, market_tier INTEGER, labor_rate NUMERIC, paint_rate NUMERIC,
         parts_markup NUMERIC, tax_rate NUMERIC, lat NUMERIC, lng NUMERIC, geofence_radius NUMERIC,
-        monthly_revenue_target INTEGER, twilio_auth_token TEXT
+        monthly_revenue_target INTEGER, twilio_auth_token TEXT, public_intake_slug TEXT UNIQUE NOT NULL
         ${legacy ? '' : ', twilio_phone_number TEXT'}
       )`);
       const ids = [1, 2, 3, 4].map(n => type === 'UUID' ? randomUUID() : `shop-${n}`);
-      for (const id of ids) await pool.query('INSERT INTO shops(id,name) VALUES($1,$2)', [id, 'Unchanged']);
+      for (const [i, id] of ids.entries()) await pool.query('INSERT INTO shops(id,name,public_intake_slug) VALUES($1,$2,$3)',
+        [id, 'Unchanged', 'a'.repeat(25) + 'abcd'[i]]);
       await work(pool, ids);
     } finally {
       if (pool) await pool.end();
@@ -85,6 +86,7 @@ test('real PostgreSQL Phase B isolated TEXT/UUID routing uniqueness and update r
           }, i ? 'admin' : 'owner')));
           assert.deepEqual(results.map(r => r.statusCode).sort(), [200, 409]);
           const winner = results.findIndex(r => r.statusCode === 200), loser = 1 - winner;
+          assert.equal(results[winner].body.public_intake_slug, snapshot.find(r => r.id === ids[winner]).public_intake_slug);
           assert.doesNotMatch(JSON.stringify(results[loser].body), /15551234567|PRIVATE|shops_twilio|Winner-/);
           const rows = (await pool.query('SELECT id,name,twilio_phone_number FROM shops')).rows;
           assert.equal(rows.find(r => r.id === ids[loser]).name, 'Unchanged', 'conflicting statement is atomic');

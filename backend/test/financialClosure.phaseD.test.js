@@ -29,7 +29,9 @@ function routes(db, payments) {
     '../middleware/auth': next, '../middleware/roles': roles };
   const multer = () => ({ single: () => next }); multer.diskStorage = () => ({});
   return {
-    settings: load('routes/settings.js', common),
+    settings: load('routes/settings.js', { ...common,
+      // Bulk deletion must never load the live DB or rotate a public intake link.
+      '../services/publicShop': { newPublicIntakeSlug: () => assert.fail('Unexpected public intake slug rotation') } }),
     market: load('routes/market.js', { ...common, fs: { mkdirSync() {} }, multer,
       '../data/market-rates': {}, '../services/sms': {}, '../services/mediaStorage': {} }),
   };
