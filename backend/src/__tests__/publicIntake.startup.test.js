@@ -96,9 +96,9 @@ function routeApp() {
     app.use(`/api/${prefix}`, require(`../routes/${route}`));
   }
   let sequence = 1;
-  return { embeds, async request(method, url, body = {}, shop) {
+  return { embeds, async request(method, url, body = {}, shop, role = 'owner') {
     const headers = { 'content-type': 'application/json' };
-    if (shop) headers.authorization = `Bearer ${jwt.sign({ id: ORPHAN, shop_id: shop, role: 'owner' }, process.env.JWT_SECRET)}`;
+    if (shop) headers.authorization = `Bearer ${jwt.sign({ id: ORPHAN, shop_id: shop, role }, process.env.JWT_SECRET)}`;
     const response = await inject(app, { method, url, headers, body: Buffer.from(JSON.stringify(body)), ip: `127.0.0.${sequence++}` });
     await new Promise(resolve => setImmediate(resolve));
     return response;
@@ -231,11 +231,11 @@ test('full initDb on guarded real PostgreSQL (no provider calls or skipped cases
             assert.equal(appointments.filter(row => row.shop_id === A).length, 0);
           }
           const detail = `/api/estimate-requests/${saved.id}`;
-          assert.equal((await request('GET', detail, {}, shop === A ? B : A)).status, 404);
-          assert.equal((await request('PATCH', `${detail}/status`, { status: 'contacted' }, shop === A ? B : A)).status, 404);
+          assert.equal((await request('GET', detail, {}, shop === A ? B : A, 'staff')).status, 404);
+          assert.equal((await request('PATCH', `${detail}/status`, { status: 'contacted' }, shop === A ? B : A, 'staff')).status, 404);
           assert.deepEqual(await rows('estimate_requests'), estimates, 'cross-tenant mutation changes no rows');
-          assert.equal((await request('GET', detail, {}, shop)).status, 200);
-          assert.equal((await request('PATCH', `${detail}/status`, { status: 'contacted' }, shop)).status, 200);
+          assert.equal((await request('GET', detail, {}, shop, 'staff')).status, 200);
+          assert.equal((await request('PATCH', `${detail}/status`, { status: 'contacted' }, shop, 'staff')).status, 200);
         }
         const rotation = await request('POST', '/api/settings/public-intake/rotate', { shop_id: A }, B);
         assert.equal(rotation.status, 200);
