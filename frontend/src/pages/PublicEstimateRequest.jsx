@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import PublicIntake, { IntakeIdentity } from '../components/PublicIntake'
 import { Camera, CheckCircle2, Loader2, ShieldCheck, Wrench, X } from 'lucide-react'
-import { Logo, Panel } from '../components/ui'
+import { Panel } from '../components/ui'
 
 const DAMAGE_TYPES = ['front impact', 'rear impact', 'side damage', 'hail', 'glass']
 const inputClass = 'mt-1 w-full rounded-instrument border border-line-2 bg-void px-3 py-2.5 text-sm text-ink placeholder:text-faint focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20'
@@ -15,7 +15,17 @@ function fileToDataUrl(file) {
   })
 }
 
-async function compressImage(file) {
+export function validIntakePhoto(photo) {
+  const match = /^data:image\/(?:jpeg|png|webp);base64,([A-Za-z0-9+/]+={0,2})$/.exec(photo)
+  if (!match || match[1].length % 4 !== 0) return false
+  try {
+    const decoded = atob(match[1])
+    return decoded.length > 0 && decoded.length <= 300 * 1024 && btoa(decoded) === match[1]
+  } catch { return false }
+}
+
+export async function compressImage(file) {
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw new Error('Choose JPEG, PNG or WebP photos only.')
   const rawDataUrl = await fileToDataUrl(file)
   const image = new Image()
 
@@ -26,7 +36,7 @@ async function compressImage(file) {
   })
 
   const maxWidth = 1280
-  const scale = image.width > maxWidth ? maxWidth / image.width : 1
+  const scale = Math.min(1, maxWidth / Math.max(image.width, image.height))
   const width = Math.round(image.width * scale)
   const height = Math.round(image.height * scale)
   const canvas = document.createElement('canvas')
@@ -34,20 +44,24 @@ async function compressImage(file) {
   canvas.height = height
 
   const context = canvas.getContext('2d')
+  if (!context || !width || !height) throw new Error('Could not resize photo.')
   context.drawImage(image, 0, 0, width, height)
 
   let quality = 0.76
   let compressed = canvas.toDataURL('image/jpeg', quality)
-  while (compressed.length > 180000 && quality > 0.45) {
+  while (!validIntakePhoto(compressed) && quality > 0.45) {
     quality -= 0.08
     compressed = canvas.toDataURL('image/jpeg', quality)
   }
+  if (!validIntakePhoto(compressed)) throw new Error('Photo exceeds 300 KB after resizing. Choose a smaller photo.')
   return compressed
 }
 
 export default function PublicEstimateRequest() {
-  const [params] = useSearchParams()
-  const shopId = params.get('shop') || ''
+  return <PublicIntake>{(shop, shopLink, invalidateShop) => <EstimateForm shop={shop} shopLink={shopLink} invalidateShop={invalidateShop} />}</PublicIntake>
+}
+
+function EstimateForm({ shop, shopLink, invalidateShop }) {
   const [form, setForm] = useState({
     name: '',
     phone: '',
@@ -60,6 +74,7 @@ export default function PublicEstimateRequest() {
     preferred_date: '',
   })
   const [photos, setPhotos] = useState([])
+  const [processingPhotos, setProcessingPhotos] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [done, setDone] = useState(false)
   const [error, setError] = useState('')
@@ -71,16 +86,21 @@ export default function PublicEstimateRequest() {
   async function onPickPhotos(event) {
     const files = Array.from(event.target.files || [])
     if (!files.length) return
-    const nextFiles = files.slice(0, 5 - photos.length)
-    if (!nextFiles.length) return
-
+    if (processingPhotos || submitting) return
+    if (files.length + photos.length > 5) {
+      setError('Choose up to 5 photos total.')
+      event.target.value = ''
+      return
+    }
+    setProcessingPhotos(true)
     try {
-      const compressed = await Promise.all(nextFiles.map((file) => compressImage(file)))
-      setPhotos((previous) => [...previous, ...compressed].slice(0, 5))
+      const compressed = await Promise.all(files.map((file) => compressImage(file)))
+      setPhotos((previous) => [...previous, ...compressed])
       setError('')
-    } catch {
-      setError('Failed to process one or more photos. Try different files.')
+    } catch (photoError) {
+      setError(photoError.message || 'Failed to process one or more photos. Try different files.')
     } finally {
+      setProcessingPhotos(false)
       event.target.value = ''
     }
   }
@@ -91,16 +111,25 @@ export default function PublicEstimateRequest() {
 
   async function submit(event) {
     event.preventDefault()
+    if (!shopLink || submitting || processingPhotos) return
+    if (photos.length > 5 || !photos.every(validIntakePhoto)) {
+      setError('Choose up to 5 JPEG, PNG or WebP photos, at most 300 KB each after resizing.')
+      return
+    }
     setSubmitting(true)
     setError('')
     try {
-      const query = shopId ? `?shop=${encodeURIComponent(shopId)}` : ''
+      const query = `?shop=${encodeURIComponent(shopLink)}`
       const response = await fetch(`/api/public/estimate-request${query}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...form, photos }),
       })
       const responseData = await response.json().catch(() => ({}))
+      if (response.status === 404 || ['SHOP_LINK_REQUIRED', 'SHOP_NOT_FOUND'].includes(responseData?.code)) {
+        invalidateShop()
+        return
+      }
       if (!response.ok) throw new Error(responseData?.error || 'Could not submit estimate request')
       setDone(true)
     } catch (requestError) {
@@ -114,8 +143,8 @@ export default function PublicEstimateRequest() {
     return (
       <main className="min-h-screen bg-void px-4 py-10 text-ink sm:py-14">
         <div className="mx-auto max-w-xl space-y-5">
-          <header className="flex items-center gap-3 border-b border-line pb-5">
-            <Logo variant="mark" className="h-10 w-10" />
+          <header className="flex flex-col items-start gap-3 border-b border-line pb-5">
+            <IntakeIdentity shop={shop} />
             <p className="font-display text-lg font-semibold text-ink">Collision estimate request</p>
           </header>
           <Panel className="p-6 text-center">
@@ -131,8 +160,8 @@ export default function PublicEstimateRequest() {
   return (
     <main className="min-h-screen bg-void px-4 py-6 text-ink sm:px-6 sm:py-10">
       <div className="mx-auto max-w-3xl space-y-5">
-        <header className="flex items-center gap-3 border-b border-line pb-5">
-          <Logo variant="mark" className="h-10 w-10 shrink-0" />
+        <header className="flex flex-col items-start gap-3 border-b border-line pb-5">
+          <IntakeIdentity shop={shop} />
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.1em] text-brand">
               <ShieldCheck size={15} aria-hidden="true" />
@@ -191,9 +220,10 @@ export default function PublicEstimateRequest() {
                 <label className="inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-instrument bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-lit">
                   <Camera size={16} aria-hidden="true" />
                   Add photos
-                  <input aria-label="Damage photos" type="file" accept="image/*" multiple onChange={onPickPhotos} className="sr-only" />
+                  <input aria-label="Damage photos" type="file" accept="image/jpeg,image/png,image/webp" disabled={processingPhotos || submitting} multiple onChange={onPickPhotos} className="sr-only" />
                 </label>
-                <p className="mt-2 font-mono text-xs tabular-nums text-faint">{photos.length}/5 selected</p>
+                <p className="mt-2 font-mono text-xs tabular-nums text-faint">{photos.length}/5 selected · JPEG, PNG or WebP · Max 300 KB each after resizing</p>
+                {processingPhotos && <p role="status" className="mt-2 text-sm text-muted">Resizing photos…</p>}
 
                 {photos.length > 0 && (
                   <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
@@ -215,7 +245,7 @@ export default function PublicEstimateRequest() {
                 <Wrench size={15} className="text-brand" aria-hidden="true" />
                 REVV auto body estimate intake
               </div>
-              <button type="submit" disabled={submitting} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-instrument bg-brand px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-lit disabled:cursor-not-allowed disabled:opacity-50">
+              <button type="submit" disabled={submitting || processingPhotos} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-instrument bg-brand px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-lit disabled:cursor-not-allowed disabled:opacity-50">
                 {submitting && <Loader2 size={16} className="animate-spin" aria-hidden="true" />}
                 {submitting ? 'Submitting...' : 'Submit request'}
               </button>

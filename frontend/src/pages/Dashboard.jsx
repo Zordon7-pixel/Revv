@@ -905,7 +905,7 @@ export default function Dashboard() {
           )}
           {admin && pendingAppointments > 0 && (
             <button
-              onClick={() => navigate('/book')}
+              onClick={() => navigate('/appointments')}
               className="inline-flex items-center gap-2 rounded-instrument border border-brand/30 bg-brand/10 px-3 py-2 text-xs font-medium text-brand transition-colors hover:bg-brand/15"
             >
               <CalendarDays size={13} />

@@ -31,6 +31,7 @@ import FloorMode from './pages/FloorMode'
 import AgreementSigning from './pages/AgreementSigning'
 import ApprovalPortal from './pages/ApprovalPortal'
 import BookAppointment from './pages/BookAppointment'
+import Appointments from './pages/Appointments'
 import SuperAdminLogin from './pages/SuperAdminLogin'
 import SuperAdminDashboard from './pages/SuperAdminDashboard'
 import SuperAdminRoute from './components/SuperAdminRoute'
@@ -172,6 +173,7 @@ export default function App() {
               <Route path="ros/:id/inspection/:inspectionId" element={<InspectionEditor />} />
               <Route path="customers" element={<Customers />} />
               <Route path="timeclock" element={<TimeClock />} />
+              <Route path="appointments" element={<AdminRoute><Appointments /></AdminRoute>} />
               <Route path="schedule" element={<Schedule />} />
               <Route path="reports" element={<ManagementRoute><Reports /></ManagementRoute>} />
               <Route path="workload" element={<ManagementRoute><TechWorkload /></ManagementRoute>} />
