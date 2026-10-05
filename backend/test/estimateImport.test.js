@@ -262,7 +262,9 @@ test('create reuses import-estimate path and writes shop-scoped RO, customer, ve
     assert.equal(body.imported_line_count, 5);
 
     const inserts = dbMock.calls.filter((call) => /^INSERT INTO/i.test(call.sql.trim()));
-    assert.ok(inserts.some((call) => /INSERT INTO customers/i.test(call.sql) && call.params[1] === 'shop-1'));
+    const customerInsert = inserts.find((call) => /INSERT INTO customers/i.test(call.sql));
+    assert.equal(customerInsert.params[1], 'shop-1');
+    assert.equal(customerInsert.params[4], false);
     assert.ok(inserts.some((call) => /INSERT INTO vehicles/i.test(call.sql) && call.params[1] === 'shop-1'));
     assert.ok(inserts.some((call) => /INSERT INTO repair_orders/i.test(call.sql) && call.params[1] === 'shop-1'));
 
@@ -277,6 +279,50 @@ test('create reuses import-estimate path and writes shop-scoped RO, customer, ve
     assert.equal(operations.length, 4);
     assert.ok(operations.some((call) => call.params[3] === 'RPR left quarter panel' && call.params[6] === 2.5 && call.params[7] === 65));
     assert.ok(operations.some((call) => call.params[3] === 'RNI tail lamp assembly for access' && call.params[6] === 0.3));
+  });
+});
+
+test('import-estimate customer creation accepts only top-level staff attestation with a valid method', async () => {
+  const dbMock = createDbMock();
+  await withTestApp(dbMock, async app => {
+    app.post('/consent-regression', (req, res) => {
+      req.user = { id: 'user-1', shop_id: 'shop-1' };
+      return require('../src/routes/ros').importEstimateHandler(req, res);
+    });
+    for (const nested of [false, true]) {
+      for (const choice of [{}, ...[null, false, 'true', 'false', '1', 1, {}, [], true].map(sms_consent => ({ sms_consent })),
+        ...['verbal', 'written', 'ocr', '', null].map(sms_consent_method => ({ sms_consent: true, sms_consent_method }))]) {
+        dbMock.calls.length = 0;
+        const body = {
+          customer: { name: 'Synthetic Consent Customer', ...(nested ? choice : {}), sms_consent_at: '2000-01-01T00:00:00Z', sms_consent_by: 'spoofed-ocr' },
+          sms_consent_at: '2000-01-01T00:00:00Z', sms_consent_by: 'spoofed-staff',
+          vehicle: { make: 'Toyota', model: 'Camry' },
+          ...(!nested ? choice : {}),
+        };
+        const started = Date.now();
+        const res = await inject(app, {
+          method: 'POST', url: '/consent-regression',
+          headers: { 'content-type': 'application/json' },
+          body: Buffer.from(JSON.stringify(body)),
+        });
+        if (!nested && choice.sms_consent === true && !['verbal', 'written'].includes(choice.sms_consent_method)) {
+          assert.equal(res.status, 400);
+          assert.equal(dbMock.calls.some(call => /INSERT|UPDATE|DELETE/i.test(call.sql)), false);
+          continue;
+        }
+        assert.equal(res.status, 201);
+        const insert = dbMock.calls.find(call => /INSERT INTO customers/i.test(call.sql));
+        assert.equal(insert.params[1], 'shop-1');
+        const confirmed = !nested && choice.sms_consent === true;
+        assert.equal(insert.params[4], confirmed);
+        if (confirmed) {
+          assert.equal(insert.params[10], choice.sms_consent_method);
+          assert.equal(insert.params[11], 'user-1');
+          assert.ok(new Date(insert.params[9]).getTime() >= started);
+          assert.ok(new Date(insert.params[9]).getTime() <= Date.now());
+        } else assert.deepEqual(insert.params.slice(9, 12), [null, null, null]);
+      }
+    }
   });
 });
 

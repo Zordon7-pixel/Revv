@@ -50,6 +50,8 @@ async function loadAutofill(client, roId, shopId) {
   return buildAutofill(ro, customer || {}, vehicle || {}, metadata || {}, previous || {});
 }
 function checkRevision(supplied, current) {
-  if (supplied !== undefined && supplied !== current.revision) throw inputError('The repair order or estimate changed. Reload RO details and review the agreement again.', 409);
+  if (typeof supplied !== 'string' || supplied.length !== 64 || !/^[a-f0-9]{64}$/.test(supplied) || supplied !== current.revision) {
+    throw inputError('The repair order or estimate changed. Reload RO details and review the agreement again.', 409);
+  }
 }
 module.exports = { buildAutofill, loadAutofill, checkRevision };

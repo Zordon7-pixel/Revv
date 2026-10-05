@@ -1,3 +1,4 @@
+const { hasConfirmedSmsConsent } = require('../services/customerConsent');
 const router = require('express').Router();
 const { dbGet, dbAll, dbRun } = require('../db');
 const auth   = require('../middleware/auth');
@@ -365,9 +366,10 @@ async function createMagicLink(req, res, roId) {
   try {
     const ro = await dbGet(`
       SELECT ro.*, c.phone as customer_phone, c.name as customer_name, c.email as customer_email,
+             c.sms_consent, c.sms_consent_at, c.sms_consent_method, c.sms_consent_by,
              s.name as shop_name, s.twilio_phone_number
       FROM repair_orders ro
-      LEFT JOIN customers c ON c.id = ro.customer_id
+      LEFT JOIN customers c ON c.id = ro.customer_id AND c.shop_id = ro.shop_id
       LEFT JOIN shops s ON s.id = ro.shop_id
       WHERE ro.id = $1 AND ro.shop_id = $2
     `, [roId, req.user.shop_id]);
@@ -391,17 +393,17 @@ async function createMagicLink(req, res, roId) {
     const paymentUrl = paymentLink.ok ? paymentLink.url : null;
     
     // Send SMS to customer (non-blocking)
-    if (ro.customer_phone) {
+    if (ro.customer_phone && hasConfirmedSmsConsent(ro)) {
       setImmediate(async () => {
         try {
           const { sendSMS, isConfiguredForShop } = require('../services/sms');
           if (await isConfiguredForShop(req.user.shop_id)) {
             const message = `Hi ${ro.customer_name || 'there'}! Track your vehicle repair at ${ro.shop_name}:\n${trackingUrl}${paymentUrl ? `\nPay here: ${paymentUrl}` : ''}`;
-            await sendSMS(ro.customer_phone, message, { shopId: req.user.shop_id });
-            console.log(`[Portal] Tracking link SMS sent for RO ${ro.ro_number}`);
+            const result = await sendSMS(ro.customer_phone, message, { shopId: req.user.shop_id });
+            console.log(result.ok ? '[Portal] Tracking SMS sent' : '[Portal] Tracking SMS not sent');
           }
         } catch (err) {
-          console.error('[Portal] SMS failed:', err.message);
+          console.error('[Portal] SMS failed');
         }
       });
     }
@@ -410,7 +412,7 @@ async function createMagicLink(req, res, roId) {
       token, 
       trackingUrl,
       paymentUrl,
-      message: `Tracking link generated${paymentUrl ? ' with payment checkout link' : ''} and SMS sent to customer`
+      message: `Tracking link generated${paymentUrl ? ' with payment checkout link' : ''}`
     });
   } catch (err) {
     console.error('[Portal Magic Link] Error:', err.message);

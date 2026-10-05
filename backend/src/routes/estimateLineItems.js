@@ -3,7 +3,9 @@ const { dbAll, dbGet, dbRun } = require('../db');
 const auth = require('../middleware/auth');
 const { v4: uuidv4 } = require('uuid');
 const { calculateProfit } = require('../services/profit');
-const { centsToDollars, dollarsToCents } = require('../services/roMoney');
+const { centsToDollars, dollarsToCents, getSelectedPanelMoney } = require('../services/roMoney');
+
+router.use(require('./panelEstimator').createPanelEstimatorRouter());
 
 const ALLOWED_TYPES = new Set(['labor', 'parts', 'sublet', 'other']);
 
@@ -265,6 +267,15 @@ async function ensureRepairOrder(roId, shopId) {
 }
 
 async function getSummary(roId, shopId) {
+  const selected = await getSelectedPanelMoney(roId, shopId);
+  if (selected) return {
+    subtotal: centsToDollars(selected.subtotalCents), labor_total: centsToDollars(selected.laborCents),
+    parts_total: centsToDollars(selected.partsCents), sublet_total: centsToDollars(selected.subletCents),
+    other_total: centsToDollars(selected.otherCents), taxable_subtotal: centsToDollars(selected.taxableSubtotalCents),
+    tax_rate: selected.taxRate, tax_amount: centsToDollars(selected.taxCents),
+    grand_total: centsToDollars(selected.totalCents), line_count: selected.lineCount,
+    source: selected.source, revision_id: selected.revision_id,
+  };
   const [summaryRow, metadata] = await Promise.all([
     dbGet(
     `SELECT
@@ -400,6 +411,9 @@ async function getProfitOpportunities(roId, shopId) {
 }
 
 async function syncRepairOrderFinancials(roId, shopId, summary, options = {}) {
+  if (await getSelectedPanelMoney(roId, shopId)) {
+    throw Object.assign(new Error('PANEL_REVISION_CONFLICT'), { code: 'P0001' });
+  }
   const [ro, metadata] = await Promise.all([
     dbGet(
       `SELECT id, deductible_waived, referral_fee, goodwill_repair_cost
@@ -465,6 +479,9 @@ router.get('/:roId/opportunities', auth, async (req, res) => {
     const opportunities = await getProfitOpportunities(req.params.roId, req.user.shop_id);
     return res.json({ success: true, ...opportunities });
   } catch (err) {
+    if ((err.code === 'P0001' && err.message === 'PANEL_REVISION_CONFLICT') || err.code === '40P01') {
+      return res.status(409).json({ error: 'PANEL_REVISION_CONFLICT' });
+    }
     console.error('[Estimate Items] opportunities error:', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
@@ -502,6 +519,12 @@ router.post('/:roId/import-financials', auth, async (req, res) => {
       financials,
     });
   } catch (err) {
+    if (err.code === '23514' && err.message === 'RO_FINANCIAL_HOLD') {
+      return res.status(409).json({ error: 'Total cannot be less than paid and reserved payments' });
+    }
+    if ((err.code === 'P0001' && err.message === 'PANEL_REVISION_CONFLICT') || err.code === '40P01') {
+      return res.status(409).json({ error: 'PANEL_REVISION_CONFLICT' });
+    }
     console.error('[Estimate Items] import financials error:', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
@@ -515,6 +538,9 @@ router.get('/:roId/summary', auth, async (req, res) => {
     const summary = await getSummary(req.params.roId, req.user.shop_id);
     return res.json({ success: true, summary });
   } catch (err) {
+    if ((err.code === 'P0001' && err.message === 'PANEL_REVISION_CONFLICT') || err.code === '40P01') {
+      return res.status(409).json({ error: 'PANEL_REVISION_CONFLICT' });
+    }
     console.error('[Estimate Items] summary error:', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
@@ -536,6 +562,9 @@ router.get('/:roId', auth, async (req, res) => {
     const summary = await getSummary(req.params.roId, req.user.shop_id);
     return res.json({ success: true, items, summary });
   } catch (err) {
+    if ((err.code === 'P0001' && err.message === 'PANEL_REVISION_CONFLICT') || err.code === '40P01') {
+      return res.status(409).json({ error: 'PANEL_REVISION_CONFLICT' });
+    }
     console.error('[Estimate Items] list error:', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
@@ -592,6 +621,12 @@ router.post('/:roId', auth, async (req, res) => {
     await syncRepairOrderFinancials(req.params.roId, req.user.shop_id, summary);
     return res.status(201).json({ success: true, item: inserted, summary });
   } catch (err) {
+    if (err.code === '23514' && err.message === 'RO_FINANCIAL_HOLD') {
+      return res.status(409).json({ error: 'Total cannot be less than paid and reserved payments' });
+    }
+    if ((err.code === 'P0001' && err.message === 'PANEL_REVISION_CONFLICT') || err.code === '40P01') {
+      return res.status(409).json({ error: 'PANEL_REVISION_CONFLICT' });
+    }
     console.error('[Estimate Items] create error:', err);
     return res.status(500).json({ error: err.message || 'Internal server error' });
   }
@@ -646,6 +681,12 @@ router.put('/:roId/:itemId', auth, async (req, res) => {
     await syncRepairOrderFinancials(req.params.roId, req.user.shop_id, summary);
     return res.json({ success: true, item: updated, summary });
   } catch (err) {
+    if (err.code === '23514' && err.message === 'RO_FINANCIAL_HOLD') {
+      return res.status(409).json({ error: 'Total cannot be less than paid and reserved payments' });
+    }
+    if ((err.code === 'P0001' && err.message === 'PANEL_REVISION_CONFLICT') || err.code === '40P01') {
+      return res.status(409).json({ error: 'PANEL_REVISION_CONFLICT' });
+    }
     console.error('[Estimate Items] update error:', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
@@ -669,6 +710,12 @@ router.delete('/:roId/:itemId', auth, async (req, res) => {
     await syncRepairOrderFinancials(req.params.roId, req.user.shop_id, summary);
     return res.json({ success: true, deleted_id: removed.id, summary });
   } catch (err) {
+    if (err.code === '23514' && err.message === 'RO_FINANCIAL_HOLD') {
+      return res.status(409).json({ error: 'Total cannot be less than paid and reserved payments' });
+    }
+    if ((err.code === 'P0001' && err.message === 'PANEL_REVISION_CONFLICT') || err.code === '40P01') {
+      return res.status(409).json({ error: 'PANEL_REVISION_CONFLICT' });
+    }
     console.error('[Estimate Items] delete error:', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
@@ -692,6 +739,9 @@ router.get('/metadata/:roId', auth, async (req, res) => {
 
     return res.json({ metadata: metadata || null });
   } catch (err) {
+    if ((err.code === 'P0001' && err.message === 'PANEL_REVISION_CONFLICT') || err.code === '40P01') {
+      return res.status(409).json({ error: 'PANEL_REVISION_CONFLICT' });
+    }
     console.error('[Estimate Metadata] GET error:', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
@@ -753,6 +803,12 @@ router.post('/metadata/:roId', auth, async (req, res) => {
 
     return res.json({ success: true, metadata });
   } catch (err) {
+    if (err.code === '23514' && err.message === 'RO_FINANCIAL_HOLD') {
+      return res.status(409).json({ error: 'Total cannot be less than paid and reserved payments' });
+    }
+    if ((err.code === 'P0001' && err.message === 'PANEL_REVISION_CONFLICT') || err.code === '40P01') {
+      return res.status(409).json({ error: 'PANEL_REVISION_CONFLICT' });
+    }
     console.error('[Estimate Metadata] POST error:', err);
     return res.status(500).json({ error: 'Internal server error' });
   }

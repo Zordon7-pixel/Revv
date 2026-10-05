@@ -1,3 +1,4 @@
+const { hasConfirmedSmsConsent } = require('./customerConsent');
 const { ensureDelivery, fail } = require('./partsDelivery');
 const PUBLIC_FIELDS = ['status', 'expected_date', 'eta_source', 'quantity', 'received_quantity', 'customer_note'];
 const LABELS = {ordered:'Ordered',backordered:'Backordered',shipped:'Shipped',partially_received:'Partially received',received:'Received by the shop',cancelled:'Cancelled'};
@@ -20,7 +21,7 @@ function content(context, part) {
 function channelAllowed(c, channel) {
   const preference = c.preferred_contact_method || '';
   if (preference && preference !== 'both' && preference !== channel) return 'contact_preference';
-  if (c[`${channel}_consent`] !== true) return 'no_consent';
+  if (channel === 'sms' ? !hasConfirmedSmsConsent(c) : c.email_consent !== true) return 'no_consent';
   if (c[`${channel}_notifications_enabled`] === false) return 'shop_disabled';
   if (!c[channel === 'sms' ? 'phone' : 'email']) return 'missing_contact';
   return null;
@@ -35,7 +36,7 @@ async function notifyPartUpdate(db, shopId, part, previousRevision, providers = 
   // Explicit per-update opt-in only. No-op saves cannot re-send the previous event.
   if (part.delivery_revision <= previousRevision) return {status:'skipped',reason:'no_customer_change',channels:[]};
   await ensureDelivery(db);
-  const {rows} = await db.query(`SELECT e.before_state,e.after_state,r.ro_number,c.phone,c.email,c.sms_consent,c.email_consent,
+  const {rows} = await db.query(`SELECT e.before_state,e.after_state,r.ro_number,c.phone,c.email,c.sms_consent,c.sms_consent_at,c.sms_consent_method,c.sms_consent_by,c.email_consent,
       c.preferred_contact_method,s.name AS shop_name,s.sms_notifications_enabled,s.email_notifications_enabled
     FROM parts_delivery_events e
     JOIN parts_orders p ON p.id::text=e.part_id AND p.shop_id::text=e.shop_id AND p.delivery_revision=e.revision
@@ -62,7 +63,7 @@ async function notifyPartUpdate(db, shopId, part, previousRevision, providers = 
 
       const accepted = channel === 'sms' ? response?.ok === true && !response.simulated : !!response?.id;
       const rawReason = channel === 'sms' ? response?.reason : response ? 'provider_failed' : 'not_configured';
-      const safeReason = ({opted_out:'opted_out',sms_not_entitled:'plan_unavailable','not configured':'not_configured',not_configured:'not_configured'})[rawReason] || 'provider_failed';
+      const safeReason = ({no_confirmed_consent:'no_consent',consent_lookup_failed:'consent_unavailable',opted_out:'opted_out',sms_not_entitled:'plan_unavailable','not configured':'not_configured',not_configured:'not_configured'})[rawReason] || 'provider_failed';
       channels.push({channel,status:accepted?'accepted':'not_sent',...(accepted?{provider_reference:String(response.sid || response.id || '').slice(0,200)}:{reason:safeReason})});
     } catch { channels.push({channel,status:'unknown',reason:'verify_before_retry'}); }
   }

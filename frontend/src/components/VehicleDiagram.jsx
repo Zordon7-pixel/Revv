@@ -50,7 +50,7 @@ const COLORS = {
   interior: 'var(--raised)',
   hover: 'var(--brand-deep)',
   selected: 'var(--crit)',
-  stroke: 'var(--line-2)',
+  stroke: 'var(--muted)',
   tireStroke: 'var(--muted)',
   selectedStroke: 'var(--crit)',
 }
@@ -63,7 +63,11 @@ function fallbackLabel(id) {
     .join(' ')
 }
 
-export default function VehicleDiagram({ value = [], onChange, readOnly = false }) {
+export const vehiclePanelOptions = [...EXTERIOR_PANELS, ...INTERIOR_PANELS].map(panel => [panel.id, panel.label])
+
+export const vehiclePanelLabel = id => [...EXTERIOR_PANELS, ...INTERIOR_PANELS].find(panel => panel.id === id)?.label || fallbackLabel(id)
+
+export default function VehicleDiagram({ value = [], onChange, readOnly = false, onPanelSelect, compact = false }) {
   const [hovered, setHovered] = useState(null)
   const selected = Array.isArray(value) ? value : []
   const [mode, setMode] = useState(() => (
@@ -75,8 +79,9 @@ export default function VehicleDiagram({ value = [], onChange, readOnly = false 
   const selectedExteriorCount = selected.filter((id) => !INTERIOR_PANEL_IDS.has(id)).length
   const selectedInteriorCount = selected.filter((id) => INTERIOR_PANEL_IDS.has(id)).length
 
-  function toggle(id) {
+  function toggle(id, remove = false, trigger) {
     if (readOnly) return
+    if (onPanelSelect && selected.includes(id) && !remove) { onPanelSelect(id, trigger); return }
     const next = selected.includes(id)
       ? selected.filter((panelId) => panelId !== id)
       : [...selected, id]
@@ -105,10 +110,18 @@ export default function VehicleDiagram({ value = [], onChange, readOnly = false 
     const shapeProps = {
       fill: getPanelFill(panel, isSelected, isHovered),
       stroke: getPanelStroke(panel, isSelected),
-      strokeWidth: isSelected ? 2 : 1,
-      opacity: 0.95,
+      strokeWidth: 2,
+      vectorEffect: 'non-scaling-stroke',
+      className: 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand',
       style: { cursor: readOnly ? 'default' : 'pointer', transition: 'fill 0.15s ease' },
-      onClick: () => toggle(panel.id),
+      'aria-label': panel.label,
+      role: readOnly ? undefined : 'button',
+      tabIndex: readOnly ? undefined : 0,
+      'aria-pressed': readOnly ? undefined : isSelected,
+      onClick: event => toggle(panel.id, false, event.currentTarget),
+      onKeyDown: event => {
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggle(panel.id, false, event.currentTarget) }
+      },
       onMouseEnter: () => setHovered(panel.id),
       onMouseLeave: () => setHovered(null),
     }
@@ -128,13 +141,9 @@ export default function VehicleDiagram({ value = [], onChange, readOnly = false 
   function renderExteriorCanvas() {
     return (
       <>
-        <ellipse cx="160" cy="230" rx="120" ry="220" fill="var(--panel)" stroke="var(--line-2)" strokeWidth="1.25" />
+        <ellipse cx="160" cy="230" rx="120" ry="220" fill="var(--panel)" stroke="var(--muted)" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
         <path d="M96,52 L224,52 L236,228 L224,406 L96,406 L84,228 Z" fill="var(--void)" opacity="0.36" />
         {activePanels.map((panel) => renderPanel(panel))}
-        <text x="160" y="14" textAnchor="middle" fontSize="9" fill="var(--faint)">FRONT</text>
-        <text x="160" y="456" textAnchor="middle" fontSize="9" fill="var(--faint)">REAR</text>
-        <text x="10" y="230" textAnchor="middle" fontSize="9" fill="var(--faint)" transform="rotate(-90,10,230)">LEFT</text>
-        <text x="310" y="230" textAnchor="middle" fontSize="9" fill="var(--faint)" transform="rotate(90,310,230)">RIGHT</text>
       </>
     )
   }
@@ -142,45 +151,50 @@ export default function VehicleDiagram({ value = [], onChange, readOnly = false 
   function renderInteriorCanvas() {
     return (
       <>
-        <rect x="76" y="38" width="168" height="384" rx="64" fill="var(--panel)" stroke="var(--line-2)" strokeWidth="1.25" />
+        <rect x="76" y="38" width="168" height="384" rx="64" fill="var(--panel)" stroke="var(--muted)" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
         <rect x="96" y="58" width="128" height="344" rx="42" fill="var(--void)" opacity="0.4" />
         {activePanels.map((panel) => renderPanel(panel))}
-        <text x="160" y="18" textAnchor="middle" fontSize="9" fill="var(--faint)">DASH / FRONT</text>
-        <text x="160" y="452" textAnchor="middle" fontSize="9" fill="var(--faint)">REAR CABIN</text>
       </>
     )
   }
 
   return (
-    <div className="flex flex-col items-center gap-3">
+    <div className="flex min-w-0 flex-col items-center gap-3">
       {!readOnly && (
-        <div className="inline-flex items-center rounded-instrument border border-line-2 bg-void p-1">
+        <div className="flex max-w-full flex-wrap justify-center gap-1 rounded-instrument border border-line-2 bg-void p-1">
           <button
             type="button"
             onClick={() => setMode('exterior')}
-            className={`rounded-md px-3 py-1 text-xs font-semibold transition-colors ${mode === 'exterior' ? 'bg-brand text-white' : 'text-muted hover:text-ink'}`}
+            aria-pressed={mode === 'exterior'}
+            className={`min-h-11 min-w-11 rounded-md px-3 py-2 text-sm font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ${mode === 'exterior' ? 'bg-brand text-white' : 'text-muted hover:text-ink'}`}
           >
             Exterior ({selectedExteriorCount})
           </button>
           <button
             type="button"
             onClick={() => setMode('interior')}
-            className={`rounded-md px-3 py-1 text-xs font-semibold transition-colors ${mode === 'interior' ? 'bg-brand text-white' : 'text-muted hover:text-ink'}`}
+            aria-pressed={mode === 'interior'}
+            className={`min-h-11 min-w-11 rounded-md px-3 py-2 text-sm font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ${mode === 'interior' ? 'bg-brand text-white' : 'text-muted hover:text-ink'}`}
           >
             Interior ({selectedInteriorCount})
           </button>
         </div>
       )}
 
-      <div className="relative">
-        <svg viewBox="0 0 320 460" width="240" height="345" style={{ display: 'block' }}>
+      {/* HTML labels keep their CSS text size when the SVG scales to a narrow column. */}
+      <div className={`relative grid w-full min-w-0 grid-cols-[16px_minmax(0,1fr)_16px] items-center gap-1 text-center text-xs font-semibold text-ink ${compact ? 'max-w-[240px]' : 'max-w-[280px]'}`}>
+        <span className="col-span-3">{mode === 'interior' ? 'DASH / FRONT' : 'FRONT'}</span>
+        <span className="justify-self-center" style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>LEFT</span>
+        <svg aria-label="Vehicle damage map" viewBox="0 0 320 460" width={compact ? "200" : "240"} height={compact ? "288" : "345"} className="block h-auto w-full min-w-0">
           {mode === 'interior' ? renderInteriorCanvas() : renderExteriorCanvas()}
         </svg>
+        <span className="justify-self-center" style={{ writingMode: 'vertical-rl' }}>RIGHT</span>
+        <span className="col-span-3">{mode === 'interior' ? 'REAR CABIN' : 'REAR'}</span>
 
         {hovered && (
-          <div className="pointer-events-none absolute left-1/2 top-2 z-10 -translate-x-1/2 whitespace-nowrap rounded-lg border border-line-2 bg-void px-2 py-1 text-xs text-ink">
+          <div className={`pointer-events-none absolute left-1/2 top-2 z-10 -translate-x-1/2 rounded-lg border border-line-2 bg-void px-2 py-1 text-xs text-ink ${compact ? 'w-full whitespace-normal text-center' : 'whitespace-nowrap'}`}>
             {panelMap[hovered]?.label || fallbackLabel(hovered)}
-            {selected.includes(hovered) ? ' — click to remove' : ' — click to mark damaged'}
+            {selected.includes(hovered) ? (onPanelSelect ? ' — open editor' : ' — click to remove') : ' — click to mark damaged'}
           </div>
         )}
       </div>
@@ -196,8 +210,8 @@ export default function VehicleDiagram({ value = [], onChange, readOnly = false 
               {!readOnly && (
                 <button
                   type="button"
-                  onClick={() => toggle(id)}
-                  className="ml-0.5 leading-none text-crit transition-opacity hover:opacity-70"
+                  onClick={() => toggle(id, true)}
+                  className="ml-0.5 inline-flex min-h-11 min-w-11 items-center justify-center rounded-full text-crit transition-opacity hover:opacity-70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand"
                   aria-label={`Remove ${panelMap[id]?.label || fallbackLabel(id)}`}
                 >
                   x
@@ -208,11 +222,18 @@ export default function VehicleDiagram({ value = [], onChange, readOnly = false 
         </div>
       )}
 
+      {!readOnly && <details className="w-full max-w-sm rounded-instrument border border-line-2 p-3">
+        <summary className="min-h-11 cursor-pointer content-center rounded-md py-2 text-sm text-brand focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand">Select panels with keyboard</summary>
+        <div className="mt-3 grid grid-cols-1 gap-1 sm:grid-cols-2">{activePanels.map(panel => <label key={panel.id} className="flex min-h-11 items-center gap-2 text-sm text-ink">
+          <input type="checkbox" checked={selected.includes(panel.id)} onChange={() => toggle(panel.id, true)} />{panel.label}
+        </label>)}</div>
+      </details>}
+      {!readOnly && <p className="text-center text-sm text-muted">Use the checkbox list above for larger touch targets, including small rims and interior controls.</p>}
       {!readOnly && (
         <p className="text-center text-xs text-faint">
           {mode === 'interior'
-            ? `Mark interior damage for steering column, ignition switch, dash, console, and seats • ${selected.length} zone${selected.length !== 1 ? 's' : ''} selected`
-            : `Mark exterior damage, including undercarriage, tires, and rims • ${selected.length} zone${selected.length !== 1 ? 's' : ''} selected`}
+            ? `Mark interior damage for steering column, ignition switch, dash, console, and seats • ${selected.length} ${compact ? 'panel' : 'zone'}${selected.length !== 1 ? 's' : ''} selected`
+            : `Mark exterior damage, including undercarriage, tires, and rims • ${selected.length} ${compact ? 'panel' : 'zone'}${selected.length !== 1 ? 's' : ''} selected`}
         </p>
       )}
     </div>

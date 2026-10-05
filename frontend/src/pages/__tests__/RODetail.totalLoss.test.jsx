@@ -1,4 +1,8 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import postcss from 'postcss'
+import tailwindcss from 'tailwindcss'
+import tailwindConfig from '../../../tailwind.config.js'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
@@ -110,14 +114,14 @@ function makeRo(overrides = {}) {
   }
 }
 
-function stubApi(initialRo, { preDropoffPhotos = [] } = {}) {
+function stubApi(initialRo, { preDropoffPhotos = [], messages = [] } = {}) {
   let currentRo = initialRo
   api.get.mockImplementation((url) => {
     if (url === '/ros/ro-1') return Promise.resolve({ data: currentRo })
     if (url === '/parts-requests/ro-1') return Promise.resolve({ data: { requests: [] } })
     if (url === '/comms/ro-1') return Promise.resolve({ data: { comms: [] } })
     if (url === '/ros/ro-1/notes') return Promise.resolve({ data: { notes: [] } })
-    if (url === '/sms/thread/ro-1') return Promise.resolve({ data: { messages: [], customerPhone: '' } })
+    if (url === '/sms/thread/ro-1') return Promise.resolve({ data: { messages, customerPhone: '' } })
     if (url === '/photos/ro/ro-1/predropoff') return Promise.resolve({ data: { photos: preDropoffPhotos } })
     if (url === '/inspections/ro/ro-1') return Promise.resolve({ data: { inspections: [] } })
     if (url === '/ros/ro-1/supplements') return Promise.resolve({ data: { supplements: [], totalApproved: 0 } })
@@ -188,6 +192,74 @@ describe('RODetail total loss action', () => {
     } else {
       delete window.URL.revokeObjectURL
     }
+  })
+
+  describe('outgoing SMS metadata contrast', () => {
+    let styles
+    const originalTheme = document.documentElement.getAttribute('data-theme')
+
+    beforeAll(async () => {
+      // Compile the real stylesheet/config: a class name alone cannot prove its color.
+      const result = await postcss([tailwindcss({
+        ...tailwindConfig,
+        content: [{ raw: readFileSync('src/pages/RODetail.jsx', 'utf8'), extension: 'jsx' }],
+      })]).process(readFileSync('src/index.css', 'utf8'), { from: undefined })
+      styles = document.createElement('style')
+      styles.textContent = result.css
+      document.head.appendChild(styles)
+    })
+
+    afterEach(() => {
+      if (originalTheme === null) document.documentElement.removeAttribute('data-theme')
+      else document.documentElement.setAttribute('data-theme', originalTheme)
+      vi.unstubAllGlobals()
+    })
+    afterAll(() => styles?.remove())
+
+    function luminance(color) {
+      const channels = color.slice(1).match(/../g).map(hex => parseInt(hex, 16)).map(value => {
+        const channel = value / 255
+        return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
+      })
+      return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722
+    }
+
+    it.each([
+      ['dark', 390], ['dark', 1440], ['light', 390], ['light', 1440],
+    ])('keeps light AA metadata and incoming styles in %s at %ipx', async (theme, width) => {
+      document.documentElement.setAttribute('data-theme', theme)
+      vi.stubGlobal('innerWidth', width)
+      const created_at = '2026-10-01T12:00:00.000Z'
+      stubApi(makeRo(), { messages: [
+        { id: 'outgoing', direction: 'outbound', body: 'Synthetic outgoing message', created_at },
+        { id: 'incoming', direction: 'inbound', body: 'Synthetic incoming message', created_at },
+      ] })
+      renderRODetail()
+      await screen.findByText('RO-1')
+      await userEvent.setup().click(screen.getByRole('tab', { name: 'Comms' }))
+      const outgoing = await screen.findByText('Synthetic outgoing message')
+      const incoming = screen.getByText('Synthetic incoming message')
+      const metadata = outgoing.nextElementSibling
+      expect(metadata).toHaveTextContent(`→ Sent · ${new Date(created_at).toLocaleString()}`)
+      expect(metadata.className).toBe('text-[10px] mt-1 w-fit rounded px-1 bg-brand-deep text-[color:var(--on-brand)]')
+      expect(incoming.nextElementSibling.className).toBe('text-[10px] mt-1 text-faint')
+      expect(incoming.nextElementSibling).toHaveTextContent('← Customer')
+      expect(incoming.parentElement.className).toBe('max-w-[80%] rounded-instrument px-3 py-2 text-sm bg-void border border-line-2 text-ink rounded-bl-sm')
+      expect(outgoing.parentElement.className).toBe('max-w-[80%] rounded-instrument px-3 py-2 text-sm bg-brand text-on-brand rounded-br-sm')
+      for (const body of [incoming, outgoing]) expect(body.className).toBe('whitespace-pre-wrap leading-snug')
+
+      const tokens = getComputedStyle(document.documentElement)
+      expect(tokens.getPropertyValue('--on-brand').trim()).toBe('#FFFFFF')
+      expect(tokens.getPropertyValue('--brand').trim()).toBe(theme === 'dark' ? '#6366F1' : '#4F46E5')
+      expect(tokens.getPropertyValue('--brand-deep').trim()).toBe(theme === 'dark' ? '#4844C7' : '#3730A3')
+      const foreground = getComputedStyle(metadata).color
+      const background = getComputedStyle(metadata).backgroundColor
+      expect(foreground).toBe('#FFFFFF')
+      expect(background).toBe(theme === 'dark' ? '#4844C7' : '#3730A3')
+      expect(getComputedStyle(outgoing.parentElement).backgroundColor).toBe(theme === 'dark' ? '#6366F1' : '#4F46E5')
+      expect(foreground).not.toBe(background)
+      expect((luminance(foreground) + 0.05) / (luminance(background) + 0.05)).toBeGreaterThanOrEqual(4.5)
+    })
   })
 
   it('confirms total loss, sends the status note, and keeps profit fields editable', async () => {

@@ -1,3 +1,5 @@
+import { getTokenPayload } from '../lib/auth'
+import { rowEconomics, aggregateEconomics, EconomicsMoney, EconomicsSource, economicsPercent, economicsTone } from './JobCosting'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Activity, ArrowRight, Clock3, Gauge } from 'lucide-react'
@@ -52,6 +54,8 @@ function KpiLink({ to, children }) {
 
 export default function OwnerKpis() {
   const navigate = useNavigate()
+  const role = getTokenPayload()?.role
+
   const [from, setFrom] = useState(monthStartKey())
   const [to, setTo] = useState(todayKey())
   const [jobType, setJobType] = useState('collision')
@@ -97,11 +101,8 @@ export default function OwnerKpis() {
   const monthToDatePeriod = `Month to date (${formatDateRange(monthStartKey(), todayKey())})`
   const selectedPeriod = formatDateRange(from, to)
   const turnaroundPeriod = 'Last 90 days of closed ROs'
-  const recentMargins = useMemo(() => (jobCosting?.rows || []).slice(0, 6).map((row) => {
-    const revenue = Number(row.total || 0)
-    const profit = Number(row.true_profit || 0)
-    return { ...row, margin: revenue > 0 ? (profit / revenue) * 100 : 0, revenue, profit }
-  }), [jobCosting])
+  const economics = aggregateEconomics(jobCosting, role)
+  const recentMargins = useMemo(() => (jobCosting?.rows || []).slice(0, 6).map((row) => ({ ...row, ...rowEconomics(row, role) })), [jobCosting, role])
   const averageStageDays = useMemo(() => {
     const rows = ownerData?.cycle_time_by_stage || []
     if (!rows.length) return 0
@@ -129,7 +130,7 @@ export default function OwnerKpis() {
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <StatInstrument label="Average cycle stage" value={<span className="font-mono tabular-nums">{averageStageDays.toFixed(1)}d</span>} detail={cycleTimePeriod} />
         <StatInstrument label="Supplement capture" value={<span className="font-mono tabular-nums text-gold" data-testid="supplement-capture-rate-value">{percent(captureRate)}</span>} detail={<><Money cents={dollarsToCents(identifiedDollars)} /> identified / <Money cents={capture.captured_cents || 0} /> captured</>} tone="gold" />
-        <KpiLink to="/job-costing"><StatInstrument label="Average RO margin" value={<span className="font-mono tabular-nums text-good">{percent(jobCosting?.avgMargin)}</span>} detail={<><Money cents={dollarsToCents(jobCosting?.grossProfit)} /> gross profit</>} tone="good" /></KpiLink>
+        {!economics.hidden && <KpiLink to="/job-costing"><StatInstrument label="Average RO margin" value={economicsPercent(economics.margin)} detail={<><EconomicsMoney value={economics.profit} /> {economics.label}{economics.known != null && <span className="block">Partial known subtotal: <EconomicsMoney value={economics.known} /> · Not all job economics supplied; not a total.</span>}</>} tone={economicsTone(economics.margin)} /></KpiLink>}
         <KpiLink to="/performance"><StatInstrument label="Tech throughput" value={<span className="font-mono tabular-nums">{ownerData?.tech_efficiency?.reduce((sum, tech) => sum + Number(tech.ros_advanced || 0), 0) || 0}</span>} detail={monthToDatePeriod} /></KpiLink>
       </div>
 
@@ -156,7 +157,7 @@ export default function OwnerKpis() {
               {recentMargins.map((row) => (
                 <button key={row.id} type="button" onClick={() => navigate(`/ros/${row.id}`)} className="flex w-full items-center justify-between gap-3 py-3 text-left transition-colors hover:bg-panel-2">
                   <div className="min-w-0"><p className="truncate text-sm text-ink">{row.ro_number || 'RO'} - {row.customer_name || 'Customer'}</p><p className="truncate text-xs text-muted">{[row.year, row.make, row.model].filter(Boolean).join(' ') || row.status}</p></div>
-                  <div className="shrink-0 text-right"><p className={`font-mono text-sm font-semibold tabular-nums ${row.margin >= 0 ? 'text-good' : 'text-crit'}`}>{percent(row.margin)}</p><Money cents={dollarsToCents(row.profit)} className="text-xs text-muted" /></div>
+                  {!row.hidden && <div className="min-w-0 text-right"><p className={`font-mono text-sm font-semibold tabular-nums ${row.margin == null ? 'text-muted' : row.margin >= 0 ? 'text-good' : 'text-crit'}`}>{economicsPercent(row.margin)}</p><p className="text-xs text-muted">{row.selected ? 'Estimated gross contribution' : 'Profit'}: <EconomicsMoney value={row.profit} /></p>{row.selected && <><p className="text-xs text-muted">Estimated direct cost: <EconomicsMoney value={row.cost} /></p><EconomicsSource money={row} /></>}</div>}
                 </button>
               ))}
             </div>

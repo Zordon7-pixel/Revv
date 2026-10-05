@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { ensureShopTwilioNumber, SHOP_TWILIO_SCHEMA_REQUIRED } = require('./shopTwilioNumber');
 
 async function runMigrations() {
   if (!process.env.DATABASE_URL) {
@@ -29,6 +30,10 @@ async function runMigrations() {
       try { await query(schemaSql); } catch (e) { console.warn('[migrate] schemaSql warning (existing db):', e.message); }
       console.log('PostgreSQL schema already exists; running idempotent column additions.');
     }
+
+    await ensureShopTwilioNumber({ query });
+    await require('./customerConsent').up({ query });
+    await require('./paymentReservations').up(require('./postgres').pool);
 
     // ── Idempotent column additions ──────────────────────────────────────────
     // These ALWAYS run regardless of schema state. Each wrapped independently.
@@ -64,7 +69,9 @@ async function runMigrations() {
       `ALTER TABLE shops ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT`,
       `ALTER TABLE shops ADD COLUMN IF NOT EXISTS plan_expires_at TIMESTAMPTZ`,
       `ALTER TABLE shops ADD COLUMN IF NOT EXISTS trial_ends_at TIMESTAMPTZ DEFAULT (NOW() + INTERVAL '14 days')`,
-      `ALTER TABLE customers ADD COLUMN IF NOT EXISTS sms_consent BOOLEAN DEFAULT TRUE`,
+      // Shared consent migration above audits legacy TRUE and installs revision protection.
+      `ALTER TABLE customers ADD COLUMN IF NOT EXISTS sms_consent BOOLEAN`,
+      `ALTER TABLE customers ALTER COLUMN sms_consent SET DEFAULT FALSE`,
       `ALTER TABLE customers ADD COLUMN IF NOT EXISTS email_consent BOOLEAN DEFAULT FALSE`,
       `ALTER TABLE customers ADD COLUMN IF NOT EXISTS preferred_contact_method TEXT DEFAULT 'sms'`,
       `CREATE TABLE IF NOT EXISTS owner_activity_events (
@@ -603,6 +610,7 @@ async function runMigrations() {
 
     console.log('[migrate] All idempotent migrations complete.');
   } catch (err) {
+    if (err.code === SHOP_TWILIO_SCHEMA_REQUIRED) throw err;
     console.error('[migrate] Fatal migration error:', err.message);
   }
 }

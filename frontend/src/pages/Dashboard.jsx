@@ -1,3 +1,4 @@
+import { aggregateEconomics, EconomicsMoney } from './JobCosting'
 import React, { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Hand, AlertCircle, CalendarDays, ChevronRight, Radar, ArrowUpRight, ArrowDownRight, Minus, ChevronLeft, Truck } from 'lucide-react'
@@ -295,8 +296,11 @@ export default function Dashboard() {
   const displayCompleted = useCountUp(data?.completed || 0)
   const revenueMtdCents = Number(instruments?.revenue_mtd_cents || 0)
   const revenueGoalCents = Number(instruments?.revenue_goal_cents || 0)
-  const trueProfitCents = Number(instruments?.true_profit_cents || 0)
-  const profitMargin = Number(instruments?.profit_margin_percent || 0)
+  const economics = aggregateEconomics(instruments, role, {
+    profit: instruments?.true_profit_cents == null ? null : instruments.true_profit_cents / 100,
+    margin: instruments?.profit_margin_percent, legacyLabel: 'True Profit',
+  })
+  const profitMargin = economics.margin
   const supplementOpportunityCents = Number(instruments?.supplement_opportunity_cents || 0)
   const weeklyTrendDirection = weekly?.ro_opened?.trend_direction || 'flat'
   const weeklyTrendPercent = Number(weekly?.ro_opened?.trend_percent || 0)
@@ -787,12 +791,12 @@ export default function Dashboard() {
             onClick={() => navigate('/monthly-report')}
           />
         )}
-        {admin && (
+        {admin && !economics.hidden && (
           <StatInstrument
-            label="True Profit"
-            value={<Money cents={trueProfitCents} data-testid="stat-value-true-profit" />}
-            detail="Server-authoritative month-to-date margin"
-            gauge={{ value: Math.max(profitMargin, 0), max: 100, tone: 'good', label: `${profitMargin.toFixed(1)}%` }}
+            label={economics.label}
+            value={<span data-testid="stat-value-true-profit"><EconomicsMoney value={economics.profit} /></span>}
+            detail={<>{economics.detail}{economics.known != null && <span className="block">Partial known subtotal: <EconomicsMoney value={economics.known} /> · Not all job economics supplied; not a total.</span>}</>}
+            gauge={profitMargin == null ? undefined : { value: Math.max(profitMargin, 0), max: 100, tone: 'good', label: `${profitMargin.toFixed(1)}%` }}
             onClick={() => navigate('/monthly-report')}
           />
         )}

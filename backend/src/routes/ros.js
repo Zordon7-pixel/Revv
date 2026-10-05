@@ -1,9 +1,12 @@
+const { hasConfirmedSmsConsent, consentMutation } = require('../services/customerConsent');
 const router = require('express').Router();
 const { pool, dbGet, dbAll, dbRun } = require('../db');
 const auth = require('../middleware/auth');
+const { selectedEconomics, redactSelectedRO, redactROs, redactRO, summarizeEconomics, aggregateMetadata } = require('../services/panelEstimatorEconomics');
 const { ROLE_RANK, getRoleRank, requireAdmin, requireTechnician } = require('../middleware/roles');
 const { calculateProfit, calculateTrueProfit } = require('../services/profit');
-const { getRoMoneySummary, isPaidStatus, roundToIntCents } = require('../services/roMoney');
+const { isPaidStatus, roundToIntCents, dollarsToCents } = require('../services/roMoney');
+const { withLockedRo, getPaymentBalance, reconcileLocked, PaymentError } = require('../services/paymentReservations');
 const { sendSMS, isConfiguredForShop } = require('../services/sms');
 const { sendMail } = require('../services/mailer');
 const { statusChangeEmail } = require('../services/emailTemplates');
@@ -33,6 +36,7 @@ const STATUS_SMS_LABELS = {
   delivery: 'Ready for Pickup',
 };
 const SMS_STATUSES = new Set(Object.keys(STATUS_SMS_LABELS));
+const { panelPublicHandler, noStore: approvalNoStore, publicError: approvalError, publicRequestError, respondLegacyApproval } = require('../services/panelEstimatorApproval');
 const publicTokenLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20,
@@ -152,11 +156,12 @@ function queueStatusSMS(roId, shopId, toStatus) {
         `SELECT ro.id, ro.ro_number, ro.payment_status, ro.payment_received,
                 v.year, v.make, v.model,
                 c.phone AS customer_phone, c.email AS customer_email, c.name AS customer_name,
+                c.sms_consent, c.sms_consent_at, c.sms_consent_method, c.sms_consent_by,
                 s.name AS shop_name,
                 COALESCE(s.sms_notifications_enabled, TRUE) AS sms_notifications_enabled
          FROM repair_orders ro
          LEFT JOIN vehicles v ON v.id = ro.vehicle_id
-         LEFT JOIN customers c ON c.id = ro.customer_id
+         LEFT JOIN customers c ON c.id = ro.customer_id AND c.shop_id = ro.shop_id
          LEFT JOIN shops s ON s.id = ro.shop_id
          WHERE ro.id = $1 AND ro.shop_id = $2`,
         [roId, shopId]
@@ -164,6 +169,11 @@ function queueStatusSMS(roId, shopId, toStatus) {
 
       if (!ro?.customer_phone) {
         console.warn(`${tag} skipped — no customer phone on record`);
+        return;
+      }
+
+      if (!hasConfirmedSmsConsent(ro)) {
+        console.log(`${tag} skipped — no confirmed SMS consent`);
         return;
       }
 
@@ -204,15 +214,15 @@ function queueStatusSMS(roId, shopId, toStatus) {
         return;
       }
 
-      console.log(`${tag} sending to ${ro.customer_phone}`);
+      console.log(`${tag} sending`);
       const result = await sendSMS(ro.customer_phone, message, { shopId });
       if (result.ok) {
-        console.log(`${tag} sent OK (sid: ${result.sid})`);
+        console.log(`${tag} sent OK`);
       } else {
-        console.error(`${tag} failed — ${result.reason}`);
+        console.warn(`${tag} not sent`);
       }
     } catch (err) {
-      console.error(`[SMS] RO ${roId} → ${toStatus}: unexpected error —`, err.message);
+      console.error(`[SMS] RO ${roId} status notification failed`);
     }
   });
 }
@@ -249,7 +259,7 @@ function queueStatusEmail(roId, shopId, toStatus) {
                 v.year, v.make, v.model,
                 COALESCE(s.email_notifications_enabled, TRUE) AS email_notifications_enabled
          FROM repair_orders ro
-         LEFT JOIN customers c ON c.id = ro.customer_id
+         LEFT JOIN customers c ON c.id = ro.customer_id AND c.shop_id = ro.shop_id
          LEFT JOIN shops s ON s.id = ro.shop_id
          LEFT JOIN vehicles v ON v.id = ro.vehicle_id
          WHERE ro.id = $1 AND ro.shop_id = $2`,
@@ -272,7 +282,8 @@ function queueStatusEmail(roId, shopId, toStatus) {
       });
 
       let finalHtml = html;
-      if (toStatus === 'ready' && !['paid', 'succeeded'].includes(normalizedPaymentStatus(emailContext.payment_status, emailContext.payment_received))) {
+      // The status API and ready-for-pickup email template use delivery.
+      if (['delivery', 'ready'].includes(toStatus) && !['paid', 'succeeded'].includes(normalizedPaymentStatus(emailContext.payment_status, emailContext.payment_received))) {
         const linkResult = await createPaymentCheckoutLinkForRo({
           roId,
           shopId,
@@ -851,7 +862,8 @@ async function enrichRO(ro) {
      WHERE ro.id = $1`,
     [ro.id]
   );
-  const profit   = calculateProfit(ro);
+  const selected = await selectedEconomics(ro.shop_id, [ro.id]);
+  const profit = selected.has(String(ro.id)) ? null : calculateProfit(ro);
   const assigned_tech = enriched?.assigned_tech || null;
   const vehicle = enriched?.vehicle || null;
   const customer = enriched?.customer
@@ -862,7 +874,7 @@ async function enrichRO(ro) {
   if (customer) {
     customer.has_portal_access = !!enriched?.has_portal_access;
   }
-  return { ...ro, vehicle, customer, log, parts, profit, assigned_tech };
+  return redactSelectedRO({ ...ro, vehicle, customer, log, parts, profit, assigned_tech }, selected);
 }
 
 router.get('/', auth, async (req, res) => {
@@ -968,7 +980,7 @@ router.get('/', auth, async (req, res) => {
       WHERE ${where.join('\n        AND ')}
       ORDER BY ro.created_at DESC
     `, params);
-    res.json({ ros });
+    res.json({ ros: await redactROs(ros, req.user.shop_id) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1138,7 +1150,7 @@ router.put('/:id/revenue-period', auth, requireAdmin, async (req, res) => {
     }
 
     const updated = await dbGet('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
-    return res.json({ ok: true, ro: updated });
+    return res.json({ ok: true, ro: await redactRO(updated, req.user.shop_id) });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
@@ -1163,14 +1175,24 @@ router.get('/job-cost/summary', auth, requireAdmin, async (req, res) => {
       ORDER BY ro.created_at DESC
     `, params);
 
+    const selected = await selectedEconomics(req.user.shop_id, rows.map(row => row.id), req.user.role);
+    const economics = summarizeEconomics(rows, selected, req.user.role);
     const totalJobs = rows.length;
-    const totalRevenue = rows.reduce((s, r) => s + parseFloat(r.total || 0), 0);
-    const totalCost = rows.reduce((s, r) => s + parseFloat(r.parts_cost || 0) + parseFloat(r.labor_cost || 0) + parseFloat(r.sublet_cost || 0), 0);
-    const grossProfit = rows.reduce((s, r) => s + parseFloat(r.true_profit || 0), 0);
-    const profitableCount = rows.filter(r => parseFloat(r.true_profit || 0) > 0).length;
-    const avgMargin = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0;
-
-    res.json({ totalJobs, totalRevenue, totalCost, grossProfit, avgMargin, profitableCount, rows });
+    const totalRevenue = rows.reduce((sum, row) => sum + BigInt(dollarsToCents(row.total)), 0n);
+    const revenueCents = Number(totalRevenue);
+    if (!Number.isSafeInteger(revenueCents)) throw new Error('Revenue exceeds safe integer range');
+    const grossProfit = economics.profit_cents === null ? null : economics.profit_cents / 100;
+    const avgMargin = grossProfit === null ? null : revenueCents > 0
+      ? Math.round(economics.profit_cents * 10000 / revenueCents) / 100 : 0;
+    res.json({ totalJobs, totalRevenue: revenueCents / 100,
+      totalCost: economics.cost_cents === null ? null : economics.cost_cents / 100,
+      grossProfit, avgMargin, profitableCount: economics.profitable_count,
+      ...aggregateMetadata(economics), rows: rows.map(row => {
+        const redacted = redactSelectedRO(row, selected);
+        const panelEconomics = selected.get(String(row.id))?.panel_economics;
+        return ['owner', 'admin'].includes(String(req.user.role || '').toLowerCase()) && panelEconomics
+          ? { ...redacted, panel_economics: panelEconomics } : redacted;
+      }) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1325,7 +1347,11 @@ router.get('/:id', auth, async (req, res) => {
     const payload = await enrichRO(ro);
     const actorRole = String(req.user.role || '').toLowerCase();
 
-    if (['owner', 'admin'].includes(actorRole)) {
+    if (payload.panel_estimator_selected) {
+      const selected = await selectedEconomics(req.user.shop_id, [ro.id], actorRole);
+      const economics = selected.get(String(ro.id))?.panel_economics;
+      if (economics) payload.panel_economics = economics;
+    } else if (['owner', 'admin'].includes(actorRole)) {
       try {
         const [costProfile, laborHoursRow] = await Promise.all([
           dbGet(
@@ -1774,7 +1800,12 @@ router.post('/:id/approval-link', auth, requireTechnician, async (req, res) => {
   }
 });
 
-router.get('/approval/:token', publicTokenLimiter, async (req, res) => {
+router.use('/approval', publicRequestError(publicTokenLimiter));
+
+router.get('/approval/:token/pdf', approvalNoStore, publicTokenLimiter,
+  panelPublicHandler(pool, 'pdf'), (req, res) => res.status(404).json({ error: 'NOT_FOUND' }));
+
+router.get('/approval/:token', approvalNoStore, publicTokenLimiter, panelPublicHandler(pool, 'get'), async (req, res) => {
   try {
     await ensureApprovalLinksTable();
     const link = await dbGet('SELECT * FROM estimate_approval_links WHERE token = $1', [req.params.token]);
@@ -1807,60 +1838,25 @@ router.get('/approval/:token', publicTokenLimiter, async (req, res) => {
       shop,
     });
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    return approvalError(res, err);
   }
 });
 
-router.post('/approval/:token/respond', publicTokenLimiter, async (req, res) => {
+router.post(['/approval/:token', '/approval/:token/respond'], approvalNoStore, publicTokenLimiter,
+  panelPublicHandler(pool, 'respond'), async (req, res) => {
   try {
-    await ensureApprovalLinksTable();
-    await ensureRoCommsTable();
-    const link = await dbGet('SELECT * FROM estimate_approval_links WHERE token = $1', [req.params.token]);
-    if (!link) return res.status(404).json({ error: 'Link not found' });
-    if (link.responded_at) return res.status(400).json({ error: 'Response already submitted' });
-
-    const ro = await dbGet('SELECT * FROM repair_orders WHERE id = $1', [link.ro_id]);
-    if (!ro) return res.status(404).json({ error: 'Repair order not found' });
-
-    const { decision, reason } = req.body || {};
-    if (!['approve', 'decline'].includes(decision)) {
-      return res.status(400).json({ error: 'Invalid decision' });
-    }
-
-    const now = new Date().toISOString();
-    if (decision === 'approve') {
-      const fromStatus = ro.status;
-      // Public endpoint — no req.user/shop_id available. Ownership is enforced by the approval
-      // token (uuidv4, cryptographically unguessable). ro.id is derived from the token lookup,
-      // so only the holder of the valid token can trigger this update. No shop_id needed here.
-      await dbRun('UPDATE repair_orders SET status = $1, estimate_approved_at = $2, updated_at = $3 WHERE id = $4', ['approval', now, now, ro.id]);
-      await dbRun(
-        'INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by, note) VALUES ($1, $2, $3, $4, $5, $6)',
-        [uuidv4(), ro.id, fromStatus, 'approval', null, 'Estimate approved by customer via public approval link']
-      );
-      notifyStatusChange(ro.shop_id, ro, 'approval');
-      queueStatusSMS(ro.id, ro.shop_id, 'approval');
-      await dbRun('UPDATE estimate_approval_links SET responded_at = $1 WHERE token = $2', [now, req.params.token]);
-      return res.json({ ok: true, decision: 'approve' });
-    }
-
-    if (!reason?.trim()) return res.status(400).json({ error: 'Reason is required when requesting changes' });
-
-    await dbRun(
-      `INSERT INTO ro_comms (id, ro_id, shop_id, user_id, channel, direction, summary)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [uuidv4(), ro.id, ro.shop_id, null, 'email', 'inbound', `Estimate change request: ${reason.trim()}`]
-    );
-    await dbRun('UPDATE estimate_approval_links SET responded_at = $1, decline_reason = $2 WHERE token = $3', [now, reason.trim(), req.params.token]);
-    return res.json({ ok: true, decision: 'decline' });
-  } catch (err) {
-    return res.status(500).json({ error: err.message });
-  }
+    const { ro, decision } = await respondLegacyApproval(pool, req.params.token, req.body, 'status');
+    if (decision === 'approve') queueStatusSMS(ro.id, ro.shop_id, 'approval');
+    return res.json({ ok: true, decision });
+  } catch (err) { return approvalError(res, err); }
 });
+
+router.use('/approval', publicRequestError(publicTokenLimiter));
 
 router.post('/', auth, requireTechnician, roLimitGuard, async (req, res) => {
   try {
-    const { customer_id, vehicle_id, job_type, payment_type, claim_number, policy_number, insurer, adjuster_name, adjuster_phone, adjuster_email, deductible, notes, estimated_delivery, damaged_panels, sms_consent, email_consent, preferred_contact_method } = req.body;
+    const consent = consentMutation(req.body, req.user.id);
+    const { customer_id, vehicle_id, job_type, payment_type, claim_number, policy_number, insurer, adjuster_name, adjuster_phone, adjuster_email, deductible, notes, estimated_delivery, damaged_panels, email_consent, preferred_contact_method } = req.body;
     if (!customer_id || !vehicle_id) {
       return res.status(400).json({ error: 'customer_id and vehicle_id are required' });
     }
@@ -1874,10 +1870,12 @@ router.post('/', auth, requireTechnician, roLimitGuard, async (req, res) => {
       [vehicle_id, req.user.shop_id, customer_id]
     );
     if (!vehicle) return res.status(400).json({ error: 'Invalid vehicle_id for this customer/shop' });
-    if (typeof sms_consent === 'boolean') {
+    if (consent) {
       await dbRun(
-        'UPDATE customers SET sms_consent = $1 WHERE id = $2 AND shop_id = $3',
-        [sms_consent, customer_id, req.user.shop_id]
+        `UPDATE customers SET sms_consent = $1, sms_consent_at = $2,
+           sms_consent_method = $3, sms_consent_by = $4 WHERE id = $5 AND shop_id = $6`,
+        [consent.sms_consent, consent.sms_consent_at, consent.sms_consent_method,
+          consent.sms_consent_by, customer_id, req.user.shop_id]
       );
     }
     if (typeof email_consent === 'boolean' || preferred_contact_method) {
@@ -1989,14 +1987,18 @@ router.post('/', auth, requireTechnician, roLimitGuard, async (req, res) => {
         // Get customer and shop info
         const roContext = await dbGet(`
           SELECT ro.*, c.phone as customer_phone, c.name as customer_name,
+                 c.sms_consent, c.sms_consent_at, c.sms_consent_method, c.sms_consent_by,
                  s.name as shop_name, s.twilio_phone_number
           FROM repair_orders ro
-          LEFT JOIN customers c ON c.id = ro.customer_id
+          LEFT JOIN customers c ON c.id = ro.customer_id AND c.shop_id = ro.shop_id
           LEFT JOIN shops s ON s.id = ro.shop_id
-          WHERE ro.id = $1
-        `, [roId]);
+          WHERE ro.id = $1 AND ro.shop_id = $2
+        `, [roId, req.user.shop_id]);
         
-        if (!roContext?.customer_phone) return;
+        if (!roContext?.customer_phone || !hasConfirmedSmsConsent(roContext)) {
+          console.log('[Auto-Track] SMS skipped: missing phone or confirmed consent');
+          return;
+        }
         
         const token = await ensureTrackingToken(roId, req.user.shop_id);
         
@@ -2005,11 +2007,11 @@ router.post('/', auth, requireTechnician, roLimitGuard, async (req, res) => {
           const baseUrl = process.env.APP_URL || process.env.PUBLIC_URL || 'https://revvshop.app';
           const trackingUrl = `${baseUrl}/track/${token}`;
           const message = `Hi ${roContext.customer_name || 'there'}! Track your vehicle repair at ${roContext.shop_name}:\n${trackingUrl}`;
-          await sendSMS(roContext.customer_phone, message, { shopId: req.user.shop_id });
-          console.log(`[Auto-Track] Tracking link SMS sent for RO ${roNumber}`);
+          const result = await sendSMS(roContext.customer_phone, message, { shopId: req.user.shop_id });
+          console.log(result.ok ? '[Auto-Track] SMS sent' : '[Auto-Track] SMS not sent');
         }
       } catch (err) {
-        console.error('[Auto-Track] Failed to send tracking SMS:', err.message);
+        console.error('[Auto-Track] Tracking SMS failed');
       }
     });
 
@@ -2039,7 +2041,7 @@ router.post('/', auth, requireTechnician, roLimitGuard, async (req, res) => {
     }
     res.status(201).json(enriched);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({ error: err.message });
   }
 });
 
@@ -2055,7 +2057,9 @@ async function importEstimateHandler(req, res) {
 
     const customerName = cleanText(customer.name || body.customer_name, 160) || 'Imported Estimate Customer';
     const customerPhone = cleanText(customer.phone || body.customer_phone, 50);
-    const customerSmsConsent = body.sms_consent === true || customer.sms_consent === true;
+    // Only the explicit top-level staff attestation can consent; OCR/nested evidence is ignored.
+    const consent = consentMutation(body, req.user.id);
+    const customerSmsConsent = consent?.sms_consent === true;
     const vehicleYear = cleanYear(vehicle.year || body.vehicle_year);
     const vehicleMake = cleanText(vehicle.make || body.vehicle_make, 80);
     const vehicleModel = cleanText(vehicle.model || body.vehicle_model, 120);
@@ -2086,8 +2090,8 @@ async function importEstimateHandler(req, res) {
     await client.query('BEGIN');
 
     await txRun(
-      `INSERT INTO customers (id, shop_id, name, phone, sms_consent, email, address, insurance_company, policy_number)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      `INSERT INTO customers (id, shop_id, name, phone, sms_consent, email, address, insurance_company, policy_number, sms_consent_at, sms_consent_method, sms_consent_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
       [
         customerId,
         req.user.shop_id,
@@ -2098,6 +2102,7 @@ async function importEstimateHandler(req, res) {
         cleanText(customer.address || body.customer_address, 255),
         insuranceCompany,
         cleanText(insurance.policy_number || body.policy_number, 120),
+        consent?.sms_consent_at || null, consent?.sms_consent_method || null, consent?.sms_consent_by || null,
       ]
     );
 
@@ -2248,6 +2253,7 @@ async function importEstimateHandler(req, res) {
         console.error('[RO Import Estimate] Rollback error:', rollbackErr?.message || rollbackErr);
       }
     }
+    if (err.status === 400 || err.status === 401) return res.status(err.status).json({ error: err.message });
     console.error('[RO Import Estimate] Error:', err?.message || err);
     return res.status(500).json({ error: 'Internal server error' });
   } finally {
@@ -2301,7 +2307,10 @@ router.put('/:id', auth, requireTechnician, async (req, res) => {
     const statusChanged = Object.prototype.hasOwnProperty.call(updates, 'status') && updates.status !== ro.status;
     if (Object.keys(updates).length > 0) {
       // If true_profit is explicitly provided, use it as a manual override — skip auto-calculation
-      if (!Object.prototype.hasOwnProperty.call(body, 'true_profit')) {
+      if ((await selectedEconomics(req.user.shop_id, [ro.id])).has(String(ro.id))) {
+        // Selected economics are immutable; generic edits cannot restore manual profit.
+        delete updates.true_profit;
+      } else if (!Object.prototype.hasOwnProperty.call(body, 'true_profit')) {
         const profit = calculateProfit({ ...ro, ...updates });
         updates.true_profit = profit.trueProfit;
       }
@@ -2578,11 +2587,12 @@ router.patch('/:id', auth, requireTechnician, async (req, res) => {
 
 router.post('/:id/approve-estimate', auth, requireTechnician, async (req, res) => {
   try {
-    const ro = await dbGet('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
-    if (!ro) return res.status(404).json({ error: 'Not found' });
-    const now = new Date().toISOString();
-    await dbRun('UPDATE repair_orders SET estimate_approved_at = $1, estimate_approved_by = $2, updated_at = $3 WHERE id = $4 AND shop_id = $5', [now, req.user.id, now, req.params.id, req.user.shop_id]);
-    const updatedRO = await dbGet('SELECT * FROM repair_orders WHERE id = $1', [req.params.id]);
+    const ro = await withLockedRo(req.params.id, req.user.shop_id, async (client, lockedRo) => {
+      const now = new Date().toISOString();
+      await client.query('UPDATE repair_orders SET estimate_approved_at = $1, estimate_approved_by = $2, updated_at = $3 WHERE id = $4 AND shop_id = $5', [now, req.user.id, now, req.params.id, req.user.shop_id]);
+      return lockedRo;
+    });
+    const updatedRO = await dbGet('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
     res.json(await enrichRO(updatedRO));
 
     setImmediate(async () => {
@@ -2601,40 +2611,37 @@ router.post('/:id/approve-estimate', auth, requireTechnician, async (req, res) =
       }
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err instanceof PaymentError ? err.status : 500).json({ error: err instanceof PaymentError ? err.message : 'Could not approve repair order' });
   }
 });
 
 router.post('/:id/mark-paid', auth, requireTechnician, async (req, res) => {
   try {
     const { payment_method } = req.body || {};
-    const ro = await dbGet('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
-    if (!ro) return res.status(404).json({ error: 'Not found' });
-
-    const now = new Date().toISOString();
     const method = payment_method || 'cash';
-    const money = await getRoMoneySummary(req.params.id, req.user.shop_id);
-
-    // Mark payment received only — do NOT auto-close the RO.
-    // Admin/owner can manually close when ready.
-    await dbRun(
-      `UPDATE repair_orders
-       SET payment_received = 1,
-           payment_received_at = $1,
-           payment_method = $2,
-           payment_status = $3,
-           amount_paid_cents = $4,
-           amount_owed_cents = $5,
-           updated_at = $6
-       WHERE id = $7 AND shop_id = $8`,
-      [now, method, 'paid', money.totalCents, money.totalCents, now, req.params.id, req.user.shop_id]
-    );
-
-    // Log payment event (no status change)
-    await dbRun(
-      'INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by, note) VALUES ($1, $2, $3, $4, $5, $6)',
-      [uuidv4(), req.params.id, ro.status, ro.status, req.user.id, `Payment received (${method})`]
-    );
+    const ro = await withLockedRo(req.params.id, req.user.shop_id, async (client, lockedRo) => {
+      await reconcileLocked(client, lockedRo, { actorId: req.user.id, reason: 'mark_paid' });
+      let balance;
+      try { balance = await getPaymentBalance(client, lockedRo); }
+      catch (error) { if (error instanceof PaymentError) return error; throw error; }
+      if (balance.hasOpenPayments || balance.occupiedCents > 0) {
+        return new PaymentError('Cannot mark paid while a payment is open or requires reconciliation', 409);
+      }
+      const now = new Date().toISOString();
+      // The money and event commit together; provider reservations use this lock too.
+      await client.query(
+        `UPDATE repair_orders
+         SET payment_received = 1, payment_received_at = $1, payment_method = $2,
+             payment_status = $3, amount_paid_cents = $4, amount_owed_cents = $5, updated_at = $6
+         WHERE id = $7 AND shop_id = $8`,
+        [now, method, 'paid', balance.money.totalCents, balance.money.totalCents, now, req.params.id, req.user.shop_id]
+      );
+      await client.query(
+        'INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by, note) VALUES ($1, $2, $3, $4, $5, $6)',
+        [uuidv4(), req.params.id, lockedRo.status, lockedRo.status, req.user.id, `Payment received (${method})`]
+      );
+      return lockedRo;
+    });
     notifyUsersByRole(
       req.user.shop_id,
       ['owner'],
@@ -2644,7 +2651,7 @@ router.post('/:id/mark-paid', auth, requireTechnician, async (req, res) => {
       req.params.id
     ).catch(() => {});
 
-    const updatedRO = await dbGet('SELECT * FROM repair_orders WHERE id = $1', [req.params.id]);
+    const updatedRO = await dbGet('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
     res.json(await enrichRO(updatedRO));
 
     // Send paid invoice email immediately on payment
@@ -2653,52 +2660,88 @@ router.post('/:id/mark-paid', auth, requireTechnician, async (req, res) => {
     queueQuickBooksSync(req.params.id, req.user.shop_id);
     // Review email and closed-status email fire only when RO is actually closed (via status change)
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err instanceof PaymentError ? err.status : 500).json({
+      error: err instanceof PaymentError ? err.message : 'Could not mark repair order paid',
+    });
   }
 });
 
 router.delete('/:id', auth, requireTechnician, async (req, res) => {
+  let client;
   try {
-    const { id } = req.params;
-    const ro = await dbGet(
-      'SELECT id, status, shop_id FROM repair_orders WHERE id = $1 AND shop_id = $2',
-      [id, req.user.shop_id]
-    );
-    if (!ro) return res.status(404).json({ error: 'Not found' });
-    if (ro.shop_id !== req.user.shop_id) return res.status(403).json({ error: 'Forbidden' });
+    client = await pool.connect();
+    await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
+    const params = [req.params.id, req.user.shop_id];
+    // Serialize with draft saves, revision commits and approval decisions.
+    const ro = (await client.query(
+      'SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2 FOR UPDATE', params
+    )).rows[0];
+    if (!ro) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Not found' });
+    }
+    const exists = async table => (await client.query('SELECT to_regclass($1) AS relation', [table])).rows[0].relation;
+    // Evidence, not the actor's rank or a positive payment sum, decides deletability.
+    // SELECT * tolerates the optional legacy approval/payment columns on TEXT/UUID ROs.
+    let protectedHistory = ['paid', 'succeeded', 'partial', 'pending'].includes(String(ro.payment_status || '').trim().toLowerCase()) ||
+      ro.payment_received === true || Number(ro.payment_received) > 0 || Number(ro.amount_paid_cents) > 0 ||
+      Number(ro.paid_amount) > 0 || !!ro.paid_at || !!ro.payment_received_at || !!ro.stripe_payment_intent_id ||
+      !!ro.estimate_approved_at || !!ro.estimate_approved_by || ro.insurance_approved_amount != null ||
+      ['approved', 'accepted', 'signed'].includes(String(ro.estimate_status || '').trim().toLowerCase()) ||
+      ['approved', 'signed'].includes(String(ro.status || '').trim().toLowerCase());
+    for (const [table, predicate] of [
+      ['ro_payments', 'TRUE'], // Includes zero successes, failures and all financial history.
+      ['ro_payment_attempts', 'TRUE'], // Never discard even a failed/settled reservation.
+      ['estimate_approval_links', "responded_at IS NOT NULL AND COALESCE(decline_reason, '') = ''"],
+      ['ro_panel_estimator_approval_events', "kind = 'decision' AND decision = 'approve'"],
+      ['claim_links', 'TRUE'], // Issued carrier assessments can carry approved money.
+      // Retain every issued agreement, including pending signatures and voided history.
+      // Agreement signing locks its own request; refusing all requests closes that race.
+      ['agreement_requests', 'TRUE'],
+    ]) {
+      if (await exists(table)) {
+        const evidence = await client.query(`SELECT 1 FROM ${table}
+          WHERE ro_id = $1 AND shop_id = $2 AND (${predicate}) LIMIT 1`, params);
+        protectedHistory ||= evidence.rowCount > 0;
+      }
+    }
+    if (protectedHistory) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Cannot delete a repair order with payment history, a payment reservation, approval or claim history, or an issued or signed agreement' });
+    }
+    if (await exists('ro_panel_estimator_drafts')) {
+      const draft = (await client.query(
+        'SELECT 1 FROM ro_panel_estimator_drafts WHERE ro_id = $1 AND shop_id = $2', params
+      )).rowCount;
+      if (draft) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'PANEL_REVISION_CONFLICT' });
+      }
+    }
 
-    // Delete child records that lack CASCADE to avoid FK violations
-    await dbRun(
-      `DELETE FROM job_status_log
-       WHERE ro_id = $1
-         AND ro_id IN (SELECT id FROM repair_orders WHERE id = $1 AND shop_id = $2)`,
-      [id, req.user.shop_id]
-    );
-    await dbRun('DELETE FROM ro_payments WHERE ro_id = $1 AND shop_id = $2', [id, req.user.shop_id]).catch(() => {});
-    await dbRun('DELETE FROM estimate_approval_links WHERE ro_id = $1 AND shop_id = $2', [id, req.user.shop_id]).catch(() => {});
-    await dbRun('DELETE FROM ro_comms WHERE ro_id = $1 AND shop_id = $2', [id, req.user.shop_id]).catch(() => {});
-    await dbRun('DELETE FROM portal_tokens WHERE ro_id = $1 AND shop_id = $2', [id, req.user.shop_id]).catch(() => {});
-    await dbRun('DELETE FROM sms_messages WHERE ro_id = $1 AND shop_id = $2', [id, req.user.shop_id]).catch(() => {});
-    await dbRun('DELETE FROM ro_internal_notes WHERE ro_id = $1 AND shop_id = $2', [id, req.user.shop_id]).catch(() => {});
-    await dbRun('DELETE FROM ro_supplements WHERE ro_id = $1 AND shop_id = $2', [id, req.user.shop_id]).catch(() => {});
-    await dbRun(
-      `DELETE FROM ro_photos
-       WHERE ro_id = $1
-         AND ro_id IN (SELECT id FROM repair_orders WHERE id = $1 AND shop_id = $2)`,
-      [id, req.user.shop_id]
-    ).catch(() => {});
-    await dbRun('DELETE FROM estimate_line_items WHERE ro_id = $1 AND shop_id = $2', [id, req.user.shop_id]).catch(() => {});
-    await dbRun(
-      `DELETE FROM parts_requests
-       WHERE ro_id = $1
-         AND ro_id IN (SELECT id FROM repair_orders WHERE id = $1 AND shop_id = $2)`,
-      [id, req.user.shop_id]
-    ).catch(() => {});
-    await dbRun('DELETE FROM parts_orders WHERE ro_id = $1 AND shop_id = $2', [id, req.user.shop_id]).catch(() => {});
-    await dbRun('DELETE FROM repair_orders WHERE id = $1 AND shop_id = $2', [id, req.user.shop_id]);
+    // Fixed table names only. Optional absent tables are checked before SQL, never
+    // ignored after an error that would leave PostgreSQL's transaction aborted.
+    for (const [table, tenantColumn] of [
+      ['job_status_log', false], ['estimate_approval_links', true],
+      ['ro_comms', true], ['portal_tokens', true], ['sms_messages', true],
+      ['ro_internal_notes', true], ['ro_supplements', true], ['ro_photos', false],
+      ['estimate_line_items', true], ['parts_requests', false], ['parts_orders', true],
+    ]) {
+      if (!await exists(table)) continue;
+      await client.query(`DELETE FROM ${table} WHERE ro_id = $1
+        ${tenantColumn ? 'AND shop_id = $2' : ''}
+        AND ro_id::text IN (SELECT id::text FROM repair_orders WHERE id::text = $1::text AND shop_id::text = $2::text)`, params);
+    }
+    await client.query('DELETE FROM repair_orders WHERE id = $1 AND shop_id = $2', params);
+    await client.query('COMMIT');
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (client) {
+      try { await client.query('ROLLBACK'); } catch (rollbackError) { err.rollbackError = rollbackError; }
+    }
+    res.status(500).json({ error: 'Could not delete repair order' });
+  } finally {
+    if (client) client.release();
   }
 });
 

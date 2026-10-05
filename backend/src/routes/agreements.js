@@ -12,6 +12,16 @@ const {
 const { canUseProfile, prepareDetails, buildPreparedPdf } = require('../services/milesAgreements');
 const { loadAutofill, checkRevision } = require('../services/agreementAutofill');
 
+function recipientEmail(supplied, saved) {
+  const email = String(supplied || saved || '').trim();
+  if (email && (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254)) throw inputError('Enter a valid customer email.');
+  return email;
+}
+function matchesIntake(parent, details) {
+  const intake = parent.preparation_details;
+  return intake.vin === details.vin && intake.name === details.name && (intake.claim || '') === (details.claim || '');
+}
+
 // Factory also lets integration tests use a disposable database without touching production.
 function createAgreementsRouter(database = pool) {
   const router = express.Router();
@@ -25,7 +35,7 @@ function createAgreementsRouter(database = pool) {
   const handle = (fn) => async (req, res) => {
     try { await ensureSchema(); await fn(req, res); }
     catch (err) {
-      if (err.code === '23505') err = inputError('An unsigned request already exists for this agreement. Use its signing link or void it before creating another.', 409);
+      if (err.code === '23505') err = inputError('An active request already exists for this agreement. Use its signing link. Only pending requests can be voided by an owner or admin.', 409);
       if (!err.status) console.error('[Agreements]', err.code || err.name);
       if (!res.headersSent) res.status(err.status || 500).json({ error: err.status ? err.message : 'Could not complete the agreement action. Please try again.' });
     }
@@ -184,15 +194,19 @@ function createAgreementsRouter(database = pool) {
     const template = (await client.query('SELECT * FROM agreement_templates WHERE id::text=$1 AND shop_id=$2 AND archived=FALSE', [req.body.template_id,req.user.shop_id])).rows[0];
     if (!template || !canUseProfile(template, req.user.shop_id)) throw inputError('Choose an available prepared shop agreement.');
     const identity = context.identity;
+    // Validate the full saved email, just as creation does, before display truncation.
+    const recipient = (await client.query(`SELECT c.email FROM repair_orders r
+      LEFT JOIN customers c ON c.id=r.customer_id AND c.shop_id=r.shop_id
+      WHERE r.id::text=$1 AND r.shop_id::text=$2`, [req.params.roId, req.user.shop_id])).rows[0];
     const details = prepareDetails(template, req.user.shop_id, {
       vehicle_make: identity.vehicle, vin: identity.vin, claim_number: identity.claim,
-      customer_phone: identity.phone, customer_email: String(req.body.recipient_email || identity.email),
+      customer_phone: identity.phone, customer_email: recipientEmail(req.body.recipient_email, recipient?.email),
     }, req.body.recipient_name || identity.name, req.body.preparation);
     let parentId = null;
     if (details.stage === 'completion') {
       const parent = (await client.query(`SELECT id,preparation_details FROM agreement_requests WHERE shop_id=$1 AND ro_id=$2 AND template_id=$3
         AND status='signed' AND preparation_details->>'stage'='intake' ORDER BY completed_at DESC LIMIT 1`, [req.user.shop_id,req.params.roId,template.id])).rows[0];
-      if (!parent || parent.preparation_details.vin !== details.vin || parent.preparation_details.name !== details.name) throw inputError('A matching signed intake is required before completion.', 409);
+      if (!parent || !matchesIntake(parent, details)) throw inputError('A matching signed intake (customer, VIN and claim) is required before completion.', 409);
       parentId = parent.id;
     }
     return buildPreparedPdf(template, details, identity.ro_number, parentId);
@@ -206,15 +220,18 @@ function createAgreementsRouter(database = pool) {
       const ro = (await client.query(`SELECT ro.ro_number,c.name AS customer_name,c.email AS customer_email,s.name AS shop_name
         FROM repair_orders ro JOIN shops s ON s.id=ro.shop_id
         LEFT JOIN customers c ON c.id=ro.customer_id AND c.shop_id=ro.shop_id
-        WHERE ro.id::text=$1 AND ro.shop_id::text=$2`, [req.params.roId, req.user.shop_id])).rows[0];
+        WHERE ro.id::text=$1 AND ro.shop_id::text=$2 FOR UPDATE OF ro`, [req.params.roId, req.user.shop_id])).rows[0];
       if (!ro) throw inputError('Repair order not found.', 404);
-      if (req.body.source_revision !== undefined) checkRevision(req.body.source_revision, await loadAutofill(client, req.params.roId, req.user.shop_id));
       const template = (await client.query(`SELECT * FROM agreement_templates
         WHERE id::text=$1 AND shop_id=$2 AND archived=FALSE FOR SHARE`, [req.body.template_id, req.user.shop_id])).rows[0];
       if (!template) throw inputError('Choose an active shop agreement.', 400);
+      // Prepared templates always require review of the current source snapshot.
+      // Static uploads remain revision-free unless the caller supplies a revision.
+      if (template.preparation_kind || Object.prototype.hasOwnProperty.call(req.body, 'source_revision')) {
+        checkRevision(req.body.source_revision, await loadAutofill(client, req.params.roId, req.user.shop_id));
+      }
       const name = requiredText(req.body.recipient_name || ro.customer_name, 'Customer name', 120);
-      const email = String(req.body.recipient_email || ro.customer_email || '').trim();
-      if (email && (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254)) throw inputError('Enter a valid customer email.');
+      const email = recipientEmail(req.body.recipient_email, ro.customer_email);
       let prepared = null; let details = null; let parentId = null;
       if (template.preparation_kind) {
         if (!canUseProfile(template, req.user.shop_id)) throw inputError('This authorization is not available for this shop.', 403);
@@ -230,7 +247,7 @@ function createAgreementsRouter(database = pool) {
             AND status='signed' AND preparation_details->>'stage'='intake' ORDER BY completed_at DESC LIMIT 1`,
           [req.user.shop_id, req.params.roId, template.id])).rows[0];
           if (!parent) throw inputError('Complete the intake signature before preparing the completion acknowledgment.', 409);
-          if (parent.preparation_details.vin !== details.vin || parent.preparation_details.name !== details.name) throw inputError('Customer or VIN differs from the signed intake. Review the repair order before completion.', 409);
+          if (!matchesIntake(parent, details)) throw inputError('Customer, VIN or claim differs from the signed intake. Review the repair order before completion.', 409);
           parentId = parent.id;
         }
         prepared = await buildPreparedPdf(template, details, ro.ro_number, parentId);
@@ -256,11 +273,11 @@ function createAgreementsRouter(database = pool) {
     });
     res.json({ signing_path: `/sign#${token}` });
   }));
-  router.post('/:id/void', handle(async (req, res) => {
+  router.post('/:id/void', manager, handle(async (req, res) => {
     await transaction(async (client) => {
       const row = (await client.query(`UPDATE agreement_requests SET status='voided'
         WHERE id::text=$1 AND shop_id=$2 AND status='pending' RETURNING id`, [req.params.id, req.user.shop_id])).rows[0];
-      if (!row) throw inputError('Only an unsigned agreement can be voided.', 409);
+      if (!row) throw inputError('Only a pending agreement can be voided.', 409);
       await event(client, row.id, 'voided', req);
     });
     res.json({ success: true });

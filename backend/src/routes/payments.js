@@ -1,14 +1,13 @@
 const express = require('express');
-const { v4: uuidv4 } = require('uuid');
-const { dbGet, dbAll, dbRun } = require('../db');
+const { dbGet, dbAll } = require('../db');
 const auth = require('../middleware/auth');
 const { requireTechnician } = require('../middleware/roles');
 const { createNotification } = require('../services/notifications');
-const { createPaymentIntent, constructWebhookEvent } = require('../services/stripe');
+const { getStripeClient, createPaymentIntent, constructWebhookEvent } = require('../services/stripe');
 const { sendMail } = require('../services/mailer');
 const { paymentConfirmationEmail } = require('../services/emailTemplates');
 const { createPaymentCheckoutLinkForRo, sendClosedPaidInvoiceEmail } = require('../services/customerBilling');
-const { getPaidCents, getRoMoneySummary, reconcilePaymentStatus } = require('../services/roMoney');
+const { PaymentError, reconcileReservations, reservePayment, metadataFor, recordProviderResult, settlePaymentEvent } = require('../services/paymentReservations');
 
 const router = express.Router();
 
@@ -18,117 +17,36 @@ function normalizedPaymentStatus(ro) {
   return 'unpaid';
 }
 
-function normalizeAmountCents(amount) {
-  const parsed = Number(amount);
-  if (!Number.isInteger(parsed) || parsed <= 0) return null;
-  return parsed;
-}
-
-async function ensurePaymentsTable() {
-  await dbRun(`
-    CREATE TABLE IF NOT EXISTS ro_payments (
-      id TEXT PRIMARY KEY,
-      shop_id TEXT NOT NULL,
-      ro_id TEXT NOT NULL,
-      stripe_payment_intent_id TEXT UNIQUE,
-      amount_cents INTEGER NOT NULL,
-      currency TEXT DEFAULT 'usd',
-      status TEXT DEFAULT 'pending',
-      payment_method TEXT,
-      receipt_email TEXT,
-      paid_at TEXT,
-      failure_message TEXT,
-      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-      updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-    )
-  `);
-  await dbRun(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS amount_paid_cents INTEGER DEFAULT 0`);
-  await dbRun(`ALTER TABLE repair_orders ADD COLUMN IF NOT EXISTS amount_owed_cents INTEGER DEFAULT 0`);
-}
-
 async function handleCreateIntent(req, res) {
   try {
-    await ensurePaymentsTable();
-
     const { ro_id: roId, amount, allow_partial } = req.body || {};
-    if (!roId) {
-      return res.status(400).json({ error: 'ro_id is required' });
-    }
-
-    const ro = await dbGet(
-      'SELECT id, shop_id, ro_number, customer_id, payment_status, payment_received FROM repair_orders WHERE id = $1 AND shop_id = $2',
-      [roId, req.user.shop_id]
-    );
-    if (!ro) return res.status(404).json({ error: 'Repair order not found' });
-
-    const money = await getRoMoneySummary(ro.id, req.user.shop_id);
-    if (!money.lineCount || money.totalCents <= 0) {
-      return res.status(400).json({ error: 'No payable estimate line items found for this RO' });
-    }
-
-    const amountCents = amount === undefined ? money.totalCents : normalizeAmountCents(amount);
-    if (!amountCents) return res.status(400).json({ error: 'amount must be a positive integer in cents' });
-    if (amountCents !== money.totalCents && allow_partial !== true) {
-      return res.status(400).json({ error: 'Payment amount must match the server-calculated amount owed' });
-    }
-
-    const paymentIntent = await createPaymentIntent(amountCents, 'usd', {
-      roId: ro.id,
-      shopId: req.user.shop_id,
-      roNumber: ro.ro_number || '',
-      amountOwedCents: String(money.totalCents),
-      paymentKind: amountCents === money.totalCents ? 'full' : 'partial',
-    });
-
-    if (!paymentIntent) {
-      return res.status(503).json({ error: 'Stripe payments are not configured' });
-    }
-
-    const customer = ro.customer_id
-      ? await dbGet('SELECT email FROM customers WHERE id = $1', [ro.customer_id])
-      : null;
-
-    await dbRun(
-      `INSERT INTO ro_payments (id, shop_id, ro_id, stripe_payment_intent_id, amount_cents, currency, status, receipt_email)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       ON CONFLICT (stripe_payment_intent_id)
-       DO UPDATE SET amount_cents = EXCLUDED.amount_cents,
-                     currency = EXCLUDED.currency,
-                     status = EXCLUDED.status,
-                     receipt_email = EXCLUDED.receipt_email,
-                     updated_at = NOW()`,
-      [
-        uuidv4(),
-        req.user.shop_id,
-        ro.id,
-        paymentIntent.id,
-        amountCents,
-        paymentIntent.currency || 'usd',
-        paymentIntent.status || 'pending',
-        customer?.email || null,
-      ]
-    );
-
-    await dbRun(
-      `UPDATE repair_orders
-       SET payment_status = $1,
-           stripe_payment_intent_id = $2,
-           amount_owed_cents = $3,
-           updated_at = $4
-       WHERE id = $5 AND shop_id = $6`,
-      ['pending', paymentIntent.id, money.totalCents, new Date().toISOString(), ro.id, req.user.shop_id]
-    );
-
-    return res.json({
-      clientSecret: paymentIntent.client_secret,
-      paymentIntentId: paymentIntent.id,
-      amountCents,
-      amountOwedCents: money.totalCents,
-    });
+    if (!roId) return res.status(400).json({ error: 'ro_id is required' });
+    if (!getStripeClient()) return res.status(503).json({ error: 'Stripe payments are not configured' });
+    const attempt = await reservePayment({ roId, shopId: req.user.shop_id, kind: 'intent', amount, allowPartial: allow_partial });
+    const paymentIntent = await createPaymentIntent(attempt.amountCents, 'usd', metadataFor(attempt), attempt.idempotencyKey);
+    if (!paymentIntent) return res.status(503).json({ error: 'Stripe payments are not configured' });
+    await recordProviderResult(attempt, paymentIntent);
+    return res.json({ clientSecret: paymentIntent.client_secret, paymentIntentId: paymentIntent.id,
+      amountCents: attempt.amountCents, amountOwedCents: attempt.remainingCents });
   } catch (err) {
-    return res.status(500).json({ error: err.message || 'Failed to create payment intent' });
+    return res.status(err instanceof PaymentError ? err.status : 500).json({
+      error: err instanceof PaymentError ? err.message : 'Failed to create payment intent' });
   }
 }
+
+// Exact roles: the shared rank guard also admits assistants and superadmins.
+router.post('/reconcile/:roId', auth, (req, res, next) => {
+  if (!['owner', 'admin'].includes(req.user?.role)) return res.status(403).json({ error: 'Owner or admin access required' });
+  return next();
+}, async (req, res) => {
+  try {
+    const result = await reconcileReservations({ roId: req.params.roId, shopId: req.user.shop_id, actorId: req.user.id });
+    return res.json(result);
+  } catch (error) {
+    return res.status(error instanceof PaymentError ? error.status : 500).json({
+      error: error instanceof PaymentError ? error.message : 'Could not reconcile payments' });
+  }
+});
 
 router.post('/intent', auth, requireTechnician, handleCreateIntent);
 
@@ -147,7 +65,7 @@ router.post('/link/:roId', auth, requireTechnician, async (req, res) => {
     const ro = await dbGet(
       `SELECT ro.id, ro.shop_id, ro.ro_number, c.email AS customer_email, c.name AS customer_name
        FROM repair_orders ro
-       LEFT JOIN customers c ON c.id = ro.customer_id
+       LEFT JOIN customers c ON c.id = ro.customer_id AND c.shop_id = ro.shop_id
        WHERE ro.id = $1 AND ro.shop_id = $2`,
       [req.params.roId, req.user.shop_id]
     );
@@ -174,14 +92,12 @@ router.post('/link/:roId', auth, requireTechnician, async (req, res) => {
       trackingToken: result.trackingToken,
     });
   } catch (err) {
-    return res.status(500).json({ error: err.message || 'Could not create payment link' });
+    return res.status(500).json({ error: 'Could not create payment link' });
   }
 });
 
 router.post('/webhook', async (req, res) => {
   try {
-    await ensurePaymentsTable();
-
     const signature = req.headers['stripe-signature'];
     if (!signature) return res.status(400).json({ error: 'Missing stripe-signature header' });
 
@@ -190,140 +106,61 @@ router.post('/webhook', async (req, res) => {
       return res.status(200).json({ received: true, skipped: true });
     }
 
-    if (event.type === 'payment_intent.succeeded') {
-      const intent = event.data.object;
-      const roId = intent.metadata?.roId || null;
-      const shopId = intent.metadata?.shopId || null;
-      const paidAt = intent.created ? new Date(intent.created * 1000).toISOString() : new Date().toISOString();
-      const amountPaid = intent.amount_received || intent.amount || 0;
-
-      await dbRun(
-        `UPDATE ro_payments
-         SET status = $1,
-             payment_method = $2,
-             paid_at = $3,
-             updated_at = NOW()
-         WHERE stripe_payment_intent_id = $4`,
-        ['succeeded', 'card', paidAt, intent.id]
-      );
-
-      const existingPayment = await dbGet('SELECT id FROM ro_payments WHERE stripe_payment_intent_id = $1', [intent.id]);
-      if (!existingPayment && roId && shopId) {
-        await dbRun(
-          `INSERT INTO ro_payments (id, shop_id, ro_id, stripe_payment_intent_id, amount_cents, currency, status, payment_method, paid_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-          [uuidv4(), shopId, roId, intent.id, amountPaid, intent.currency || 'usd', 'succeeded', 'card', paidAt]
-        );
-      }
-
-      if (roId && shopId) {
-        const money = await getRoMoneySummary(roId, shopId);
-        const paidCents = await getPaidCents(roId, shopId);
-        const nextPaymentStatus = reconcilePaymentStatus({
-          paidCents,
-          owedCents: money.totalCents,
-        });
-        const paymentReceived = nextPaymentStatus === 'paid' ? 1 : 0;
-
-        await dbRun(
-          `UPDATE repair_orders
-           SET payment_status = $1,
-               stripe_payment_intent_id = $2,
-               payment_received = $3,
-               payment_received_at = $4,
-               payment_method = $5,
-               paid_at = $6,
-               paid_amount = $7,
-               amount_paid_cents = $8,
-               amount_owed_cents = $9,
-               updated_at = $10
-           WHERE id = $11 AND shop_id = $12`,
-          [nextPaymentStatus, intent.id, paymentReceived, paidAt, 'card', paidAt, amountPaid, paidCents, money.totalCents, new Date().toISOString(), roId, shopId]
-        );
-
-        const ro = await dbGet('SELECT ro_number FROM repair_orders WHERE id = $1 AND shop_id = $2', [roId, shopId]);
-        const owners = await dbAll('SELECT id FROM users WHERE shop_id = $1 AND role = $2', [shopId, 'owner']);
-        await Promise.all(
-          owners.map((owner) =>
-            createNotification(
-              shopId,
-              owner.id,
-              'payment',
-              'Payment Received',
-              `Payment was received for RO #${ro?.ro_number || 'N/A'}.`,
-              roId
-            )
+    const settled = await settlePaymentEvent(event);
+    if (settled) {
+      const { roId, shopId, amountPaid, ro } = settled;
+      const owners = await dbAll('SELECT id FROM users WHERE shop_id = $1 AND role = $2', [shopId, 'owner']);
+      await Promise.all(
+        owners.map((owner) =>
+          createNotification(
+            shopId,
+            owner.id,
+            'payment',
+            'Payment Received',
+            `Payment was received for RO #${ro?.ro_number || 'N/A'}.`,
+            roId
           )
-        );
-
-        // Send payment confirmation email to customer
-        setImmediate(async () => {
-          try {
-            const customer = await dbGet(
-              `SELECT c.email, c.name, s.name AS shop_name
-               FROM customers c
-               JOIN repair_orders ro ON c.id = ro.customer_id
-               JOIN shops s ON s.id = ro.shop_id
-               WHERE ro.id = $1 AND ro.shop_id = $2`,
-              [roId, shopId]
-            );
-            
-            if (customer && customer.email) {
-              const amountFormatted = (amountPaid / 100).toFixed(2);
-              const { subject, html } = paymentConfirmationEmail({
-                shopName: customer.shop_name,
-                roNumber: ro?.ro_number || 'N/A',
-                amountFormatted: `$${amountFormatted}`,
-                customerName: customer.name,
-                email: customer.email,
-              });
-              
-              await sendMail(customer.email, subject, html).catch((e) => {
-                console.error(`[Email] Payment confirmation failed for RO ${roId}:`, e.message);
-              });
-            }
-            await sendClosedPaidInvoiceEmail({ roId, shopId }).catch((e) => {
-              console.error(`[Email] Closed+paid invoice email failed for RO ${roId}:`, e.message);
-            });
-          } catch (err) {
-            console.error(`[Email] Payment confirmation email handler error for RO ${roId}:`, err.message);
-          }
-        });
-      }
-    }
-
-    if (event.type === 'payment_intent.payment_failed') {
-      const intent = event.data.object;
-      const failureMessage = intent.last_payment_error?.message || 'Payment failed';
-
-      console.error(`[Stripe] payment_intent.payment_failed ${intent.id}: ${failureMessage}`);
-
-      await dbRun(
-        `UPDATE ro_payments
-         SET status = $1,
-             failure_message = $2,
-             updated_at = NOW()
-         WHERE stripe_payment_intent_id = $3`,
-        ['failed', failureMessage, intent.id]
+        )
       );
 
-      const roId = intent.metadata?.roId;
-      const shopId = intent.metadata?.shopId;
-      if (roId && shopId) {
-        await dbRun(
-          `UPDATE repair_orders
-           SET payment_status = $1,
-               stripe_payment_intent_id = $2,
-               updated_at = $3
-           WHERE id = $4 AND shop_id = $5`,
-          ['failed', intent.id, new Date().toISOString(), roId, shopId]
-        );
-      }
+      // Send payment confirmation email to customer
+      setImmediate(async () => {
+        try {
+          const customer = await dbGet(
+            `SELECT c.email, c.name, s.name AS shop_name
+             FROM customers c
+             JOIN repair_orders ro ON c.id = ro.customer_id
+             JOIN shops s ON s.id = ro.shop_id
+             WHERE ro.id = $1 AND ro.shop_id = $2`,
+            [roId, shopId]
+          );
+
+          if (customer && customer.email) {
+            const amountFormatted = (amountPaid / 100).toFixed(2);
+            const { subject, html } = paymentConfirmationEmail({
+              shopName: customer.shop_name,
+              roNumber: ro?.ro_number || 'N/A',
+              amountFormatted: `$${amountFormatted}`,
+              customerName: customer.name,
+              email: customer.email,
+            });
+
+            await sendMail(customer.email, subject, html).catch((e) => {
+              console.error('[Email] Payment confirmation failed');
+            });
+          }
+          await sendClosedPaidInvoiceEmail({ roId, shopId }).catch((e) => {
+            console.error('[Email] Closed+paid invoice email failed');
+          });
+        } catch (err) {
+          console.error('[Email] Payment confirmation handler failed');
+        }
+      });
     }
 
     return res.json({ received: true });
   } catch (err) {
-    return res.status(400).json({ error: `Webhook Error: ${err.message}` });
+    return res.status(400).json({ error: 'Payment webhook could not be processed' });
   }
 });
 
@@ -331,8 +168,6 @@ router.get('/history/:shopId', auth, requireTechnician, async (req, res) => {
   try {
     const { shopId } = req.params;
     if (shopId !== req.user.shop_id) return res.status(403).json({ error: 'Forbidden' });
-
-    await ensurePaymentsTable();
 
     const payments = await dbAll(
       `SELECT
@@ -360,7 +195,7 @@ router.get('/history/:shopId', auth, requireTechnician, async (req, res) => {
 
     return res.json({ payments });
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: 'Could not load payments' });
   }
 });
 
@@ -397,7 +232,7 @@ router.get('/ro/:roId', auth, requireTechnician, async (req, res) => {
       latestPayment,
     });
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: 'Could not load payments' });
   }
 });
 

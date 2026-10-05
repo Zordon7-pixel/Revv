@@ -1,5 +1,6 @@
 const router = require('express').Router();
 const { dbGet, dbRun } = require('../db');
+const { withLockedShopDeletion, PaymentError } = require('../services/paymentReservations');
 const auth = require('../middleware/auth');
 const { requireAdmin, requireTechnician, disallowAssistant } = require('../middleware/roles');
 
@@ -46,45 +47,45 @@ function isOwnerOrAdmin(user) {
   return ['owner', 'admin'].includes(user?.role);
 }
 
-async function resetRos(shopId) {
-  await dbRun(
+async function resetRos(shopId, run) {
+  await run(
     `DELETE FROM ro_photos
-     WHERE ro_id IN (SELECT id FROM repair_orders WHERE shop_id = $1)`,
+     WHERE ro_id::text IN (SELECT id::text FROM repair_orders WHERE shop_id = $1)`,
     [shopId]
   );
-  await dbRun(
+  await run(
     `DELETE FROM parts_orders
-     WHERE ro_id IN (SELECT id FROM repair_orders WHERE shop_id = $1)`,
+     WHERE ro_id::text IN (SELECT id::text FROM repair_orders WHERE shop_id = $1)`,
     [shopId]
   );
-  await dbRun(
+  await run(
     `DELETE FROM job_status_log
-     WHERE ro_id IN (SELECT id FROM repair_orders WHERE shop_id = $1)`,
+     WHERE ro_id::text IN (SELECT id::text FROM repair_orders WHERE shop_id = $1)`,
     [shopId]
   );
-  await dbRun(
+  await run(
     `DELETE FROM parts_requests
-     WHERE ro_id IN (SELECT id FROM repair_orders WHERE shop_id = $1)`,
+     WHERE ro_id::text IN (SELECT id::text FROM repair_orders WHERE shop_id = $1)`,
     [shopId]
   );
-  const roResult = await dbRun('DELETE FROM repair_orders WHERE shop_id = $1', [shopId]);
+  const roResult = await run('DELETE FROM repair_orders WHERE shop_id = $1', [shopId]);
   return roResult.rowCount || 0;
 }
 
-async function resetCustomers(shopId) {
-  await dbRun('UPDATE users SET customer_id = NULL WHERE shop_id = $1', [shopId]);
-  const result = await dbRun('DELETE FROM customers WHERE shop_id = $1', [shopId]);
+async function resetCustomers(shopId, run) {
+  await run('UPDATE users SET customer_id = NULL WHERE shop_id = $1', [shopId]);
+  const result = await run('DELETE FROM customers WHERE shop_id = $1', [shopId]);
   return result.rowCount || 0;
 }
 
-async function resetVehicles(shopId) {
-  const result = await dbRun('DELETE FROM vehicles WHERE shop_id = $1', [shopId]);
+async function resetVehicles(shopId, run) {
+  const result = await run('DELETE FROM vehicles WHERE shop_id = $1', [shopId]);
   return result.rowCount || 0;
 }
 
-async function resetTimeclock(shopId) {
-  await dbRun('DELETE FROM lunch_breaks WHERE shop_id = $1', [shopId]);
-  const entries = await dbRun('DELETE FROM time_entries WHERE shop_id = $1', [shopId]);
+async function resetTimeclock(shopId, run) {
+  await run('DELETE FROM lunch_breaks WHERE shop_id = $1', [shopId]);
+  const entries = await run('DELETE FROM time_entries WHERE shop_id = $1', [shopId]);
   return entries.rowCount || 0;
 }
 
@@ -192,35 +193,42 @@ router.post('/reset/:section', auth, requireAdmin, disallowAssistant, async (req
       return res.status(400).json({ error: 'Invalid section' });
     }
 
-    const deleted = {};
     const shopId = req.user.shop_id;
+    const deleted = await withLockedShopDeletion(shopId, async client => {
+      const deleted = {};
+      const run = (sql, params) => client.query(sql, params);
 
-    if (section === 'ros') {
-      deleted.ros = await resetRos(shopId);
-    }
+      if (section === 'ros') {
+        deleted.ros = await resetRos(shopId, run);
+      }
 
-    if (section === 'customers') {
-      deleted.customers = await resetCustomers(shopId);
-    }
+      if (section === 'customers') {
+        deleted.customers = await resetCustomers(shopId, run);
+      }
 
-    if (section === 'vehicles') {
-      deleted.vehicles = await resetVehicles(shopId);
-    }
+      if (section === 'vehicles') {
+        deleted.vehicles = await resetVehicles(shopId, run);
+      }
 
-    if (section === 'timeclock') {
-      deleted.timeclock = await resetTimeclock(shopId);
-    }
+      if (section === 'timeclock') {
+        deleted.timeclock = await resetTimeclock(shopId, run);
+      }
 
-    if (section === 'all') {
-      deleted.ros = await resetRos(shopId);
-      deleted.vehicles = await resetVehicles(shopId);
-      deleted.customers = await resetCustomers(shopId);
-      deleted.timeclock = await resetTimeclock(shopId);
-    }
+      if (section === 'all') {
+        deleted.ros = await resetRos(shopId, run);
+        deleted.vehicles = await resetVehicles(shopId, run);
+        deleted.customers = await resetCustomers(shopId, run);
+        deleted.timeclock = await resetTimeclock(shopId, run);
+      }
+
+      return deleted;
+    });
 
     return res.json({ ok: true, deleted });
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    return res.status(err instanceof PaymentError ? err.status : 500).json({
+      error: err instanceof PaymentError ? err.message : 'Could not reset data',
+    });
   }
 });
 

@@ -4,6 +4,7 @@ const { getStripeClient } = require('./stripe');
 const { sendMail } = require('./mailer');
 const { closedPaidInvoiceEmail } = require('./emailTemplates');
 const { getRoMoneySummary } = require('./roMoney');
+const { PaymentError, reservePayment, metadataFor, recordProviderResult } = require('./paymentReservations');
 
 function appBaseUrl() {
   return String(process.env.APP_URL || process.env.PUBLIC_URL || 'https://revvshop.app').replace(/\/+$/, '');
@@ -31,73 +32,50 @@ async function ensureTrackingToken(roId, shopId) {
 }
 
 async function createPaymentCheckoutLinkForRo({ roId, shopId, customerEmail = null, customerName = null, trackingToken = null }) {
-  const stripe = getStripeClient();
-  if (!stripe) {
-    return { ok: false, error: 'Stripe is not configured' };
-  }
+  try {
+    const stripe = getStripeClient();
+    if (!stripe) return { ok: false, error: 'Stripe is not configured' };
+    const attempt = await reservePayment({ roId, shopId, kind: 'checkout' });
+    const { ro, amountCents } = attempt;
+    const token = trackingToken || (await ensureTrackingToken(ro.id, ro.shop_id));
+    const statusUrl = `${appBaseUrl()}/track/${token}`;
 
-  const ro = await dbGet(
-    `SELECT id, shop_id, ro_number, payment_status, payment_received
-     FROM repair_orders
-     WHERE id = $1 AND shop_id = $2`,
-    [roId, shopId]
-  );
-  if (!ro) return { ok: false, error: 'Repair order not found' };
-
-  const paymentStatus = normalizedPaymentStatus(ro);
-  if (paymentStatus === 'paid') {
-    return { ok: false, error: 'Repair order is already paid' };
-  }
-
-  const money = await getRoMoneySummary(ro.id, ro.shop_id);
-  const amountCents = money.totalCents;
-  if (!amountCents) {
-    return { ok: false, error: 'No payable estimate line items found for this RO' };
-  }
-
-  const token = trackingToken || (await ensureTrackingToken(ro.id, ro.shop_id));
-  const statusUrl = `${appBaseUrl()}/track/${token}`;
-
-  const session = await stripe.checkout.sessions.create({
-    mode: 'payment',
-    customer_email: customerEmail || undefined,
-    line_items: [
-      {
-        price_data: {
-          currency: 'usd',
-          unit_amount: amountCents,
-          product_data: {
-            name: `Repair Order #${ro.ro_number || ro.id}`,
-            description: customerName ? `Customer: ${customerName}` : undefined,
+    const session = await stripe.checkout.sessions.create({
+      mode: 'payment',
+      customer_email: customerEmail || undefined,
+      line_items: [
+        {
+          price_data: {
+            currency: 'usd',
+            unit_amount: amountCents,
+            product_data: {
+              name: `Repair Order #${ro.ro_number || ro.id}`,
+              description: customerName ? `Customer: ${customerName}` : undefined,
+            },
           },
+          quantity: 1,
         },
-        quantity: 1,
+      ],
+      metadata: metadataFor(attempt),
+      payment_intent_data: {
+        metadata: metadataFor(attempt),
+        receipt_email: customerEmail || undefined,
       },
-    ],
-    metadata: {
-      roId: ro.id,
-      shopId: ro.shop_id,
-      roNumber: ro.ro_number || '',
-    },
-    payment_intent_data: {
-      metadata: {
-        roId: ro.id,
-        shopId: ro.shop_id,
-        roNumber: ro.ro_number || '',
-      },
-      receipt_email: customerEmail || undefined,
-    },
-    success_url: `${statusUrl}?payment=success`,
-    cancel_url: `${statusUrl}?payment=cancelled`,
-  });
+      success_url: `${statusUrl}?payment=success`,
+      cancel_url: `${statusUrl}?payment=cancelled`,
+    }, { idempotencyKey: attempt.idempotencyKey });
+    await recordProviderResult(attempt, session);
 
-  return {
-    ok: true,
-    url: session.url,
-    amountCents,
-    trackingToken: token,
-    expiresAt: session.expires_at ? new Date(session.expires_at * 1000).toISOString() : null,
-  };
+    return {
+      ok: true,
+      url: session.url,
+      amountCents,
+      trackingToken: token,
+      expiresAt: session.expires_at ? new Date(session.expires_at * 1000).toISOString() : null,
+    };
+  } catch (error) {
+    return { ok: false, error: error instanceof PaymentError ? error.message : 'Could not create payment link' };
+  }
 }
 
 async function sendClosedPaidInvoiceEmail({ roId, shopId, force = false }) {
@@ -105,7 +83,7 @@ async function sendClosedPaidInvoiceEmail({ roId, shopId, force = false }) {
     `SELECT ro.id, ro.shop_id, ro.ro_number, ro.status, ro.payment_status, ro.payment_received,
             ro.invoice_emailed_at, c.email AS customer_email, c.name AS customer_name, s.name AS shop_name
      FROM repair_orders ro
-     LEFT JOIN customers c ON c.id = ro.customer_id
+     LEFT JOIN customers c ON c.id = ro.customer_id AND c.shop_id = ro.shop_id
      LEFT JOIN shops s ON s.id = ro.shop_id
      WHERE ro.id = $1 AND ro.shop_id = $2`,
     [roId, shopId]

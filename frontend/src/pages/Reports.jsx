@@ -1,3 +1,5 @@
+import { getTokenPayload } from '../lib/auth'
+import { aggregateEconomics, EconomicsMoney, economicsTone } from './JobCosting'
 import { useEffect, useState } from 'react'
 import { BarChart3, FileBarChart, ShieldCheck } from 'lucide-react'
 import api from '../lib/api'
@@ -70,9 +72,10 @@ export default function Reports() {
 
   const targetDollars = Number(shop?.monthly_revenue_target || 85000)
   const revenueDollars = Number(summaryData?.revenue || 0)
-  const profitDollars = Number(summaryData?.profit || 0)
+  const economics = aggregateEconomics(summaryData, getTokenPayload()?.role, { profit: summaryData?.profit, margin: summaryData?.profit_margin_percent, legacyLabel: 'True profit' })
+  const profitDollars = economics.profit
   const revenuePercent = targetDollars > 0 ? Math.min(Math.round((revenueDollars / targetDollars) * 100), 100) : 0
-  const margin = revenueDollars > 0 ? Math.round((profitDollars / revenueDollars) * 100) : 0
+  const margin = economics.panel ? economics.margin : !economics.complete || profitDollars == null ? null : revenueDollars > 0 ? Math.round((profitDollars / revenueDollars) * 100) : 0
 
   return (
     <div className="mx-auto max-w-7xl space-y-5">
@@ -134,10 +137,11 @@ export default function Reports() {
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <StatInstrument label="Total jobs" value={<Numeric>{summaryData.total || 0}</Numeric>} detail="This billing month" />
                 <StatInstrument label="Completed" value={<Numeric className="text-good">{summaryData.completed || 0}</Numeric>} detail="Closed and total loss" tone="good" />
-                <StatInstrument label="True profit" value={<Money cents={dollarsToCents(profitDollars)} className={profitDollars >= 0 ? 'text-good' : 'text-crit'} />} detail="Recorded shop profit" tone={profitDollars >= 0 ? 'good' : 'crit'} />
-                <StatInstrument label="Profit margin" value={<Numeric className={margin >= 0 ? 'text-good' : 'text-crit'}>{margin}%</Numeric>} detail="Profit as share of revenue" tone={margin >= 0 ? 'good' : 'crit'} />
+                {!economics.hidden && <StatInstrument label={economics.label} value={<EconomicsMoney value={profitDollars} />} detail={economics.detail} tone={economicsTone(profitDollars)} />}
+                {!economics.hidden && <StatInstrument label={economics.panel ? 'Contribution / profit margin' : 'Profit margin'} value={margin == null ? 'Not supplied' : `${margin}%`} detail={economics.panel ? 'Server report margin' : 'Profit as share of revenue'} tone={economicsTone(margin)} />}
               </div>
 
+              {economics.known != null && <p className="text-sm text-muted">Partial known subtotal: <EconomicsMoney value={economics.known} /> · {economics.label}. Not all job economics supplied; not a total.</p>}
               <Panel title="Revenue by job type" description="Share of recorded monthly revenue">
                 {(summaryData.byType || []).length ? (
                   <div className="space-y-4 p-4">

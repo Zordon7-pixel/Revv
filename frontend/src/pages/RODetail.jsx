@@ -1,3 +1,4 @@
+import { isPanelSelected, rowEconomics, EconomicsMoney, EconomicsSource, economicsPercent } from './JobCosting'
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useParams, useNavigate } from 'react-router-dom'
@@ -229,6 +230,8 @@ export default function RODetail() {
   const currentUser = getTokenPayload()
   const currentUserId = currentUser?.id || null
   const currentUserRole = String(currentUser?.role || '').toLowerCase()
+  const selectedPanel = isPanelSelected(ro)
+  const panelMoney = ro ? rowEconomics(ro, currentUserRole) : null
   const currentUserIsTechRole = ['technician', 'employee', 'staff'].includes(currentUserRole)
 
   // useMemo must be before any early return — moved here from line 635
@@ -1819,9 +1822,9 @@ export default function RODetail() {
             {editing ? (
               <div className="space-y-2">
                 {[
-                  ['Parts Cost ($)', 'parts_cost'],
-                  ['Labor Cost ($)', 'labor_cost'],
-                  ['Sublet Cost ($)', 'sublet_cost'],
+                  [selectedPanel ? 'Parts billed ($)' : 'Parts Cost ($)', 'parts_cost'],
+                  [selectedPanel ? 'Labor billed ($)' : 'Labor Cost ($)', 'labor_cost'],
+                  [selectedPanel ? 'Sublet billed ($)' : 'Sublet Cost ($)', 'sublet_cost'],
                   ['Tax ($)', 'tax'],
                   ['Gross Estimate ($)', 'total'],
                   ['Deductible ($)', 'deductible'],
@@ -1838,7 +1841,7 @@ export default function RODetail() {
             ) : (
               <div className="space-y-2">
                 {[
-                  ['Parts Cost', `$${parseFloat(ro.parts_cost||0).toFixed(2)}`],
+                  [selectedPanel ? 'Parts billed' : 'Parts Cost', `$${parseFloat(ro.parts_cost||0).toFixed(2)}`],
                   [t('ro.labor'), `$${parseFloat(ro.labor_cost||0).toFixed(2)}`],
                   ['Sublet', `$${parseFloat(ro.sublet_cost||0).toFixed(2)}`],
                   ['Tax', `$${parseFloat(ro.tax||0).toFixed(2)}`],
@@ -1891,6 +1894,17 @@ export default function RODetail() {
                     ) : null
                   )
                 ))}
+                {selectedPanel ? (!panelMoney.hidden && (
+                  <section aria-label="Panel estimator economics" className="border-t border-line-2 pt-2 space-y-2">
+                    <EconomicsSource money={panelMoney} />
+                    <dl className="space-y-2 text-xs">
+                      <div className="flex justify-between gap-3"><dt>Estimated direct cost</dt><dd><EconomicsMoney value={panelMoney.cost} /></dd></div>
+                      <div className="flex justify-between gap-3"><dt>Estimated gross contribution</dt><dd><EconomicsMoney value={panelMoney.profit} /></dd></div>
+                      <div className="flex justify-between gap-3"><dt>Pre-tax contribution margin</dt><dd>{economicsPercent(panelMoney.margin)}</dd></div>
+                    </dl>
+                    <p className="text-xs text-muted">Before overhead; based on the selected estimate revision.</p>
+                  </section>
+                )) : (
                 <div className="border-t border-line-2 pt-2 flex justify-between items-center text-sm font-bold">
                   <span className="text-gold">True Profit</span>
                   {inlineEdit.field === 'true_profit' ? (
@@ -1909,11 +1923,12 @@ export default function RODetail() {
                   ) : (
                     <span className="flex items-center gap-1">
                       <span className="font-mono tabular-nums text-gold">${parseFloat(ro.true_profit||0).toFixed(2)}</span>
-                      {userIsAdmin && <button type="button" onClick={() => setInlineEdit({ field: 'true_profit', value: String(parseFloat(ro.true_profit || 0)) })} className="text-faint hover:text-ink"><Pencil size={10} /></button>}
+                      {userIsAdmin && <button type="button" aria-label="Edit true profit" onClick={() => setInlineEdit({ field: 'true_profit', value: String(parseFloat(ro.true_profit || 0)) })} className="text-faint hover:text-ink"><Pencil size={10} /></button>}
                     </span>
                   )}
                 </div>
-                {ro.profit_breakdown?.costProfileApplied && (
+                )}
+                {!selectedPanel && ro.profit_breakdown?.costProfileApplied && (
                   <div className="mt-3 rounded-lg border border-good/20 bg-good/5 p-3">
                     <div className="mb-2 text-[10px] font-bold uppercase tracking-wide text-good">True Shop Profit Breakdown</div>
                     <div className="space-y-1.5">
@@ -2307,7 +2322,7 @@ export default function RODetail() {
                 }`}
               >
                 <p className="whitespace-pre-wrap leading-snug">{msg.body}</p>
-                <p className={`text-[10px] mt-1 ${msg.direction === 'outbound' ? 'text-brand' : 'text-faint'}`}>
+                <p className={`text-[10px] mt-1 ${msg.direction === 'outbound' ? 'w-fit rounded px-1 bg-brand-deep text-[color:var(--on-brand)]' : 'text-faint'}`}>
                   {msg.direction === 'inbound' ? '← Customer' : '→ Sent'} · {new Date(msg.created_at).toLocaleString()}
                 </p>
               </div>

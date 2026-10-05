@@ -1,6 +1,13 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 
+// Never load the application's DB/.env while exercising this mocked service.
+const dbPath = require.resolve('../db');
+require.cache[dbPath] = {
+  id: dbPath, filename: dbPath, loaded: true,
+  exports: { dbGet: async () => { throw new Error('Unexpected database access'); } },
+};
+
 const {
   SMS_OPT_IN_CONFIRMATION_MESSAGE,
   sendCustomerOptInConfirmation,
@@ -27,17 +34,19 @@ test('customer opt-in confirmation is attempted for consented create with phone'
   ]);
 });
 
-test('customer opt-in confirmation is not attempted when sms_consent is false', async () => {
-  const calls = [];
-  const result = await sendCustomerOptInConfirmation({
-    phone: '+15551234567',
-    smsConsent: false,
-    shopId: 'shop-1',
-    send: async (...args) => calls.push(args),
-  });
+test('customer opt-in confirmation requires literal boolean true', async () => {
+  for (const smsConsent of [undefined, null, false, 'true', 'false', '1', 1, 0, {}, []]) {
+    const calls = [];
+    const result = await sendCustomerOptInConfirmation({
+      phone: '+15551234567',
+      smsConsent,
+      shopId: 'shop-1',
+      send: async (...args) => calls.push(args),
+    });
 
-  assert.equal(result.attempted, false);
-  assert.equal(calls.length, 0);
+    assert.equal(result.attempted, false);
+    assert.equal(calls.length, 0);
+  }
 });
 
 test('customer opt-in confirmation is not attempted when phone is empty', async () => {
@@ -84,7 +93,7 @@ test('POST /customers attempts opt-in confirmation only for consented creates wi
           shop_id: params[1],
           name: 'Jane Customer',
           phone: dbRuns.at(-1)?.params?.[3] || null,
-          sms_consent: dbRuns.at(-1)?.params?.[4] || false,
+          sms_consent: dbRuns.at(-1)?.params?.[4],
         };
       }
       return null;
@@ -143,10 +152,24 @@ test('POST /customers attempts opt-in confirmation only for consented creates wi
     });
   }
 
+  for (const method of [undefined, null, 'import', 'VERBAL']) {
+    const invalid = await runCreate({ name: 'Invalid', sms_consent: true, sms_consent_method: method });
+    assert.equal(invalid.statusCode, 400);
+  }
+  assert.equal(dbRuns.length, 0);
+  assert.equal(smsCalls.length, 0);
+
   smsCalls.length = 0;
   dbRuns.length = 0;
-  let res = await runCreate({ name: 'Jane Customer', phone: '+15551234567', sms_consent: true });
+  let res = await runCreate({ name: 'Jane Customer', phone: '+15551234567', sms_consent: true, sms_consent_method: 'verbal', sms_consent_at: '1900-01-01', sms_consent_by: 'spoof' });
   assert.equal(res.statusCode, 201);
+  assert.equal(res.body.sms_consent, true);
+  assert.equal(dbRuns[0].params[4], true);
+  assert.equal(dbRuns[0].params[7], 'sms');
+  assert.ok(dbRuns[0].params[11] instanceof Date);
+  assert.ok(dbRuns[0].params[11].getFullYear() > 2020);
+  assert.equal(dbRuns[0].params[12], 'verbal');
+  assert.equal(dbRuns[0].params[13], 'user-1');
   assert.equal(smsCalls.length, 1);
   assert.deepEqual(smsCalls[0], [
     '+15551234567',
@@ -154,15 +177,22 @@ test('POST /customers attempts opt-in confirmation only for consented creates wi
     { shopId: 'shop-1' },
   ]);
 
-  smsCalls.length = 0;
-  dbRuns.length = 0;
-  res = await runCreate({ name: 'No Consent', phone: '+15551234567', sms_consent: false });
-  assert.equal(res.statusCode, 201);
-  assert.equal(smsCalls.length, 0);
+  for (const choice of [{}, ...[null, false, 'true', 'false', '1', 1, 0, {}, []].map(sms_consent => ({ sms_consent }))]) {
+    smsCalls.length = 0;
+    dbRuns.length = 0;
+    res = await runCreate({ name: 'No Consent', phone: '+15551234567', ...choice });
+    assert.equal(res.statusCode, 201);
+    assert.equal(res.body.sms_consent, false);
+    assert.equal(dbRuns.length, 1);
+    assert.equal(dbRuns[0].params[1], 'shop-1');
+    assert.equal(dbRuns[0].params[4], false);
+    assert.equal(dbRuns[0].params[7], 'none');
+    assert.equal(smsCalls.length, 0);
+  }
 
   smsCalls.length = 0;
   dbRuns.length = 0;
-  res = await runCreate({ name: 'No Phone', phone: '   ', sms_consent: true });
+  res = await runCreate({ name: 'No Phone', phone: '   ', sms_consent: true, sms_consent_method: 'verbal' });
   assert.equal(res.statusCode, 201);
   assert.equal(smsCalls.length, 0);
 });

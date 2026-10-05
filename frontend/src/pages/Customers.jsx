@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Search, Phone, Shield, X, Mail, MapPin, Car, FileText, ChevronRight, User, Pencil, Trash2 } from 'lucide-react'
 import api from '../lib/api'
+import SmsConsentFields, { consentForm, consentPayload, consentError } from '../components/SmsConsentFields'
 import { isAdmin, isAssistant } from '../lib/auth'
 import AppOverlay from '../components/AppOverlay'
 import { EmptyState, PageHeader, Panel, StatusBadge } from '../components/ui'
@@ -13,6 +14,7 @@ function getLastName(name) {
 }
 
 const EMPTY_CUSTOMER_FORM = {
+  ...consentForm(),
   name: '',
   phone: '',
   email: '',
@@ -21,8 +23,16 @@ const EMPTY_CUSTOMER_FORM = {
   policy_number: '',
 }
 
+function normalizedPhone(phone) {
+  const digits = String(phone || '').replace(/[^0-9]/g, '')
+  return digits.length === 10 ? `1${digits}` : digits
+}
+
 function createCustomerForm(customer = {}) {
   return {
+    ...consentForm(customer),
+    initial_phone: customer.phone || '',
+    editing_customer: Boolean(customer.id),
     name: customer?.name || '',
     phone: customer?.phone || '',
     email: customer?.email || '',
@@ -34,6 +44,7 @@ function createCustomerForm(customer = {}) {
 
 function normalizeCustomerForm(form) {
   return {
+    ...(form.editing_customer && normalizedPhone(form.phone) !== normalizedPhone(form.initial_phone) ? {} : consentPayload(form)),
     name: String(form.name || '').trim(),
     phone: String(form.phone || '').trim(),
     email: String(form.email || '').trim(),
@@ -118,6 +129,9 @@ function CustomerFormFields({ form, onChange }) {
           className="w-full bg-void border border-line-2 rounded-lg px-3 py-2 text-sm text-ink placeholder:text-faint focus:outline-none focus:border-brand"
         />
       </div>
+      {form.editing_customer && normalizedPhone(form.phone) !== normalizedPhone(form.initial_phone)
+        ? <p role="status" className="text-xs text-muted">Changing the phone clears SMS consent. Save this number, then reopen Edit Customer to confirm fresh consent.</p>
+        : <SmsConsentFields form={form} onChange={onChange} />}
     </>
   )
 }
@@ -352,12 +366,13 @@ function EditCustomerModal({ customer, onClose, onSave }) {
   }, [customer])
 
   function updateField(field, value) {
-    setForm((prev) => ({ ...prev, [field]: value }))
+    setForm((prev) => ({ ...prev, [field]: value, ...(field.startsWith('sms_') ? { sms_touched: true } : {}) }))
     if (error) setError('')
   }
 
   async function saveCustomer(event) {
     event.preventDefault()
+    if (normalizedPhone(form.phone) === normalizedPhone(form.initial_phone) && consentError(form)) { setError(consentError(form)); return }
     const payload = normalizeCustomerForm(form)
     if (!payload.name) {
       setError('Name is required.')
@@ -454,12 +469,13 @@ export default function Customers() {
   }
 
   function updateAddCustomerField(field, value) {
-    setForm((prev) => ({ ...prev, [field]: value }))
+    setForm((prev) => ({ ...prev, [field]: value, ...(field.startsWith('sms_') ? { sms_touched: true } : {}) }))
     if (formError) setFormError('')
   }
 
   async function addCustomer(event) {
     event.preventDefault()
+    if (consentError(form)) { setFormError(consentError(form)); return }
     const payload = normalizeCustomerForm(form)
     if (!payload.name) {
       setFormError('Name is required.')

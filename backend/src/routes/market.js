@@ -4,6 +4,8 @@ const path = require('path');
 const multer = require('multer');
 const { v4: uuidv4 } = require('uuid');
 const { dbGet, dbAll, dbRun } = require('../db');
+const { SHOP_TWILIO_NUMBER_UNIQUE } = require('../db/shopTwilioNumber');
+const { withLockedShopDeletion, PaymentError } = require('../services/paymentReservations');
 const auth = require('../middleware/auth');
 const { requireAdmin } = require('../middleware/roles');
 const { getRatesForState, getAllStates } = require('../data/market-rates');
@@ -151,10 +153,28 @@ router.delete('/shop/logo', auth, requireAdmin, async (req, res) => {
   }
 });
 
-router.put('/shop', auth, async (req, res) => {
+// This route owns credentials and inbound routing. Shared requireAdmin also
+// admits assistant/superadmin, which must not grant access here.
+function requireShopOwnerOrAdmin(req, res, next) {
+  if (!['owner', 'admin'].includes(req.user?.role)) {
+    return res.status(403).json({ error: 'Only shop owners and admins can update shop settings.' });
+  }
+  return next();
+}
+
+router.put('/shop', auth, requireShopOwnerOrAdmin, async (req, res) => {
   try {
     const ALLOWED_MARKET_FIELDS = ['state','labor_rate','paint_rate','parts_markup','name','phone','twilio_account_sid','twilio_auth_token','twilio_phone_number','twilio_api_key','twilio_api_secret','address','city','zip','tax_rate','lat','lng','geofence_radius','tracking_api_key','monthly_revenue_target'];
     const updates = Object.fromEntries(Object.entries(req.body).filter(([k]) => ALLOWED_MARKET_FIELDS.includes(k)));
+    if (updates.twilio_phone_number !== undefined && updates.twilio_phone_number !== null) {
+      if (typeof updates.twilio_phone_number !== 'string') {
+        return res.status(400).json({ error: 'SMS phone number must use E.164 format (such as +15551234567), or be empty.' });
+      }
+      updates.twilio_phone_number = updates.twilio_phone_number.trim();
+      if (updates.twilio_phone_number && !/^\+[1-9]\d{1,14}$/.test(updates.twilio_phone_number)) {
+        return res.status(400).json({ error: 'SMS phone number must use E.164 format (such as +15551234567), or be empty.' });
+      }
+    }
     const {
       name, phone, address, city, state, zip, labor_rate, paint_rate, parts_markup, tax_rate,
       lat, lng, geofence_radius, tracking_api_key, twilio_account_sid, twilio_auth_token,
@@ -200,6 +220,9 @@ router.put('/shop', auth, async (req, res) => {
     const smsConfig = await getTwilioConfigForShop(req.user.shop_id);
     res.json({ ...updated, sms_configured: await isConfiguredForShop(req.user.shop_id), sms_phone: smsConfig?.phoneNumber || null });
   } catch (err) {
+    if (err.code === '23505' && err.constraint === SHOP_TWILIO_NUMBER_UNIQUE) {
+      return res.status(409).json({ error: 'SMS phone number is already assigned. Choose a different number or contact support.' });
+    }
     res.status(500).json({ error: err.message });
   }
 });
@@ -207,17 +230,21 @@ router.put('/shop', auth, async (req, res) => {
 router.delete('/demo-data', auth, async (req, res) => {
   try {
     const shopId = req.user.shop_id;
-    await dbRun('DELETE FROM parts_orders WHERE ro_id IN (SELECT id FROM repair_orders WHERE shop_id = $1)', [shopId]);
-    await dbRun('DELETE FROM job_status_log WHERE ro_id IN (SELECT id FROM repair_orders WHERE shop_id = $1)', [shopId]);
-    await dbRun('DELETE FROM time_entries WHERE shop_id = $1', [shopId]);
-    await dbRun('DELETE FROM schedules WHERE shop_id = $1', [shopId]);
-    await dbRun('DELETE FROM repair_orders WHERE shop_id = $1', [shopId]);
-    await dbRun('DELETE FROM vehicles WHERE shop_id = $1', [shopId]);
-    await dbRun("DELETE FROM users WHERE shop_id = $1 AND role = 'customer'", [shopId]);
-    await dbRun('DELETE FROM customers WHERE shop_id = $1', [shopId]);
+    await withLockedShopDeletion(shopId, async client => {
+      await client.query('DELETE FROM parts_orders WHERE ro_id::text IN (SELECT id::text FROM repair_orders WHERE shop_id = $1)', [shopId]);
+      await client.query('DELETE FROM job_status_log WHERE ro_id::text IN (SELECT id::text FROM repair_orders WHERE shop_id = $1)', [shopId]);
+      await client.query('DELETE FROM time_entries WHERE shop_id = $1', [shopId]);
+      await client.query('DELETE FROM schedules WHERE shop_id = $1', [shopId]);
+      await client.query('DELETE FROM repair_orders WHERE shop_id = $1', [shopId]);
+      await client.query('DELETE FROM vehicles WHERE shop_id = $1', [shopId]);
+      await client.query("DELETE FROM users WHERE shop_id = $1 AND role = 'customer'", [shopId]);
+      await client.query('DELETE FROM customers WHERE shop_id = $1', [shopId]);
+    });
     res.json({ ok: true, message: 'All demo data cleared. Shop settings and staff accounts are untouched.' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err instanceof PaymentError ? err.status : 500).json({
+      error: err instanceof PaymentError ? err.message : 'Could not clear demo data',
+    });
   }
 });
 

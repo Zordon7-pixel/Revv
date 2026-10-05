@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const { dbGet, dbAll } = require('../db');
 const auth = require('../middleware/auth');
+const { periodEconomics, aggregateMetadata, redactROs } = require('../services/panelEstimatorEconomics');
 const { requireAdmin, requireTechnician } = require('../middleware/roles');
 
 function toCsvValue(value) {
@@ -35,6 +36,7 @@ router.get('/summary', auth, requireTechnician, requireAdmin, async (req, res) =
     );
     const revenueRow  = await dbGet(`SELECT COALESCE(SUM(total),0) as r FROM repair_orders WHERE shop_id = $1${monthFilter}`, [sid]);
     const profitRow   = await dbGet(`SELECT COALESCE(SUM(true_profit),0) as p FROM repair_orders WHERE shop_id = $1${monthFilter}`, [sid]);
+    const economics = await periodEconomics(sid, req.user.role, monthFilter);
     const byStatus = await dbAll(
       `SELECT ${normalizedStatusExpr} AS status, COUNT(*)::int as count
        FROM repair_orders
@@ -102,10 +104,11 @@ router.get('/summary', auth, requireTechnician, requireAdmin, async (req, res) =
       active: activeRow.n,
       completed: completedRow.n,
       revenue: parseFloat(revenueRow.r),
-      profit: parseFloat(profitRow.p),
+      profit: economics ? (economics.profit_cents === null ? null : economics.profit_cents / 100) : parseFloat(profitRow.p),
+      ...aggregateMetadata(economics),
       byStatus,
       byType,
-      recent,
+      recent: await redactROs(recent, sid),
       insuranceSummary: {
         insuranceJobsThisMonth: insuranceJobsRow?.n || 0,
         approvedAmountCents: Number(insuranceApprovedVsBilled?.approved_cents || 0),

@@ -21,6 +21,8 @@ app.set('trust proxy', 1);
 const sentry = require('./lib/sentry');
 sentry.init();
 app.use(sentry.requestHandler());
+const { panelBearerRequest, panelBearerParserError } = require('./services/panelEstimatorApproval');
+app.use(panelBearerRequest);
 
 // CORS — restrict to known origin in production
 const allowedOrigins = process.env.CORS_ORIGIN
@@ -41,6 +43,7 @@ app.use(cors({
 app.use('/api/payments/webhook', express.raw({ type: 'application/json' }));
 app.use('/api/subscriptions/webhook', express.raw({ type: 'application/json' }), subscriptionsRouter);
 app.use(express.json({ limit: '1mb' }));
+app.use(panelBearerParserError);
 
 // Security headers
 app.use(helmet({ contentSecurityPolicy: false }));
@@ -222,6 +225,7 @@ initDb()
         const { runMigrations } = require('./db/migrate');
         await runMigrations();
       } catch (e) {
+        if (e.code === 'SHOP_TWILIO_SCHEMA_REQUIRED') throw e;
         console.error('[migrate] Migration error:', e.message);
       }
     }

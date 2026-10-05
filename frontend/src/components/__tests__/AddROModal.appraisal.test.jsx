@@ -31,14 +31,14 @@ describe('AddROModal appraisal quick intake', () => {
     api.get.mockReset()
     api.post.mockReset()
     api.get.mockImplementation((url) => {
-      if (url === '/customers') return Promise.resolve({ data: { customers: [{ id: 'customer-1', name: 'Miles Customer', phone: '7185550100', email: 'miles@example.com', sms_consent: true, email_consent: false }] } })
-      if (url === '/customers/customer-1/autofill') return Promise.resolve({ data: { customer: { id: 'customer-1', name: 'Miles Customer', phone: '7185550100', email: 'miles@example.com', sms_consent: true, email_consent: false }, vehicles: [{ id: 'vehicle-1', year: 2024, make: 'Toyota', model: 'Camry', vin: '1HGBH41JXMN109186' }] } })
+      if (url === '/customers') return Promise.resolve({ data: { customers: [{ id: 'customer-1', name: 'Miles Customer', phone: '7185550100', email: 'miles@example.com', sms_consent: true, sms_consent_at: '2026-10-01T12:00:00Z', sms_consent_method: 'written', sms_consent_by: 'staff-1', email_consent: false }] } })
+      if (url === '/customers/customer-1/autofill') return Promise.resolve({ data: { customer: { id: 'customer-1', name: 'Miles Customer', phone: '7185550100', email: 'miles@example.com', sms_consent: true, sms_consent_at: '2026-10-01T12:00:00Z', sms_consent_method: 'written', sms_consent_by: 'staff-1', email_consent: false }, vehicles: [{ id: 'vehicle-1', year: 2024, make: 'Toyota', model: 'Camry', vin: '1HGBH41JXMN109186' }] } })
       if (url === '/ros') return Promise.resolve({ data: { ros: [] } })
       if (url === '/ros/turnaround-estimate') return Promise.resolve({ data: {} })
       return Promise.resolve({ data: {} })
     })
     api.post.mockImplementation((url) => {
-      if (url === '/insurance-ocr/parse') return Promise.resolve({ data: { parsed: { customer_name: 'Miles Customer', customer_phone: '(718) 555-0100', customer_email: 'miles@example.com', vehicle_year: '2024', vehicle_make: 'Toyota', vehicle_model: 'Camry', vin: '1HGBH41JXMN109186', insurance_company: 'Progressive', claim_number: 'CLM-100', policy_number: 'POL-200', detected_format: 'ccc', needs_review: false, review_reasons: [], line_items: [{ type: 'parts', description: 'Bumper cover', quantity: 1, unit_price: 500 }], estimate_totals: { parts: 500, total_cost_of_repairs: 550, deductible: 100, net_cost_of_repairs: 450 } } } })
+      if (url === '/insurance-ocr/parse') return Promise.resolve({ data: { parsed: { sms_consent: true, sms_consent_method: 'verbal', sms_consent_at: '2000-01-01T00:00:00Z', sms_consent_by: 'ocr-spoof', customer_name: 'Miles Customer', customer_phone: '(718) 555-0100', customer_email: 'miles@example.com', vehicle_year: '2024', vehicle_make: 'Toyota', vehicle_model: 'Camry', vin: '1HGBH41JXMN109186', insurance_company: 'Progressive', claim_number: 'CLM-100', policy_number: 'POL-200', detected_format: 'ccc', needs_review: false, review_reasons: [], line_items: [{ type: 'parts', description: 'Bumper cover', quantity: 1, unit_price: 500 }], estimate_totals: { parts: 500, total_cost_of_repairs: 550, deductible: 100, net_cost_of_repairs: 450 } } } })
       if (url === '/ros') return Promise.resolve({ data: { id: 'ro-1', ro_number: 'RO-100' } })
       if (url === '/claim-tracker/ro/ro-1/evidence') return Promise.resolve({ data: { evidence: {} } })
       if (url === '/estimate-metadata/metadata/ro-1') return Promise.resolve({ data: { success: true } })
@@ -66,6 +66,8 @@ describe('AddROModal appraisal quick intake', () => {
     await screen.findByDisplayValue('Miles Customer')
     await user.click(screen.getByRole('button', { name: 'Use Details in New RO' }))
     await screen.findByText(/Matched Miles Customer/)
+    expect(screen.getByLabelText('Customer agreed to texts')).toBeChecked()
+    expect(screen.getByLabelText('SMS consent method')).toHaveValue('written')
 
     await user.click(screen.getByRole('button', { name: /Next/ }))
     await screen.findByText(/Step 2/)
@@ -83,6 +85,8 @@ describe('AddROModal appraisal quick intake', () => {
       claim_number: 'CLM-100',
       policy_number: 'POL-200',
     }))
+    const roPayload = api.post.mock.calls.find(([url]) => url === '/ros')[1]
+    for (const key of ['sms_consent', 'sms_consent_method', 'sms_consent_at', 'sms_consent_by']) expect(roPayload).not.toHaveProperty(key)
     expect(api.post.mock.calls.filter(([url]) => url === '/claim-tracker/ro/ro-1/evidence')).toHaveLength(2)
     expect(api.post).toHaveBeenCalledWith('/estimate-metadata/metadata/ro-1', {
       adjuster_totals: expect.objectContaining({ total_cost_of_repairs: 550 }),
@@ -92,6 +96,51 @@ describe('AddROModal appraisal quick intake', () => {
         line_items: [expect.objectContaining({ description: 'Bumper cover' })],
       }),
     })
+  })
+
+  it.each([
+    ['new', undefined],
+    ['existing', false],
+    ['existing', null],
+    ['existing', undefined],
+    ['existing', true],
+  ])('appraisal consent stays explicit for %s customers (%s)', async (kind, stored) => {
+    const get = api.get.getMockImplementation()
+    const post = api.post.getMockImplementation()
+    api.get.mockImplementation(async url => {
+      const result = await get(url)
+      if (url === '/customers') {
+        result.data.customers = kind === 'new' ? [] : result.data.customers.map(c => ({ ...c, sms_consent: stored, sms_consent_at: null, sms_consent_method: null, sms_consent_by: null }))
+      }
+      if (url === '/customers/customer-1/autofill') Object.assign(result.data.customer, { sms_consent: stored, sms_consent_at: null, sms_consent_method: null, sms_consent_by: null })
+      return result
+    })
+    api.post.mockImplementation((url, body) => {
+      if (url === '/customers') return Promise.resolve({ data: { id: 'customer-new' } })
+      if (url === '/vehicles') return Promise.resolve({ data: { id: 'vehicle-new' } })
+      return post(url, body)
+    })
+    const user = userEvent.setup()
+    const onSaved = vi.fn()
+    render(<MemoryRouter><AddROModal onClose={vi.fn()} onSaved={onSaved} /></MemoryRouter>)
+    await user.click(screen.getByRole('tab', { name: 'Appraisal Quick Intake' }))
+    fireEvent.change(screen.getByLabelText('Appraisal files'), { target: { files: [new File(['one'], 'page.jpg', { type: 'image/jpeg' })] } })
+    await user.click(screen.getByRole('button', { name: 'Read Appraisal' }))
+    await screen.findByDisplayValue('Miles Customer')
+    await user.click(screen.getByRole('button', { name: 'Use Details in New RO' }))
+    expect(screen.getByLabelText(/Customer agreed to texts/i)).not.toBeChecked()
+    expect(screen.getByText(/SMS consent unconfirmed/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Next/ }))
+    await user.click(screen.getByRole('button', { name: /Next/ }))
+    await user.click(screen.getByRole('button', { name: 'Add Repair Order' }))
+    await waitFor(() => expect(onSaved).toHaveBeenCalled())
+    const roPayload = api.post.mock.calls.find(([url]) => url === '/ros')[1]
+    for (const key of ['sms_consent', 'sms_consent_method', 'sms_consent_at', 'sms_consent_by']) expect(roPayload).not.toHaveProperty(key)
+    if (kind === 'new') {
+      const customerPayload = api.post.mock.calls.find(([url]) => url === '/customers')[1]
+      for (const key of ['sms_consent', 'sms_consent_method', 'sms_consent_at', 'sms_consent_by']) expect(customerPayload).not.toHaveProperty(key)
+    }
+    else expect(api.post).not.toHaveBeenCalledWith('/customers', expect.anything())
   })
   async function openAuthorizationFlow({ duplicate = false, failure = false } = {}) {
     const get = api.get.getMockImplementation()

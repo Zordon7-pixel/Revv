@@ -5,16 +5,7 @@ const { requireTechnician } = require('../middleware/roles');
 const { sendCustomerOptInConfirmation } = require('../services/customerOptInConfirmation');
 const { v4: uuidv4 } = require('uuid');
 
-const CONTACT_METHODS = new Set(['none', 'sms', 'email', 'both']);
-
-function normalizePreferredContactMethod(value, smsConsent, emailConsent) {
-  const method = String(value || '').trim().toLowerCase();
-  if (CONTACT_METHODS.has(method)) return method;
-  if (smsConsent && emailConsent) return 'both';
-  if (emailConsent) return 'email';
-  if (smsConsent) return 'sms';
-  return 'none';
-}
+const { hasConfirmedSmsConsent, consentMutation, normalizePreferredContactMethod } = require('../services/customerConsent');
 
 router.get('/', auth, async (req, res) => {
   try {
@@ -25,6 +16,9 @@ router.get('/', auth, async (req, res) => {
          c.name,
          c.phone,
          c.sms_consent,
+         c.sms_consent_at,
+         c.sms_consent_method,
+         c.sms_consent_by,
          c.email,
          c.email_consent,
          c.preferred_contact_method,
@@ -124,7 +118,7 @@ router.get('/:id/history', auth, async (req, res) => {
 router.get('/:id/autofill', auth, async (req, res) => {
   try {
     const customer = await dbGet(
-      'SELECT id, name, phone, sms_consent, email, email_consent, preferred_contact_method, insurance_company, policy_number FROM customers WHERE id = $1 AND shop_id = $2',
+      'SELECT id, name, phone, sms_consent, sms_consent_at, sms_consent_method, sms_consent_by, email, email_consent, preferred_contact_method, insurance_company, policy_number FROM customers WHERE id = $1 AND shop_id = $2',
       [req.params.id, req.user.shop_id]
     );
     if (!customer) return res.status(404).json({ error: 'Not found' });
@@ -192,65 +186,101 @@ router.get('/:id', auth, async (req, res) => {
 
 router.post('/', auth, requireTechnician, async (req, res) => {
   try {
-    const { name, phone, email, address, insurance_company, policy_number, sms_consent, email_consent, preferred_contact_method } = req.body;
+    const { name, phone, email, address, insurance_company, policy_number, email_consent, preferred_contact_method } = req.body;
     if (!name || !name.trim()) return res.status(400).json({ error: 'Customer name is required.' });
     const nextEmailConsent = email_consent === true;
     const normalizedEmail = String(email || '').trim() || null;
     if (nextEmailConsent && !normalizedEmail) {
       return res.status(400).json({ error: 'Customer email is required for email status updates.' });
     }
-    const nextSmsConsent = sms_consent !== false;
+    const consent = consentMutation(req.body, req.user.id);
+    const nextSmsConsent = hasConfirmedSmsConsent(consent);
     const nextPreferredMethod = normalizePreferredContactMethod(preferred_contact_method, nextSmsConsent, nextEmailConsent);
     const shop = await dbGet('SELECT id FROM shops WHERE id = $1', [req.user.shop_id]);
     if (!shop) return res.status(401).json({ error: 'Session expired. Please log out and back in.' });
     const id = uuidv4();
     await dbRun(
       `INSERT INTO customers
-        (id, shop_id, name, phone, sms_consent, email, email_consent, preferred_contact_method, address, insurance_company, policy_number)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-      [id, req.user.shop_id, name.trim(), phone || null, nextSmsConsent, normalizedEmail, nextEmailConsent, nextPreferredMethod, address || null, insurance_company || null, policy_number || null]
+        (id, shop_id, name, phone, sms_consent, email, email_consent, preferred_contact_method, address, insurance_company, policy_number, sms_consent_at, sms_consent_method, sms_consent_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+      [id, req.user.shop_id, name.trim(), phone || null, nextSmsConsent, normalizedEmail, nextEmailConsent, nextPreferredMethod, address || null, insurance_company || null, policy_number || null, consent?.sms_consent_at || null, consent?.sms_consent_method || null, consent?.sms_consent_by || null]
     );
     await sendCustomerOptInConfirmation({
       phone,
-      smsConsent: sms_consent !== false,
+      smsConsent: nextSmsConsent,
       shopId: req.user.shop_id,
     });
     res.status(201).json(await dbGet('SELECT * FROM customers WHERE id = $1 AND shop_id = $2', [id, req.user.shop_id]));
   } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
     console.error('Customer save error:', err.message);
     res.status(500).json({ error: 'Error saving customer. Please try again.' });
   }
 });
 
+// Same punctuation/US-country-prefix normalization as the SMS recipient guard.
+function normalizedPhone(phone) {
+  const digits = String(phone || '').replace(/[^0-9]/g, '');
+  return digits.length === 10 ? `1${digits}` : digits;
+}
+function maskedPhone(phone) {
+  const digits = normalizedPhone(phone);
+  return digits.length >= 7 ? `***${digits.slice(-4)}` : '***';
+}
+
 router.put('/:id', auth, requireTechnician, async (req, res) => {
+  let client;
   try {
-    const { name, phone, email, address, insurance_company, policy_number, sms_consent, email_consent, preferred_contact_method } = req.body;
-    const nextSmsConsent = typeof sms_consent === 'boolean' ? sms_consent : null;
-    const nextEmailConsent = typeof email_consent === 'boolean' ? email_consent : null;
-    const normalizedEmail = String(email || '').trim() || null;
-    if (nextEmailConsent === true && !normalizedEmail) {
+    client = await pool.connect();
+    await client.query('BEGIN');
+    const existing = (await client.query('SELECT * FROM customers WHERE id=$1 AND shop_id=$2 FOR UPDATE',
+      [req.params.id, req.user.shop_id])).rows[0];
+    if (!existing) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Not found' });
+    }
+    const phoneChanged = Object.hasOwn(req.body, 'phone')
+      && normalizedPhone(req.body.phone) !== normalizedPhone(existing.phone);
+    // A phone edit cannot also attest to the new number, even with TRUE in the
+    // same payload. A later explicit submission must supply fresh evidence.
+    const mutation = consentMutation(phoneChanged ? { sms_consent: false } : req.body, req.user.id);
+    const changes = {};
+    for (const field of ['name', 'phone', 'email', 'address', 'insurance_company', 'policy_number']) {
+      if (Object.hasOwn(req.body, field)) changes[field] = req.body[field];
+    }
+    if (typeof req.body.email_consent === 'boolean') changes.email_consent = req.body.email_consent;
+    Object.assign(changes, mutation);
+    const next = { ...existing, ...changes };
+    if (next.email_consent === true && !String(next.email || '').trim()) {
+      await client.query('ROLLBACK');
       return res.status(400).json({ error: 'Customer email is required for email status updates.' });
     }
-    const nextPreferredMethod = Object.prototype.hasOwnProperty.call(req.body || {}, 'preferred_contact_method')
-      ? normalizePreferredContactMethod(preferred_contact_method, nextSmsConsent !== false, nextEmailConsent === true)
-      : null;
-    await dbRun(
-      `UPDATE customers SET
-         name=$1,
-         phone=$2,
-         sms_consent=COALESCE($3, sms_consent),
-         email=$4,
-         email_consent=COALESCE($5, email_consent),
-         preferred_contact_method=COALESCE($6, preferred_contact_method),
-         address=$7,
-         insurance_company=$8,
-         policy_number=$9
-       WHERE id=$10 AND shop_id=$11`,
-      [name, phone, nextSmsConsent, normalizedEmail, nextEmailConsent, nextPreferredMethod, address, insurance_company, policy_number, req.params.id, req.user.shop_id]
-    );
-    res.json(await dbGet('SELECT * FROM customers WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]));
+    changes.preferred_contact_method = normalizePreferredContactMethod(
+      req.body.preferred_contact_method ?? existing.preferred_contact_method,
+      hasConfirmedSmsConsent(next), next.email_consent);
+    // Only actual consent mutations name consent columns: unrelated edits must
+    // not advance the trigger revision or overwrite a concurrent STOP.
+    const fields = Object.keys(changes);
+    const result = await client.query(`UPDATE customers SET ${fields.map((f, i) => `${f}=$${i + 1}`).join(', ')}
+      WHERE id=$${fields.length + 1} AND shop_id=$${fields.length + 2} RETURNING *`,
+    [...Object.values(changes), req.params.id, req.user.shop_id]);
+    if (phoneChanged) {
+      await client.query(`INSERT INTO customer_consent_phone_changes
+        (customer_id, shop_id, old_phone_masked, new_phone_masked, staff_id, reason)
+        VALUES ($1, $2, $3, $4, $5, 'phone_changed')`,
+      [existing.id, req.user.shop_id, maskedPhone(existing.phone), maskedPhone(next.phone), req.user.id]);
+    }
+    await client.query('COMMIT');
+    res.json(result.rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (client) {
+      try { await client.query('ROLLBACK'); } catch (rollbackError) {
+        console.error('[Customer consent] Rollback failed:', rollbackError.message);
+      }
+    }
+    res.status(err.status || 500).json({ error: err.status ? err.message : 'Error saving customer. Please try again.' });
+  } finally {
+    if (client) client.release();
   }
 });
 
