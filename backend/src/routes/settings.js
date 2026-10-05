@@ -4,6 +4,38 @@ const { withLockedShopDeletion, PaymentError } = require('../services/paymentRes
 const auth = require('../middleware/auth');
 const { requireAdmin, requireTechnician, disallowAssistant } = require('../middleware/roles');
 
+const { newPublicIntakeSlug } = require('../services/publicShop');
+
+function intakeOwner(req, res, next) {
+  if (!isOwnerOrAdmin(req.user) || !req.user.shop_id) {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+  return next();
+}
+
+router.get('/public-intake', auth, intakeOwner, async (req, res) => {
+  try {
+    const shop = await dbGet('SELECT public_intake_slug FROM shops WHERE id = $1', [req.user.shop_id]);
+    if (!shop) return res.status(404).json({ error: 'Shop not found' });
+    return res.json({ public_intake_slug: shop.public_intake_slug });
+  } catch {
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.post('/public-intake/rotate', auth, intakeOwner, async (req, res) => {
+  try {
+    const shop = await dbGet(
+      'UPDATE shops SET public_intake_slug = $1 WHERE id = $2 RETURNING public_intake_slug',
+      [newPublicIntakeSlug(), req.user.shop_id]
+    );
+    if (!shop) return res.status(404).json({ error: 'Shop not found' });
+    return res.json({ public_intake_slug: shop.public_intake_slug });
+  } catch {
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 const SECTIONS = new Set(['ros', 'customers', 'vehicles', 'timeclock', 'all']);
 const COST_PROFILE_PERCENT_FIELDS = [
   'parts_margin_pct',

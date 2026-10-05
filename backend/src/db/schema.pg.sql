@@ -1,6 +1,30 @@
+CREATE OR REPLACE FUNCTION public_intake_new_slug() RETURNS TEXT
+LANGUAGE plpgsql VOLATILE AS $slug$
+DECLARE
+  -- PostgreSQL's cryptographically random UUID needs no pgcrypto extension.
+  bytes BYTEA := uuid_send(gen_random_uuid());
+  alphabet TEXT := 'abcdefghijklmnopqrstuvwxyz234567';
+  result TEXT := '';
+  bits INTEGER := 0;
+  value INTEGER := 0;
+  i INTEGER;
+BEGIN
+  FOR i IN 0..15 LOOP
+    value := ((value & 255) << 8) | get_byte(bytes, i);
+    bits := bits + 8;
+    WHILE bits >= 5 LOOP
+      bits := bits - 5;
+      result := result || substr(alphabet, ((value >> bits) & 31) + 1, 1);
+    END LOOP;
+  END LOOP;
+  RETURN result || substr(alphabet, ((value << (5 - bits)) & 31) + 1, 1);
+END;
+$slug$;
+
 CREATE TABLE IF NOT EXISTS shops (
   id UUID PRIMARY KEY,
   name TEXT NOT NULL,
+  public_intake_slug TEXT UNIQUE NOT NULL DEFAULT public_intake_new_slug(),
   onboarded BOOLEAN DEFAULT FALSE,
   phone TEXT,
   logo_url TEXT,
@@ -338,7 +362,7 @@ CREATE TABLE IF NOT EXISTS ro_claim_disputes (
 
 CREATE TABLE IF NOT EXISTS estimate_requests (
   id UUID PRIMARY KEY,
-  shop_id TEXT REFERENCES shops(id) ON DELETE SET NULL,
+  shop_id UUID NOT NULL REFERENCES shops(id),
   name TEXT NOT NULL,
   phone TEXT NOT NULL,
   email TEXT NOT NULL,
