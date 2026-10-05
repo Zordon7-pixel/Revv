@@ -241,7 +241,7 @@ describe('RODetail total loss action', () => {
       const incoming = screen.getByText('Synthetic incoming message')
       const metadata = outgoing.nextElementSibling
       expect(metadata).toHaveTextContent(`→ Sent · ${new Date(created_at).toLocaleString()}`)
-      expect(metadata.className).toBe('text-[10px] mt-1 text-[color:var(--on-brand)]')
+      expect(metadata.className).toBe('text-[10px] mt-1 w-fit rounded px-1 bg-brand-deep text-[color:var(--on-brand)]')
       expect(incoming.nextElementSibling.className).toBe('text-[10px] mt-1 text-faint')
       expect(incoming.nextElementSibling).toHaveTextContent('← Customer')
       expect(incoming.parentElement.className).toBe('max-w-[80%] rounded-instrument px-3 py-2 text-sm bg-void border border-line-2 text-ink rounded-bl-sm')
@@ -251,10 +251,12 @@ describe('RODetail total loss action', () => {
       const tokens = getComputedStyle(document.documentElement)
       expect(tokens.getPropertyValue('--on-brand').trim()).toBe('#FFFFFF')
       expect(tokens.getPropertyValue('--brand').trim()).toBe(theme === 'dark' ? '#6366F1' : '#4F46E5')
+      expect(tokens.getPropertyValue('--brand-deep').trim()).toBe(theme === 'dark' ? '#4844C7' : '#3730A3')
       const foreground = getComputedStyle(metadata).color
-      const background = getComputedStyle(outgoing.parentElement).backgroundColor
+      const background = getComputedStyle(metadata).backgroundColor
       expect(foreground).toBe('#FFFFFF')
-      expect(background).toBe(theme === 'dark' ? '#6366F1' : '#4F46E5')
+      expect(background).toBe(theme === 'dark' ? '#4844C7' : '#3730A3')
+      expect(getComputedStyle(outgoing.parentElement).backgroundColor).toBe(theme === 'dark' ? '#6366F1' : '#4F46E5')
       expect(foreground).not.toBe(background)
       expect((luminance(foreground) + 0.05) / (luminance(background) + 0.05)).toBeGreaterThanOrEqual(4.5)
     })

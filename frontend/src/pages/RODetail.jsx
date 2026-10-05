@@ -2322,7 +2322,7 @@ export default function RODetail() {
                 }`}
               >
                 <p className="whitespace-pre-wrap leading-snug">{msg.body}</p>
-                <p className={`text-[10px] mt-1 ${msg.direction === 'outbound' ? 'text-[color:var(--on-brand)]' : 'text-faint'}`}>
+                <p className={`text-[10px] mt-1 ${msg.direction === 'outbound' ? 'w-fit rounded px-1 bg-brand-deep text-[color:var(--on-brand)]' : 'text-faint'}`}>
                   {msg.direction === 'inbound' ? '← Customer' : '→ Sent'} · {new Date(msg.created_at).toLocaleString()}
                 </p>
               </div>
