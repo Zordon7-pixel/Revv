@@ -8,7 +8,92 @@ const pool = new Pool({
     : false,
 });
 
+// Startup only. Each child repair is atomic, including constraint replacement.
+async function alignIntakeShopId(table, shopIdType) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(`LOCK TABLE ${table} IN ACCESS EXCLUSIVE MODE`);
+    const { rows: constraints } = await client.query(`
+      SELECT c.conname FROM pg_constraint c
+      JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY(c.conkey)
+      WHERE c.conrelid = $1::regclass AND c.contype = 'f' AND a.attname = 'shop_id'
+    `, [table]);
+    for (const { conname } of constraints) {
+      await client.query(`ALTER TABLE ${table} DROP CONSTRAINT "${conname.replace(/"/g, '""')}"`);
+    }
+    const { rows: [column] } = await client.query(`
+      SELECT atttypid::regtype::text AS type FROM pg_attribute
+      WHERE attrelid = $1::regclass AND attname = 'shop_id' AND NOT attisdropped
+    `, [table]);
+    if (column.type !== shopIdType) {
+      // Explicit cast is required when upgrading legacy TEXT children to UUID.
+      await client.query(`ALTER TABLE ${table} ALTER COLUMN shop_id TYPE ${shopIdType} USING shop_id::${shopIdType}`);
+    }
+    await client.query(`ALTER TABLE ${table} ALTER COLUMN shop_id SET NOT NULL`);
+    await client.query(`ALTER TABLE ${table} ADD CONSTRAINT ${table}_shop_id_fkey FOREIGN KEY (shop_id) REFERENCES shops(id)`);
+    await client.query('COMMIT');
+  } catch {
+    await client.query('ROLLBACK');
+    throw new Error(`[DB] ${table}.shop_id alignment failed: check type, null, invalid or orphan shop IDs; rows preserved`);
+  } finally {
+    client.release();
+  }
+}
+
+async function initPublicIntakeSlugs() {
+  const { newPublicIntakeSlug } = require('../services/publicShop');
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('LOCK TABLE shops IN ACCESS EXCLUSIVE MODE');
+    await client.query(`CREATE OR REPLACE FUNCTION public_intake_new_slug() RETURNS TEXT
+LANGUAGE plpgsql VOLATILE AS $slug$
+DECLARE
+  -- PostgreSQL's cryptographically random UUID needs no pgcrypto extension.
+  bytes BYTEA := uuid_send(gen_random_uuid());
+  alphabet TEXT := 'abcdefghijklmnopqrstuvwxyz234567';
+  result TEXT := '';
+  bits INTEGER := 0;
+  value INTEGER := 0;
+  i INTEGER;
+BEGIN
+  FOR i IN 0..15 LOOP
+    value := ((value & 255) << 8) | get_byte(bytes, i);
+    bits := bits + 8;
+    WHILE bits >= 5 LOOP
+      bits := bits - 5;
+      result := result || substr(alphabet, ((value >> bits) & 31) + 1, 1);
+    END LOOP;
+  END LOOP;
+  RETURN result || substr(alphabet, ((value << (5 - bits)) & 31) + 1, 1);
+END;
+$slug$;`);
+    await client.query('ALTER TABLE shops ADD COLUMN IF NOT EXISTS public_intake_slug TEXT');
+    await client.query('ALTER TABLE shops ALTER COLUMN public_intake_slug SET DEFAULT public_intake_new_slug()');
+    const { rows } = await client.query('SELECT id FROM shops WHERE public_intake_slug IS NULL');
+    for (const { id } of rows) {
+      await client.query('UPDATE shops SET public_intake_slug = $1 WHERE id = $2', [newPublicIntakeSlug(), id]);
+    }
+    await client.query('CREATE UNIQUE INDEX IF NOT EXISTS shops_public_intake_slug_key ON shops(public_intake_slug)');
+    await client.query('ALTER TABLE shops ALTER COLUMN public_intake_slug SET NOT NULL');
+    await client.query('COMMIT');
+  } catch {
+    await client.query('ROLLBACK');
+    throw new Error('[DB] shops.public_intake_slug migration failed');
+  } finally {
+    client.release();
+  }
+}
+
 async function initDb() {
+  const { rows: [parent] } = await pool.query(`
+    SELECT atttypid::regtype::text AS type FROM pg_attribute
+    WHERE attrelid = to_regclass('shops') AND attname = 'id' AND NOT attisdropped
+  `);
+  const shopIdType = parent?.type || 'uuid';
+  if (!['uuid', 'text'].includes(shopIdType)) throw new Error('[DB] Unsupported shops.id type');
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS shops (
       id UUID PRIMARY KEY,
@@ -54,7 +139,7 @@ async function initDb() {
 
     CREATE TABLE IF NOT EXISTS customers (
       id UUID PRIMARY KEY,
-      shop_id UUID REFERENCES shops(id),
+      shop_id ${shopIdType} REFERENCES shops(id),
       name TEXT NOT NULL,
       phone TEXT,
       email TEXT,
@@ -93,7 +178,7 @@ async function initDb() {
 
     CREATE TABLE IF NOT EXISTS users (
       id UUID PRIMARY KEY,
-      shop_id UUID REFERENCES shops(id) ON DELETE SET NULL,
+      shop_id ${shopIdType} REFERENCES shops(id) ON DELETE SET NULL,
       name TEXT NOT NULL,
       email TEXT UNIQUE NOT NULL,
       password_hash TEXT NOT NULL,
@@ -106,7 +191,7 @@ async function initDb() {
 
     CREATE TABLE IF NOT EXISTS vehicles (
       id UUID PRIMARY KEY,
-      shop_id UUID REFERENCES shops(id),
+      shop_id ${shopIdType} REFERENCES shops(id),
       customer_id UUID REFERENCES customers(id),
       year INTEGER,
       make TEXT,
@@ -120,7 +205,7 @@ async function initDb() {
 
     CREATE TABLE IF NOT EXISTS repair_orders (
       id UUID PRIMARY KEY,
-      shop_id UUID REFERENCES shops(id),
+      shop_id ${shopIdType} REFERENCES shops(id),
       ro_number TEXT UNIQUE,
       vehicle_id UUID REFERENCES vehicles(id),
       customer_id UUID REFERENCES customers(id),
@@ -203,7 +288,7 @@ async function initDb() {
 
     CREATE TABLE IF NOT EXISTS parts_orders (
       id UUID PRIMARY KEY,
-      shop_id UUID REFERENCES shops(id),
+      shop_id ${shopIdType} REFERENCES shops(id),
       ro_id UUID REFERENCES repair_orders(id),
       part_name TEXT NOT NULL,
       part_number TEXT,
@@ -226,7 +311,7 @@ async function initDb() {
 
     CREATE TABLE IF NOT EXISTS schedules (
       id UUID PRIMARY KEY,
-      shop_id UUID REFERENCES shops(id),
+      shop_id ${shopIdType} REFERENCES shops(id),
       user_id UUID REFERENCES users(id),
       shift_date TEXT NOT NULL,
       start_time TEXT NOT NULL,
@@ -248,7 +333,7 @@ async function initDb() {
 
     CREATE TABLE IF NOT EXISTS time_entries (
       id UUID PRIMARY KEY,
-      shop_id UUID REFERENCES shops(id),
+      shop_id ${shopIdType} REFERENCES shops(id),
       user_id UUID REFERENCES users(id),
       clock_in TEXT,
       clock_out TEXT,
@@ -363,7 +448,7 @@ async function initDb() {
 
     CREATE TABLE IF NOT EXISTS ro_payments (
       id UUID PRIMARY KEY,
-      shop_id UUID NOT NULL REFERENCES shops(id),
+      shop_id ${shopIdType} NOT NULL REFERENCES shops(id),
       ro_id UUID NOT NULL REFERENCES repair_orders(id),
       stripe_payment_intent_id TEXT UNIQUE,
       amount_cents INTEGER NOT NULL,
@@ -380,7 +465,7 @@ async function initDb() {
     CREATE TABLE IF NOT EXISTS ro_supplements (
       id UUID PRIMARY KEY,
       ro_id UUID NOT NULL REFERENCES repair_orders(id) ON DELETE CASCADE,
-      shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+      shop_id ${shopIdType} NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
       description TEXT NOT NULL DEFAULT '',
       amount NUMERIC(12,2) NOT NULL DEFAULT 0,
       amount_cents INTEGER,
@@ -391,6 +476,8 @@ async function initDb() {
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     );
   `);
+
+  await initPublicIntakeSlugs();
 
   await pool.query(`ALTER TABLE ro_supplements ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT ''`);
   await pool.query(`ALTER TABLE ro_supplements ADD COLUMN IF NOT EXISTS amount NUMERIC(12,2) NOT NULL DEFAULT 0`);
@@ -408,7 +495,7 @@ async function initDb() {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS vehicle_diagnostic_scans (
         id SERIAL PRIMARY KEY,
-        shop_id UUID REFERENCES shops(id),
+        shop_id ${shopIdType} REFERENCES shops(id),
         ro_id UUID REFERENCES repair_orders(id),
         vehicle_id UUID REFERENCES vehicles(id),
         vin TEXT,
@@ -540,7 +627,7 @@ async function initDb() {
     CREATE TABLE IF NOT EXISTS ro_comms (
       id UUID PRIMARY KEY,
       ro_id UUID NOT NULL REFERENCES repair_orders(id),
-      shop_id UUID NOT NULL REFERENCES shops(id),
+      shop_id ${shopIdType} NOT NULL REFERENCES shops(id),
       user_id UUID REFERENCES users(id),
       channel TEXT NOT NULL,
       direction TEXT NOT NULL DEFAULT 'outbound',
@@ -573,7 +660,7 @@ async function initDb() {
     CREATE TABLE IF NOT EXISTS estimate_approval_links (
       id UUID PRIMARY KEY,
       ro_id UUID NOT NULL REFERENCES repair_orders(id),
-      shop_id UUID NOT NULL REFERENCES shops(id),
+      shop_id ${shopIdType} NOT NULL REFERENCES shops(id),
       token TEXT NOT NULL UNIQUE,
       created_by UUID REFERENCES users(id),
       decline_reason TEXT,
@@ -585,7 +672,7 @@ async function initDb() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS appointment_requests (
       id UUID PRIMARY KEY,
-      shop_id UUID NOT NULL REFERENCES shops(id),
+      shop_id ${shopIdType} NOT NULL REFERENCES shops(id),
       name TEXT NOT NULL,
       phone TEXT NOT NULL,
       email TEXT,
@@ -602,7 +689,7 @@ async function initDb() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS estimate_requests (
       id UUID PRIMARY KEY,
-      shop_id TEXT REFERENCES shops(id) ON DELETE SET NULL,
+      shop_id ${shopIdType} NOT NULL REFERENCES shops(id),
       name TEXT NOT NULL,
       phone TEXT NOT NULL,
       email TEXT NOT NULL,
@@ -618,12 +705,15 @@ async function initDb() {
     )
   `);
 
+  await alignIntakeShopId('estimate_requests', shopIdType);
+  await alignIntakeShopId('appointment_requests', shopIdType);
+
   // Customer experience: portal tokens for tracking
   await pool.query(`
     CREATE TABLE IF NOT EXISTS portal_tokens (
       id UUID PRIMARY KEY,
       ro_id UUID NOT NULL REFERENCES repair_orders(id),
-      shop_id UUID NOT NULL REFERENCES shops(id),
+      shop_id ${shopIdType} NOT NULL REFERENCES shops(id),
       token TEXT NOT NULL UNIQUE,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
       expires_at TEXT
@@ -635,7 +725,7 @@ async function initDb() {
     CREATE TABLE IF NOT EXISTS ro_ratings (
       id UUID PRIMARY KEY,
       ro_id UUID NOT NULL REFERENCES repair_orders(id),
-      shop_id UUID NOT NULL REFERENCES shops(id),
+      shop_id ${shopIdType} NOT NULL REFERENCES shops(id),
       rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     )
@@ -644,7 +734,7 @@ async function initDb() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS monthly_goals (
       id UUID PRIMARY KEY,
-      shop_id UUID NOT NULL REFERENCES shops(id),
+      shop_id ${shopIdType} NOT NULL REFERENCES shops(id),
       year_month TEXT NOT NULL,
       revenue_goal REAL,
       ro_goal INTEGER,

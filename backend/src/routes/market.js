@@ -60,7 +60,7 @@ function receiveShopLogo(req, res, next) {
 
 async function getShopProfile(shopId) {
   return dbGet(
-    `SELECT id, name, phone, logo_url, address, city, state, zip, market_tier,
+    `SELECT id, name, phone, logo_url, public_intake_slug, address, city, state, zip, market_tier,
             labor_rate, paint_rate, parts_markup, tax_rate, lat, lng, geofence_radius,
             twilio_phone_number, monthly_revenue_target
      FROM shops

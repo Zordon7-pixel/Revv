@@ -2,36 +2,18 @@ const router = require('express').Router();
 const rateLimit = require('express-rate-limit');
 const { dbGet, dbAll, dbRun } = require('../db');
 const auth = require('../middleware/auth');
-const { requireAdmin, requireTechnician } = require('../middleware/roles');
+const { requireTechnician } = require('../middleware/roles');
 const { v4: uuidv4 } = require('uuid');
+const { resolvePublicShop, sendPublicIntakeError } = require('../services/publicShop');
 const appointmentLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
   message: { error: 'Too many requests, please try again later.' },
 });
 
-async function ensureTable() {
-  await dbRun(`
-    CREATE TABLE IF NOT EXISTS appointment_requests (
-      id TEXT PRIMARY KEY,
-      shop_id TEXT NOT NULL,
-      name TEXT NOT NULL,
-      phone TEXT NOT NULL,
-      email TEXT,
-      vehicle_info TEXT,
-      service TEXT NOT NULL,
-      preferred_date TEXT,
-      preferred_time TEXT,
-      notes TEXT,
-      status TEXT DEFAULT 'pending',
-      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-    )
-  `);
-}
-
 router.post('/request', appointmentLimiter, async (req, res) => {
   try {
-    await ensureTable();
+    const shopId = await resolvePublicShop(req);
     const {
       name,
       phone,
@@ -52,17 +34,6 @@ router.post('/request', appointmentLimiter, async (req, res) => {
       return res.status(400).json({ error: 'Notes must be 1000 characters or less' });
     }
 
-    let shopId = req.query?.shop || null;
-    if (shopId) {
-      const shopExists = await dbGet('SELECT id FROM shops WHERE id = $1', [shopId]);
-      if (!shopExists) return res.status(400).json({ error: 'Invalid shop' });
-    }
-    if (!shopId) {
-      const firstShop = await dbGet('SELECT id FROM shops ORDER BY created_at ASC LIMIT 1');
-      if (!firstShop?.id) return res.status(400).json({ error: 'No shop configured' });
-      shopId = firstShop.id;
-    }
-
     const vehicleInfo = [vehicle_year, vehicle_make, vehicle_model].filter(Boolean).join(' ').trim();
     const id = uuidv4();
     await dbRun(
@@ -73,13 +44,12 @@ router.post('/request', appointmentLimiter, async (req, res) => {
     );
     return res.status(201).json({ ok: true, id });
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    return sendPublicIntakeError(res, err);
   }
 });
 
 router.get('/', auth, requireTechnician, async (req, res) => {
   try {
-    await ensureTable();
     const requests = await dbAll(
       `SELECT * FROM appointment_requests
        WHERE shop_id = $1 AND status = 'pending'
@@ -88,13 +58,12 @@ router.get('/', auth, requireTechnician, async (req, res) => {
     );
     return res.json({ requests });
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    return sendPublicIntakeError(res, err);
   }
 });
 
 router.put('/:id', auth, requireTechnician, async (req, res) => {
   try {
-    await ensureTable();
     const { status } = req.body || {};
     if (!['pending', 'confirmed', 'declined'].includes(status)) {
       return res.status(400).json({ error: 'Invalid status' });
@@ -107,10 +76,10 @@ router.put('/:id', auth, requireTechnician, async (req, res) => {
     if (!found) return res.status(404).json({ error: 'Not found' });
 
     await dbRun('UPDATE appointment_requests SET status = $1 WHERE id = $2 AND shop_id = $3', [status, req.params.id, req.user.shop_id]);
-    const updated = await dbGet('SELECT * FROM appointment_requests WHERE id = $1', [req.params.id]);
+    const updated = await dbGet('SELECT * FROM appointment_requests WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
     return res.json({ request: updated });
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    return sendPublicIntakeError(res, err);
   }
 });
 
