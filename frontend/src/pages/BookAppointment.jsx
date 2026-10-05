@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import PublicIntake, { IntakeIdentity } from '../components/PublicIntake'
 import { CalendarCheck2, CheckCircle2, Loader2 } from 'lucide-react'
 import { useLanguage } from '../contexts/LanguageContext'
-import { Logo, Panel } from '../components/ui'
+import { Panel } from '../components/ui'
 
 const SERVICES = [
   'Oil Change',
@@ -17,10 +17,11 @@ const SERVICES = [
 const inputClass = 'mt-1 w-full rounded-instrument border border-line-2 bg-void px-3 py-2.5 text-sm text-ink placeholder:text-faint focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20'
 
 export default function BookAppointment() {
+  return <PublicIntake>{(shop, shopLink, invalidateShop) => <BookingForm shop={shop} shopLink={shopLink} invalidateShop={invalidateShop} />}</PublicIntake>
+}
+
+function BookingForm({ shop, shopLink, invalidateShop }) {
   const { t } = useLanguage()
-  const [params] = useSearchParams()
-  const shopName = params.get('name') || t('booking.title')
-  const shopId = params.get('shop') || ''
 
   const [form, setForm] = useState({
     name: '',
@@ -44,16 +45,21 @@ export default function BookAppointment() {
 
   async function submit(event) {
     event.preventDefault()
+    if (!shopLink || submitting) return
     setError('')
     setSubmitting(true)
     try {
-      const query = shopId ? `?shop=${encodeURIComponent(shopId)}` : ''
+      const query = `?shop=${encodeURIComponent(shopLink)}`
       const response = await fetch(`/api/appointments/request${query}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form),
       })
       const responseData = await response.json().catch(() => ({}))
+      if (response.status === 404 || ['SHOP_LINK_REQUIRED', 'SHOP_NOT_FOUND'].includes(responseData?.code)) {
+        invalidateShop()
+        return
+      }
       if (!response.ok) throw new Error(responseData?.error || 'Could not submit request')
       setDone(true)
     } catch (requestError) {
@@ -67,9 +73,9 @@ export default function BookAppointment() {
     return (
       <main className="min-h-screen bg-void px-4 py-10 text-ink sm:py-14">
         <div className="mx-auto max-w-lg space-y-5">
-          <header className="flex items-center gap-3 border-b border-line pb-5">
-            <Logo variant="mark" className="h-10 w-10" />
-            <p className="font-display text-lg font-semibold text-ink">{shopName}</p>
+          <header className="flex flex-col items-start gap-3 border-b border-line pb-5">
+            <IntakeIdentity shop={shop} />
+
           </header>
           <Panel className="p-6 text-center">
             <CheckCircle2 className="mx-auto h-9 w-9 text-good" aria-hidden="true" />
@@ -84,10 +90,10 @@ export default function BookAppointment() {
   return (
     <main className="min-h-screen bg-void px-4 py-6 text-ink sm:px-6 sm:py-10">
       <div className="mx-auto max-w-2xl space-y-5">
-        <header className="flex items-center gap-3 border-b border-line pb-5">
-          <Logo variant="mark" className="h-10 w-10 shrink-0" />
+        <header className="flex flex-col items-start gap-3 border-b border-line pb-5">
+          <IntakeIdentity shop={shop} />
           <div className="min-w-0">
-            <h1 className="break-words font-display text-xl font-semibold leading-tight text-ink sm:text-2xl">{shopName}</h1>
+            <h1 className="break-words font-display text-xl font-semibold leading-tight text-ink sm:text-2xl">Book an appointment</h1>
             <p className="text-sm text-muted">Request a service appointment</p>
           </div>
         </header>

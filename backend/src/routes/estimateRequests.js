@@ -40,6 +40,16 @@ router.get('/', auth, async (req, res) => {
   }
 });
 
+router.get('/:id', auth, async (req, res) => {
+  try {
+    const row = await dbGet('SELECT * FROM estimate_requests WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
+    if (!row) return res.status(404).json({ error: 'Not found' });
+    return res.json({ success: true, request: { ...row, photos: parsePhotos(row.photos_json) } });
+  } catch {
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 router.patch('/:id/status', auth, async (req, res) => {
   try {
     const status = String(req.body?.status || '').toLowerCase();
@@ -54,11 +64,11 @@ router.patch('/:id/status', auth, async (req, res) => {
     if (!found) return res.status(404).json({ error: 'Not found' });
 
     await dbRun(
-      'UPDATE estimate_requests SET status = $1 WHERE id = $2',
-      [status, req.params.id]
+      'UPDATE estimate_requests SET status = $1 WHERE id = $2 AND shop_id = $3',
+      [status, req.params.id, req.user.shop_id]
     );
 
-    const updated = await dbGet('SELECT * FROM estimate_requests WHERE id = $1', [req.params.id]);
+    const updated = await dbGet('SELECT * FROM estimate_requests WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
     return res.json({
       success: true,
       request: {

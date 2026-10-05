@@ -3,6 +3,7 @@ const { dbGet, dbAll, dbRun } = require('../db');
 const rateLimit = require('express-rate-limit');
 const { v4: uuidv4 } = require('uuid');
 const { sendDiscordEmbed } = require('../utils/discord');
+const { resolvePublicShop, sendPublicIntakeError, validIntakePhotos } = require('../services/publicShop');
 
 const estimateRequestRateLimit = rateLimit({
   windowMs: 60 * 60 * 1000,
@@ -13,14 +14,33 @@ const estimateRequestRateLimit = rateLimit({
 });
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+const intakeMetadataLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  message: { error: 'Too many requests, please try again later.' },
+});
+router.get('/intake/:slug', intakeMetadataLimiter, async (req, res) => {
+  try {
+    const shopId = await resolvePublicShop(req);
+    const shop = await dbGet('SELECT name, logo_url FROM shops WHERE id = $1', [shopId]);
+    if (!shop) return res.status(404).json({ error: 'Shop not found', code: 'SHOP_NOT_FOUND' });
+    return res.json({ name: shop.name, logo_url: shop.logo_url });
+  } catch (err) {
+    return sendPublicIntakeError(res, err);
+  }
+});
+
 // Get public shop info with ratings and reviews
 router.get('/shop/:shopId', async (req, res) => {
   try {
     const { shopId } = req.params;
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(shopId)) {
+      return res.status(404).json({ error: 'Shop not found' });
+    }
     
     // Get shop info
     const shop = await dbGet(`
-      SELECT id, name, phone, address, city, state, zip, labor_rate
+      SELECT id, name, phone, address, city, state, zip, labor_rate, public_intake_slug
       FROM shops WHERE id = $1
     `, [shopId]);
     
@@ -71,6 +91,7 @@ router.get('/shop/:shopId', async (req, res) => {
         state: shop.state,
         zip: shop.zip,
         labor_rate: shop.labor_rate,
+        public_intake_slug: shop.public_intake_slug,
       },
       rating: {
         avg: avgRating || null,
@@ -85,15 +106,15 @@ router.get('/shop/:shopId', async (req, res) => {
       })),
     });
   } catch (err) {
-    console.error('[Public Shop] Error:', err);
+    console.error('[Public Shop] Internal server error');
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
 router.post('/estimate-request', estimateRequestRateLimit, async (req, res) => {
   try {
+    const resolvedShopId = await resolvePublicShop(req);
     const {
-      shop_id,
       name,
       phone,
       email,
@@ -142,34 +163,18 @@ router.post('/estimate-request', estimateRequestRateLimit, async (req, res) => {
       return res.status(400).json({ error: 'Invalid damage_type' });
     }
 
-    if (Array.isArray(photos) && photos.length > 5) {
-      return res.status(400).json({ error: 'A maximum of 5 photos is allowed' });
+    if (!validIntakePhotos(photos)) {
+      return res.status(400).json({ error: 'Invalid photos: up to 5 JPEG, PNG or WebP base64 images, 300 KiB each' });
     }
-
-    const incomingPhotos = Array.isArray(photos) ? photos : [];
-    const normalizedPhotos = incomingPhotos
-      .map((photo) => {
-        if (!photo || typeof photo !== 'string') return null;
-        return photo.trim();
-      })
-      .filter(Boolean);
-
-    let resolvedShopId = req.query?.shop || shop_id || null;
-    if (resolvedShopId) {
-      const shop = await dbGet('SELECT id FROM shops WHERE id = $1', [resolvedShopId]);
-      if (!shop?.id) return res.status(400).json({ error: 'Invalid shop_id' });
-      resolvedShopId = shop.id;
-    } else {
-      const firstShop = await dbGet('SELECT id FROM shops ORDER BY created_at ASC LIMIT 1');
-      resolvedShopId = firstShop?.id || null;
-    }
+    const normalizedPhotos = photos || [];
+    const requestId = uuidv4();
 
     await dbRun(
       `INSERT INTO estimate_requests
         (id, shop_id, name, phone, email, year, make, model, damage_type, description, preferred_date, photos_json, status)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'pending')`,
       [
-        uuidv4(),
+        requestId,
         resolvedShopId,
         name.trim(),
         normalizedPhoneDigits,
@@ -184,24 +189,19 @@ router.post('/estimate-request', estimateRequestRateLimit, async (req, res) => {
       ]
     );
 
-    // Notify Discord
-    sendDiscordEmbed({
-      title: '🔧 New Estimate Request',
-      description: `**${name.trim()}** submitted an estimate request`,
-      color: 0xf59e0b,
+    // Only internal identifiers and a fixed request type may leave the app.
+    Promise.resolve().then(() => sendDiscordEmbed({
+      title: 'New intake request',
       fields: [
-        { name: 'Email', value: normalizedEmail, inline: true },
-        { name: 'Phone', value: normalizedPhoneDigits, inline: true },
-        { name: 'Vehicle', value: `${year} ${make} ${model}`, inline: true },
-        { name: 'Damage', value: damage_type, inline: true },
+        { name: 'Shop ID', value: resolvedShopId },
+        { name: 'Request ID', value: requestId },
+        { name: 'Type', value: 'estimate' },
       ],
-      footer: 'REVV Lead Tracking',
-    });
+    })).catch(() => console.error('[Public Intake] Notification failed'));
 
     return res.status(201).json({ success: true, message: 'Request received' });
   } catch (err) {
-    console.error('[Public Estimate Request] Error:', err);
-    return res.status(500).json({ error: 'Internal server error' });
+    return sendPublicIntakeError(res, err);
   }
 });
 

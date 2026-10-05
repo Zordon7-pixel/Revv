@@ -7,6 +7,10 @@ import { resolveUploadedMediaUrl } from '../lib/mediaUrls'
 
 export default function ShopProfile() {
   const { shopId } = useParams()
+  return <ShopProfileContent key={shopId} shopId={shopId} />
+}
+
+function ShopProfileContent({ shopId }) {
   const navigate = useNavigate()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -33,7 +37,8 @@ export default function ShopProfile() {
   }
 
   function bookAppointment() {
-    navigate('/book')
+    const slug = data?.shop?.public_intake_slug
+    if (slug) navigate(`/book?shop=${encodeURIComponent(slug)}`)
   }
 
   async function shareProfile() {
@@ -98,7 +103,7 @@ export default function ShopProfile() {
           <button type="button" onClick={callShop} disabled={!shop.phone} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-instrument bg-brand px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-lit disabled:opacity-45">
             <Phone size={16} aria-hidden="true" /> Call
           </button>
-          <button type="button" onClick={bookAppointment} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-instrument border border-brand/40 bg-brand/10 px-4 py-2.5 text-sm font-semibold text-brand transition-colors hover:bg-brand/15">
+          <button type="button" onClick={bookAppointment} disabled={!shop.public_intake_slug} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-instrument border border-brand/40 bg-brand/10 px-4 py-2.5 text-sm font-semibold text-brand transition-colors hover:bg-brand/15 disabled:cursor-not-allowed disabled:opacity-50">
             <Calendar size={16} aria-hidden="true" /> Book appointment
           </button>
           <button type="button" onClick={shareProfile} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-instrument border border-line-2 bg-panel px-4 py-2.5 text-sm font-semibold text-ink transition-colors hover:border-brand hover:text-brand">
@@ -106,6 +111,8 @@ export default function ShopProfile() {
             {copied ? 'Copied' : 'Share'}
           </button>
         </div>
+
+        {!shop.public_intake_slug && <p className="text-sm text-muted">Online booking is unavailable. Contact the shop for a current booking link.</p>}
 
         <Panel title="Customer rating">
           <div className="p-5 text-center">
@@ -157,7 +164,7 @@ export default function ShopProfile() {
           ) : <p role="status" className="px-4 py-8 text-center text-sm text-muted">No reviews yet</p>}
         </Panel>
 
-        <button type="button" onClick={bookAppointment} className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-instrument bg-brand px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-lit">
+        <button type="button" onClick={bookAppointment} disabled={!shop.public_intake_slug} className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-instrument bg-brand px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-lit disabled:cursor-not-allowed disabled:opacity-50">
           <Calendar size={17} aria-hidden="true" /> Book appointment
         </button>
       </div>
