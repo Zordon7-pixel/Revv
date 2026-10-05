@@ -23,6 +23,84 @@ function marginPercent(value, fallback) {
   return Number.isFinite(fraction) ? String(Number((fraction * 100).toFixed(4))) : fallback
 }
 
+export function PublicIntakeSettings() {
+  const [slug, setSlug] = useState('')
+  const [busy, setBusy] = useState(true)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  const [confirmRotate, setConfirmRotate] = useState(false)
+
+  function acceptSlug(data) {
+    if (!/^[a-z2-7]{12,64}$/.test(data?.public_intake_slug || '')) throw new Error('Missing public link')
+    setSlug(data.public_intake_slug)
+  }
+
+  async function load() {
+    setBusy(true)
+    setSlug('')
+    setError('')
+    setNotice('')
+    try { acceptSlug((await api.get('/settings/public-intake')).data) }
+    catch { setError('Could not load public links. Please try again.') }
+    finally { setBusy(false) }
+  }
+
+  useEffect(() => { load() }, [])
+
+  async function copy(label, url) {
+    setError('')
+    setNotice('')
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable')
+      await navigator.clipboard.writeText(url)
+      setNotice(`${label} link copied.`)
+    } catch { setError('Could not copy the link. Select and copy the link below manually.') }
+  }
+
+  async function rotate() {
+    if (busy) return
+    setConfirmRotate(false)
+    setBusy(true)
+    setSlug('')
+    setError('')
+    setNotice('')
+    try {
+      acceptSlug((await api.post('/settings/public-intake/rotate')).data)
+      setNotice('Public links replaced. Previous slug links no longer work; share the new links.')
+    } catch { setError('Could not confirm link rotation. Reload current links before sharing or trying again.') }
+    finally { setBusy(false) }
+  }
+
+  return <section aria-labelledby="public-intake-heading" className="min-w-0 space-y-4 rounded-instrument border border-line bg-panel p-4 sm:p-5">
+    <h2 id="public-intake-heading" className="font-display font-semibold text-ink">Public shop links</h2>
+    <p className="text-sm text-muted">Share these shop-specific links with your customers.</p>
+    {busy && <p role="status" className="text-sm text-muted">Loading public links…</p>}
+    {error && <p role="alert" className="text-sm text-crit">{error}</p>}
+    {notice && <p role="status" className="text-sm text-good">{notice}</p>}
+    {slug && !busy && <>
+      {[['Estimate', '/estimate-request'], ['Booking', '/book']].map(([label, path]) => {
+        const url = `${window.location.origin}${path}?shop=${encodeURIComponent(slug)}`
+        return <div key={path} className="min-w-0 space-y-2">
+          <label className="block text-sm text-muted">{label} link
+            <input readOnly value={url} aria-label={`${label} link`} onFocus={event => event.target.select()} className="mt-1 block w-full min-w-0 rounded-instrument border border-line-2 bg-void px-3 py-2 text-sm text-ink" />
+          </label>
+          <button type="button" onClick={() => copy(label, url)} className="rounded-instrument border border-line-2 px-3 py-2 text-sm text-ink">Copy {label.toLowerCase()} link</button>
+        </div>
+      })}
+      {/* Prerequisite: an approved local QR encoder. No existing implementation or dependency is available. */}
+      <p className="text-xs text-muted">QR codes are not available yet. Use the links above to share.</p>
+      {confirmRotate ? <div role="group" aria-label="Confirm public link rotation" className="space-y-3 rounded-instrument border border-warn/40 p-3">
+        <p className="text-sm text-ink">Replace both public links? Existing slug links will stop working. Update any shared links after replacing them.</p>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={rotate} className="rounded-instrument bg-brand px-3 py-2 text-sm text-white">Replace public links</button>
+          <button type="button" onClick={() => setConfirmRotate(false)} className="rounded-instrument border border-line-2 px-3 py-2 text-sm text-ink">Cancel</button>
+        </div>
+      </div> : <button type="button" onClick={() => { setNotice(''); setConfirmRotate(true) }} className="rounded-instrument border border-line-2 px-3 py-2 text-sm text-ink">Rotate public links</button>}
+    </>}
+    {!slug && !busy && <button type="button" onClick={load} className="rounded-instrument bg-brand px-3 py-2 text-sm text-white">Reload public links</button>}
+  </section>
+}
+
 export default function Settings() {
   const currentYearMonth = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
   const [shop,   setShop]   = useState(null)
@@ -760,6 +838,7 @@ export default function Settings() {
 
       <form id="shop-settings-form" onSubmit={handleSave} className="space-y-6">
 
+        {activeSettingsTab === 'core' && userIsAdmin && <PublicIntakeSettings />}
         {activeSettingsTab === 'core' && (
           <>
             {/* My Profile */}

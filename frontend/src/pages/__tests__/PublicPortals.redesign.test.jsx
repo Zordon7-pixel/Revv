@@ -132,28 +132,33 @@ describe('Phase 6D public portals', () => {
 
   it('keeps appointment request routing and JSON payloads', async () => {
     const user = userEvent.setup()
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: vi.fn().mockResolvedValue({ ok: true }) })
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ name: 'Miles Automotive', logo_url: null }) })
+      .mockResolvedValue({ ok: true, json: async () => ({ ok: true }) })
     vi.stubGlobal('fetch', fetchMock)
 
     renderRoute(<BookAppointment />, '/book', '/book?shop=shop-1&name=Miles%20Automotive')
 
-    await user.type(screen.getByLabelText('Customer name'), 'Miles Customer')
+    await user.type(await screen.findByLabelText('Customer name'), 'Miles Customer')
     await user.type(screen.getByLabelText('Phone'), '2125550100')
     await user.click(screen.getByRole('button', { name: 'Submit Booking' }))
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
-    expect(fetchMock.mock.calls[0][0]).toBe('/api/appointments/request?shop=shop-1')
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ name: 'Miles Customer', phone: '2125550100', service: 'Oil Change' })
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    expect(fetchMock.mock.calls[1][0]).toBe('/api/appointments/request?shop=shop-1')
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toMatchObject({ name: 'Miles Customer', phone: '2125550100', service: 'Oil Change' })
     expect(await screen.findByRole('status')).toHaveTextContent('Appointment Confirmed')
   })
 
   it('keeps public estimate request fields and photo-array payload', async () => {
     const user = userEvent.setup()
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: vi.fn().mockResolvedValue({ ok: true }) })
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ name: 'Miles Automotive', logo_url: null }) })
+      .mockResolvedValue({ ok: true, json: async () => ({ ok: true }) })
     vi.stubGlobal('fetch', fetchMock)
 
     renderRoute(<PublicEstimateRequest />, '/estimate-request', '/estimate-request?shop=shop-2')
 
+    await screen.findByLabelText('Full name')
     const values = [
       ['Full name', 'Miles Customer'],
       ['Phone', '2125550101'],
@@ -166,9 +171,9 @@ describe('Phase 6D public portals', () => {
     for (const [label, value] of values) await user.type(screen.getByLabelText(label), value)
     await user.click(screen.getByRole('button', { name: 'Submit request' }))
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
-    expect(fetchMock.mock.calls[0][0]).toBe('/api/public/estimate-request?shop=shop-2')
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ name: 'Miles Customer', make: 'Honda', photos: [] })
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    expect(fetchMock.mock.calls[1][0]).toBe('/api/public/estimate-request?shop=shop-2')
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toMatchObject({ name: 'Miles Customer', make: 'Honda', photos: [] })
   })
 
   it('keeps review context and rating submission endpoints', async () => {
@@ -211,7 +216,7 @@ describe('Phase 6D public portals', () => {
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
     api.get.mockResolvedValue({
       data: {
-        shop: { name: 'Miles Automotive', phone: '212-555-0100', city: 'Queens', state: 'NY', labor_rate: 75 },
+        shop: { name: 'Miles Automotive', public_intake_slug: 'abcdefghijklmnop', phone: '212-555-0100', city: 'Queens', state: 'NY', labor_rate: 75 },
         rating: { avg: 4.9, count: 12 },
         badges: [{ type: 'top_rated', label: 'Top rated' }],
         reviews: [],
