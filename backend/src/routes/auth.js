@@ -6,6 +6,7 @@ const rateLimit = require('express-rate-limit');
 const { v4: uuidv4 } = require('uuid');
 const { dbGet, dbRun } = require('../db');
 const auth     = require('../middleware/auth');
+const { newPublicIntakeSlug } = require('../services/publicShop');
 const { sendMail } = require('../services/mailer');
 const { sendDiscordEmbed } = require('../utils/discord');
 
@@ -88,7 +89,7 @@ router.post('/shop-register', async (req, res) => {
     const shopId = uuidv4();
     const userId = uuidv4();
 
-    await dbRun('INSERT INTO shops (id, name) VALUES ($1, $2)', [shopId, shop_name.trim()]);
+    await dbRun('INSERT INTO shops (id, name, public_intake_slug) VALUES ($1, $2, $3)', [shopId, shop_name.trim(), newPublicIntakeSlug()]);
     await dbRun(
       'INSERT INTO users (id, shop_id, name, email, password_hash, role) VALUES ($1, $2, $3, $4, $5, $6)',
       [userId, shopId, name.trim(), emailNorm, bcrypt.hashSync(password, 10), 'owner']

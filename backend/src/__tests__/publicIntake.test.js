@@ -80,6 +80,7 @@ function fixture() {
       calls.push({ sql, params });
       if (fail) throw new Error('Private DB detail synthetic@example.test');
       if (sql.includes('FROM users')) return null;
+      if (sql.includes('FROM ro_ratings')) return { avg_rating: null, review_count: 0 };
       if (sql.startsWith('UPDATE shops')) {
         const shop = shops.find(s => s.id === params[1]);
         if (shop) { shop.public_intake_slug = params[0]; writes.push({ sql, params }); }
@@ -110,6 +111,7 @@ function fixture() {
       return { rowCount: 1 };
     },
     async dbAll(sql, params) {
+      if (sql.includes('FROM ro_ratings')) return [];
       assert.match(sql, /WHERE shop_id = \$1 AND status = \$2/);
       return estimates.filter(row => row.shop_id === params[0] && row.status === params[1]);
     },
@@ -280,4 +282,101 @@ test('settings restrict read/rotate to owner/admin and rotate only authenticated
   const profile = await f.request('GET', '/api/market/shop', {}, { role: 'owner' });
   assert.equal(profile.json.public_intake_slug, f.shops[1].public_intake_slug);
   assert.ok(f.calls.some(call => /SELECT id, name, phone, logo_url, public_intake_slug/.test(call.sql)));
+});
+
+
+test('actual public profile returns DB slug before/after rotation; malformed IDs never query', async t => {
+  const f = fixture();
+  for (const id of ['garbage', 'aaaaaaaaaaaaaaaaaaaaaaaaaa', "' OR 1=1"]) {
+    const response = await f.request('GET', `/api/public/shop/${encodeURIComponent(id)}`);
+    assert.equal(response.status, 404);
+  }
+  assert.equal(f.calls.length, 0);
+  assert.equal((await f.request('GET', `/api/public/shop/${UNKNOWN}`)).status, 404);
+  const before = await f.request('GET', `/api/public/shop/${B}`);
+  assert.equal(before.status, 200);
+  assert.equal(before.json.shop.public_intake_slug, f.shops[1].public_intake_slug);
+  assert.ok(f.calls.some(({ sql }) => /SELECT.*public_intake_slug/.test(sql)));
+  await f.request('POST', '/api/settings/public-intake/rotate', {}, { role: 'owner' });
+  const after = await f.request('GET', `/api/public/shop/${B}`);
+  assert.equal(after.json.shop.public_intake_slug, f.shops[1].public_intake_slug);
+  assert.notEqual(after.json.shop.public_intake_slug, before.json.shop.public_intake_slug);
+  const logs = [];
+  t.mock.method(console, 'error', (...args) => logs.push(args));
+  f.setFail();
+  assert.deepEqual((await f.request('GET', `/api/public/shop/${B}`)).json, { error: 'Internal server error' });
+  assert.deepEqual(logs, [['[Public Shop] Internal server error']]);
+});
+
+test('SQL base32 final masking matches RFC 4648 known bytes; helper uses all 128 random bits', t => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const crypto = require('node:crypto');
+  const alphabet = 'abcdefghijklmnopqrstuvwxyz234567';
+  // Pin the SQL expressions mirrored below, in both startup definitions. No runtime test seam.
+  for (const file of ['../db/index.js', '../db/schema.pg.sql']) {
+    const source = fs.readFileSync(path.join(__dirname, file), 'utf8');
+    for (const expression of ['value := ((value & 255) << 8) | get_byte(bytes, i);',
+      'bits := bits + 8;', 'bits := bits - 5;',
+      '((value >> bits) & 31) + 1', '((value << (5 - bits)) & 31) + 1']) assert.ok(source.includes(expression));
+    assert.ok(source.includes('uuid_send(gen_random_uuid())'));
+  }
+  // SQL default uses UUIDv4: 122 random bits + six fixed version/variant bits.
+  // Backfill, rotation, and app registration use randomBytes(16): 128 random bits.
+  const vectors = [
+    ['00000000000000000000000000000000', 'aaaaaaaaaaaaaaaaaaaaaaaaaa'],
+    ['ffffffffffffffffffffffffffffffff', '77777777777777777777777774'],
+    ['000102030405060708090a0b0c0d0e0f', 'aaaqeayeaudaocajbifqydiob4'],
+  ];
+  for (let last = 0; last < 256; last++) vectors.push(['a55a'.repeat(7) + 'ff' + last.toString(16).padStart(2, '0')]);
+  for (const [hex, known] of vectors) {
+    const bytes = Buffer.from(hex, 'hex');
+    // Independent RFC 4648 bit-string grouping (no accumulator/masking).
+    const binary = [...bytes].map(byte => byte.toString(2).padStart(8, '0')).join('');
+    const expected = binary.match(/.{1,5}/g).map(group => alphabet[parseInt(group.padEnd(5, '0'), 2)]).join('');
+    if (known) assert.equal(expected, known);
+    let value = 0, bits = 0, result = '';
+    for (const byte of bytes) {
+      value = ((value & 255) << 8) | byte;
+      bits += 8;
+      while (bits >= 5) { bits -= 5; result += alphabet[(value >> bits) & 31]; }
+    }
+    assert.equal(bits, 3);
+    result += alphabet[(value << (5 - bits)) & 31];
+    assert.equal(result, expected);
+    assert.match(result, /^[a-z2-7]{25}[aeimquy4]$/);
+    const random = t.mock.method(crypto, 'randomBytes', size => { assert.equal(size, 16); return bytes; });
+    delete require.cache[require.resolve('../services/publicShop')];
+    assert.equal(require('../services/publicShop').newPublicIntakeSlug(), expected);
+    random.mock.restore();
+  }
+  delete require.cache[require.resolve('../services/publicShop')];
+});
+
+
+test('shop registration explicitly inserts the randomBytes slug instead of relying on UUID default', async t => {
+  const writes = [];
+  install('../db', {
+    dbGet: async () => null,
+    dbRun: async (sql, params) => { writes.push({ sql, params }); return { rowCount: 1 }; },
+  });
+  install('../services/mailer', { sendMail: async () => null });
+  install('../utils/discord', { sendDiscordEmbed: async () => null });
+  const crypto = require('node:crypto');
+  t.mock.method(crypto, 'randomBytes', size => { assert.equal(size, 16); return Buffer.alloc(16, 255); });
+  // Keep bcrypt's own randomness separate from the slug entropy witness.
+  install('bcryptjs', { hashSync: () => 'synthetic-hash' });
+  for (const id of ['../services/publicShop', '../routes/auth']) delete require.cache[require.resolve(id)];
+  const app = express();
+  app.use(express.json());
+  app.use('/api/auth', require('../routes/auth'));
+  const response = await inject(app, { method: 'POST', url: '/api/auth/shop-register',
+    headers: { 'content-type': 'application/json' },
+    body: Buffer.from(JSON.stringify({ name: 'Synthetic Owner', email: 'owner@example.test', password: 'synthetic-only', shop_name: 'Synthetic Shop' })),
+  });
+  assert.equal(response.status, 201);
+  const insert = writes.find(({ sql }) => sql.startsWith('INSERT INTO shops'));
+  assert.equal(insert.sql, 'INSERT INTO shops (id, name, public_intake_slug) VALUES ($1, $2, $3)');
+  assert.deepEqual(insert.params, [response.json.user.shop_id, 'Synthetic Shop', '77777777777777777777777774']);
+  for (const id of ['../services/publicShop', '../routes/auth', 'bcryptjs']) delete require.cache[require.resolve(id)];
 });

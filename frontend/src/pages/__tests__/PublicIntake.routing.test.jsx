@@ -7,6 +7,7 @@ import BookAppointment from '../BookAppointment'
 import PublicEstimateRequest, { compressImage, validIntakePhoto } from '../PublicEstimateRequest'
 import ShopProfile from '../ShopProfile'
 import Settings, { PublicIntakeSettings } from '../Settings'
+import qrcode from '../../lib/vendor/qrcode.mjs'
 import Dashboard from '../Dashboard'
 import Appointments from '../Appointments'
 
@@ -240,6 +241,44 @@ describe('profile and staff queue', () => {
   })
 })
 
+// Provenance: unmodified qrcode-generator@2.0.4 npm package/dist/qrcode.mjs,
+// SHA-256 ea91d7118a5395289170da848b7c6758b996163bfbccf312591ab65a4911b7c0.
+// MIT license from upstream official js2.0.4 tag; both supplied by Hermes.
+function assertQr(label, path, linkSlug) {
+  const url = `${window.location.origin}${path}?shop=${linkSlug}`
+  const img = screen.getByRole('img', { name: `${label} link QR code` })
+  expect(img.style.width).toBe('100%')
+  expect(img.style.maxWidth).toBe('192px')
+  expect(screen.getByRole('link', { name: `Open ${label.toLowerCase()} link` })).toHaveAttribute('href', url)
+  expect(img.src).toMatch(/^data:image\/svg\+xml;charset=utf-8,/)
+  const svg = new DOMParser().parseFromString(decodeURIComponent(img.src.split(',')[1]), 'image/svg+xml')
+  const code = qrcode(0, 'M')
+  // These same-origin URLs are ASCII. Feed exact URL, independently of UI byte conversion.
+  code.addData(url, 'Byte')
+  code.make()
+  const count = code.getModuleCount()
+  expect(count).toBeGreaterThanOrEqual(21)
+  expect(svg.documentElement.getAttribute('viewBox')).toBe(`0 0 ${count + 8} ${count + 8}`)
+  expect(svg.querySelector('rect').getAttribute('fill')).toBe('white')
+  expect(svg.querySelector('path').getAttribute('fill')).toBe('black')
+  const pathData = svg.querySelector('path').getAttribute('d')
+  const cells = [...pathData.matchAll(/M(\d+),(\d+)l1,0 0,1 -1,0 0,-1z /g)]
+  expect(cells.map(match => match[0]).join('')).toBe(pathData)
+  const dark = new Set(cells.map(([, x, y]) => `${Number(y) - 4},${Number(x) - 4}`))
+  // Validate every rendered module against the real encoder for this exact URL.
+  for (let row = 0; row < count; row++) {
+    for (let col = 0; col < count; col++) expect(dark.has(`${row},${col}`)).toBe(code.isDark(row, col))
+  }
+  // No drawn modules intrude into the four-module quiet zone.
+  for (const [, x, y] of cells) {
+    expect(Number(x)).toBeGreaterThanOrEqual(4)
+    expect(Number(y)).toBeGreaterThanOrEqual(4)
+    expect(Number(x)).toBeLessThan(count + 4)
+    expect(Number(y)).toBeLessThan(count + 4)
+  }
+  return img.src
+}
+
 describe('public link settings', () => {
   function mockSettings() {
     api.get.mockImplementation(url => Promise.resolve({ data: url === '/settings/public-intake' ? { public_intake_slug: slug } : url === '/market/shop' ? { name: 'Shop' } : {} }))
@@ -267,6 +306,8 @@ describe('public link settings', () => {
     api.post.mockReturnValue(rotate.promise)
     const { container } = mount(<PublicIntakeSettings />)
     await screen.findByLabelText('Estimate link')
+    const beforeEstimate = assertQr('Estimate', '/estimate-request', slug)
+    const beforeBooking = assertQr('Booking', '/book', slug)
     fireEvent.click(screen.getByRole('button', { name: 'Copy estimate link' }))
     await screen.findByText('Estimate link copied.')
     fireEvent.click(screen.getByRole('button', { name: 'Copy booking link' }))
@@ -284,9 +325,9 @@ describe('public link settings', () => {
     expect(screen.getByLabelText('Estimate link')).toHaveValue(`${window.location.origin}/estimate-request?shop=${nextSlug}`)
     expect(screen.getByLabelText('Booking link')).toHaveValue(`${window.location.origin}/book?shop=${nextSlug}`)
     expect(container.innerHTML).not.toContain(slug)
-    // No encoder is installed: pin the honest prerequisite rather than a fake QR or remote URL.
-    expect(screen.getByText(/QR codes are not available yet/)).toBeInTheDocument()
-    expect(container.querySelector('img,canvas,svg,iframe')).toBeNull()
+    expect(assertQr('Estimate', '/estimate-request', nextSlug)).not.toBe(beforeEstimate)
+    expect(assertQr('Booking', '/book', nextSlug)).not.toBe(beforeBooking)
+    expect(container.querySelectorAll('img')).toHaveLength(2)
   })
 
   it('handles clipboard failure with a manually selectable link', async () => {

@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { MapPin, Wrench, DollarSign, Save, RefreshCw, CheckCircle, ShieldCheck, Truck, Trash2, ChevronDown, X, AlertTriangle, Smartphone, LogOut, CalendarDays } from 'lucide-react'
 import api from '../lib/api'
+import qrcode from '../lib/vendor/qrcode.mjs'
 import { optimizeImageForUpload } from '../lib/imageUpload'
 import { isAdmin } from '../lib/auth'
 import { resolveUploadedMediaUrl } from '../lib/mediaUrls'
@@ -21,6 +22,19 @@ const TIER_LABELS = { 1:'Major Metro', 2:'Large City', 3:'Mid-Size Market', 4:'S
 function marginPercent(value, fallback) {
   const fraction = Number(value)
   return Number.isFinite(fraction) ? String(Number((fraction * 100).toFixed(4))) : fallback
+}
+
+function PublicLinkQr({ label, url }) {
+  const src = useMemo(() => {
+    const code = qrcode(0, 'M');
+    // The vendor's Byte mode accepts a binary string, not Unicode code points.
+    const bytes = Array.from(new TextEncoder().encode(url), byte => String.fromCharCode(byte)).join('');
+    code.addData(bytes, 'Byte');
+    code.make();
+    const svg = code.createSvgTag({ cellSize: 1, margin: 4, scalable: true });
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  }, [url]);
+  return <img src={src} alt={`${label} link QR code`} width="192" height="192" style={{ width: '100%', maxWidth: 192, height: 'auto' }} />;
 }
 
 export function PublicIntakeSettings() {
@@ -81,14 +95,14 @@ export function PublicIntakeSettings() {
       {[['Estimate', '/estimate-request'], ['Booking', '/book']].map(([label, path]) => {
         const url = `${window.location.origin}${path}?shop=${encodeURIComponent(slug)}`
         return <div key={path} className="min-w-0 space-y-2">
+          <PublicLinkQr label={label} url={url} />
+          <a href={url} className="block text-sm text-brand underline">Open {label.toLowerCase()} link</a>
           <label className="block text-sm text-muted">{label} link
             <input readOnly value={url} aria-label={`${label} link`} onFocus={event => event.target.select()} className="mt-1 block w-full min-w-0 rounded-instrument border border-line-2 bg-void px-3 py-2 text-sm text-ink" />
           </label>
           <button type="button" onClick={() => copy(label, url)} className="rounded-instrument border border-line-2 px-3 py-2 text-sm text-ink">Copy {label.toLowerCase()} link</button>
         </div>
       })}
-      {/* Prerequisite: an approved local QR encoder. No existing implementation or dependency is available. */}
-      <p className="text-xs text-muted">QR codes are not available yet. Use the links above to share.</p>
       {confirmRotate ? <div role="group" aria-label="Confirm public link rotation" className="space-y-3 rounded-instrument border border-warn/40 p-3">
         <p className="text-sm text-ink">Replace both public links? Existing slug links will stop working. Update any shared links after replacing them.</p>
         <div className="flex flex-wrap gap-2">

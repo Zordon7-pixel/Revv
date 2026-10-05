@@ -34,10 +34,13 @@ router.get('/intake/:slug', intakeMetadataLimiter, async (req, res) => {
 router.get('/shop/:shopId', async (req, res) => {
   try {
     const { shopId } = req.params;
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(shopId)) {
+      return res.status(404).json({ error: 'Shop not found' });
+    }
     
     // Get shop info
     const shop = await dbGet(`
-      SELECT id, name, phone, address, city, state, zip, labor_rate
+      SELECT id, name, phone, address, city, state, zip, labor_rate, public_intake_slug
       FROM shops WHERE id = $1
     `, [shopId]);
     
@@ -88,6 +91,7 @@ router.get('/shop/:shopId', async (req, res) => {
         state: shop.state,
         zip: shop.zip,
         labor_rate: shop.labor_rate,
+        public_intake_slug: shop.public_intake_slug,
       },
       rating: {
         avg: avgRating || null,
@@ -102,7 +106,7 @@ router.get('/shop/:shopId', async (req, res) => {
       })),
     });
   } catch (err) {
-    console.error('[Public Shop] Error:', err);
+    console.error('[Public Shop] Internal server error');
     res.status(500).json({ error: 'Internal server error' });
   }
 });
