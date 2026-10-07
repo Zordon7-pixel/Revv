@@ -659,6 +659,7 @@ async function initDb() {
   await require('./customerConsent').up(pool);
   if (process.env.REVV_SMS_AUTOPROVISION === 'true') await require('./smsProvisioning').up(pool);
   await require('./paymentReservations').up(pool);
+  await require('./estimateAiPolicy').up(pool);
   await require('../services/stockCapture').ensureStock(pool);
   await require('../services/partsDelivery').ensureDelivery(pool);
 
