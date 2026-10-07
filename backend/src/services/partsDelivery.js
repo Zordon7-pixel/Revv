@@ -28,6 +28,10 @@ function ensureDelivery(db) {
         shop_id TEXT NOT NULL, part_id TEXT NOT NULL, revision INTEGER NOT NULL,
         result JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         PRIMARY KEY(shop_id,part_id,revision))`);
+      await c.query(`CREATE TABLE IF NOT EXISTS parts_notification_cooldowns (
+        shop_id TEXT NOT NULL, customer_id TEXT NOT NULL, channel TEXT NOT NULL CHECK (channel IN ('sms','email')),
+        claim_id UUID NOT NULL, expires_at TIMESTAMPTZ NOT NULL,
+        PRIMARY KEY(shop_id,customer_id,channel))`);
       await c.query('COMMIT');
     } catch(e) { await c.query('ROLLBACK'); throw e; } finally { c.release(); }
   })().catch(e => { initialized.delete(db); throw e; }));
