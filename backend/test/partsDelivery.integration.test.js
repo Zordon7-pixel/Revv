@@ -74,11 +74,28 @@ for(const idType of ['TEXT','UUID']) test(`parts delivery lifecycle and boundari
     assert.equal((await db.query('SELECT COUNT(*)::int AS n FROM parts_delivery_notifications')).rows[0].n,1);
     await db.query("UPDATE customers SET phone='+15555550101',email='synthetic@example.test',sms_consent=TRUE,sms_consent_at=NOW(),sms_consent_method='verbal',sms_consent_by=$3,email_consent=TRUE,preferred_contact_method='both' WHERE id=$1 AND shop_id=$2",[customer,a,user]);
     const prev=part.delivery_revision;part=await savePart(db,a,user,{customer_note:'New estimated date being checked',delivery_revision:prev},{id:part.id,requireRevision:true});
-    let sends=0;const providers={sendSMS:async()=>{sends++;return {ok:true}},sendMail:async()=>{sends++;return {id:'synthetic'}}};
+    let sends=0;const providers={sendSMS:async()=>{sends++;return {ok:true,sid:'SM0123456789abcdef0123456789abcdef'}},sendMail:async()=>{sends++;return {id:'01234567-89ab-cdef-0123-456789abcdef'}}};
     const results=await Promise.all([notifyPartUpdate(db,a,part,prev,providers),notifyPartUpdate(db,a,part,prev,providers)]);
     assert.equal(sends,2);assert.ok(results.some(r=>r.reason==='already_requested'));
     assert.equal((await notifyPartUpdate(db,b,part,prev,providers)).reason,'no_customer_change');assert.equal(sends,2);
     const invalid=await api(`/parts/${part.id}/delivery`,{method:'PUT',body:{delivery_revision:part.delivery_revision,notify_customer:'true'}});assert.equal(invalid.status,400);
+  });
+  await t.test('API and history exclude malformed provider references while the save succeeds',async()=>{
+    const freshCustomer=randomUUID();
+    await db.query("INSERT INTO customers(id,shop_id,phone,email,sms_consent,sms_consent_at,sms_consent_method,sms_consent_by,email_consent,preferred_contact_method) VALUES($1,$2,'+15555550102','fresh@example.test',TRUE,NOW(),'verbal',$3,TRUE,'both')",[freshCustomer,a,user]);
+    await db.query('UPDATE repair_orders SET customer_id=$3 WHERE id=$1 AND shop_id=$2',[ro,a,freshCustomer]);
+    const paths=['sms','mailer'].map(name=>require.resolve('../src/services/'+name));
+    const cached=paths.map(path=>require.cache[path]);
+    const exports=[{sendSMS:async()=>({ok:true,sid:{toString(){assert.fail('no coercion')}}})},{sendMail:async()=>({id:'SECRET'.repeat(1000)})}];
+    paths.forEach((path,i)=>{require.cache[path]={id:path,filename:path,loaded:true,exports:exports[i]}});
+    try {
+      const result=await api(`/parts/${part.id}/delivery`,{method:'PUT',body:{delivery_revision:part.delivery_revision,customer_note:'Synthetic updated arrival',notify_customer:true}});
+      assert.equal(result.status,200);part=result.data;
+      assert.deepEqual(part.notification.channels,[{channel:'sms',status:'unknown',reason:'verify_before_retry'},{channel:'email',status:'unknown',reason:'verify_before_retry'}]);
+      const stored=(await db.query('SELECT result FROM parts_delivery_notifications WHERE shop_id=$1 AND part_id=$2 AND revision=$3',[String(a),String(part.id),part.delivery_revision])).rows[0].result;
+      const history=(await api(`/parts/${part.id}/delivery-history`)).data.events.find(e=>e.revision===part.delivery_revision).notification;
+      assert.deepEqual(stored,part.notification);assert.deepEqual(history,stored);assert.ok(!JSON.stringify(history).includes('SECRET'));
+    } finally {paths.forEach((path,i)=>{if(cached[i])require.cache[path]=cached[i];else delete require.cache[path]});}
   });
   await t.test('received and cancelled orders leave pending board; no inventory side effect',async()=>{
     assert.ok((await api('/parts/all-pending')).data.parts.some(p=>p.id===part.id));
