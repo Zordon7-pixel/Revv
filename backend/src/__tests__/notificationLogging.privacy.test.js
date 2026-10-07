@@ -15,10 +15,11 @@ const footer = '\n\nReply STOP to opt out, HELP for help.';
 // Each test owns/restores module mocks, environment and every console method.
 // The DB is replaced before loading SMS, so these tests never read .env or connect.
 async function harness(run) {
-  const paths = ['../services/mailer', '../services/sms', '../db', 'twilio'].map(require.resolve);
+  const paths = ['../services/mailer', '../services/sms', '../db', 'twilio', '../services/email', 'nodemailer'].map(require.resolve);
   const cached = paths.map(p => require.cache[p]);
   const envKeys = ['RESEND_API_KEY', 'RESEND_FROM', 'TWILIO_ACCOUNT_SID', 'TWILIO_PHONE_NUMBER',
-    'TWILIO_API_KEY', 'TWILIO_API_SECRET', 'TWILIO_AUTH_TOKEN'];
+    'TWILIO_API_KEY', 'TWILIO_API_SECRET', 'TWILIO_AUTH_TOKEN',
+    'NODE_ENV', 'EMAIL_HOST', 'EMAIL_PORT', 'EMAIL_USER', 'EMAIL_PASS', 'EMAIL_FROM'];
   const env = envKeys.map(k => process.env[k]);
   const originalFetch = global.fetch;
   const consoleMethods = Object.keys(console).filter(k => typeof console[k] === 'function' && k !== 'Console');
@@ -27,6 +28,13 @@ async function harness(run) {
   const state = { fetchCalls: [], authCalls: [], sends: [], dbCalls: [], optedOut: false, shop: null };
   state.fetch = async () => { throw new Error('Unexpected fetch'); };
   state.send = async () => ({ sid });
+  state.smtpTransports = [];
+  state.smtpSends = [];
+  state.smtpSend = async () => { throw new Error('Unexpected SMTP send'); };
+  state.smtpTransport = () => ({ sendMail: payload => {
+    state.smtpSends.push(payload);
+    return state.smtpSend(payload);
+  } });
   try {
     for (const p of paths) delete require.cache[p];
     for (const k of envKeys) delete process.env[k];
@@ -49,6 +57,12 @@ async function harness(run) {
       state.authCalls.push(args);
       return { messages: { create: async payload => { state.sends.push(payload); return state.send(payload); } } };
     } };
+    require.cache[paths[5]] = { id: paths[5], filename: paths[5], loaded: true, exports: {
+      createTransport: options => {
+        state.smtpTransports.push(options);
+        return state.smtpTransport(options);
+      },
+    } };
     await run(state, logs);
     const output = inspect(logs, { depth: null });
     for (const value of Object.values(privateValues)) assert.equal(output.includes(value), false, `Console leaked ${value}`);
@@ -69,6 +83,60 @@ const mailArgs = [privateValues.email, privateValues.subject, privateValues.body
 const config = { accountSid: privateValues.token, authToken: privateValues.token,
   phoneNumber: privateValues.fromPhone, plan: 'pro', _source: sensitive };
 const smsOptions = { shopId: privateValues.shop, twilioConfig: config };
+
+test('SMTP construction, synchronous send and rejected send failures expose only a static outcome', () => harness(async (s, logs) => {
+  process.env.NODE_ENV = 'production';
+  process.env.EMAIL_HOST = 'smtp.example.test';
+  process.env.EMAIL_USER = privateValues.fromEmail;
+  process.env.EMAIL_PASS = privateValues.token;
+  process.env.EMAIL_FROM = privateValues.fromEmail;
+  const { sendEmail } = require('../services/email');
+  let unsafeAccesses = 0;
+  const unsafe = () => {
+    unsafeAccesses++;
+    throw new Error(sensitive);
+  };
+  const coercionTrap = {
+    private: sensitive, toString: unsafe, valueOf: unsafe,
+    [Symbol.toPrimitive]: unsafe, [inspect.custom]: unsafe,
+  };
+  const getterTrap = Object.defineProperties({}, Object.fromEntries(
+    ['message', 'code', 'response', 'responseCode', 'stack'].map(key => [key, { get: unsafe }])
+  ));
+  const failures = [
+    Object.assign(new Error(sensitive), { code: 'EAUTH', response: sensitive, responseCode: 535 }),
+    Object.assign(new Error(sensitive), { code: sensitive, responseCode: sensitive }),
+    { message: coercionTrap, code: coercionTrap, responseCode: coercionTrap, stack: sensitive },
+    coercionTrap, getterTrap, sensitive, null, undefined,
+  ];
+  const defaultTransport = s.smtpTransport;
+  for (const stage of ['construction', 'throw', 'reject']) {
+    for (const failure of failures) {
+      s.smtpTransport = stage === 'construction' ? () => { throw failure; } : defaultTransport;
+      s.smtpSend = stage === 'reject' ? () => Promise.reject(failure) : () => { throw failure; };
+      const transportsBefore = s.smtpTransports.length;
+      const sendsBefore = s.smtpSends.length;
+      const logsBefore = logs.length;
+      const result = await sendEmail(...mailArgs);
+      assert.deepEqual(result, { ok: false, error: 'send_failed' });
+      assert.deepEqual(logs.slice(logsBefore), [['error', '[EMAIL] Send failed']]);
+      const output = JSON.stringify({ result, logs: logs.slice(logsBefore) });
+      for (const value of Object.values(privateValues)) assert.equal(output.includes(value), false);
+      assert.equal(s.smtpTransports.length, transportsBefore + 1);
+      assert.equal(s.smtpSends.length, sendsBefore + (stage === 'construction' ? 0 : 1));
+      if (stage !== 'construction') {
+        assert.deepEqual(s.smtpSends.at(-1), {
+          from: privateValues.fromEmail, to: privateValues.email,
+          subject: privateValues.subject, html: privateValues.body,
+        });
+      }
+      assert.equal(unsafeAccesses, 0, 'Exceptions must never be inspected or coerced');
+    }
+  }
+  assert.equal(s.fetchCalls.length, 0);
+  assert.equal(s.authCalls.length, 0);
+  assert.equal(s.dbCalls.length, 0);
+}));
 
 test('mailer unconfigured returns null without logging recipient or subject or calling fetch', () => harness(async (s, logs) => {
   const result = await require('../services/mailer').sendMail(...mailArgs);
