@@ -38,9 +38,9 @@ async function sendEmail(to, subject, html) {
       html,
     });
     return { ok: true };
-  } catch (err) {
-    console.error('[EMAIL] Send failed:', err.message);
-    return { ok: false, error: err.message };
+  } catch {
+    console.error('[EMAIL] Send failed');
+    return { ok: false, error: 'send_failed' };
   }
 }
 
