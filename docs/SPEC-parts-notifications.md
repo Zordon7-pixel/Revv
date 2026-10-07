@@ -34,14 +34,19 @@ Use Node 22 and synthetic providers only. The PG suites create and drop unique p
 
 ```sh
 node --test backend/test/partsNotifications.test.js backend/test/partsDelivery.test.js backend/src/__tests__/notificationLogging.privacy.test.js
+node --test --test-skip-pattern='real PostgreSQL' backend/test/smsConsent.phase2.test.js
 PARTS_TEST_DATABASE_URL=postgresql://revv_panel@127.0.0.1:55459/revv_parts_test node --test backend/test/partsDelivery.integration.test.js backend/test/partsCooldown.integration.test.js
 npm --prefix frontend run test:run -- src/components/__tests__/PartDeliveryEditor.test.jsx
 ```
 
 The cooldown suite covers separate Node processes and pools, restart, tenant/customer/channel isolation, deterministic window boundaries, known eligibility and adapter denials, untrusted references, timeouts, lost claim acknowledgement and failed history persistence. The existing lifecycle suite retains TEXT/UUID, no-op revision and API/history assertions. These commands are implementation checks, not Hermes's final exact-SHA gates or a release verdict.
 
-### Current implementation handoff blockers
+### Phase B2 adapter evidence
 
-The eight-file phase scope does not include `backend/src/services/sms.js`. That adapter currently uses the same `reason` field for pre-send denials and caught provider error messages. The parts service therefore requires an explicit `provider_attempted: false` marker before releasing an SMS window; reason text alone cannot safely establish that no send occurred. Approval for the narrow ninth-file adapter change is pending. Until that marker is emitted on local pre-send exits, SMS adapter denials conservatively retain the window, and the requested no-cooldown-on-definite-denial behavior is **not complete**. The injected-provider tests cover the marker contract, not its production adapter integration.
+`backend/src/services/sms.js` now emits `provider_attempted: false` on definite local pre-provider denials: missing recipient scope, STOP, absent/unconfirmed consent or provenance, consent/STOP lookup failure, entitlement, missing configuration and missing staff recipient. Existing `ok`, `reason` and body behavior is preserved. Successful sends and caught provider exceptions receive no false marker, even when an exception's text equals a known denial reason or its own properties claim no attempt. The parts consumer still requires both the false marker and its unchanged reason allowlist before releasing only the matching cooldown claim.
 
-The implementation session's PG command failed with `connect EPERM 127.0.0.1:55459` before reaching any database case. Real PG concurrency, schema, API and restart tests must be run by Hermes on the authorized host; they are not claimed as passing here.
+`backend/test/smsConsent.phase2.test.js` executes the real SMS module with mocked DB/provider dependencies and an empty adapter environment. It covers every returned denial branch, unchanged valid send/body behavior, provider initialization/send exceptions spoofing denial reasons, and the real parts consumer releasing marked denials while retaining windows for provider failures. Its existing parts acceptance fixture includes the scoped customer ID required by cooldown acquisition. These tests verify adapter integration without external provider access; they do not replace PostgreSQL concurrency tests.
+
+The B2 focused mocked run on Node v22.23.2 passed 49/49 (exit 0); the named real PostgreSQL case was explicitly excluded. A separate `backend/src/__tests__/notificationLogging.privacy.test.js` run returned 8 passed, 1 failed (exit 1): the exact denial-object expectation at line 193 lacks the new `provider_attempted: false` field. That test file is outside B2's three authorized files and remains unchanged for Hermes follow-through. This assertion update and host gates remain pending; no full-suite pass is claimed.
+
+The earlier phase B sandbox PG attempt failed with `connect EPERM 127.0.0.1:55459` before reaching database cases. Hermes subsequently reported 44 backend and 6 frontend checks passing with real loopback PostgreSQL for phase B. Those are prior-phase receipts, not B2 final-candidate evidence. Hermes owns the B2 host parts-PG rerun, complete suite and final exact-SHA gates.
