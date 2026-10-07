@@ -5,10 +5,10 @@ import PaymentPanel from '../PaymentPanel'
 import PaymentModal from '../PaymentModal'
 
 const mocks = vi.hoisted(() => ({
-  post: vi.fn(), confirm: vi.fn(), elements: { getElement: vi.fn(() => ({})) },
+  post: vi.fn(), get: vi.fn(), confirm: vi.fn(), elements: { getElement: vi.fn(() => ({})) },
   sessions: [],
 }))
-vi.mock('../../lib/api', () => ({ default: { post: mocks.post } }))
+vi.mock('../../lib/api', () => ({ default: { post: mocks.post, get: mocks.get } }))
 vi.mock('@stripe/stripe-js', () => ({ loadStripe: () => Promise.resolve({}) }))
 vi.mock('@stripe/react-stripe-js', () => ({
   Elements: ({ children, options }) => {
@@ -29,12 +29,16 @@ const deferred = () => {
   return { promise, resolve, reject }
 }
 beforeEach(() => {
+  const storage = new Map()
+  vi.stubGlobal('localStorage', { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value), removeItem: key => storage.delete(key) })
+  localStorage.setItem('sc_token', `test.${btoa(JSON.stringify({ id: 'user-1', shop_id: 'shop-1', role: 'owner' }))}.test`)
+  mocks.get.mockReset().mockResolvedValue({ data: { roId: 'ro-1', paymentStatus: 'unpaid', collectionBalance: { remainingCents: 10000, canCollect: true } } })
   vi.stubEnv('VITE_STRIPE_PUBLISHABLE_KEY', 'pk_test_fixture')
   mocks.post.mockReset().mockResolvedValue({ data: session() })
   mocks.confirm.mockReset().mockResolvedValue(result())
   mocks.sessions.length = 0
 })
-afterEach(() => { cleanup(); vi.unstubAllEnvs() })
+afterEach(() => { cleanup(); vi.unstubAllEnvs(); vi.unstubAllGlobals() })
 
 for (const surface of ['Panel', 'Modal']) {
   describe(surface, () => {
@@ -178,17 +182,15 @@ for (const surface of ['Panel', 'Modal']) {
     })
 
     for (const changed of [{ roId: 'ro-2' }, { amount: 120, totalAmount: 120 }]) {
-      it(`removes the old client secret and ignores late intent creation after ${JSON.stringify(changed)}`, async () => {
-        const old = deferred(), next = deferred()
-        mocks.post.mockReturnValueOnce(old.promise).mockReturnValueOnce(next.promise)
+      it(`discards late intent creation and requires explicit reconciliation after ${JSON.stringify(changed)}`, async () => {
+        const old = deferred()
+        mocks.post.mockReturnValueOnce(old.promise)
         const view = await start()
         view.rerender(<Component {...props(changed)} />)
-        if (surface === 'Panel') fireEvent.click(screen.getByRole('button', { name: 'Pay by Card' }))
         await act(async () => old.resolve({ data: session() }))
         expect(screen.queryByTestId('stripe-elements')).not.toBeInTheDocument()
-        await act(async () => next.resolve({ data: session({ paymentIntentId: 'pi_next', clientSecret: 'pi_next_secret_fixture' }) }))
-        expect(await screen.findByTestId('stripe-elements')).toHaveAttribute('data-secret', 'pi_next_secret_fixture')
-        expect(mocks.sessions).not.toContain('pi_fixture_secret_fixture')
+        expect(screen.getByRole('button', { name: 'Pay by Card' })).toBeDisabled()
+        expect(mocks.post).toHaveBeenCalledTimes(1)
         expect(mocks.confirm).not.toHaveBeenCalled()
       })
 
@@ -215,6 +217,219 @@ for (const surface of ['Panel', 'Modal']) {
       await act(async () => pending.resolve(result()))
       expect(success).not.toHaveBeenCalled()
       expect(screen.queryByText(/Payment received/)).not.toBeInTheDocument()
+    })
+
+    function reconcile() {
+      fireEvent.click(screen.getByRole('button', { name: 'Reconcile payments' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Confirm reconciliation' }))
+    }
+    const reconciles = () => mocks.post.mock.calls.filter(([url]) => url.includes('/reconcile/'))
+    const balanceReply = (extra = {}) => ({ roId: 'ro-1', paymentStatus: 'unpaid', collectionBalance: { remainingCents: 10000, canCollect: true }, ...extra })
+
+    for (const role of ['owner', 'admin', 'assistant', 'technician', 'staff', 'superadmin', 'customer', null]) {
+      it(`uses real auth identity for reconciliation visibility: ${role}`, async () => {
+        if (role) localStorage.setItem('sc_token', `test.${btoa(JSON.stringify({ id: 'user-1', role }))}.test`)
+        else localStorage.removeItem('sc_token')
+        await start({ role: 'owner' }) // A forged component prop is not authorization.
+        await screen.findByRole('button', { name: 'Pay $60.00' })
+        expect(!!screen.queryByRole('button', { name: 'Reconcile payments' })).toBe(['owner', 'admin'].includes(role))
+        expect(reconciles()).toHaveLength(0)
+        expect(mocks.get).not.toHaveBeenCalled()
+      })
+    }
+
+    it('requires confirmation, traps keyboard focus, cancels with Escape and restores focus', async () => {
+      const onClose = vi.fn()
+      await start({ onClose })
+      await screen.findByRole('button', { name: 'Pay $60.00' })
+      const trigger = screen.getByRole('button', { name: 'Reconcile payments' })
+      fireEvent.click(trigger)
+      expect(screen.getByRole('alertdialog')).toHaveTextContent(/may expire or cancel pending payment attempts/)
+      const cancel = screen.getByRole('button', { name: 'Cancel' })
+      expect(cancel).toHaveFocus()
+      fireEvent.keyDown(cancel, { key: 'Tab' })
+      expect(screen.getByRole('button', { name: 'Confirm reconciliation' })).toHaveFocus()
+      fireEvent.keyDown(document.activeElement, { key: 'Tab', shiftKey: true })
+      expect(cancel).toHaveFocus()
+      fireEvent.keyDown(cancel, { key: 'Escape' })
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+      expect(trigger).toHaveFocus()
+      expect(onClose).not.toHaveBeenCalled()
+      fireEvent.click(trigger)
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+      expect(trigger).toHaveFocus()
+      expect(reconciles()).toHaveLength(0)
+      expect(screen.getByTestId('stripe-elements')).toBeInTheDocument()
+    })
+
+    it('invalidates Stripe, locks duplicate submits and unlocks only after verified refresh and callback', async () => {
+      const pending = deferred(), refresh = deferred(), callback = deferred()
+      const onSuccess = vi.fn(() => callback.promise)
+      await start({ onSuccess }); await screen.findByTestId('stripe-elements')
+      mocks.post.mockReturnValue(pending.promise)
+      mocks.get.mockReturnValue(refresh.promise)
+      fireEvent.click(screen.getByRole('button', { name: 'Reconcile payments' }))
+      const confirm = screen.getByRole('button', { name: 'Confirm reconciliation' })
+      act(() => { confirm.click(); confirm.click() })
+      expect(reconciles()).toHaveLength(1)
+      expect(reconciles()[0]).toEqual(['/payments/reconcile/ro-1', {}, { timeout: 15000 }])
+      expect(screen.queryByTestId('stripe-elements')).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Pay by Card' })).toBeDisabled()
+      await act(async () => pending.resolve({ data: { reconciled: true } }))
+      expect(mocks.get).toHaveBeenCalledExactlyOnceWith('/payments/ro/ro-1', { timeout: 15000 })
+      expect(onSuccess).not.toHaveBeenCalled()
+      await act(async () => refresh.resolve({ data: balanceReply({ paymentStatus: 'partial', collectionBalance: { remainingCents: 4000, canCollect: true } }) }))
+      expect(onSuccess).toHaveBeenCalledTimes(1)
+      expect(screen.getByRole('button', { name: 'Pay by Card' })).toBeDisabled()
+      await act(async () => callback.resolve())
+      expect(screen.getByRole('status')).toHaveTextContent('partial. Remaining balance: $40.00')
+      expect(screen.getByRole('button', { name: 'Pay by Card' })).toBeEnabled()
+      expect(mocks.post).toHaveBeenCalledTimes(2)
+      mocks.post.mockResolvedValue({ data: session({ paymentIntentId: 'pi_new', clientSecret: 'pi_new_secret_fixture', amountCents: 4000, amountOwedCents: 4000 }) })
+      fireEvent.click(screen.getByRole('button', { name: 'Pay by Card' }))
+      expect(await screen.findByRole('button', { name: 'Pay $40.00' })).toBeEnabled()
+      expect(screen.getByTestId('stripe-elements')).toHaveAttribute('data-secret', 'pi_new_secret_fixture')
+    })
+
+    for (const outcome of [409, 500, 'timeout']) {
+      it(`keeps unknown payment recoverable, then holds after reconciliation ${outcome} without exposing errors`, async () => {
+        mocks.confirm.mockRejectedValue(new Error('pi_private_secret_PRIVATE'))
+        const onSuccess = vi.fn(), onMarkManual = vi.fn()
+        await start({ onSuccess, onMarkManual }); await pay()
+        await screen.findByText(/outcome is unknown/)
+        mocks.post.mockRejectedValue({ code: 'ECONNABORTED', message: 'pi_private_secret_PRIVATE', response: { status: outcome, data: { error: 'provider PRIVATE' } } })
+        reconcile()
+        expect(await screen.findByRole('alert')).toHaveTextContent(/Collection (is|remains) blocked/)
+        expect(screen.getByRole('button', { name: 'Pay by Card' })).toBeDisabled()
+        expect(screen.queryByTestId('stripe-elements')).not.toBeInTheDocument()
+        expect(screen.queryByText(/PRIVATE|pi_private|provider/)).not.toBeInTheDocument()
+        expect(screen.queryByRole('button', { name: 'Mark as Cash\/Check' })).not.toBeInTheDocument()
+        expect(onSuccess).not.toHaveBeenCalled()
+        expect(mocks.get).not.toHaveBeenCalled()
+        expect(reconciles()).toHaveLength(1)
+        expect(screen.getByRole('button', { name: 'Reconcile payments' })).toBeEnabled()
+      })
+    }
+
+    for (const [label, reply] of [
+      ['missing', undefined], ['wrong RO', { roId: 'ro-2' }],
+      ['invalid cents', balanceReply({ collectionBalance: { remainingCents: '10000', canCollect: true } })],
+      ['pending', balanceReply({ paymentStatus: 'pending' })],
+      ['unknown', balanceReply({ paymentStatus: 'unknown' })],
+      ['inconsistent zero', balanceReply({ collectionBalance: { remainingCents: 0, canCollect: false } })],
+      ['occupied', balanceReply({ collectionBalance: { remainingCents: 10000, canCollect: false } })],
+      ['paid but collectable', balanceReply({ paymentStatus: 'paid' })],
+    ]) it(`fails closed on ${label} refresh`, async () => {
+      const onSuccess = vi.fn()
+      await start({ onSuccess }); await screen.findByTestId('stripe-elements')
+      mocks.post.mockResolvedValue({ data: { reconciled: true } })
+      mocks.get.mockResolvedValue({ data: reply })
+      reconcile()
+      expect(await screen.findByRole('alert')).toHaveTextContent('could not be verified')
+      expect(screen.queryByRole('status')).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Pay by Card' })).toBeDisabled()
+      expect(onSuccess).not.toHaveBeenCalled()
+    })
+
+    for (const failure of ['get', 'callback', 'malformed reconcile']) it(`does not unlock or claim success after ${failure} failure`, async () => {
+      const onSuccess = failure === 'callback' ? vi.fn().mockRejectedValue(new Error('PRIVATE')) : vi.fn()
+      await start({ onSuccess }); await screen.findByTestId('stripe-elements')
+      mocks.post.mockResolvedValue({ data: failure === 'malformed reconcile' ? {} : { reconciled: true } })
+      if (failure === 'get') mocks.get.mockRejectedValue(new Error('PRIVATE pi_secret'))
+      reconcile()
+      expect(await screen.findByRole('alert')).toHaveTextContent('Collection remains blocked')
+      expect(screen.queryByRole('status')).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Pay by Card' })).toBeDisabled()
+      expect(screen.queryByText(/PRIVATE|pi_secret/)).not.toBeInTheDocument()
+    })
+
+    it('refreshes a paid RO without enabling another collection', async () => {
+      await start(); await screen.findByTestId('stripe-elements')
+      mocks.post.mockResolvedValue({ data: { reconciled: true } })
+      mocks.get.mockResolvedValue({ data: balanceReply({ paymentStatus: 'paid', collectionBalance: { remainingCents: 0, canCollect: false } }) })
+      reconcile()
+      expect(await screen.findByRole('status')).toHaveTextContent('paid. Remaining balance: $0.00')
+      expect(screen.getByRole('button', { name: 'Pay by Card' })).toBeDisabled()
+    })
+
+    for (const stage of ['post', 'get']) for (const change of ['unmount', 'RO', 'estimate']) {
+      it(`ignores late reconciliation ${stage} after ${change}`, async () => {
+        const pending = deferred(), onSuccess = vi.fn()
+        const view = await start({ onSuccess }); await screen.findByTestId('stripe-elements')
+        mocks.post.mockResolvedValue({ data: { reconciled: true } })
+        if (stage === 'post') mocks.post.mockReturnValue(pending.promise)
+        else mocks.get.mockReturnValue(pending.promise)
+        reconcile()
+        await act(async () => {})
+        if (change === 'unmount') view.unmount()
+        else view.rerender(<Component {...props({ onSuccess, ...(change === 'RO' ? { roId: 'ro-2' } : { amount: 120, totalAmount: 120 }) })} />)
+        await act(async () => pending.resolve({ data: stage === 'post' ? { reconciled: true } : balanceReply() }))
+        expect(onSuccess).not.toHaveBeenCalled()
+        expect(screen.queryByTestId('stripe-elements')).not.toBeInTheDocument()
+        expect(screen.queryByText(/Reconciliation verified/)).not.toBeInTheDocument()
+        if (change !== 'unmount') expect(screen.getByRole('button', { name: 'Pay by Card' })).toBeDisabled()
+      })
+    }
+
+    for (const outcome of ['resolve', 'reject']) for (const change of ['unmount', 'RO', 'estimate']) {
+      it(`ignores stale parent refresh ${outcome} after ${change}`, async () => {
+        const callback = deferred(), onSuccess = vi.fn(() => callback.promise)
+        const view = await start({ onSuccess }); await screen.findByTestId('stripe-elements')
+        mocks.post.mockResolvedValue({ data: { reconciled: true } })
+        reconcile()
+        await act(async () => {})
+        expect(onSuccess).toHaveBeenCalledTimes(1)
+        expect(screen.getByRole('button', { name: 'Pay by Card' })).toBeDisabled()
+        if (change === 'unmount') view.unmount()
+        else view.rerender(<Component {...props({ onSuccess, ...(change === 'RO' ? { roId: 'ro-2' } : { amount: 120, totalAmount: 120 }) })} />)
+        await act(async () => outcome === 'resolve' ? callback.resolve() : callback.reject(new Error('PRIVATE stale callback')))
+        expect(screen.queryByText(/Reconciliation verified|could not be refreshed|PRIVATE/)).not.toBeInTheDocument()
+        expect(screen.queryByTestId('stripe-elements')).not.toBeInTheDocument()
+        expect(onSuccess).toHaveBeenCalledTimes(1)
+        if (change !== 'unmount') {
+          expect(screen.getByRole('button', { name: 'Pay by Card' })).toBeDisabled()
+          expect(screen.getByRole('alert')).toHaveTextContent('Repair order changed')
+          expect(screen.getByRole('button', { name: 'Reconcile payments' })).toBeEnabled()
+        }
+      })
+    }
+
+    it('reconciles during in-flight confirmation and ignores its late success callback', async () => {
+      const provider = deferred(), reconciliation = deferred(), onSuccess = vi.fn()
+      mocks.confirm.mockReturnValue(provider.promise)
+      await start({ onSuccess }); await pay()
+      mocks.post.mockReturnValue(reconciliation.promise)
+      reconcile()
+      expect(screen.queryByTestId('stripe-elements')).not.toBeInTheDocument()
+      await act(async () => provider.resolve(result()))
+      expect(onSuccess).not.toHaveBeenCalled()
+      expect(screen.getByRole('button', { name: 'Pay by Card' })).toBeDisabled()
+      await act(async () => reconciliation.reject(new Error('unknown')))
+      expect(await screen.findByRole('alert')).toHaveTextContent('Collection remains blocked')
+    })
+
+    it('ignores late intent creation after an explicit reconciliation attempt', async () => {
+      const intent = deferred()
+      mocks.post.mockReturnValue(intent.promise)
+      const view = await start()
+      mocks.post.mockRejectedValue(new Error('unknown'))
+      reconcile()
+      await screen.findByRole('alert')
+      await act(async () => intent.resolve({ data: session() }))
+      expect(screen.queryByTestId('stripe-elements')).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Pay by Card' })).toBeDisabled()
+      view.unmount()
+    })
+
+    it('cannot bypass unknown state by changing estimates or switching RO away and back', async () => {
+      mocks.confirm.mockRejectedValue(new Error('unknown'))
+      const view = await start(); await pay(); await screen.findByRole('alert')
+      for (const change of [{ amount: 120, totalAmount: 120 }, { roId: 'ro-2' }, { roId: 'ro-1' }]) {
+        view.rerender(<Component {...props(change)} />)
+        expect(screen.getByRole('button', { name: 'Pay by Card' })).toBeDisabled()
+        expect(screen.queryByTestId('stripe-elements')).not.toBeInTheDocument()
+      }
+      expect(mocks.post).toHaveBeenCalledTimes(1)
     })
 
     it('does not initialize duplicate intents under StrictMode or rapid clicks', async () => {

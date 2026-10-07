@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo } from 'react'
 import { AlertCircle, CheckCircle, CreditCard, Loader2, X } from 'lucide-react'
 import { loadStripe } from '@stripe/stripe-js'
 import { CardElement, Elements, useElements, useStripe } from '@stripe/react-stripe-js'
-import api from '../lib/api'
 import AppOverlay from './AppOverlay'
-import { money, PaymentAmounts, usePaymentConfirmation, validatePaymentSession } from './paymentSession'
+import { money, PaymentAmounts, usePaymentConfirmation, usePaymentCollection, PaymentReconciliation } from './paymentSession'
 
 const CARD_OPTIONS = {
   style: {
@@ -58,53 +57,14 @@ function CheckoutForm({ amount, session, onSuccess }) {
   )
 }
 
-export default function PaymentModal(props) {
-  return <PaymentModalSession key={JSON.stringify([props.roId, props.amount])} {...props} />
-}
-
-function PaymentModalSession({ roId, amount, onClose, onSuccess }) {
+export default function PaymentModal({ roId, amount, onClose, onSuccess }) {
   const publishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY
-  const stripePromise = useMemo(
-    () => (publishableKey ? loadStripe(publishableKey) : null),
-    [publishableKey]
-  )
-  const [loadingIntent, setLoadingIntent] = useState(true)
-  const [session, setSession] = useState(null)
-  const [error, setError] = useState('')
-  const request = useRef(null)
-
-  useEffect(() => {
-    let mounted = true
-    async function createIntent() {
-      if (!roId || !stripePromise) {
-        if (mounted) {
-          setError('A valid RO and payment configuration are required.')
-          setLoadingIntent(false)
-        }
-        return
-      }
-      setLoadingIntent(true)
-      setError('')
-      try {
-        request.current ||= api.post('/payments/create-intent', { ro_id: roId })
-        const { data } = await request.current
-        const validated = validatePaymentSession(data)
-        if (mounted) {
-          setSession(validated)
-          setLoadingIntent(false)
-        }
-      } catch {
-        if (mounted) {
-          setError('Unable to initialize a valid payment session. Refresh the balance before trying again.')
-          setLoadingIntent(false)
-        }
-      }
-    }
-    createIntent()
-    return () => {
-      mounted = false
-    }
-  }, [roId, amount, stripePromise])
+  const stripePromise = useMemo(() => (publishableKey ? loadStripe(publishableKey) : null), [publishableKey])
+  const collection = usePaymentCollection({ roId, estimate: amount, endpoint: '/payments/create-intent', configured: !!stripePromise, onSuccess })
+  const { session, loading: loadingIntent } = collection
+  // Preserve initial modal collection behavior. Reconciliation and all subsequent
+  // collection require separate explicit operator actions, never an effect retry.
+  useEffect(() => { collection.start() }, [])
 
   const appearance = {
     theme: 'night',
@@ -119,7 +79,7 @@ function PaymentModalSession({ roId, amount, onClose, onSuccess }) {
 
   return (
     <AppOverlay label="Collect payment" onClose={onClose} className="bg-void/75 p-4 backdrop-blur-[1px]">
-      <section className="w-full max-w-md rounded-instrument border border-line-2 bg-panel shadow-2xl">
+      <section className="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-instrument border border-line-2 bg-panel shadow-2xl">
         <header className="flex items-center justify-between border-b border-line-2 px-5 py-4">
           <div className="flex items-center gap-2">
             <CreditCard size={16} className="text-gold" aria-hidden="true" />
@@ -143,15 +103,15 @@ function PaymentModalSession({ roId, amount, onClose, onSuccess }) {
             <div role="status" className="flex items-center gap-2 text-sm text-muted">
               <Loader2 size={15} className="animate-spin" aria-hidden="true" /> Creating secure payment session...
             </div>
-          ) : error ? (
-            <div role="alert" className="rounded-instrument border border-crit/35 bg-crit/10 px-3 py-2 text-sm text-crit">
-              {error}
-            </div>
-          ) : (
+          ) : session ? (
             <Elements stripe={stripePromise} options={{ clientSecret: session.clientSecret, appearance }}>
               <CheckoutForm amount={amount} session={session} onSuccess={onSuccess} />
             </Elements>
+          ) : (
+            <button type="button" disabled={collection.locked || collection.pending} onClick={collection.start}
+              className="w-full rounded-instrument bg-gold px-3 py-2 text-on-gold disabled:opacity-50">Pay by Card</button>
           )}
+          <PaymentReconciliation collection={collection} />
         </div>
       </section>
     </AppOverlay>
