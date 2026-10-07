@@ -12,7 +12,7 @@ const bad = [false, null, undefined, 'true', true]; // last value is legacy TRUE
 
 // Execute real source with an explicit dependency boundary: no DB, .env, sockets,
 // or provider SDK can load. Routes run their actual handlers without a listener.
-function load(file, mocks, suffix = '') {
+function load(file, mocks, suffix = '', runtimeProcess = process) {
   const filename = path.join(root, file);
   const module = { exports: {} };
   const requireLocal = createRequire(filename);
@@ -22,12 +22,12 @@ function load(file, mocks, suffix = '') {
     if (name.endsWith('/customerConsent') || name === './customerConsent') return consent;
     throw new Error(`Unmocked dependency: ${name} in ${file}`);
   };
-  vm.runInThisContext(`(function(require,module,exports,__dirname){${fs.readFileSync(filename, 'utf8')}\n${suffix}\n})`, { filename })(resolve, module, module.exports, path.dirname(filename));
+  vm.runInThisContext(`(function(require,module,exports,__dirname,process){${fs.readFileSync(filename, 'utf8')}\n${suffix}\n})`, { filename })(resolve, module, module.exports, path.dirname(filename), runtimeProcess);
   return module.exports;
 }
 
 function harness(customer = good()) {
-  const state = { customers: customer ? [customer] : [], optedOut: false, calls: [], writes: [], queries: [], failLookup: false };
+  const state = { customers: customer ? [customer] : [], optedOut: false, calls: [], writes: [], queries: [], failLookup: false, providerEntries: 0, staffPhone: phone };
   const shop = { id: 'shop-a', name: 'Test shop', plan: 'pro', twilio_account_sid: 'test', twilio_auth_token: 'test', twilio_phone_number: '+15550000000' };
   const key = value => { const d = String(value || '').replace(/\D/g, ''); return d.length === 10 ? `1${d}` : d; };
   const db = {
@@ -44,9 +44,12 @@ function harness(customer = good()) {
     },
     dbGet: async (sql, params) => {
       state.queries.push({ sql, params });
-      if (/FROM sms_opt_outs/.test(sql)) return state.optedOut ? { exists: 1 } : null;
-      if (/FROM shops/.test(sql)) return shop;
-      if (/FROM users/.test(sql)) return params[0] === 'admin-a' && params[1] === 'shop-a' ? { phone } : null;
+      if (/FROM sms_opt_outs/.test(sql)) {
+        if (state.failStopLookup) throw new Error('Database unavailable');
+        return state.optedOut ? { exists: 1 } : null;
+      }
+      if (/FROM shops/.test(sql)) return state.missingShop ? null : shop;
+      if (/FROM users/.test(sql)) return params[0] === 'admin-a' && params[1] === 'shop-a' ? { phone: state.staffPhone } : null;
       if (/FROM vehicles/.test(sql)) return { id: 'vehicle', make: 'Test', model: 'Car' };
       if (/FROM customers/.test(sql) && !/repair_orders/.test(sql)) return { id: 'customer', ...state.customers[0] };
       if (/MAX\(/.test(sql)) return { n: 0 };
@@ -83,10 +86,15 @@ function harness(customer = good()) {
       return { rows: /SELECT/.test(sql) ? [{ id: 'ro', shop_id: 'shop-a' }] : [], rowCount: 1 };
     }, release() {},
   }) };
-  const sms = load('services/sms.js', { '../db': db, twilio: () => ({ messages: { create: async payload => {
-    state.calls.push(payload);
-    return { sid: `SM${'a'.repeat(32)}` };
-  } } }) });
+  const sms = load('services/sms.js', { '../db': db, twilio: () => {
+    state.providerEntries++;
+    if (state.providerInitError) throw state.providerInitError;
+    return { messages: { create: async payload => {
+      state.calls.push(payload);
+      if (state.providerError) throw state.providerError;
+      return { sid: `SM${'a'.repeat(32)}` };
+    } } };
+  } }, '', { env: {} });
   const auto = load('services/smsAutoReply.js', { '../db': db, './sms': sms });
   return { state, db, sms, auto, shop };
 }
@@ -142,6 +150,7 @@ for (const value of bad) test(`lowest sender suppresses ${String(value)} without
   const h = harness({ shop_id: 'shop-a', phone, sms_consent: value });
   const result = await h.sms.sendSMS(phone, 'Private body', { shopId: 'shop-a', customerFacing: false, skipOptOutCheck: true, sms_consent: true, ...good() });
   assert.equal(result.reason, 'no_confirmed_consent');
+  assert.equal(result.provider_attempted, false);
   assert.equal(h.state.calls.length, 0);
 });
 test('confirmed customer reaches messages.create; unknown, cross-shop, ambiguous and failed lookup do not', async () => {
@@ -279,7 +288,7 @@ test('parts notification provenance gate and actual mocked provider acceptance',
   for (const c of [...bad.map(sms_consent => ({ shop_id: 'shop-a', phone, sms_consent })), good()]) {
     const h = harness(c);
     const parts = load('services/partsNotifications.js', { './partsDelivery': { ensureDelivery: async () => {} }, './sms': h.sms });
-    const context = { ...c, preferred_contact_method: 'sms', before_state: { status: 'ordered' }, after_state: { status: 'received', quantity: 1, received_quantity: 1 } };
+    const context = { ...c, customer_id: 'customer', preferred_contact_method: 'sms', before_state: { status: 'ordered' }, after_state: { status: 'received', quantity: 1, received_quantity: 1 } };
     const db = { query: async sql => ({ rows: /SELECT/.test(sql) ? [context] : [], rowCount: 1 }) };
     const result = await parts.notifyPartUpdate(db, 'shop-a', { id: 'part', delivery_revision: 1 }, 0);
     const allowed = consent.hasConfirmedSmsConsent(c);
@@ -292,11 +301,130 @@ test('partial or forged provenance and ordinary inbound auto-replies cannot reac
   for (const patch of [{ sms_consent: 'true' }, { sms_consent_at: null }, { sms_consent_at: 'invalid' },
     { sms_consent_method: null }, { sms_consent_method: 'ocr' }, { sms_consent_by: '' }, { sms_consent_by: null }]) {
     const h = harness({ ...good(), ...patch });
-    assert.equal((await h.sms.sendSMS(phone, 'Ordinary', 'shop-a')).ok, false);
+    assert.deepEqual(await h.sms.sendSMS(phone, 'Ordinary', 'shop-a'), {
+      ok: false, reason: 'no_confirmed_consent', body: 'Ordinary\n\nReply STOP to opt out, HELP for help.', provider_attempted: false,
+    });
     const result = await h.auto.maybeSendInboundAutoReply({ shop: h.shop, from: phone, body: 'Any news?' });
     assert.equal(result.action, 'suppressed');
     assert.equal(h.state.calls.length, 0);
     assert.equal(h.state.writes.length, 0);
+  }
+});
+
+const denialCases = [
+  ['missing scope', 'missing_recipient_scope', () => {}, { shopId: '' }],
+  ['missing phone', 'missing_recipient_scope', () => {}, undefined, ''],
+  ['non-numeric phone', 'missing_recipient_scope', () => {}, undefined, 'invalid'],
+  ['STOP', 'opted_out', h => { h.state.optedOut = true; }],
+  ['STOP lookup failure', 'consent_lookup_failed', h => { h.state.failStopLookup = true; }],
+  ['consent lookup failure', 'consent_lookup_failed', h => { h.state.failLookup = true; }],
+  ['unknown customer', 'no_confirmed_consent', h => { h.state.customers = []; }],
+  ['cross-shop customer', 'no_confirmed_consent', h => { h.state.customers[0].shop_id = 'shop-b'; }],
+  ['shared unconfirmed phone', 'no_confirmed_consent', h => { h.state.customers.push({ shop_id: 'shop-a', phone, sms_consent: false }); }],
+  ['ineligible plan', 'sms_not_entitled', h => { h.shop.plan = 'starter'; }],
+  ['missing shop', 'sms_not_entitled', h => { h.state.missingShop = true; }],
+  ['provided ineligible plan', 'sms_not_entitled', () => {}, { shopId: 'shop-a', twilioConfig: { plan: 'starter' } }],
+  ['missing configuration', 'not configured', h => { h.shop.twilio_auth_token = null; }],
+];
+for (const [label, reason, setup, options = 'shop-a', recipient = phone] of denialCases) {
+  test(`pre-provider marker preserves denial and body: ${label}`, async () => {
+    const h = harness();
+    setup(h);
+    assert.deepEqual(await h.sms.sendSMS(recipient, '  Private body  ', options), {
+      ok: false, reason, body: 'Private body\n\nReply STOP to opt out, HELP for help.', provider_attempted: false,
+    });
+    assert.equal(h.state.providerEntries, 0);
+    assert.equal(h.state.calls.length, 0);
+  });
+}
+
+test('staff pre-provider denials preserve body omission and STOP still applies', async () => {
+  const h = harness(null);
+  for (const [staffId, options] of [[null, { shopId: 'shop-a' }], ['admin-a', undefined],
+    ['unknown', { shopId: 'shop-a' }], ['admin-a', { shopId: 'shop-b' }]]) {
+    assert.deepEqual(await h.sms.sendStaffSMS(staffId, 'Staff body', options), {
+      ok: false, reason: 'missing_staff', provider_attempted: false,
+    });
+  }
+  h.state.staffPhone = '';
+  assert.deepEqual(await h.sms.sendStaffSMS('admin-a', 'Staff body', { shopId: 'shop-a' }), {
+    ok: false, reason: 'missing_staff', provider_attempted: false,
+  });
+  h.state.staffPhone = phone;
+  h.state.optedOut = true;
+  assert.deepEqual(await h.sms.sendStaffSMS('admin-a', 'Staff body', { shopId: 'shop-a' }), {
+    ok: false, reason: 'opted_out', body: 'Staff body', provider_attempted: false,
+  });
+  assert.equal(h.state.providerEntries, 0);
+});
+
+const denialReasons = ['missing_recipient_scope', 'opted_out', 'consent_lookup_failed',
+  'no_confirmed_consent', 'sms_not_entitled', 'not configured', 'missing_staff'];
+for (const reason of [...denialReasons, 'Synthetic provider failure']) {
+  test(`provider exceptions cannot impersonate local denial: ${reason}`, async () => {
+    for (const stage of ['providerError', 'providerInitError']) {
+      const h = harness();
+      h.state[stage] = Object.assign(new Error(reason), { provider_attempted: false });
+      assert.deepEqual(await h.sms.sendSMS(phone, 'Private body', 'shop-a'), {
+        ok: false, reason, body: 'Private body\n\nReply STOP to opt out, HELP for help.',
+      });
+      assert.equal(h.state.providerEntries, 1);
+      assert.equal(h.state.calls.length, stage === 'providerError' ? 1 : 0);
+    }
+  });
+}
+
+test('valid provider send preserves result, recipient and compliance body', async () => {
+  const h = harness();
+  const body = 'Private body\n\nReply STOP to opt out, HELP for help.';
+  assert.deepEqual(await h.sms.sendSMS(phone, body, 'shop-a'), { ok: true, sid: `SM${'a'.repeat(32)}`, body });
+  assert.deepEqual(h.state.calls, [{ to: phone, from: h.shop.twilio_phone_number, body }]);
+  assert.equal(h.state.providerEntries, 1);
+});
+
+async function notifyWithRealSms(h, shopId = 'shop-a') {
+  const parts = load('services/partsNotifications.js', { './partsDelivery': { ensureDelivery: async () => {} }, './sms': h.sms });
+  // Eligibility was read before the adapter's fresh lookup; model intervening denials.
+  const context = { ...good(), customer_id: 'customer', preferred_contact_method: 'sms',
+    before_state: { status: 'ordered' }, after_state: { status: 'received', quantity: 1, received_quantity: 1 } };
+  const queries = [];
+  const db = { query: async (sql, params) => {
+    queries.push({ sql, params });
+    return { rows: sql.startsWith('SELECT') ? [context] : [], rowCount: 1 };
+  } };
+  const result = await parts.notifyPartUpdate(db, shopId, { id: 'part', delivery_revision: 1 }, 0);
+  return { result, queries };
+}
+
+for (const [label, setup, reason, shopId] of [
+  ['scope', () => {}, 'missing_contact', ''],
+  ['STOP', h => { h.state.optedOut = true; }, 'opted_out'],
+  ['lookup', h => { h.state.failLookup = true; }, 'consent_unavailable'],
+  ['consent', h => { h.state.customers = []; }, 'no_consent'],
+  ['entitlement', h => { h.shop.plan = 'starter'; }, 'plan_unavailable'],
+  ['configuration', h => { h.shop.twilio_auth_token = null; }, 'not_configured'],
+]) test(`real SMS adapter releases only claimed cooldown on ${label} denial`, async () => {
+  const h = harness();
+  setup(h);
+  const { result, queries } = await notifyWithRealSms(h, shopId);
+  assert.deepEqual(result.channels[0], { channel: 'sms', status: 'not_sent', reason });
+  const claim = queries.find(q => q.sql.includes('INSERT INTO parts_notification_cooldowns'));
+  const releases = queries.filter(q => q.sql.startsWith('DELETE FROM parts_notification_cooldowns'));
+  assert.equal(releases.length, 1);
+  assert.deepEqual(releases[0].params, claim.params.slice(0, 4));
+  assert.match(releases[0].sql, /claim_id=\$4/);
+  assert.equal(h.state.providerEntries, 0);
+});
+
+test('real SMS adapter retains cooldown for provider exceptions spoofing every denial reason', async () => {
+  for (const reason of denialReasons) {
+    const h = harness();
+    h.state.providerError = Object.assign(new Error(reason), { provider_attempted: false });
+    const { result, queries } = await notifyWithRealSms(h);
+    assert.deepEqual(result.channels[0], { channel: 'sms', status: 'not_sent', reason: 'provider_failed' });
+    assert.ok(queries.some(q => q.sql.includes('INSERT INTO parts_notification_cooldowns')));
+    assert.ok(queries.every(q => !q.sql.startsWith('DELETE FROM parts_notification_cooldowns')));
+    assert.equal(h.state.calls.length, 1);
   }
 });
 

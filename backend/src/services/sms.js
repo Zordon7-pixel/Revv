@@ -16,12 +16,12 @@ function phoneMatchSql(column, parameter = '$2') {
 }
 
 async function sendStaffSMS(staffId, message, { shopId } = {}) {
-  if (!shopId || !staffId) return { ok: false, reason: 'missing_staff' };
+  if (!shopId || !staffId) return { ok: false, reason: 'missing_staff', provider_attempted: false };
   const staff = await dbGet(
     "SELECT phone FROM users WHERE id = $1 AND shop_id = $2 AND role IN ('admin', 'owner', 'manager', 'technician')",
     [staffId, shopId]
   );
-  if (!staff?.phone) return { ok: false, reason: 'missing_staff' };
+  if (!staff?.phone) return { ok: false, reason: 'missing_staff', provider_attempted: false };
   return sendSMS(staff.phone, message, { shopId }, STAFF_NOTIFICATION);
 }
 
@@ -145,7 +145,8 @@ async function sendSMS(phone, message, options = {}, audienceToken) {
   const finalMessage = messageWithComplianceFooter(message, { customerFacing: !internal });
   const suppress = reason => {
     console.warn('[SMS] Suppressed send:', reason);
-    return { ok: false, reason, body: finalMessage };
+    // Only local pre-provider exits establish that no send was attempted.
+    return { ok: false, reason, body: finalMessage, provider_attempted: false };
   };
   const key = phoneKey(phone);
   if (!shopId || !key) return suppress('missing_recipient_scope');
@@ -186,14 +187,14 @@ async function sendSMS(phone, message, options = {}, audienceToken) {
 
     if (!smsEntitled(shop)) {
       console.warn('[SMS] Suppressed send: sms_not_entitled');
-      return { ok: false, reason: 'sms_not_entitled', body: finalMessage };
+      return { ok: false, reason: 'sms_not_entitled', body: finalMessage, provider_attempted: false };
     }
   }
 
   if (!config) config = await getTwilioConfigForShop(shopId);
   if (!config) {
     console.warn('[SMS] Twilio is not configured. Skipping SMS send.');
-    return { ok: false, reason: 'not configured', body: finalMessage };
+    return { ok: false, reason: 'not configured', body: finalMessage, provider_attempted: false };
   }
 
   try {
