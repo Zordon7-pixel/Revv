@@ -2,12 +2,20 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { test } = require('node:test');
-const express = require('express');
+const { Readable } = require('node:stream');
+const { EventEmitter } = require('node:events');
 
 function mock(moduleName, value) {
   const id = require.resolve(moduleName);
   require.cache[id] = { id, filename: id, loaded: true, exports: value };
 }
+
+mock('../db', { dbGet: async () => null });
+// Explicit synthetic persisted opt-in for the recovery expectations in this suite.
+const persistedShop = { estimate_ai_enabled: true };
+mock('../services/estimateAiPolicy', { admitEstimateAi: async () => ({
+  status: persistedShop.estimate_ai_enabled === true ? 'admitted' : 'off',
+}) });
 
 let aiCalls = [];
 let aiResult;
@@ -20,7 +28,10 @@ mock('../middleware/auth', (req, _res, next) => {
 });
 mock('pdf-parse', async (buffer) => ({ text: buffer.toString('utf8') }));
 mock('openai', class {
-  chat = { completions: { create: async (payload) => {
+  chat = { completions: { create: async (payload, options) => {
+    assert.deepEqual(options, { maxRetries: 0 });
+    assert.equal(payload.max_completion_tokens, 4096);
+    assert.equal(payload.store, false);
     aiCalls.push(payload);
     if (aiError) throw aiError;
     return { choices: [{ message: { content: aiRaw ?? JSON.stringify(aiResult) } }] };
@@ -32,22 +43,25 @@ const { parseCccEstimate } = require('../services/cccExtractor');
 const ccc = fs.readFileSync(path.join(__dirname, '../../test/fixtures/ccc-estimate-totals.txt'), 'utf8');
 
 async function upload(files, run) {
-  const app = express();
-  app.use('/parse-estimate', router);
-  const server = app.listen(0, '127.0.0.1');
-  await new Promise((resolve) => server.once('listening', resolve));
-  try {
-    const form = new FormData();
-    for (const file of files) {
-      form.append('estimate_images', new Blob([file.content], { type: file.type }), file.name);
-    }
-    const response = await fetch(`http://127.0.0.1:${server.address().port}/parse-estimate/parse`, {
-      method: 'POST', body: form,
+  // Exercise the actual router, limiter and multipart middleware without a socket.
+  const form = new FormData();
+  for (const file of files) form.append('estimate_images', new Blob([file.content], { type: file.type }), file.name);
+  const encoded = new Request('http://synthetic.test/parse', { method: 'POST', body: form });
+  const bytes = Buffer.from(await encoded.arrayBuffer());
+  const req = Object.assign(Readable.from([bytes]), {
+    method: 'POST', url: '/parse', ip: '127.0.0.1',
+    headers: { 'content-type': encoded.headers.get('content-type'), 'content-length': String(bytes.length) },
+    socket: { remoteAddress: '127.0.0.1' }, app: { get: () => false },
+  });
+  const body = await new Promise((resolve, reject) => {
+    const res = Object.assign(new EventEmitter(), {
+      statusCode: 200, setHeader() {},
+      status(value) { this.statusCode = value; return this; },
+      json(value) { resolve({ status: this.statusCode, body: value }); return this; },
     });
-    await run(response, await response.json());
-  } finally {
-    await new Promise((resolve) => server.close(resolve));
-  }
+    router.handle(req, res, reject);
+  });
+  await run(body, body.body);
 }
 
 test('estimate uploads retain all sources and report actionable upload errors', async (t) => {

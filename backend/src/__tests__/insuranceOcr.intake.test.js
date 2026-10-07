@@ -1,6 +1,18 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 
+// Pure parser tests must not load dotenv, a database or a provider.
+for (const [name, value] of Object.entries({
+  '../db': {},
+  '../middleware/auth': () => assert.fail('No HTTP in parser unit tests'),
+  '../services/notifyOps': {},
+  '../services/openai': {},
+  '../services/estimateAiPolicy': {},
+})) {
+  const id = require.resolve(name);
+  require.cache[id] = { id, filename: id, loaded: true, exports: value };
+}
+
 const { INTAKE_PROMPT, normalizeIntakeParsed } = require('../routes/insuranceOcr');
 
 test('appraisal intake normalizes metadata without estimate lines or totals', () => {

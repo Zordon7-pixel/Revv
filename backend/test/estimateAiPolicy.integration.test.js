@@ -26,7 +26,7 @@ function load(file, dependencies) {
     if (Object.hasOwn(dependencies, name)) return dependencies[name];
     if (['express', 'jsonwebtoken'].includes(name)) return local(name);
     throw new Error(`Forbidden dependency: ${name}`);
-  }, module, module.exports, { env: { JWT_SECRET: secret } });
+  }, module, module.exports, { env: { JWT_SECRET: secret, OPENAI_API_KEY: 'synthetic-only' } });
   return module.exports;
 }
 
@@ -83,7 +83,32 @@ async function fixture(t, type = 'TEXT') {
   const settings = load('routes/settings.js', { '../db': db, '../middleware/auth': auth,
     '../middleware/roles': roles, '../services/publicShop': { newPublicIntakeSlug: () => assert.fail('Not in E1') },
     '../services/paymentReservations': { withLockedShopDeletion: () => assert.fail('Not in E1'), PaymentError: Error } });
-  const app = express(); app.use(express.json()); app.use('/api/settings', settings);
+  const providerCalls = [];
+  const openai = load('services/openai.js', { openai: class {
+    chat = { completions: { create: async (payload, options) => {
+      assert.deepEqual(options, { maxRetries: 0 });
+      assert.equal(payload.max_completion_tokens, 4096);
+      assert.equal(payload.store, false);
+      providerCalls.push(payload);
+      return { choices: [{ message: { content: JSON.stringify({ line_items: [
+        { type: 'parts', description: 'Synthetic bumper', quantity: 1, unit_price: 100 },
+      ] }) } }] };
+    } } };
+  } });
+  const ocrDependencies = {
+    '../db': db, '../middleware/auth': auth,
+    '../services/estimateAiPolicy': { admitEstimateAi: (...args) => service.admitEstimateAi(...args) },
+    '../services/openai': openai, '../services/notifyOps': { notifyOps: async () => {} },
+    'pdf-parse': async () => assert.fail('Only synthetic images in real PG route fixture'),
+  };
+  for (const name of ['multer', 'express-rate-limit', 'pdf-lib', 'fs/promises', 'os', 'path', 'crypto', 'child_process', 'util']) {
+    ocrDependencies[name] = require(name);
+  }
+  for (const name of ['estimateFormat', 'cccExtractor', 'mitchellExtractor']) {
+    ocrDependencies[`../services/${name}`] = require(`../src/services/${name}`);
+  }
+  const ocr = load('routes/insuranceOcr.js', ocrDependencies);
+  const app = express(); app.use(express.json()); app.use('/api/settings', settings); app.use('/api/insurance-ocr', ocr);
   // Test-only harness for simultaneous authenticated users consuming the E2 API.
   app.post('/admission', auth, roles.requireTechnician, async (req, res) => {
     res.json(await service.admitEstimateAi(req.user.shop_id));
@@ -98,7 +123,21 @@ async function fixture(t, type = 'TEXT') {
     });
     return { status: response.status, body: await response.json() };
   }
-  return { shop, other, schema, queries, request, db,
+  async function parse({ tenant = shop, id = randomUUID(), mode = 'estimate', forged = true } = {}) {
+    const form = new FormData();
+    form.append('estimate_images', new Blob(['synthetic-image'], { type: 'image/png' }), 'synthetic.png');
+    form.append('mode', mode);
+    if (forged) {
+      form.append('estimate_ai_enabled', 'true'); form.append('shop_id', other);
+      form.append('limit', '999'); form.append('now', String(epoch + 600000));
+    }
+    const token = jwt.sign({ id, role: 'technician', shop_id: tenant }, secret, { expiresIn: '1h' });
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/insurance-ocr/parse`, {
+      method: 'POST', headers: { authorization: `Bearer ${token}` }, body: form,
+    });
+    return { status: response.status, body: await response.json() };
+  }
+  return { shop, other, schema, queries, request, db, parse, providerCalls,
     sql: (sql, args) => pool.query(sql, args),
     admit: (...args) => service.admitEstimateAi(...args),
     time: value => { clock = value; }, fail: value => { failure = value; },
@@ -178,6 +217,42 @@ for (const type of ['TEXT', 'UUID']) {
   });
 }
 
+for (const type of ['TEXT', 'UUID']) test(`real PG ${type}: actual OCR route enforces opt-in, multi-user shop quota and independent shops`, async t => {
+  const f = await fixture(t, type); f.time(epoch);
+  for (const mode of ['estimate', 'intake']) {
+    const off = await f.parse({ mode });
+    assert.equal(off.status, 200);
+    assert.equal(off.body.parsed.ai_fallback_reason, 'ai_estimate_disabled');
+    assert.deepEqual(off.body.parsed.line_items, []);
+  }
+  assert.equal(f.providerCalls.length, 0);
+  for (let i = 0; i < 15; i++) assert.equal((await f.parse({ id: 'same-disabled-user' })).status, 200);
+  assert.equal((await f.parse({ id: 'same-disabled-user' })).status, 429);
+  assert.equal(f.providerCalls.length, 0);
+  assert.equal((await f.sql('SELECT * FROM estimate_ai_budgets')).rowCount, 0);
+  await f.enable(); await f.enable(f.other);
+  const results = await Promise.all(Array.from({ length: 40 }, () => f.parse()));
+  assert.ok(results.every(r => r.status === 200));
+  assert.equal(results.filter(r => r.body.parsed.line_items.length === 1).length, 15);
+  assert.equal(results.filter(r => r.body.parsed.ai_fallback_reason === 'ai_estimate_quota').length, 25);
+  assert.equal(f.providerCalls.length, 15);
+  assert.equal((await f.sql('SELECT admission_count FROM estimate_ai_budgets WHERE shop_id = $1', [f.shop])).rows[0].admission_count, 15);
+  const other = await f.parse({ tenant: f.other });
+  assert.equal(other.body.parsed.line_items.length, 1);
+  assert.equal(f.providerCalls.length, 16);
+  await f.restart(); f.time(epoch + 599999);
+  assert.equal((await f.parse()).body.parsed.ai_fallback_reason, 'ai_estimate_quota');
+  assert.equal(f.providerCalls.length, 16);
+  f.time(epoch + 600000);
+  assert.equal((await f.parse()).body.parsed.line_items.length, 1);
+  assert.equal(f.providerCalls.length, 17);
+  await f.request('/api/settings', { body: { estimate_ai_enabled: false } });
+  assert.equal((await f.parse()).body.parsed.ai_fallback_reason, 'ai_estimate_disabled');
+  f.fail(sql => /FROM shops/.test(sql));
+  assert.equal((await f.parse()).body.parsed.ai_fallback_reason, 'ai_estimate_unavailable');
+  assert.equal(f.providerCalls.length, 17);
+});
+
 test('real PG: policy revocation serializes with admission and schema errors return safe HTTP errors', async t => {
   const f = await fixture(t); await f.enable();
   const client = await f.connect();
@@ -229,6 +304,8 @@ test('real PG: missing/invalid policy, missing schema, invalid budget, DB failur
   for (const pattern of [/SELECT id::text/, /clock_timestamp/, /SELECT window_started_at/, /INSERT INTO/, /COMMIT/]) {
     f.fail(sql => pattern.test(sql));
     assert.deepEqual(await f.admit(f.shop), { status: 'unavailable' });
+    assert.equal((await f.parse()).body.parsed.ai_fallback_reason, 'ai_estimate_unavailable');
+    assert.equal(f.providerCalls.length, 0);
     f.fail(null);
     assert.equal((await f.sql('SELECT * FROM estimate_ai_budgets')).rowCount, 0);
   }
@@ -239,16 +316,24 @@ test('real PG: missing/invalid policy, missing schema, invalid budget, DB failur
   await f.sql('UPDATE estimate_ai_budgets SET admission_count = -1 WHERE shop_id = $1', [f.shop]);
   assert.deepEqual(await f.admit(f.shop), { status: 'unavailable' });
   await f.sql('DROP TABLE estimate_ai_budgets');
+  assert.equal((await f.parse()).body.parsed.ai_fallback_reason, 'ai_estimate_unavailable');
+  assert.equal(f.providerCalls.length, 0);
   assert.deepEqual(await f.admit(f.shop), { status: 'unavailable' });
   await f.sql('ALTER TABLE shops ALTER COLUMN estimate_ai_enabled DROP NOT NULL');
   await f.sql('UPDATE shops SET estimate_ai_enabled = NULL WHERE id = $1', [f.shop]);
+  assert.equal((await f.parse()).body.parsed.ai_fallback_reason, 'ai_estimate_unavailable');
+  assert.equal(f.providerCalls.length, 0);
   assert.deepEqual(await f.admit(f.shop), { status: 'unavailable' });
   await f.sql('ALTER TABLE shops ALTER COLUMN estimate_ai_enabled DROP DEFAULT');
   await f.sql('ALTER TABLE shops ALTER COLUMN estimate_ai_enabled TYPE TEXT USING estimate_ai_enabled::text');
   await f.sql("UPDATE shops SET estimate_ai_enabled = 'true' WHERE id = $1", [f.shop]);
+  assert.equal((await f.parse()).body.parsed.ai_fallback_reason, 'ai_estimate_unavailable');
+  assert.equal(f.providerCalls.length, 0);
   assert.deepEqual(await f.admit(f.shop), { status: 'unavailable' });
   await assert.rejects(f.initialize(), { code: 'ESTIMATE_AI_SCHEMA_REQUIRED' });
   await f.sql('ALTER TABLE shops DROP COLUMN estimate_ai_enabled');
+  assert.equal((await f.parse()).body.parsed.ai_fallback_reason, 'ai_estimate_unavailable');
+  assert.equal(f.providerCalls.length, 0);
   assert.deepEqual(await f.admit(f.shop), { status: 'unavailable' });
 });
 
