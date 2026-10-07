@@ -1,9 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo } from 'react'
 import { CreditCard, CheckCircle, Loader2 } from 'lucide-react'
 import { loadStripe } from '@stripe/stripe-js'
 import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js'
-import api from '../lib/api'
-import { money, PaymentAmounts, usePaymentConfirmation, validatePaymentSession } from './paymentSession'
+import { money, PaymentAmounts, usePaymentConfirmation, usePaymentCollection, PaymentReconciliation } from './paymentSession'
 
 function CheckoutForm({ session, totalAmount, onSuccess }) {
   const stripe = useStripe()
@@ -37,54 +36,11 @@ function CheckoutForm({ session, totalAmount, onSuccess }) {
   )
 }
 
-export default function PaymentPanel(props) {
-  return <PaymentPanelSession key={JSON.stringify([props.roId, props.totalAmount])} {...props} />
-}
-
-function PaymentPanelSession({ roId, totalAmount, onSuccess, onMarkManual }) {
-  const [initializing, setInitializing] = useState(false)
-  const [showCheckout, setShowCheckout] = useState(false)
-  const [session, setSession] = useState(null)
-  const active = useRef(true)
-  const starting = useRef(false)
-  useEffect(() => {
-    active.current = true
-    return () => { active.current = false }
-  }, [])
-  const [error, setError] = useState('')
-
+export default function PaymentPanel({ roId, totalAmount, onSuccess, onMarkManual }) {
   const publishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY
   const stripePromise = useMemo(() => (publishableKey ? loadStripe(publishableKey) : null), [publishableKey])
-
-  async function startCardPayment() {
-    if (!roId) return
-
-    if (starting.current || !active.current) return
-    if (!stripePromise) {
-      setError('Stripe publishable key is not configured.')
-      return
-    }
-
-    starting.current = true
-    setInitializing(true)
-    setError('')
-
-    try {
-      const { data } = await api.post('/payments/intent', {
-        ro_id: roId,
-      })
-
-      const validated = validatePaymentSession(data)
-      if (active.current) {
-        setSession(validated)
-        setShowCheckout(true)
-      }
-    } catch {
-      if (active.current) setError('Unable to initialize a valid payment session. Refresh the balance before trying again.')
-    } finally {
-      if (active.current) setInitializing(false)
-    }
-  }
+  const collection = usePaymentCollection({ roId, estimate: totalAmount, endpoint: '/payments/intent', configured: !!stripePromise, onSuccess })
+  const { session, loading: initializing } = collection
 
   return (
     <section className="space-y-3 rounded-instrument border border-line-2 bg-panel p-4" aria-label="Payment">
@@ -95,11 +51,11 @@ function PaymentPanelSession({ roId, totalAmount, onSuccess, onMarkManual }) {
         </div>
       </div>
 
-      {!showCheckout && (
+      {!session && (
         <button
           type="button"
-          onClick={startCardPayment}
-          disabled={initializing || starting.current}
+          onClick={collection.start}
+          disabled={initializing || collection.locked || collection.pending}
           className="inline-flex w-full items-center justify-center gap-1 rounded-instrument bg-gold px-3 py-2 text-xs font-semibold text-on-gold transition-colors hover:bg-gold-lit disabled:opacity-50 sm:w-auto"
         >
           {initializing ? <Loader2 size={12} className="animate-spin" /> : <CreditCard size={12} />}
@@ -107,15 +63,15 @@ function PaymentPanelSession({ roId, totalAmount, onSuccess, onMarkManual }) {
         </button>
       )}
 
-      {showCheckout && stripePromise && session && (
+      {stripePromise && session && (
         <Elements stripe={stripePromise} options={{ clientSecret: session.clientSecret }}>
           <CheckoutForm session={session} totalAmount={totalAmount} onSuccess={onSuccess} />
         </Elements>
       )}
 
-      {error && <div role="alert" className="rounded-instrument border border-crit/35 bg-crit/10 px-3 py-2 text-xs text-crit">{error}</div>}
+      <PaymentReconciliation collection={collection} />
 
-      {!starting.current && typeof onMarkManual === 'function' && (
+      {!collection.locked && !collection.pending && typeof onMarkManual === 'function' && (
         <button
           type="button"
           onClick={onMarkManual}

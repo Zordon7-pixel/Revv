@@ -108,7 +108,7 @@ async function fixture(t, type) {
       './stripe': stripe, './notifications': sharedNotifications });
     const auth = load('middleware/auth.js', { '../db': db });
     const payments = load('routes/payments.js', { '../db': db, '../middleware/auth': auth, '../middleware/roles': roles,
-      '../services/stripe': stripe, '../services/paymentReservations': service,
+      '../services/stripe': stripe, '../services/paymentReservations': service, '../services/roMoney': money,
       '../services/notifications': { createNotification: forbidden }, '../services/mailer': { sendMail: forbidden },
       '../services/emailTemplates': { paymentConfirmationEmail: forbidden },
       '../services/customerBilling': { createPaymentCheckoutLinkForRo: forbidden, sendClosedPaidInvoiceEmail: forbidden } });
@@ -176,7 +176,8 @@ test('offline registered webhook signature gate rejects forged/tampered bodies b
   const router = load('routes/payments.js', { '../db': {}, '../middleware/auth': forbidden, '../middleware/roles': roles,
     '../services/stripe': stripe, '../services/paymentReservations': { settlePaymentEvent: async () => { calls++; return null; } },
     '../services/notifications': { createNotification: forbidden }, '../services/mailer': { sendMail: forbidden },
-    '../services/emailTemplates': {}, '../services/customerBilling': {} });
+    '../services/emailTemplates': {}, '../services/customerBilling': {},
+    '../services/roMoney': load('services/roMoney.js', { '../db': { pool: { query: forbidden }, dbGet: forbidden } }) });
   const handler = router.stack.find(l => l.route?.path === '/webhook').route.stack[0].handle;
   const body = JSON.stringify({ type: 'payment_intent.succeeded', data: { object: { id: 'pi_synthetic' } } });
   const signature = webhooks.generateTestHeaderString({ payload: body, secret: env.STRIPE_WEBHOOK_SECRET });

@@ -45,7 +45,7 @@ function consumers(db, money, provider = {}) {
     './paymentReservations': reservations, './mailer': {}, './emailTemplates': {} });
   const router = load('routes/payments.js', {
     '../db': db, '../middleware/auth': (req,res,next) => next(), '../middleware/roles': roles,
-    '../services/paymentReservations': reservations, '../services/stripe': stripe,
+    '../services/paymentReservations': reservations, '../services/roMoney': money, '../services/stripe': stripe,
     '../services/notifications': {}, '../services/mailer': {}, '../services/emailTemplates': {}, '../services/customerBilling': billing,
   });
   return { router, calls, reservations, billing };

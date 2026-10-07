@@ -66,7 +66,7 @@ function wire(db, p, auth = (_q,_s,next)=>next()) {
   const billing=load('services/customerBilling.js',{'../db':db,'./stripe':p.stripe,'./roMoney':money,
     './paymentReservations':reservations,'./mailer':{sendMail:async()=>{}},'./emailTemplates':{}});
   const shared={'../db':db,'../middleware/auth':auth,'../middleware/roles':roles,
-    '../services/paymentReservations':reservations,'../services/customerBilling':billing};
+    '../services/paymentReservations':reservations,'../services/roMoney':money,'../services/customerBilling':billing};
   const payments=load('routes/payments.js',{...shared,'../services/stripe':p.stripe,
     '../services/notifications':{createNotification:async()=>{}},'../services/mailer':{},'../services/emailTemplates':{}});
   const mocks={...shared, '../middleware/roLimitGuard':(_q,_s,next)=>next(),
@@ -85,7 +85,7 @@ function wire(db, p, auth = (_q,_s,next)=>next()) {
 async function invoke(router, route, body={}, role='owner', shop='shop') {
   const layer=router.stack.find(l=>l.route?.path===route);
   const req={body,params:{id:'ro',roId:'ro'},headers:{'stripe-signature':'mock'},user:{id:'actor',role,shop_id:shop}};
-  const res={statusCode:200,status(n){this.statusCode=n;return this;},json(body){this.body=body;return this;}};
+  const res={statusCode:200,headers:{},set(key,value){this.headers[key]=value;return this;},status(n){this.statusCode=n;return this;},json(body){this.body=body;return this;}};
   const pending=[];let i=0;
   const next=()=>{const result=layer.route.stack[i++]?.handle(req,res,next);if(result?.then)pending.push(result);};
   next();await Promise.all(pending);return res;
@@ -354,6 +354,61 @@ test('staff cannot claim unidentified historical pointers or pending state recon
   }
 });
 
+test('status refresh is tenant-scoped, read-only, uncached and reports authoritative collection capacity', async () => {
+  const f=memoryFixture();
+  let r=await invoke(f.payments,'/ro/:roId');
+  assert.equal(r.statusCode,200);assert.equal(r.headers['Cache-Control'],'no-store');
+  assert.deepEqual(r.body.collectionBalance,{remainingCents:10000,canCollect:true});
+  await reserveIntent(f);
+  const calls=f.calls.length;
+  r=await invoke(f.payments,'/ro/:roId');
+  assert.deepEqual(r.body.collectionBalance,{remainingCents:10000,canCollect:false});
+  assert.equal(f.calls.length,calls);assert.equal(f.state.audit.length,0);
+  assert.equal((await invoke(f.payments,'/ro/:roId',{},'owner','other')).statusCode,404);
+  assert.equal((await invoke(f.payments,'/reconcile/:roId')).statusCode,200);
+  r=await invoke(f.payments,'/ro/:roId');
+  assert.deepEqual(r.body.collectionBalance,{remainingCents:10000,canCollect:true});
+  assert.equal((await cash(f)).statusCode,200);
+  r=await invoke(f.payments,'/ro/:roId');
+  assert.equal(r.body.paymentStatus,'paid');assert.deepEqual(r.body.collectionBalance,{remainingCents:0,canCollect:false});
+});
+test('status refresh refuses inconsistent paid status and sanitizes unexpected storage errors', async () => {
+  const f=memoryFixture();f.state.ro.payment_status='paid';
+  assert.equal((await invoke(f.payments,'/ro/:roId')).statusCode,409);
+  f.db.pool.connect=async()=>{throw Error('SECRET provider pi_private');};
+  const r=await invoke(f.payments,'/ro/:roId');
+  assert.equal(r.statusCode,500);assert.deepEqual(r.body,{error:'Could not load payments'});
+});
+
+for (const [status, paid, remaining, canCollect] of [
+  ['partial', 2500, 7500, true], ['paid', 10000, 0, false], ['succeeded', 10000, 0, false],
+  ['unknown', 2500, 7500, false],
+]) test(`status refresh ${status} preserves money and only advertises verified collection`, async () => {
+  const f=memoryFixture();
+  Object.assign(f.state.ro,{payment_status:status,amount_paid_cents:paid});
+  const before=JSON.stringify(f.state);
+  const r=await invoke(f.payments,'/ro/:roId');
+  assert.equal(r.statusCode,200);assert.equal(r.body.paymentStatus,status);
+  assert.deepEqual(r.body.collectionBalance,{remainingCents:remaining,canCollect});
+  assert.equal(JSON.stringify(f.state),before);assert.equal(f.calls.length,0);
+  assert.ok(f.queries.includes('BEGIN ISOLATION LEVEL READ COMMITTED'));
+  assert.match(f.queries.find(sql=>sql.includes('FOR UPDATE')), /id = \$1 AND shop_id = \$2 FOR UPDATE/);
+  assert.equal(f.queries.at(-1),'COMMIT');
+});
+
+test('status refresh keeps unknown attempts held and unidentified pending state fails closed', async () => {
+  const f=memoryFixture();await reserveIntent(f);
+  f.state.attempts[0].status='unknown';
+  let r=await invoke(f.payments,'/ro/:roId');
+  assert.equal(r.statusCode,200);
+  assert.deepEqual(r.body.collectionBalance,{remainingCents:10000,canCollect:false});
+  assert.equal(held(f),10000);
+  const unidentified=memoryFixture();unidentified.state.ro.payment_status='pending';
+  r=await invoke(unidentified.payments,'/ro/:roId');
+  assert.equal(r.statusCode,409);assert.deepEqual(r.body,{error:'Could not load payments'});
+  assert.equal(unidentified.calls.length,0);
+});
+
 const TEST_DATABASE='postgresql://revv_panel@127.0.0.1:55459/revv_panel_test';
 test('late success commits one investigation and in-app alerts before deliberate refusal; repeats preserve every financial fact',async()=>{
   const f=memoryFixture();await reserveIntent(f);
@@ -429,7 +484,7 @@ test('real PostgreSQL mounted ready -> auto link -> cash, audit/tenant/concurren
         server=app.listen(0,'127.0.0.1');await once(server,'listening');
         const token=(role='owner',tenant=shop)=>jwt.sign({id:actor,shop_id:tenant,role},process.env.JWT_SECRET,{expiresIn:'1h'});
         const request=async(method,url,body={},role='owner',tenant=shop)=>{
-          const r=await fetch(`http://127.0.0.1:${server.address().port}${url}`,{method,headers:{'content-type':'application/json',authorization:`Bearer ${token(role,tenant)}`},body:JSON.stringify(body)});
+          const r=await fetch(`http://127.0.0.1:${server.address().port}${url}`,{method,headers:{'content-type':'application/json',...(role === null ? {} : {authorization:`Bearer ${token(role,tenant)}`})},...(method === 'GET' ? {} : {body:JSON.stringify(body)})});
           return {status:r.status,body:await r.json()};
         };
         const makeRo=async(c=customer)=>{
@@ -468,11 +523,36 @@ test('real PostgreSQL mounted ready -> auto link -> cash, audit/tenant/concurren
         });
         await t.test('authenticated exact roles, forged body role/tenant, and foreign tenant are refused',async()=>{
           const ro=await makeRo();assert.equal((await request('POST','/api/payments/intent',{ro_id:ro})).status,200);
-          for(const role of ['assistant','superadmin','technician','customer']) assert.equal((await request('POST',`/api/payments/reconcile/${ro}`,{role:'owner',shop_id:shop},role)).status,403);
+          assert.equal((await request('POST',`/api/payments/reconcile/${ro}`,{role:'owner'},null)).status,401);
+          const calls=p.calls.length;
+          for(const role of ['assistant','superadmin','technician','staff','customer']) assert.equal((await request('POST',`/api/payments/reconcile/${ro}`,{role:'owner',shop_id:shop},role)).status,403);
           assert.equal((await request('POST',`/api/payments/reconcile/${ro}`,{shop_id:shop},'owner',other)).status,404);
           assert.equal((await snapshot(ro)).audit.length,0);
+          assert.equal(p.calls.length,calls);
           assert.equal((await request('POST',`/api/payments/reconcile/${ro}`,{},'admin')).status,200);
           assert.equal((await snapshot(ro)).held,0);
+        });
+        for (const mode of ['failCancel', 'pendingCancel']) await t.test(`reconcile ${mode} keeps occupied funds; explicit verified release permits new identity`, async () => {
+          const ro=await makeRo();await request('POST','/api/payments/intent',{ro_id:ro});
+          p.control[mode]=true;
+          try {
+            const r=await request('POST',`/api/payments/reconcile/${ro}`);
+            assert.equal(r.status,409);assert.doesNotMatch(JSON.stringify(r.body),/SECRET|PRIVATE|pi_|cs_/);
+            const state=await snapshot(ro);
+            assert.equal(state.held,10000);assert.equal(state.ro.amount_paid_cents,0);assert.equal(state.ledger.length,0);
+            assert.equal(state.audit.at(-1).outcome,'unknown');
+            const refreshed=await request('GET',`/api/payments/ro/${ro}`);
+            assert.equal(refreshed.status,200);assert.deepEqual(refreshed.body.collectionBalance,{remainingCents:10000,canCollect:false});
+            assert.equal((await request('POST','/api/payments/intent',{ro_id:ro})).status,409);
+          } finally {p.control[mode]=false;}
+          assert.equal((await request('POST',`/api/payments/reconcile/${ro}`,{},'owner')).status,200);
+          const refreshed=await request('GET',`/api/payments/ro/${ro}`);
+          assert.equal(refreshed.status,200);assert.equal(refreshed.body.roId,ro);assert.equal(refreshed.body.paymentStatus,'unpaid');
+          assert.deepEqual(refreshed.body.collectionBalance,{remainingCents:10000,canCollect:true});
+          assert.equal((await request('GET',`/api/payments/ro/${ro}`,{},'owner',other)).status,404);
+          assert.equal((await request('POST','/api/payments/intent',{ro_id:ro})).status,200);
+          const state=await snapshot(ro);assert.equal(state.attempts.length,2);assert.equal(state.held,10000);
+          assert.notEqual(state.attempts[0].idempotency_key,state.attempts[1].idempotency_key);
         });
         await t.test('Checkout decline keeps persisted capacity; retry on same session settles once',async()=>{
           const ro=await makeRo();await f.billing.createPaymentCheckoutLinkForRo({roId:ro,shopId:shop});
@@ -522,6 +602,9 @@ test('real PostgreSQL mounted ready -> auto link -> cash, audit/tenant/concurren
           await f.reservations.settlePaymentEvent({type:'payment_intent.succeeded',data:{object:o}});
           await f.reservations.settlePaymentEvent({type:'payment_intent.payment_failed',data:{object:o}});
           const s=await snapshot(ro);assert.equal(s.held,0);assert.equal(s.ledger.length,1);assert.equal(s.ro.amount_paid_cents,10000);
+          const refreshed=await request('GET',`/api/payments/ro/${ro}`);
+          assert.equal(refreshed.status,200);assert.equal(refreshed.body.paymentStatus,'paid');
+          assert.deepEqual(refreshed.body.collectionBalance,{remainingCents:0,canCollect:false});
         });
         await t.test('cross-tenant customer cannot reach manual link, auto link or billing invoice',async()=>{
           const ro=await makeRo(foreign),before=p.calls.length;

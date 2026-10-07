@@ -7,7 +7,9 @@ const { getStripeClient, createPaymentIntent, constructWebhookEvent } = require(
 const { sendMail } = require('../services/mailer');
 const { paymentConfirmationEmail } = require('../services/emailTemplates');
 const { createPaymentCheckoutLinkForRo, sendClosedPaidInvoiceEmail } = require('../services/customerBilling');
-const { PaymentError, reconcileReservations, reservePayment, metadataFor, recordProviderResult, settlePaymentEvent } = require('../services/paymentReservations');
+const { PaymentError, withLockedRo, getPaymentBalance, reconcileReservations, reservePayment, metadataFor, recordProviderResult, settlePaymentEvent } = require('../services/paymentReservations');
+
+const { getRoMoneySummary, getPaidCents } = require('../services/roMoney');
 
 const router = express.Router();
 
@@ -201,38 +203,50 @@ router.get('/history/:shopId', auth, requireTechnician, async (req, res) => {
 
 router.get('/ro/:roId', auth, requireTechnician, async (req, res) => {
   try {
-    const ro = await dbGet(
-      `SELECT id, shop_id, ro_number, payment_status, payment_received, payment_received_at, payment_method,
-              stripe_payment_intent_id, paid_at, paid_amount
-       FROM repair_orders
-       WHERE id = $1 AND shop_id = $2`,
-      [req.params.roId, req.user.shop_id]
-    );
-    if (!ro) return res.status(404).json({ error: 'Repair order not found' });
+    res.set('Cache-Control', 'no-store');
+    const payload = await withLockedRo(req.params.roId, req.user.shop_id, async (client, ro) => {
+      let collectionBalance;
+      const status = normalizedPaymentStatus(ro);
+      if (['paid', 'succeeded'].includes(status)) {
+        const money = await getRoMoneySummary(ro.id, ro.shop_id, client);
+        const paid = Math.max(await getPaidCents(ro.id, ro.shop_id, client), Number(ro.amount_paid_cents || 0));
+        if (!Number.isSafeInteger(money.totalCents) || money.totalCents <= 0 || !Number.isSafeInteger(paid) || paid < money.totalCents) {
+          throw new PaymentError('Could not verify payment balance', 409);
+        }
+        collectionBalance = { remainingCents: 0, canCollect: false };
+      } else {
+        const balance = await getPaymentBalance(client, ro);
+        collectionBalance = { remainingCents: balance.remainingCents,
+          canCollect: ['unpaid', 'partial'].includes(status) && !balance.hasOpenPayments
+            && balance.occupiedCents === 0 && balance.availableCents > 0 };
+      }
 
-    const latestPayment = await dbGet(
-      `SELECT id, stripe_payment_intent_id, amount_cents, currency, status, payment_method, paid_at, failure_message, created_at
-       FROM ro_payments
-       WHERE ro_id = $1 AND shop_id = $2
-       ORDER BY created_at DESC
-       LIMIT 1`,
-      [ro.id, req.user.shop_id]
-    );
+      const latestPayment = (await client.query(
+        `SELECT id, stripe_payment_intent_id, amount_cents, currency, status, payment_method, paid_at, failure_message, created_at
+         FROM ro_payments
+         WHERE ro_id = $1 AND shop_id = $2
+         ORDER BY created_at DESC
+         LIMIT 1`,
+        [ro.id, req.user.shop_id]
+      )).rows[0];
 
-    return res.json({
-      roId: ro.id,
-      roNumber: ro.ro_number,
-      paymentStatus: normalizedPaymentStatus(ro),
-      paymentReceived: !!ro.payment_received,
-      paymentReceivedAt: ro.payment_received_at,
-      paymentMethod: ro.payment_method,
-      paymentIntentId: ro.stripe_payment_intent_id,
-      paidAt: ro.paid_at,
-      paidAmount: ro.paid_amount,
-      latestPayment,
+      return {
+        collectionBalance,
+        roId: ro.id,
+        roNumber: ro.ro_number,
+        paymentStatus: normalizedPaymentStatus(ro),
+        paymentReceived: !!ro.payment_received,
+        paymentReceivedAt: ro.payment_received_at,
+        paymentMethod: ro.payment_method,
+        paymentIntentId: ro.stripe_payment_intent_id,
+        paidAt: ro.paid_at,
+        paidAmount: ro.paid_amount,
+        latestPayment,
+      };
     });
+    return res.json(payload);
   } catch (err) {
-    return res.status(500).json({ error: 'Could not load payments' });
+    return res.status(err instanceof PaymentError ? err.status : 500).json({ error: 'Could not load payments' });
   }
 });
 
