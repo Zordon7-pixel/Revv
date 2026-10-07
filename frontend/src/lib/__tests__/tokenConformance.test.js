@@ -170,11 +170,19 @@ describe('redesign token conformance', () => {
     }
 
     const payment = read('src/components/PaymentPanel.jsx')
+    const modal = read('src/components/PaymentModal.jsx')
+    const paymentSession = read('src/components/paymentSession.jsx')
     const parts = read('src/components/PartsSearch.jsx')
-    expect(payment).toMatch(/api\.post\('\/payments\/intent'/)
-    expect(payment).toMatch(/ro_id: roId/)
-    expect(payment).not.toMatch(/amount: amountCents/)
-    expect(payment).toMatch(/validatePaymentSession/)
+    // Follow the imported collection hook to the request and validation seam.
+    for (const source of [payment, modal]) {
+      expect(source).toMatch(/import \{[^}]*\busePaymentCollection\b[^}]*\} from '\.\/paymentSession'/)
+      expect(source).not.toMatch(/amount: amountCents/)
+    }
+    expect(payment).toMatch(/usePaymentCollection\(\{ roId, estimate: totalAmount, endpoint: '\/payments\/intent'/)
+    expect(modal).toMatch(/usePaymentCollection\(\{ roId, estimate: amount, endpoint: '\/payments\/create-intent'/)
+    expect(paymentSession).toMatch(/export function usePaymentCollection\(\{ roId, estimate, endpoint, configured, onSuccess \}\)/)
+    expect(paymentSession).toMatch(/const \{ data \} = await api\.post\(endpoint, \{ ro_id: roId \}\)\s*const session = validatePaymentSession\(data\)/)
+    expect(paymentSession).not.toMatch(/amount: amountCents/)
     expect(payment).toMatch(/stripe\.confirmPayment/)
     expect(payment).toMatch(/onMarkManual/)
     expect(parts).toMatch(/AppOverlay/)

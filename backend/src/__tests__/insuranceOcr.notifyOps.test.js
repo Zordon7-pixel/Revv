@@ -22,9 +22,18 @@ test('insurance OCR uses only OpenAI and preserves local parsing recovery', () =
   assert.doesNotMatch(source, /ANTHROPIC|Anthropic|anthropic-ai/);
   assert.match(source, /parseEstimateTextWithOpenAI/);
   assert.match(source, /parseEstimateImageUrlsWithOpenAI/);
-  assert.match(source, /if \(!apiKey\)/);
-  assert.match(source, /const openai = getOpenAI\(\)/);
-  assert.match(source, /buildDeterministicParseResponse\(deterministicSummaryFallback/);
+  // Configuration refusal now lives behind the shared, shop-scoped admission.
+  assert.equal(require('../services/openai').getOpenAI({}), null);
+  assert.match(source, /const budget = createEstimateBudget\(req\.user\.shop_id\)/);
+  const budgetSource = source.slice(source.indexOf('function createEstimateBudget('), source.indexOf('function buildManualFallback('));
+  assert.match(budgetSource, /result = await admitEstimateAi\(shopId\)/);
+  assert.match(budgetSource, /if \(result\?\.status !== 'admitted'\) \{\s*throw fallbackError/);
+  assert.match(budgetSource, /client = getOpenAI\(\);\s*if \(!client\) throw fallbackError\('ai_estimate_unavailable'\)/);
+  // The catch path retains deterministic rows/totals and marks manual review.
+  assert.match(source, /return res\.json\(buildManualFallback\(deterministicParsed, detectedFormat,\s*err\.fallbackReason \|\| 'ai_estimate_unavailable', intakeMode\)\)/);
+  const fallbackSource = source.slice(source.indexOf('function buildManualFallback('), source.indexOf('function buildDeterministicParseResponse('));
+  assert.match(fallbackSource, /buildDeterministicSummaryFallback\(parsed, format\) \|\| parsed/);
+  assert.match(fallbackSource, /return buildDeterministicParseResponse\(\{\s*\.\.\.retained,\s*ai_fallback_reason: safeReason,\s*needs_review: true/);
 });
 
 test('insurance OCR retries zero-line-item results and can build rows from totals', () => {
@@ -32,7 +41,15 @@ test('insurance OCR retries zero-line-item results and can build rows from total
 
   assert.match(source, /RELAXED_LINE_ITEM_PROMPT/);
   assert.match(source, /retryWithRelaxedPrompt/);
-  assert.match(source, /No line items extracted; retrying with relaxed line-item prompt/);
+  assert.match(source, /if \(!items\.length && retryWithRelaxedPrompt\) \{\s*const retryRaw = await retryWithRelaxedPrompt\(\)/);
+  assert.match(source, /if \(!raw && retryWithRelaxedPrompt\) \{\s*raw = await retryWithRelaxedPrompt\(\);\s*retryWithRelaxedPrompt = null/);
+  assert.match(source, /retryWithRelaxedPrompt = \(\) => parseEstimateImageUrlsWithOpenAI\(budget, imageDataUrls, RELAXED_LINE_ITEM_PROMPT \+ textContext\)/);
+  assert.match(source, /return parseEstimateTextWithOpenAI\(budget, extractedTextForTotals, recoveryPrompt\)/);
+  assert.match(source, /return parseEstimateImageUrlsWithOpenAI\(budget, imageDataUrls, recoveryPrompt\)/);
+  assert.match(source, /if \(budget\.calls >= 2\) throw fallbackError\('ai_estimate_call_limit'\)/);
+  assert.match(source, /if \(calls >= 2\) throw fallbackError\('ai_estimate_call_limit'\)/);
+  assert.match(source, /textChars \+ nextText > PDF_TEXT_CHAR_LIMIT \|\| pages \+ nextPages > PDF_IMAGE_PAGE_LIMIT/);
+  assert.match(source, /calls\+\+;\s*textChars \+= nextText;\s*pages \+= nextPages;\s*return client\.chat\.completions\.create\(payload, \{ maxRetries: 0 \}\)/);
   assert.match(source, /normalizeLineItems\(parsed\.line_items\)/);
   assert.match(source, /buildLineItemsFromTotals\(estimateTotals\)/);
   assert.match(source, /Estimate totals - parts/);
