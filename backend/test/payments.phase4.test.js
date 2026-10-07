@@ -39,7 +39,8 @@ function consumers(db, money, provider = {}) {
     } } } }),
     constructWebhookEvent: body => body,
   };
-  const reservations = load('services/paymentReservations.js', { '../db': db, './roMoney': money, './stripe': stripe });
+  const notifications = load('services/notifications.js', { '../db': db });
+  const reservations = load('services/paymentReservations.js', { '../db': db, './roMoney': money, './stripe': stripe, './notifications': notifications });
   const billing = load('services/customerBilling.js', { '../db': db, './stripe': stripe, './roMoney': money,
     './paymentReservations': reservations, './mailer': {}, './emailTemplates': {} });
   const router = load('routes/payments.js', {
@@ -321,6 +322,8 @@ test('real PostgreSQL payment reservations, parallel creation and settlement (mo
         await admin.query(`CREATE SCHEMA ${schema}`); created=true;
         raw=new Pool({...config,options:`-c search_path=${schema}`,max:10});
         await raw.query(`CREATE TABLE shops(id ${identityType} PRIMARY KEY,tax_rate NUMERIC DEFAULT 0);
+          CREATE TABLE users(id ${identityType} PRIMARY KEY,shop_id ${identityType},role TEXT);
+          CREATE TABLE notifications(id TEXT PRIMARY KEY,shop_id ${identityType},user_id ${identityType},type TEXT,title TEXT,body TEXT,ro_id ${identityType},read BOOLEAN DEFAULT FALSE,created_at TIMESTAMPTZ DEFAULT NOW());
           CREATE TABLE repair_orders(id ${identityType} PRIMARY KEY,shop_id ${identityType} NOT NULL,ro_number TEXT,
             payment_status TEXT DEFAULT 'unpaid',payment_received INTEGER DEFAULT 0,stripe_payment_intent_id TEXT,
             status TEXT DEFAULT 'estimate',estimate_approved_at TEXT,estimate_approved_by TEXT,estimate_status TEXT,insurance_approved_amount NUMERIC,
@@ -561,6 +564,21 @@ test('real PostgreSQL payment reservations, parallel creation and settlement (mo
           let state=await invariant(ro); assert.equal(state.paid,0); assert.equal(state.open,10000); assert.equal(state.ledger.length,0);
           assert.equal((await createIntent(f,ro)).statusCode,409);
           await f.reservations.settlePaymentEvent(e); state=await invariant(ro); assert.equal(state.paid,10000);assert.equal(state.open,0);
+        });
+        await t.test('released attempt late success commits investigation before refusal, never a successful ledger',async()=> {
+          const ro=await makeRo(),f=consumers(db,money),owner=randomUUID();
+          await raw.query("INSERT INTO users(id,shop_id,role) VALUES ($1,$2,'owner')",[owner,shop]);
+          const a=await f.reservations.reservePayment({roId:ro,shopId:shop,kind:'intent'});
+          const pi=`pi_${ro}`,m=f.reservations.metadataFor(a);
+          await f.reservations.recordProviderResult(a,{id:pi});
+          const canceled=event(pi,m,10000,'payment_intent.canceled');canceled.data.object.status='canceled';
+          await f.reservations.settlePaymentEvent(canceled);
+          const before=await invariant(ro);
+          for(let i=0;i<2;i++) await assert.rejects(f.reservations.settlePaymentEvent(event(pi,m,10000)),e=>e.status===409);
+          assert.deepEqual(await invariant(ro),before);
+          assert.equal((await raw.query('SELECT * FROM ro_payment_investigations WHERE shop_id=$1 AND attempt_id=$2',[shop,a.id])).rowCount,1);
+          const notifications=(await raw.query('SELECT * FROM notifications WHERE shop_id=$1 AND ro_id=$2',[shop,ro])).rows;
+          assert.equal(notifications.length,1);assert.equal(notifications[0].user_id,owner);
         });
         await t.test('tenant/missing parent/amount/provider identity conflicts cannot create orphan ledger',async()=> {
           const ro=await makeRo(),f=consumers(db,money);

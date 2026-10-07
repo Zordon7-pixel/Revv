@@ -38,6 +38,20 @@ async function up(pool) {
       LANGUAGE plpgsql AS $$ BEGIN
         RAISE EXCEPTION 'RO_HISTORY_PROTECTED' USING ERRCODE='23514';
       END $$`);
+    await client.query(`CREATE TABLE IF NOT EXISTS ro_payment_investigations (
+      id TEXT PRIMARY KEY, shop_id TEXT NOT NULL, ro_id TEXT NOT NULL,
+      attempt_id TEXT NOT NULL REFERENCES ro_payment_attempts(id),
+      event_type TEXT NOT NULL CHECK (event_type IN ('payment_intent.succeeded',
+        'checkout.session.completed', 'checkout.session.async_payment_succeeded')),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (shop_id, attempt_id)
+    )`);
+    await client.query(`DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid='ro_payment_investigations'::regclass AND tgname='revv_investigation_immutable') THEN
+        CREATE TRIGGER revv_investigation_immutable BEFORE UPDATE OR DELETE OR TRUNCATE ON ro_payment_investigations
+          FOR EACH STATEMENT EXECUTE FUNCTION revv_guard_payment_audit();
+      END IF;
+    END $$`);
     await client.query(`DO $$ BEGIN
       IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid='ro_payment_attempt_audit'::regclass AND tgname='revv_audit_immutable') THEN
         CREATE TRIGGER revv_audit_immutable BEFORE UPDATE OR DELETE OR TRUNCATE ON ro_payment_attempt_audit

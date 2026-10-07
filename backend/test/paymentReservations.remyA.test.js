@@ -61,7 +61,8 @@ function providers() {
 }
 function wire(db, p, auth = (_q,_s,next)=>next()) {
   const money=load('services/roMoney.js',{'../db':db});
-  const reservations=load('services/paymentReservations.js',{'../db':db,'./roMoney':money,'./stripe':p.stripe});
+  const notifications=load('services/notifications.js',{'../db':db});
+  const reservations=load('services/paymentReservations.js',{'../db':db,'./roMoney':money,'./stripe':p.stripe,'./notifications':notifications});
   const billing=load('services/customerBilling.js',{'../db':db,'./stripe':p.stripe,'./roMoney':money,
     './paymentReservations':reservations,'./mailer':{sendMail:async()=>{}},'./emailTemplates':{}});
   const shared={'../db':db,'../middleware/auth':auth,'../middleware/roles':roles,
@@ -90,7 +91,7 @@ async function invoke(router, route, body={}, role='owner', shop='shop') {
   next();await Promise.all(pending);return res;
 }
 function memoryFixture() {
-  const state={ro:{id:'ro',shop_id:'shop',ro_number:'TEST',status:'ready',payment_status:'unpaid',amount_paid_cents:0},attempts:[],ledger:[],audit:[]};
+  const state={ro:{id:'ro',shop_id:'shop',ro_number:'TEST',status:'ready',payment_status:'unpaid',amount_paid_cents:0},attempts:[],ledger:[],audit:[],investigations:[],notifications:[]};
   const queries=[];
   const query=async(sql,a=[])=> {
     queries.push(sql);let rows=[];
@@ -111,7 +112,14 @@ function memoryFixture() {
       const r=state.attempts.find(r=>r.id===a[3]);r.stripe_payment_intent_id ||= a[0];r.stripe_checkout_session_id ||= a[1];
       if(!['settled','released'].includes(r.status))r.status=a[2];
     } else if (/INSERT INTO ro_payment_attempt_audit/.test(sql)) state.audit.push({id:a[0],shop_id:a[1],ro_id:a[2],attempt_id:a[3],actor_id:a[4],action:a[5],prior_state:a[6],outcome:a[7],created_at:new Date()});
-    else if (/INSERT INTO ro_payments/.test(sql)) state.ledger.push({id:a[0],shop_id:a[1],ro_id:a[2],stripe_payment_intent_id:a[3],amount_cents:a[4],status:'succeeded'});
+    else if (/INSERT INTO ro_payment_investigations/.test(sql)) {
+      if(!state.investigations.some(r=>r.shop_id===a[1] && r.attempt_id===a[3])) {
+        const row={id:a[0],shop_id:a[1],ro_id:a[2],attempt_id:a[3],event_type:a[4]};state.investigations.push(row);rows=[row];
+      }
+    }
+    else if (/SELECT id FROM users/.test(sql)) rows=[{id:'actor'},{id:'admin'}];
+    else if (/INSERT INTO notifications/.test(sql)) state.notifications.push({id:a[0],shop_id:a[1],user_id:a[2],title:a[3],body:a[4],ro_id:a[5]});
+    else if (/INSERT INTO ro_payments/.test(sql)) state.ledger.push({id:a[0],shop_id:a[1],ro_id:a[2],stripe_payment_intent_id:a[3],amount_cents:a[4],currency:'usd',status:'succeeded'});
     else if (/UPDATE ro_payments SET status = 'succeeded'/.test(sql)) state.ledger.find(r=>r.id===a[1]).status='succeeded';
     else if (/UPDATE ro_payments SET status = 'failed'/.test(sql)) {const r=state.ledger.find(r=>r.id===a[0]);if(r.status!=='succeeded')r.status='failed';}
     else if (/UPDATE repair_orders SET payment_status/.test(sql)) Object.assign(state.ro,{payment_status:a[0],amount_paid_cents:a[6],payment_received:a[2]});
@@ -347,6 +355,42 @@ test('staff cannot claim unidentified historical pointers or pending state recon
 });
 
 const TEST_DATABASE='postgresql://revv_panel@127.0.0.1:55459/revv_panel_test';
+test('late success commits one investigation and in-app alerts before deliberate refusal; repeats preserve every financial fact',async()=>{
+  const f=memoryFixture();await reserveIntent(f);
+  assert.equal((await invoke(f.payments,'/reconcile/:roId')).statusCode,200);
+  const a=f.state.attempts[0],o={...f.objects.get(a.stripe_payment_intent_id),status:'succeeded',amount_received:10000};
+  const before=structuredClone({ro:f.state.ro,attempts:f.state.attempts,ledger:f.state.ledger,audit:f.state.audit});
+  const calls=f.calls.length;
+  for(let i=0;i<3;i++) {
+    await assert.rejects(webhook(f,'payment_intent.succeeded',o),e=>e instanceof f.reservations.PaymentError && e.status===409);
+    assert.equal(f.queries.at(-1),'COMMIT');
+  }
+  assert.equal(f.state.investigations.length,1);assert.equal(f.state.notifications.length,2);
+  assert.equal(f.state.investigations[0].attempt_id,a.id);
+  assert.deepEqual({ro:f.state.ro,attempts:f.state.attempts,ledger:f.state.ledger,audit:f.state.audit},before);
+  assert.equal(f.calls.length,calls);assert.equal(held(f),0);
+  assert.ok(f.queries.findIndex(q=>q.includes('INSERT INTO ro_payment_investigations'))<f.queries.findIndex(q=>q.includes('INSERT INTO notifications')));
+});
+for(const bad of [{id:'pi_wrong'},{amount:9999},{amount_received:9999},{currency:'eur'}]) test(`released mismatch ${JSON.stringify(bad)} refuses before investigation`,async()=>{
+  const f=memoryFixture();await reserveIntent(f);await invoke(f.payments,'/reconcile/:roId');
+  const o={...f.objects.get(f.state.attempts[0].stripe_payment_intent_id),status:'succeeded',amount_received:10000,...bad};
+  const queryCount=f.queries.length;
+  await assert.rejects(webhook(f,'payment_intent.succeeded',o),e=>e.status===409);
+  const queries=f.queries.slice(queryCount);
+  if(queries.length)assert.equal(queries.at(-1),'ROLLBACK');
+  assert.equal(f.state.investigations.length,0);assert.equal(f.state.notifications.length,0);
+});
+test('notification SQL failure is thrown and rolls back instead of committing the expected refusal',async()=>{
+  const f=memoryFixture();await reserveIntent(f);await invoke(f.payments,'/reconcile/:roId');
+  const connect=f.db.pool.connect;
+  f.db.pool.connect=async()=>{const client=await connect();return {...client,query:async(sql,args)=>{
+    if(sql.includes('INSERT INTO notifications'))throw Error('synthetic notification failure');
+    return client.query(sql,args);
+  }};};
+  const o={...f.objects.get(f.state.attempts[0].stripe_payment_intent_id),status:'succeeded',amount_received:10000};
+  await assert.rejects(webhook(f,'payment_intent.succeeded',o),/synthetic notification failure/);
+  assert.equal(f.queries.at(-1),'ROLLBACK'); // Real rollback atomicity is covered by the PG suite.
+});
 test('real PostgreSQL mounted ready -> auto link -> cash, audit/tenant/concurrency witnesses', {timeout:60000}, async t=>{
   assert.equal(process.env.PANEL_ESTIMATOR_TEST_DATABASE_URL,TEST_DATABASE,'Dedicated loopback test DB only');
   const {Pool}=require('pg'),express=require('express'),jwt=require('jsonwebtoken');
@@ -363,6 +407,7 @@ test('real PostgreSQL mounted ready -> auto link -> cash, audit/tenant/concurren
           CREATE TABLE customers(id ${type} PRIMARY KEY,shop_id ${type},name TEXT,email TEXT,email_consent BOOLEAN DEFAULT TRUE,preferred_contact_method TEXT);
           CREATE TABLE vehicles(id ${type} PRIMARY KEY,year INTEGER,make TEXT,model TEXT);
           CREATE TABLE users(id ${type} PRIMARY KEY,shop_id ${type},role TEXT,revoke_all_before TIMESTAMPTZ);
+          CREATE TABLE notifications(id TEXT PRIMARY KEY,shop_id ${type},user_id ${type},type TEXT,title TEXT,body TEXT,ro_id ${type},read BOOLEAN DEFAULT FALSE,created_at TIMESTAMPTZ DEFAULT NOW());
           CREATE TABLE revoked_tokens(id TEXT,token_jti TEXT);
           CREATE TABLE repair_orders(id ${type} PRIMARY KEY,shop_id ${type},customer_id ${type},vehicle_id ${type},ro_number TEXT DEFAULT 'SYNTHETIC',
             status TEXT DEFAULT 'repair',payment_status TEXT DEFAULT 'unpaid',payment_received INTEGER DEFAULT 0,

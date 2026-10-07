@@ -166,7 +166,26 @@ async function settlePaymentEvent(event, locked = null) {
       if (released(attempt)) {
         // A late success contradicts terminal provider proof: never charge twice or
         // silently revive capacity. Require investigation; retain original evidence.
-        if (success) fail();
+        if (success) {
+          // Unlike bindProvider, this must not learn new identities from metadata.
+          // Checkout and its intent may both report the same success, but both must
+          // match identities persisted before release. Do not touch the attempt.
+          if (!intentId || intentId !== attempt.stripe_payment_intent_id ||
+              (checkout && (!sessionId || sessionId !== attempt.stripe_checkout_session_id)) ||
+              ((checkout ? object.amount_total : object.amount_received) !== Number(attempt.amount_cents)) ||
+              (!checkout && object.amount !== Number(attempt.amount_cents)) ||
+              (payment && payment.currency !== 'usd')) fail();
+          const investigation = await client.query(`INSERT INTO ro_payment_investigations
+            (id, shop_id, ro_id, attempt_id, event_type) VALUES ($1,$2,$3,$4,$5)
+            ON CONFLICT (shop_id, attempt_id) DO NOTHING RETURNING id`,
+          [randomUUID(), shopId, roId, attempt.id, event.type]);
+          if (investigation.rowCount) {
+            await require('./notifications').createPaymentInvestigationNotifications(client, shopId, roId);
+          }
+          // withLockedRo commits this deliberate refusal; thrown DB/notification
+          // errors instead roll back both records and let a callback retry safely.
+          return new PaymentError('Payment requires manual reconciliation', 409);
+        }
         return null;
       }
       await bindProvider(client, attempt, intentId, sessionId, success ? 'settled' : 'open');
