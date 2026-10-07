@@ -82,3 +82,41 @@ describe('Estimate Builder gap review', () => {
     expect(window.alert).not.toHaveBeenCalled()
   })
 })
+
+describe('Estimate Builder AI fallback explanation', () => {
+  afterEach(cleanup)
+
+  it.each([
+    ['ai_estimate_disabled', /AI estimate fallback is disabled for this shop/],
+    ['ai_estimate_quota', /temporarily unavailable because the shop limit was reached/],
+    ['ai_estimate_unavailable', /AI estimate fallback is temporarily unavailable/],
+    ['ai_estimate_call_limit', /AI estimate fallback reached its attempt limit/],
+    ['ai_estimate_input_limit', /The estimate exceeds the AI input limit/],
+    ['estimate_pages_unreadable', /Some estimate pages could not be read/],
+  ])('shows %s and keeps manual entry available', async (reason, message) => {
+    Object.values(api).forEach(mock => mock.mockReset())
+    api.get.mockImplementation(url => Promise.resolve({ data:
+      url === '/ros/ro-1' ? { id: 'ro-1', ro_number: 'RO-SYNTHETIC' }
+        : url === '/estimate-items/ro-1' ? { items: [], summary: {} }
+          : {},
+    }))
+    api.post.mockImplementation(url => Promise.resolve({ data: url === '/insurance-ocr/parse'
+      ? { success: true, needs_review: true, parsed: { line_items: [], estimate_totals: null,
+        needs_review: true, review_reasons: [reason], ai_fallback_reason: reason } }
+      : { success: true, flags: [], summary: {} },
+    }))
+    const user = userEvent.setup()
+    const view = renderPage()
+    const file = new File(['synthetic-original'], 'estimate.png', { type: 'image/png' })
+    await waitFor(() => expect(view.container.querySelector('input[type="file"]')).not.toBeNull())
+    await user.upload(view.container.querySelector('input[type="file"]'), file)
+    expect(await screen.findByText(message)).toBeInTheDocument()
+    expect(screen.getByText(/No line items extracted. Review the original estimate and add lines manually/)).toBeInTheDocument()
+    const form = api.post.mock.calls.find(([url]) => url === '/insurance-ocr/parse')[1]
+    expect(form.getAll('estimate_images')).toEqual([file])
+    expect(api.post.mock.calls.some(([url]) => url.includes('/import'))).toBe(false)
+    expect(api.patch).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'Close estimate import' }))
+    expect(screen.queryByText(message)).not.toBeInTheDocument()
+  })
+})

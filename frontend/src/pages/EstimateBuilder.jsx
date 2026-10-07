@@ -29,6 +29,15 @@ function SeverityBadge({ severity }) {
   return null
 }
 
+const estimateFallbackMessages = {
+  ai_estimate_disabled: 'AI estimate fallback is disabled for this shop. Review the standard extraction or enter missing lines manually.',
+  ai_estimate_quota: 'AI estimate fallback is temporarily unavailable because the shop limit was reached. Review the standard extraction or enter missing lines manually.',
+  ai_estimate_unavailable: 'AI estimate fallback is temporarily unavailable. Review the standard extraction or enter missing lines manually.',
+  ai_estimate_call_limit: 'AI estimate fallback reached its attempt limit. Detailed extraction may be incomplete; review the estimate and enter missing lines manually.',
+  ai_estimate_input_limit: 'The estimate exceeds the AI input limit. The upload was not fully transcribed; review the originals and enter missing lines manually.',
+  estimate_pages_unreadable: 'Some estimate pages could not be read. The upload was not fully transcribed; review the originals and enter missing lines manually.',
+}
+
 // ── OCR Preview Modal ─────────────────────────────────────────────────────────
 function OcrModal({
   parsed,
@@ -73,6 +82,11 @@ function OcrModal({
         {metaNote && (
           <div className="px-5 py-3 bg-brand/30 border-b border-brand/30 text-brand text-xs">
             {metaNote}
+          </div>
+        )}
+        {estimateFallbackMessages[parsed.ai_fallback_reason] && (
+          <div role="status" className="mx-5 mt-3 rounded border border-gold/40 bg-gold/10 p-3 text-sm text-gold">
+            {estimateFallbackMessages[parsed.ai_fallback_reason]}
           </div>
         )}
         <EstimateReviewWarning
@@ -122,7 +136,7 @@ function OcrModal({
             />
           </div>
           {parsed.line_items.length === 0 ? (
-            <p className="text-faint text-sm text-center py-6">No line items extracted. Try a clearer photo.</p>
+            <p className="text-faint text-sm text-center py-6">No line items extracted. Review the original estimate and add lines manually.</p>
           ) : parsed.line_items.map((item, idx) => {
             const flag = flags?.[idx]
             const isUndervalue = flag?.type === 'undervalue'

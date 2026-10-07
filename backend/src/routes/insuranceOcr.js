@@ -4,6 +4,8 @@ const { getOpenAI, aiModel, completionText } = require('../services/openai');
 const rateLimit = require('express-rate-limit');
 const { ipKeyGenerator } = rateLimit;
 const pdfParse = require('pdf-parse');
+const { PDFDocument } = require('pdf-lib');
+const { admitEstimateAi } = require('../services/estimateAiPolicy');
 const fs = require('fs/promises');
 const os = require('os');
 const path = require('path');
@@ -51,6 +53,66 @@ const execFileAsync = promisify(execFile);
 const PDF_TEXT_CHAR_LIMIT = 120000;
 const PDF_IMAGE_PAGE_LIMIT = 12;
 const AI_CONFIG_ERROR = 'AI estimate extraction is not configured correctly. Please contact support.';
+
+// All reasons are static; provider/database details never enter the response.
+const AI_FALLBACK_REASONS = new Set([
+  'ai_estimate_disabled', 'ai_estimate_quota', 'ai_estimate_unavailable',
+  'ai_estimate_call_limit', 'ai_estimate_input_limit', 'estimate_pages_unreadable',
+]);
+function fallbackError(reason) {
+  return Object.assign(new Error('Estimate requires manual review'), { fallbackReason: reason });
+}
+
+function createEstimateBudget(shopId) {
+  let calls = 0, textChars = 0, pages = 0, admitted = false, client;
+  return {
+    get calls() { return calls; },
+    get remainingPages() { return PDF_IMAGE_PAGE_LIMIT - pages; },
+    // Count complete payloads, including prompts and repeated input on retries.
+    async create(payload) {
+      if (calls >= 2) throw fallbackError('ai_estimate_call_limit');
+      let nextText = 0, nextPages = 0;
+      for (const message of payload.messages) {
+        if (typeof message.content === 'string') nextText += message.content.length;
+        else for (const part of message.content) {
+          if (part.type === 'text') nextText += part.text.length;
+          if (part.type === 'image_url') nextPages++;
+        }
+      }
+      if (textChars + nextText > PDF_TEXT_CHAR_LIMIT || pages + nextPages > PDF_IMAGE_PAGE_LIMIT) {
+        throw fallbackError('ai_estimate_input_limit');
+      }
+      if (!admitted) {
+        let result;
+        try { result = await admitEstimateAi(shopId); }
+        catch { throw fallbackError('ai_estimate_unavailable'); }
+        if (result?.status !== 'admitted') {
+          throw fallbackError(result?.status === 'off' ? 'ai_estimate_disabled'
+            : result?.status === 'quota' ? 'ai_estimate_quota' : 'ai_estimate_unavailable');
+        }
+        admitted = true;
+        client = getOpenAI();
+        if (!client) throw fallbackError('ai_estimate_unavailable');
+      }
+      calls++;
+      textChars += nextText;
+      pages += nextPages;
+      return client.chat.completions.create(payload, { maxRetries: 0 });
+    },
+  };
+}
+
+function buildManualFallback(parsed, format, reason, intakeMode) {
+  const safeReason = AI_FALLBACK_REASONS.has(reason) ? reason : 'ai_estimate_unavailable';
+  const retained = intakeMode ? normalizeIntakeParsed(parsed || {}, format)
+    : (buildDeterministicSummaryFallback(parsed, format) || parsed || { line_items: [], estimate_totals: null });
+  return buildDeterministicParseResponse({
+    ...retained,
+    ai_fallback_reason: safeReason,
+    needs_review: true,
+    review_reasons: [...new Set([...(retained.review_reasons || []), safeReason])],
+  }, format);
+}
 
 function buildDeterministicParseResponse(parsed, detectedFormat) {
   const reviewReasons = Array.isArray(parsed?.review_reasons) ? parsed.review_reasons : [];
@@ -657,9 +719,9 @@ function sanitizeTextForOpenAI(input, { aggressive = false } = {}) {
   return cleaned;
 }
 
-async function parseEstimateTextWithOpenAI(openai, extractedText, prompt = SYSTEM_PROMPT) {
+async function parseEstimateTextWithOpenAI(budget, extractedText, prompt = SYSTEM_PROMPT) {
   const callParser = async (cleanedText) => {
-    const response = await openai.chat.completions.create({
+    const response = await budget.create({
       model: aiModel('estimate'),
       max_completion_tokens: 4096,
       store: false,
@@ -667,7 +729,7 @@ async function parseEstimateTextWithOpenAI(openai, extractedText, prompt = SYSTE
       messages: [
         {
           role: 'user',
-          content: `${prompt}\n\nEstimate document text:\n${cleanedText.slice(0, PDF_TEXT_CHAR_LIMIT)}`,
+          content: `${prompt}\n\nEstimate document text:\n${cleanedText}`,
         },
       ],
     });
@@ -688,41 +750,18 @@ async function parseEstimateTextWithOpenAI(openai, extractedText, prompt = SYSTE
   }
 }
 
-async function parseEstimateImageUrlsWithOpenAI(openai, imageDataUrls, prompt = SYSTEM_PROMPT) {
-  const response = await openai.chat.completions.create({
+async function parseEstimateImageUrlsWithOpenAI(budget, imageDataUrls, prompt = SYSTEM_PROMPT) {
+  const response = await budget.create({
     model: aiModel('estimate'),
     max_completion_tokens: 4096,
-      store: false,
-      response_format: { type: 'json_object' },
+    store: false,
+    response_format: { type: 'json_object' },
     messages: [
       {
         role: 'user',
         content: [
           { type: 'text', text: prompt },
           ...imageDataUrls.map((url) => ({ type: 'image_url', image_url: { url, detail: 'high' } })),
-        ],
-      },
-    ],
-  });
-  return completionText(response);
-}
-
-async function parseEstimateUploadImageWithOpenAI(openai, file, mimeType, prompt = SYSTEM_PROMPT) {
-  const base64 = file.buffer.toString('base64');
-  const response = await openai.chat.completions.create({
-    model: aiModel('estimate'),
-    max_completion_tokens: 4096,
-      store: false,
-      response_format: { type: 'json_object' },
-    messages: [
-      {
-        role: 'user',
-        content: [
-          { type: 'text', text: prompt },
-          {
-            type: 'image_url',
-            image_url: { url: `data:${mimeType};base64,${base64}`, detail: 'high' },
-          },
         ],
       },
     ],
@@ -798,6 +837,30 @@ async function extractPdfPageImages(buffer, maxPages = PDF_IMAGE_PAGE_LIMIT) {
   }
 }
 
+async function renderEstimatePdfs(files, maxPages) {
+  let pageCount = 0;
+  const documents = [];
+  // Preflight the entire batch. Never render a truncated subset as a full document.
+  for (const file of files) {
+    let count;
+    try { count = (await PDFDocument.load(file.buffer)).getPageCount(); }
+    catch { throw fallbackError('estimate_pages_unreadable'); }
+    if (!Number.isInteger(count) || count < 1) throw fallbackError('estimate_pages_unreadable');
+    pageCount += count;
+    if (pageCount > maxPages) throw fallbackError('ai_estimate_input_limit');
+    documents.push({ file, count });
+  }
+  const images = [];
+  for (const { file, count } of documents) {
+    let rendered;
+    try { rendered = await extractPdfPageImages(file.buffer, count); }
+    catch { throw fallbackError('estimate_pages_unreadable'); }
+    if (rendered.length !== count) throw fallbackError('estimate_pages_unreadable');
+    images.push(...rendered);
+  }
+  return images;
+}
+
 // ── Phase 1: OCR parse ───────────────────────────────────────────────────────
 const estimateUploadFields = upload.fields([
   { name: 'estimate_image', maxCount: MAX_ESTIMATE_UPLOAD_FILES },
@@ -817,20 +880,23 @@ function uploadEstimateFiles(req, res, next) {
 }
 
 router.post('/parse', auth, insuranceOcrLimiter, uploadEstimateFiles, async (req, res) => {
-  let deterministicSummaryFallback = null;
+  let deterministicParsed = null;
+  let detectedFormat = FORMATS.UNKNOWN;
+  const intakeMode = String(req.body?.mode || '').trim().toLowerCase() === 'intake';
   try {
     const files = collectEstimateUploadFiles(req);
     if (!files.length) {
       return res.status(400).json({ success: false, error: 'No file uploaded. Use field name: estimate_image' });
     }
 
-    const intakeMode = String(req.body?.mode || '').trim().toLowerCase() === 'intake';
     const parsePrompt = intakeMode ? INTAKE_PROMPT : SYSTEM_PROMPT;
     let raw = '';
     let extractedTextForTotals = '';
     let retryWithRelaxedPrompt = null;
     const imageDataUrls = [];
     const pdfTextParts = [];
+    const scannedPdfs = [];
+    const allPdfs = [];
 
     for (const file of files) {
       const mimeType = file.mimetype || 'application/octet-stream';
@@ -841,6 +907,7 @@ router.post('/parse', auth, insuranceOcrLimiter, uploadEstimateFiles, async (req
         continue;
       }
 
+      allPdfs.push(file);
       let extractedText = '';
       try {
         extractedText = await extractPdfText(file.buffer);
@@ -853,11 +920,7 @@ router.post('/parse', auth, insuranceOcrLimiter, uploadEstimateFiles, async (req
         continue;
       }
 
-      try {
-        imageDataUrls.push(...await extractPdfPageImages(file.buffer, PDF_IMAGE_PAGE_LIMIT));
-      } catch (imgErr) {
-        console.error('[InsuranceOCR] PDF image conversion failed:', imgErr);
-      }
+      scannedPdfs.push(file);
     }
 
     extractedTextForTotals = pdfTextParts.join('\n\n');
@@ -867,7 +930,7 @@ router.post('/parse', auth, insuranceOcrLimiter, uploadEstimateFiles, async (req
       signals: [],
     };
 
-    let deterministicParsed = null;
+    detectedFormat = formatDetection.format;
     if (files.length === 1 && extractedTextForTotals && formatDetection.format === FORMATS.CCC) {
       const parsed = parseCccEstimate(extractedTextForTotals);
       if (intakeMode) {
@@ -877,7 +940,6 @@ router.post('/parse', auth, insuranceOcrLimiter, uploadEstimateFiles, async (req
         return res.json(buildDeterministicParseResponse(parsed, formatDetection.format));
       }
       deterministicParsed = parsed;
-      deterministicSummaryFallback = buildDeterministicSummaryFallback(parsed, formatDetection.format);
     }
 
     if (files.length === 1 && extractedTextForTotals && formatDetection.format === FORMATS.MITCHELL) {
@@ -889,79 +951,50 @@ router.post('/parse', auth, insuranceOcrLimiter, uploadEstimateFiles, async (req
         return res.json(buildDeterministicParseResponse(parsed, formatDetection.format));
       }
       deterministicParsed = parsed;
-      deterministicSummaryFallback = buildDeterministicSummaryFallback(parsed, formatDetection.format);
     }
 
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) {
-      if (deterministicSummaryFallback) {
-        return res.json(buildDeterministicParseResponse(deterministicSummaryFallback, formatDetection.format));
-      }
-      return res.status(503).json({ success: false, error: AI_CONFIG_ERROR });
-    }
-
-    const openai = getOpenAI();
+    // Deterministic parsing above is unrestricted and never consumes AI admission.
+    // No slicing: if any source cannot fit/read, keep the deterministic/manual path.
+    if (extractedTextForTotals.length > PDF_TEXT_CHAR_LIMIT) throw fallbackError('ai_estimate_input_limit');
+    const budget = createEstimateBudget(req.user.shop_id);
+    imageDataUrls.push(...await renderEstimatePdfs(scannedPdfs, PDF_IMAGE_PAGE_LIMIT - imageDataUrls.length));
 
     if (imageDataUrls.length) {
       const textContext = extractedTextForTotals
-        ? `\n\nAlso include the uploaded PDF text when extracting the estimate:\n${sanitizeTextForOpenAI(extractedTextForTotals).slice(0, PDF_TEXT_CHAR_LIMIT)}`
+        ? `\n\nAlso include the uploaded PDF text when extracting the estimate:\n${sanitizeTextForOpenAI(extractedTextForTotals)}`
         : '';
-      if (!intakeMode) retryWithRelaxedPrompt = () => parseEstimateImageUrlsWithOpenAI(openai, imageDataUrls, RELAXED_LINE_ITEM_PROMPT + textContext);
-      raw = await parseEstimateImageUrlsWithOpenAI(openai, imageDataUrls, parsePrompt + textContext);
+      if (!intakeMode) retryWithRelaxedPrompt = () => parseEstimateImageUrlsWithOpenAI(budget, imageDataUrls, RELAXED_LINE_ITEM_PROMPT + textContext);
+      raw = await parseEstimateImageUrlsWithOpenAI(budget, imageDataUrls, parsePrompt + textContext);
     } else if (extractedTextForTotals) {
-      if (!intakeMode) retryWithRelaxedPrompt = () => parseEstimateTextWithOpenAI(openai, extractedTextForTotals, RELAXED_LINE_ITEM_PROMPT);
-      try {
-        raw = await parseEstimateTextWithOpenAI(openai, extractedTextForTotals, parsePrompt);
-      } catch (parseErr) {
-        if (isOpenAiJsonBodyParseError(parseErr)) {
-          console.warn('[InsuranceOCR] OpenAI rejected PDF-text payload; falling back to PDF image OCR.');
-        } else {
-          throw parseErr;
+      raw = await parseEstimateTextWithOpenAI(budget, extractedTextForTotals, parsePrompt);
+      // Spend the remaining attempt on visual recovery when available, otherwise
+      // relaxed text. A JSON transport repair already used that same attempt.
+      retryWithRelaxedPrompt = async () => {
+        const recoveryPrompt = intakeMode ? INTAKE_PROMPT : RELAXED_LINE_ITEM_PROMPT;
+        if (budget.calls >= 2) throw fallbackError('ai_estimate_call_limit');
+        try {
+          imageDataUrls.push(...await renderEstimatePdfs(allPdfs, budget.remainingPages));
+        } catch (err) {
+          if (err.fallbackReason !== 'estimate_pages_unreadable') throw err;
+          return parseEstimateTextWithOpenAI(budget, extractedTextForTotals, recoveryPrompt);
         }
-      }
-
-      if (!raw) {
-        for (const file of files) {
-          const mimeType = file.mimetype || 'application/octet-stream';
-          const filename = String(file.originalname || '').toLowerCase();
-          const isPdf = mimeType === 'application/pdf' || filename.endsWith('.pdf');
-          if (!isPdf) continue;
-          try {
-            imageDataUrls.push(...await extractPdfPageImages(file.buffer, PDF_IMAGE_PAGE_LIMIT));
-          } catch (imgErr) {
-            console.error('[InsuranceOCR] PDF image conversion failed:', imgErr);
-          }
-        }
-
-        if (!imageDataUrls.length) {
-          if (deterministicSummaryFallback) {
-            return res.json(buildDeterministicParseResponse(deterministicSummaryFallback, formatDetection.format));
-          }
-          return res.status(422).json({
-            success: false,
-            error: 'Could not read pages from this PDF. Please upload a clearer PDF or a photo/screenshot.',
-          });
-        }
-
-        if (!intakeMode) retryWithRelaxedPrompt = () => parseEstimateImageUrlsWithOpenAI(openai, imageDataUrls, RELAXED_LINE_ITEM_PROMPT);
-        raw = await parseEstimateImageUrlsWithOpenAI(openai, imageDataUrls, parsePrompt);
-      }
+        return parseEstimateImageUrlsWithOpenAI(budget, imageDataUrls, recoveryPrompt);
+      };
     } else {
-      return res.status(422).json({
-        success: false,
-        error: 'Could not read estimate pages. Please upload a clearer PDF or photo.',
-      });
+      throw fallbackError('estimate_pages_unreadable');
+    }
+
+    // An empty response may still have consumed an attempt. Recovery shares budget.
+    if (!raw && retryWithRelaxedPrompt) {
+      raw = await retryWithRelaxedPrompt();
+      retryWithRelaxedPrompt = null;
     }
 
     let parsed;
     try {
       parsed = parseModelJson(raw);
     } catch {
-      console.error('[InsuranceOCR] Failed to parse OpenAI response. raw length:', raw?.length);
-      if (!deterministicParsed) {
-        return res.status(422).json({ success: false, error: 'Could not extract estimate data from file. Try a clearer upload.' });
-      }
-      parsed = deterministicParsed;
+      throw fallbackError('ai_estimate_unavailable');
     }
 
     if (intakeMode) {
@@ -976,53 +1009,18 @@ router.post('/parse', auth, insuranceOcrLimiter, uploadEstimateFiles, async (req
     let estimateTotals = mergeEstimateTotals(modelTotals, deterministicTotals, textTotals);
 
     if (!items.length && retryWithRelaxedPrompt) {
-      try {
-        console.warn('[InsuranceOCR] No line items extracted; retrying with relaxed line-item prompt.');
-        const retryRaw = await retryWithRelaxedPrompt();
-        const retryParsed = parseModelJson(retryRaw);
-        const retryItems = normalizeLineItems(retryParsed.line_items);
-        if (retryItems.length) {
-          parsed = mergeRecoveredParsed(parsed, retryParsed);
-          items = retryItems;
-        }
-        modelTotals = mergeEstimateTotals(modelTotals, retryParsed.estimate_totals);
-        estimateTotals = mergeEstimateTotals(modelTotals, deterministicTotals, textTotals);
-      } catch (retryErr) {
-        console.warn('[InsuranceOCR] Relaxed line-item retry failed:', retryErr?.message || retryErr);
+      const retryRaw = await retryWithRelaxedPrompt();
+      const retryParsed = parseModelJson(retryRaw);
+      const retryItems = normalizeLineItems(retryParsed.line_items);
+      if (retryItems.length) {
+        parsed = mergeRecoveredParsed(parsed, retryParsed);
+        items = retryItems;
       }
+      modelTotals = mergeEstimateTotals(modelTotals, retryParsed.estimate_totals);
+      estimateTotals = mergeEstimateTotals(modelTotals, deterministicTotals, textTotals);
     }
 
-    if (!items.length && extractedTextForTotals && imageDataUrls.length === 0) {
-      for (const file of files) {
-        const mimeType = file.mimetype || 'application/octet-stream';
-        const filename = String(file.originalname || '').toLowerCase();
-        const isPdf = mimeType === 'application/pdf' || filename.endsWith('.pdf');
-        if (!isPdf) continue;
-        try {
-          imageDataUrls.push(...await extractPdfPageImages(file.buffer, PDF_IMAGE_PAGE_LIMIT));
-        } catch (imgErr) {
-          console.warn('[InsuranceOCR] Visual line-item retry could not render PDF pages:', imgErr?.message || imgErr);
-        }
-      }
-
-      if (imageDataUrls.length) {
-        try {
-          console.warn('[InsuranceOCR] Text extraction returned zero lines; retrying from rendered PDF pages.');
-          const visualRaw = await parseEstimateImageUrlsWithOpenAI(openai, imageDataUrls, RELAXED_LINE_ITEM_PROMPT);
-          const visualParsed = parseModelJson(visualRaw);
-          const visualItems = normalizeLineItems(visualParsed.line_items);
-          if (visualItems.length) {
-            parsed = mergeRecoveredParsed(parsed, visualParsed);
-            items = visualItems;
-          }
-          modelTotals = mergeEstimateTotals(modelTotals, visualParsed.estimate_totals);
-          estimateTotals = mergeEstimateTotals(modelTotals, deterministicTotals, textTotals);
-        } catch (visualErr) {
-          console.warn('[InsuranceOCR] Visual line-item retry failed:', visualErr?.message || visualErr);
-        }
-      }
-    }
-
+    const exhaustedReason = !items.length ? 'ai_estimate_call_limit' : null;
     let usedSummaryFallback = false;
     if (!items.length && estimateTotals) {
       items = buildLineItemsFromTotals(estimateTotals);
@@ -1039,6 +1037,7 @@ router.post('/parse', auth, insuranceOcrLimiter, uploadEstimateFiles, async (req
         `${formatDetection.format || FORMATS.UNKNOWN}_summary_items_from_totals`,
       ])];
     }
+    if (exhaustedReason) reviewReasons.push(exhaustedReason);
     const needsReview = Boolean(parsed.needs_review || reviewReasons.length);
 
     return res.json({
@@ -1061,6 +1060,7 @@ router.post('/parse', auth, insuranceOcrLimiter, uploadEstimateFiles, async (req
         detected_format: formatDetection.format,
         needs_review: needsReview,
         review_reasons: reviewReasons,
+        ...(exhaustedReason ? { ai_fallback_reason: exhaustedReason } : {}),
         total_allowed: parsed.total_allowed || null,
         estimate_totals: estimateTotals,
         line_items: items,
@@ -1073,23 +1073,10 @@ router.post('/parse', auth, insuranceOcrLimiter, uploadEstimateFiles, async (req
       await notifyOps('high', providerCode, {
         shop_id: req.user.shop_id,
         ro_id: req.body?.ro_id || req.body?.roId || 'n/a',
-      });
-      if (deterministicSummaryFallback) {
-        return res.json(buildDeterministicParseResponse(
-          deterministicSummaryFallback,
-          deterministicSummaryFallback.detected_format
-        ));
-      }
-      return res.status(503).json({ success: false, error: AI_CONFIG_ERROR });
+      }).catch(() => console.warn('[InsuranceOCR] Ops notification unavailable'));
     }
-    if (deterministicSummaryFallback) {
-      return res.json(buildDeterministicParseResponse(
-        deterministicSummaryFallback,
-        deterministicSummaryFallback.detected_format
-      ));
-    }
-    const status = err.publicMessage === true && err.status === 422 ? 422 : isAiProviderConfigError(err) ? 503 : 500;
-    return res.status(status).json({ success: false, error: safeInsuranceOcrError(err) });
+    return res.json(buildManualFallback(deterministicParsed, detectedFormat,
+      err.fallbackReason || 'ai_estimate_unavailable', intakeMode));
   }
 });
 
