@@ -34,6 +34,7 @@ async function runMigrations() {
     await ensureShopTwilioNumber({ query });
     await require('./customerConsent').up({ query });
     await require('./paymentReservations').up(require('./postgres').pool);
+    await require('./estimateAiPolicy').up(require('./index').pool);
 
     // ── Idempotent column additions ──────────────────────────────────────────
     // These ALWAYS run regardless of schema state. Each wrapped independently.
@@ -610,7 +611,7 @@ async function runMigrations() {
 
     console.log('[migrate] All idempotent migrations complete.');
   } catch (err) {
-    if (err.code === SHOP_TWILIO_SCHEMA_REQUIRED) throw err;
+    if (err.code === SHOP_TWILIO_SCHEMA_REQUIRED || err.code === 'ESTIMATE_AI_SCHEMA_REQUIRED') throw err;
     console.error('[migrate] Fatal migration error:', err.message);
   }
 }

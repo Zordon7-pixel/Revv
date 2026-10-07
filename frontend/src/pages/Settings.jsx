@@ -132,6 +132,9 @@ export default function Settings() {
   const [smsLoading, setSmsLoading] = useState(true)
   const [smsNotificationsEnabled, setSmsNotificationsEnabled] = useState(true)
   const [emailNotificationsEnabled, setEmailNotificationsEnabled] = useState(true)
+  const [estimateAiEnabled, setEstimateAiEnabled] = useState(false)
+  const [estimateAiLoaded, setEstimateAiLoaded] = useState(false)
+  const [estimateAiDirty, setEstimateAiDirty] = useState(false)
   const [costProfile, setCostProfile] = useState({
     parts_margin_pct: '25',
     materials_margin_pct: '45',
@@ -249,6 +252,8 @@ export default function Settings() {
       .then(r => {
         setSmsNotificationsEnabled(r?.data?.sms_notifications_enabled !== false)
         setEmailNotificationsEnabled(r?.data?.email_notifications_enabled !== false)
+        setEstimateAiEnabled(r?.data?.estimate_ai_enabled === true)
+        setEstimateAiLoaded(typeof r?.data?.estimate_ai_enabled === 'boolean')
         setCostProfile({
           parts_margin_pct: marginPercent(r?.data?.parts_margin_pct, '25'),
           materials_margin_pct: marginPercent(r?.data?.materials_margin_pct, '45'),
@@ -431,7 +436,13 @@ export default function Settings() {
         sms_notifications_enabled: !!smsNotificationsEnabled,
         email_notifications_enabled: !!emailNotificationsEnabled,
         ...costProfilePayload,
+        ...(userIsAdmin && estimateAiLoaded && estimateAiDirty
+          ? { estimate_ai_enabled: estimateAiEnabled }
+          : {}),
       })
+      setEstimateAiEnabled(updatedSettings?.estimate_ai_enabled === true)
+      setEstimateAiLoaded(typeof updatedSettings?.estimate_ai_enabled === 'boolean')
+      setEstimateAiDirty(false)
       await api.put('/owner-activity/preferences', ownerActivityPrefs)
       setShop(data)
       setForm(f => ({
@@ -853,6 +864,25 @@ export default function Settings() {
       <form id="shop-settings-form" onSubmit={handleSave} className="space-y-6">
 
         {activeSettingsTab === 'core' && userIsAdmin && <PublicIntakeSettings />}
+        {activeSettingsTab === 'core' && (
+          <section aria-labelledby="estimate-ai-heading" className="space-y-3 rounded-instrument border border-line bg-panel p-5">
+            <h2 id="estimate-ai-heading" className="text-sm font-semibold text-ink">AI estimate fallback</h2>
+            <p role="status" className="text-sm text-muted">
+              {estimateAiLoaded
+                ? `${estimateAiEnabled ? 'On' : 'Off'}${estimateAiDirty ? ' — unsaved change' : ''}`
+                : 'AI estimate fallback status unavailable. Reload settings to try again.'}
+            </p>
+            <p className="text-xs text-muted">When enabled, estimate content may be sent to OpenAI if standard parsing needs help. When off or unavailable, use standard parsing or manual entry. This setting applies only to estimate fallback.</p>
+            {userIsAdmin && (
+              <label className="flex items-center gap-2 text-sm text-ink">
+                <input type="checkbox" checked={estimateAiEnabled} disabled={!estimateAiLoaded || saving}
+                  onChange={event => { setEstimateAiEnabled(event.target.checked); setEstimateAiDirty(true) }} />
+                Enable AI estimate fallback
+              </label>
+            )}
+            {userIsAdmin && <p className="text-xs text-faint">Use Save Settings to apply a change. Shared shop admission and per-request limits apply; they do not guarantee a dollar spending cap.</p>}
+          </section>
+        )}
         {activeSettingsTab === 'core' && (
           <>
             {/* My Profile */}

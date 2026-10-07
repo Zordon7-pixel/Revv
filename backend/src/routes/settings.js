@@ -100,6 +100,7 @@ router.get('/', auth, requireTechnician, async (req, res) => {
       : '';
     const settings = await dbGet(
       `SELECT
+         estimate_ai_enabled,
          COALESCE(sms_notifications_enabled, TRUE) AS sms_notifications_enabled,
          COALESCE(email_notifications_enabled, TRUE) AS email_notifications_enabled${costProfileColumns}
        FROM shops
@@ -109,7 +110,7 @@ router.get('/', auth, requireTechnician, async (req, res) => {
     if (!settings) return res.status(404).json({ error: 'Shop not found' });
     return res.json(settings);
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: 'Could not load settings' });
   }
 });
 
@@ -120,6 +121,12 @@ router.patch('/', auth, requireTechnician, async (req, res) => {
     }
 
     const updates = {};
+    if (req.body && Object.prototype.hasOwnProperty.call(req.body, 'estimate_ai_enabled')) {
+      if (typeof req.body.estimate_ai_enabled !== 'boolean') {
+        return res.status(400).json({ error: 'estimate_ai_enabled must be a boolean' });
+      }
+      updates.estimate_ai_enabled = req.body.estimate_ai_enabled;
+    }
     if (req.body && Object.prototype.hasOwnProperty.call(req.body, 'sms_notifications_enabled')) {
       updates.sms_notifications_enabled = !!req.body.sms_notifications_enabled;
     }
@@ -148,6 +155,10 @@ router.patch('/', auth, requireTechnician, async (req, res) => {
 
     const setClauses = [];
     const values = [];
+    if (Object.prototype.hasOwnProperty.call(updates, 'estimate_ai_enabled')) {
+      values.push(updates.estimate_ai_enabled);
+      setClauses.push(`estimate_ai_enabled = $${values.length}`);
+    }
     if (Object.prototype.hasOwnProperty.call(updates, 'sms_notifications_enabled')) {
       values.push(updates.sms_notifications_enabled);
       setClauses.push(`sms_notifications_enabled = $${values.length}`);
@@ -170,6 +181,7 @@ router.patch('/', auth, requireTechnician, async (req, res) => {
 
     const updated = await dbGet(
       `SELECT
+         estimate_ai_enabled,
          COALESCE(sms_notifications_enabled, TRUE) AS sms_notifications_enabled,
          COALESCE(email_notifications_enabled, TRUE) AS email_notifications_enabled,
          parts_margin_pct,
@@ -182,7 +194,7 @@ router.patch('/', auth, requireTechnician, async (req, res) => {
     );
     return res.json(updated);
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: 'Could not save settings' });
   }
 });
 
