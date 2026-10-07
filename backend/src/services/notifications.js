@@ -15,4 +15,21 @@ async function createNotification(shopId, userId, type, title, body = null, roId
   return id;
 }
 
-module.exports = { createNotification };
+// In-app only. Caller owns the RO lock, investigation deduplication and transaction.
+// Do not call activity/email/SMS hooks or use the global dbRun here. All selected
+// recipients must persist or the caller rolls back the investigation too.
+async function createPaymentInvestigationNotifications(client, shopId, roId) {
+  const recipients = await client.query(
+    "SELECT id FROM users WHERE shop_id = $1 AND role IN ('owner', 'admin')", [shopId]
+  );
+  for (const user of recipients.rows) {
+    await client.query(`INSERT INTO notifications
+      (id, shop_id, user_id, type, title, body, ro_id, read)
+      VALUES ($1,$2,$3,'payment_investigation',$4,$5,$6,FALSE)`,
+    [uuidv4(), shopId, user.id, 'Payment investigation required',
+      'A payment success was reported after this payment attempt was released. Review the repair order and verify payment records before taking any payment action. No payment balance was changed.',
+      roId]);
+  }
+}
+
+module.exports = { createNotification, createPaymentInvestigationNotifications };
