@@ -23,6 +23,23 @@ const NAV_GROUPS = [
   { id: 'admin', label: 'Admin', defaultOpen: false },
 ]
 
+// Stored navigation is untrusted. Keep the original query/hash for safe local routes.
+function isLocalDestination(value) {
+  if (typeof value !== 'string' || value.length > 8192 || !/^\/(?!\/)/.test(value)) return false
+  if (/[\\\s\u0000-\u001f\u007f-\u009f]/u.test(value)) return false
+  try {
+    const decoded = decodeURIComponent(value)
+    if (/[\\\u0000-\u001f\u007f-\u009f]/u.test(decoded)) return false
+    const pathname = decodeURIComponent(value.split(/[?#]/, 1)[0])
+    if (pathname.startsWith('//')) return false
+    const base = 'https://revv.invalid'
+    const target = new URL(pathname, base)
+    return target.origin === base && !target.pathname.startsWith('//')
+  } catch {
+    return false // Malformed percent escapes or URLs cannot be previous routes.
+  }
+}
+
 const allNav = [
   { to: '/dashboard',    icon: LayoutDashboard, labelKey: 'nav.dashboard',    group: 'core', adminOnly: false },
   { to: '/ros',          icon: ClipboardList,   labelKey: 'nav.repairOrders', group: 'core', adminOnly: false },
@@ -116,7 +133,7 @@ export default function Layout() {
 
   function goBackOrDashboard() {
     const prevPath = sessionStorage.getItem('revv_prev_path')
-    if (prevPath && prevPath !== location.pathname) {
+    if (isLocalDestination(prevPath) && prevPath !== location.pathname) {
       navigate(prevPath)
       return
     }
