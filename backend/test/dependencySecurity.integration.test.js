@@ -8,6 +8,7 @@ const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const nodemailer = require('nodemailer');
 const addressparser = require('nodemailer/lib/addressparser');
 const semver = require('semver');
+const { createRequire } = require('node:module');
 
 // No app bootstrap, dotenv, DB, credentials, SMTP, or provider client requests.
 // Listening failures are real failures: Hermes must run the loopback tests on host.
@@ -165,14 +166,17 @@ test('Twilio CommonJS signature helpers verify bounded synthetic data without a 
 test('security-target parent ranges are checked with npm semver, without incompatible overrides', () => {
   const expressPackage = require('express/package.json');
   const twilioPackage = require('twilio/package.json');
-  const parser = require('body-parser/package.json');
+  const fromExpress = createRequire(require.resolve('express'));
+  const parser = fromExpress('body-parser/package.json');
+  const fromParser = createRequire(fromExpress.resolve('body-parser'));
   assert.equal(semver.satisfies('2.0.8', expressPackage.dependencies['proxy-addr']), true);
   assert.equal(semver.satisfies('1.20.6', expressPackage.dependencies['body-parser']), true);
   assert.equal(semver.satisfies('1.20.0', twilioPackage.dependencies.axios), true);
-  // Current Express/parser pins do NOT admit qs 6.16.0; updating only qs is insufficient.
-  assert.ok(semver.validRange(expressPackage.dependencies.qs));
-  assert.ok(semver.validRange(parser.dependencies.qs));
+  // Express and body-parser intentionally resolve different compatible qs minors.
+  // Resolve from each real consumer so a hoisted copy cannot conceal a stale child.
+  assert.equal(semver.satisfies('6.16.0', expressPackage.dependencies.qs), true);
+  assert.equal(semver.satisfies(fromParser('qs/package.json').version, parser.dependencies.qs), true);
   for (const name of ['proxy-addr', 'body-parser', 'qs']) {
-    assert.equal(semver.satisfies(require(`${name}/package.json`).version, expressPackage.dependencies[name]), true);
+    assert.equal(semver.satisfies(fromExpress(`${name}/package.json`).version, expressPackage.dependencies[name]), true);
   }
 });
