@@ -1,56 +1,72 @@
-# Phase G3 dependency disposition — t_3ae3ac28
+# Phase G5 dependency disposition — t_3ae3ac28
 
-2026-10-10. **Scoped uncommitted implementation; nested Vite closure blocked. Not security clean.**
-Base: `348c78ab41b3d9d3408eb78d31aef8f58f3e68ed`, branch
+2026-10-10. **Scoped uncommitted two-file completion; nested Vite cache blocker resolved.
+Not security clean; final installed-graph/full-suite acceptance pending.**
+Base: `7fb862b09a519dd4f713bc3a28421a64da239340`, branch
 `codex/revv-all-issues-recovery-20261007`, supplied `recovery-run/source`.
-Only frontend manifest/lock, Layout, its navigation test and this document change.
-The existing 38-issue recovery scope and original A–F requirements remain; no earlier
-phase repeated. Hermes owns board, commit, host gates, exact-SHA review and shipping.
-G2 full-scope deployed Spark **failed `empty_or_excessive_review_scope`**, not PASS;
-no reviewer was requested. This five-file change is security-sensitive navigation/dependency
-work and exceeds two files; report that to Hermes for review routing.
+Only `frontend/package-lock.json` and this document change in G5. All committed
+G2/G3/Codex source, manifests and tests are preserved. The existing 38-issue recovery
+scope and original A–F requirements remain. Hermes owns board, commits, host gates,
+exact-SHA review and shipping. This is security-sensitive dependency work; G5 is two
+files, while the prior G3 navigation/dependency candidate exceeded two files.
+The supplied full-scope Spark result explicitly failed `empty_or_excessive_review_scope`;
+no advisory PASS or reviewer verdict is claimed and no review was requested here.
 
 ## Current result and evidence
 
-- Host G2 receipt supplied for this continuation: plain `npm ci` **both roots PASS**;
-  **78 backend + 5 frontend PASS on actual upgraded dependencies**, including Nodemailer
-  **10.0.6** real offline stream/JSON transports, service, recipients and privacy checks.
-  Installed G2 includes Express **4.22.3**, rate-limit **8.7.1**, Axios **1.20.0**,
-  Router **6.30.6**, Vitest **4.1.11**. This supersedes the prior pending-G2-install wording.
-- Genuine pre-G3 fresh-ci audit reports: backend **7 (4 moderate, 3 high)**; frontend
-  **14 (7 moderate, 7 high)**. These are not clean. No fresh G3 audit was run.
-- G3 lock: coherent frontend Sentry **7.119.1** (including integrations), localforage
+- Supplied host G2 receipt: ordinary `npm ci` **both roots PASS**; **78 backend + 5
+  frontend PASS on actual upgraded dependencies**, including Nodemailer **10.0.6**
+  offline transports/service/recipient/privacy checks. Installed G2 includes Express
+  **4.22.3**, rate-limit **8.7.1**, Axios **1.20.0**, Router **6.30.6**, Vitest **4.1.11**.
+- Supplied host G3 continuation receipt: ordinary `npm ci` **PASS**; actual **13 backend
+  + 47 frontend PASS**, including **42 Layout navigation + 5 dependency tests**;
+  source committed at the base above. These supersede the prior G3 stale-install-only
+  wording. They do not validate the new G5 nested Vite install. Final full suite pending.
+- Last recorded pre-G3 fresh-ci audits: backend **7 (4 moderate, 3 high)**; frontend
+  **14 (7 moderate, 7 high)**. No fresh G5 audit was run; saved-range reconciliation
+  below is not a new audit and does not assert that the final graph is security clean.
+- Preserved G3 lock: coherent Sentry **7.119.1**, including integrations/localforage
   **1.8.1 → lie 3.1.1 → immediate 3.0.6**; root Vite **6.4.3**, private esbuild
-  **0.25.0** and all 25 registry-declared platform packages. Plugin-react remains
-  **4.7.0**, whose peer range admits Vite6. No overrides/unrelated upgrades/downgrades.
-- Nested Vite remains **8.0.3**: attempted **8.0.16 → rolldown 1.0.3** was rolled back
-  independently because the exact closure below lacks metadata. Existing newer nodes
-  are preserved; nested Vite is neither removed nor downgraded to Vite6.
-- Cached npm registry dist URLs, integrity and immediate dependency/optional/peer/engine/
-  platform metadata were retained and checked: **40 changed nodes verified**, **2 identical
-  reused nodes**. npm Arborist `loadVirtual`: **886 edges, 0 invalid** (absent optional
-  peers permitted). No invented metadata or omitted required platform edge.
-- Frontend offline lock normalization exited **0**, “up to date in 746ms”:
-  `npm install --package-lock-only --offline --ignore-scripts --no-audit --no-fund
-  --cache ../node_modules/.cache/g3/npm --logs-dir=../node_modules/.cache/g3/logs`.
-  Node **22.23.2**, sanitized `env -i PATH=/opt/homebrew/opt/node@22/bin:/usr/bin:/bin`;
-  TMPDIR and all generated artifacts are under task-local ignored `node_modules/.cache/g3`.
-- Targeted local command: `frontend/node_modules/.bin/vitest run --config
-  node_modules/.cache/g3/vitest.config.mjs src/components/__tests__/Layout.navigation.test.jsx
-  src/lib/__tests__/dependencySecurity.test.js` exited **0**: **42 Layout + 5 dependency
-  tests PASS** on the **existing G2 install**, not the new Sentry/Vite lock. The temporary
-  config uses the real project config with `envDir: false` and one worker. An initial
-  config-path typo failed before tests; the corrected run above passed. No .env read.
-  Host must rerun on the final install. `git diff --check` passes; no new full runtime,
-  build, graph, PostgreSQL, audit or independent-review acceptance is claimed.
+  **0.25.0**, all 25 esbuild platform packages and plugin-react **4.7.0**.
+- G5 upgrades only nested Vitest Vite **8.0.3 → 8.0.16** and its required closure:
+  **rolldown 1.0.3**, all **15** optional platform bindings (including WASM),
+  `@oxc-project/types` **0.133.0**, pluginutils **1.0.1**, emnapi core/runtime **1.10.0**,
+  wasi-threads **1.2.1**, and compatible reused wasm-runtime **1.1.6**, wasm-util
+  **0.10.3**, tslib **2.8.1**. The selected full Rolldown closure is **24 nodes**.
+  New Vite also resolves tinyglobby **0.2.17** with fdir **6.5.0**. No manifest,
+  override, incompatible range, existing-package downgrade or unrelated upgrade.
+  npm normalization removed **22 obsolete nodes** from the old Rolldown closure.
+- Validation command `/opt/homebrew/opt/node@22/bin/node node_modules/.cache/g5/check.cjs`
+  exited **0**: cached registry dist/integrity and dependency/optional/peer/engine/
+  platform metadata checked for **26 changed nodes**; npm Arborist `loadVirtual`
+  **891 edges, 0 invalid**, including **82 resolved optional dependency edges**.
+  **36 absent optional peers** are permitted; no required/optional dependency omitted.
+  Evidence: task-local ignored `node_modules/.cache/g5/verification.json`.
+- Peer/engine graph: plugin-react **4.7.0** accepts root Vite **6.4.3**; Vitest/mocker
+  **4.1.11** accept nested Vite **8.0.16**. Root Vite's `esbuild ^0.25.0` resolves
+  its private **0.25.0**; nested Vite's optional esbuild peer `^0.27.0 || ^0.28.0`
+  is absent, not incorrectly satisfied by root Vite's private esbuild. Node **22.23.2**
+  satisfies the Vite8/Rolldown engine floor.
+- Offline lock normalization on isolated manifest/lock copies, with no installed tree,
+  exited **0**, tail **“up to date in 237ms”**:
+  `npm install --prefix "$PWD/node_modules/.cache/g5" --package-lock-only --offline
+  --ignore-scripts --no-audit --no-fund --cache "$PWD/node_modules/.cache/g5/npm"
+  --logs-dir="$PWD/node_modules/.cache/g5/logs"`.
+  Used Node **22.23.2** / npm **10.9.8**, sanitized `env -i` PATH and task-local TMPDIR.
+  npm10 serialization drops six published Linux binding `libc` selectors; the final
+  lock restores those exact cached selectors and otherwise equals normalized output.
+  Scripts/network were disabled; all temporary files are under ignored task cache.
+- `git diff --check` passes. No G5 runtime tests were run against stale node_modules;
+  final fresh install, audit, full tests, build, module graph and browser QA remain Hermes
+  gates. No commit, board update, provider operation, push or deployment was performed.
 
 Saved `DISPOSITION.json` SHA256:
 `8986c291bf6e33fcf1fad70d4c3061c27047fed7d030dc13f3c786a7a97b62b4`.
-Rechecked using npm semver: **50 packages / 187 range occurrences / 135 unique IDs**;
-**170 occurrences no longer match, 17 still match**. Prior G2 **165/22** was saved-range
-reconciliation, not a live audit. G3 clears Sentry `<7.119.1`, esbuild `<=0.24.2`, root
-Vite `<=6.4.1` and two `<=6.4.2` occurrences. The five nested Vite8 ranges remain.
-Package meta-via rows can share these occurrences; counts are not independent exploits.
+All **50 rows / 187 saved range occurrences / 135 unique IDs** refreshed with npm semver,
+including recursive meta-via descendants: **175 occurrences no longer match, 12 still
+match**. G3 was **170/17**; G5 clears all five nested Vite8 saved ranges. These counts
+are saved-range reconciliation, not a live audit. Package meta-via rows can share these
+occurrences; counts are not independent exploits.
 
 ## Source bounds and remaining conditions
 
@@ -77,7 +93,8 @@ Package meta-via rows can share these occurrences; counts are not independent ex
   Firestore `~1.9.0` rejects 1.13.6; no parent override. Host must recheck actual final graph.
 - **A — Sentry:** `frontend/src/main.jsx → src/lib/sentry.js` enables the browser SDK
   when configured. The coherent 7.119.1 lock exits GHSA-593m-55hh-j8gv's saved range;
-  runtime acceptance awaits host install. Empty synthetic DSN graph is not SDK exclusion.
+  G3 host targeted tests passed; final full runtime/build acceptance remains pending.
+  Empty synthetic DSN graph is not SDK exclusion.
 - **R — Router scoped mitigation:** Router/DOM **6.30.6 remains inside both saved ranges**.
   `Layout.jsx` now validates `sessionStorage.revv_prev_path` immediately before navigate:
   single-root local destination, at most 8192 characters, no external/protocol-relative
@@ -107,7 +124,8 @@ Package meta-via rows can share these occurrences; counts are not independent ex
   no tenant-controlled pattern/CSS processing; recheck operator watch configuration.
 - **D — tooling:** static production output is served by Express; no public Vitest
   mocker/interceptor plugin is configured in `frontend/vite.config.js`. Root Vite/esbuild
-  saved ranges are patched in lock only; nested Vite8 remains blocked below. Remaining
+  and nested Vite8 saved ranges are patched in the final lock; G5 installed-graph
+  acceptance remains pending. Remaining
   tooling exposure is conditional on no public dev/preview/test server and trusted inputs.
   ws/undici consumers happy-dom/jsdom must use synthetic/local fixtures.
 - **U — UUID:** backend **9.0.1** stays in `<11.1.1`; `routes/auth.js:6,55`,
@@ -146,11 +164,11 @@ All remaining range details follow the matrix. H/O/E/B/A/R/T/D/U refer to eviden
 | frontend / **postcss-selector-parser** (moderate) | `node_modules/postcss-selector-parser@6.1.3` | `GHSA-w9m9-85wc-3x92` | `GHSA-rj75-hqrm-r3gf` | T: conditional trusted patterns/CSS |
 | frontend / **protobufjs** (high) | `node_modules/protobufjs@7.6.5` | `GHSA-66ff-xgx4-vchm`, `GHSA-2pr8-phx7-x9h3`, `GHSA-fx83-v9x8-x52w`, `GHSA-75px-5xx7-5xc7`, `GHSA-jvwf-75h9-cwgg`, `GHSA-685m-2w69-288q`, `GHSA-q6x5-8v7m-xcrf`, `GHSA-jggg-4jg4-v7c6`, `GHSA-wcpc-wj8m-hjx6`, `GHSA-f38q-mgvj-vph7`, `GHSA-j3f2-48v5-ccww` | — | B: patched; repeat host graph |
 | frontend / **react-router** (moderate) | `node_modules/react-router@6.30.6` | `GHSA-2j2x-hqr9-3h42` | `GHSA-wrjc-x8rr-h8h6`, `GHSA-337j-9hxr-rhxg` | R: residual navigation/SSR conditions |
-| frontend / **react-router-dom** (moderate) | `node_modules/react-router-dom@6.30.6` | `GHSA-jjmj-jmhj-qwj2`, `GHSA-2j2x-hqr9-3h42` | `GHSA-wrjc-x8rr-h8h6`, `GHSA-337j-9hxr-rhxg` | R: residual navigation/SSR conditions |
+| frontend / **react-router-dom** (moderate) | `node_modules/react-router-dom@6.30.6` | `GHSA-2j2x-hqr9-3h42`, `GHSA-jjmj-jmhj-qwj2` | `GHSA-wrjc-x8rr-h8h6`, `GHSA-337j-9hxr-rhxg` | R: residual navigation/SSR conditions |
 | frontend / **source-map-js** (high) | `node_modules/source-map-js@1.2.2` | `GHSA-68fv-2mgg-jv7q` | — | A/T/D: patched saved ranges; G2 host targeted pass; final full gates |
 | frontend / **tailwindcss** (high) | `node_modules/tailwindcss@3.4.19` | — | `GHSA-vfj7-8cjw-p6xm` | T: conditional trusted patterns/CSS |
 | frontend / **undici** (high) | `node_modules/undici@7.29.1` | `GHSA-vmh5-mc38-953g`, `GHSA-p88m-4jfj-68fv`, `GHSA-vxpw-j846-p89q`, `GHSA-hm92-r4w5-c3mj`, `GHSA-g8m3-5g58-fq7m`, `GHSA-pr7r-676h-xcf6`, `GHSA-8xcm-r25x-g524`, `GHSA-4cwx-7wf7-3272`, `GHSA-m8rv-5g2x-5cg5`, `GHSA-jr45-8vmc-qm54`, `GHSA-v3r7-h72x-cjcm`, `GHSA-35p6-xmwp-9g52`, `GHSA-pmjh-fq2x-6v4x`, `GHSA-r53p-7pc4-xj5r`, `GHSA-rfgv-xxqx-mfg5`, `GHSA-3xpg-4rpp-hhhm`, `GHSA-2jfj-6hjv-fm6j`, `GHSA-2gqq-gqf2-x968`, `GHSA-w293-vg96-wgc3`, `GHSA-8436-99hf-9mmv`, `GHSA-rx4f-c7p8-82vq` | — | A/T/D: patched saved ranges; G2 host targeted pass; final full gates |
-| frontend / **vite** (high) | `node_modules/vite@6.4.3`<br>`node_modules/vitest/node_modules/vite@8.0.3` | `GHSA-67mh-4wv8-2f99`; root Vite ranges | `GHSA-4w7w-66w2-5vf9`, `GHSA-v2wj-q39q-566r`, `GHSA-p9ff-h696-f583`, `GHSA-v6wh-96g9-6wx3`, `GHSA-fx2h-pf6j-xcff` | D: nested Vite8 closure blocked; host install/graph |
+| frontend / **vite** (high) | `node_modules/vite@6.4.3`<br>`node_modules/vitest/node_modules/vite@8.0.16` | `GHSA-67mh-4wv8-2f99`, `GHSA-4w7w-66w2-5vf9`, `GHSA-v2wj-q39q-566r`, `GHSA-p9ff-h696-f583`, `GHSA-v6wh-96g9-6wx3`, `GHSA-fx2h-pf6j-xcff` | — | D: both Vite saved ranges patched; final host install/graph |
 | frontend / **vitest** (moderate) | `node_modules/vitest@4.1.11` | `GHSA-82fw-gwwq-j7x9` | — | A/T/D: patched saved ranges; G2 host targeted pass; final full gates |
 | frontend / **websocket-driver** (critical) | `node_modules/websocket-driver@0.7.5` | `GHSA-mp7j-qc5w-4988`, `GHSA-xv26-6w52-cph6` | — | B: patched; repeat host graph |
 | frontend / **ws** (high) | `node_modules/ws@8.21.0` | `GHSA-58qx-3vcg-4xpx`, `GHSA-96hv-2xvq-fx4p` | — | A/T/D: patched saved ranges; G2 host targeted pass; final full gates |
@@ -175,7 +193,7 @@ All remaining range details follow the matrix. H/O/E/B/A/R/T/D/U refer to eviden
 | backend / **vitest** (moderate) | `node_modules/vitest@4.1.11` | `GHSA-82fw-gwwq-j7x9` | — | H/O/D: patched saved ranges; G2 host targeted pass; final full gates |
 
 
-## All remaining advisory ranges (17 occurrences)
+## All remaining advisory ranges (12 occurrences)
 
 | Component / package | Advisory / severity | Exact affected range | Matching current nodes |
 | --- | --- | --- | --- |
@@ -187,42 +205,21 @@ All remaining range details follow the matrix. H/O/E/B/A/R/T/D/U refer to eviden
 | frontend / postcss-selector-parser | [GHSA-rj75-hqrm-r3gf](https://github.com/advisories/GHSA-rj75-hqrm-r3gf) (moderate) | `<7.1.6` | `node_modules/postcss-selector-parser@6.1.3` |
 | frontend / react-router | [GHSA-wrjc-x8rr-h8h6](https://github.com/advisories/GHSA-wrjc-x8rr-h8h6) (moderate) | `>=6.0.0 <7.18.0` | `node_modules/react-router@6.30.6` |
 | frontend / react-router | [GHSA-337j-9hxr-rhxg](https://github.com/advisories/GHSA-337j-9hxr-rhxg) (moderate) | `>=6.4.0 <7.18.0` | `node_modules/react-router@6.30.6` |
-| frontend / vite | [GHSA-4w7w-66w2-5vf9](https://github.com/advisories/GHSA-4w7w-66w2-5vf9) (moderate) | `>=8.0.0 <=8.0.4` | `node_modules/vitest/node_modules/vite@8.0.3` |
-| frontend / vite | [GHSA-v2wj-q39q-566r](https://github.com/advisories/GHSA-v2wj-q39q-566r) (high) | `>=8.0.0 <=8.0.4` | `node_modules/vitest/node_modules/vite@8.0.3` |
-| frontend / vite | [GHSA-p9ff-h696-f583](https://github.com/advisories/GHSA-p9ff-h696-f583) (high) | `>=8.0.0 <=8.0.4` | `node_modules/vitest/node_modules/vite@8.0.3` |
-| frontend / vite | [GHSA-v6wh-96g9-6wx3](https://github.com/advisories/GHSA-v6wh-96g9-6wx3) (moderate) | `>=8.0.0 <=8.0.15` | `node_modules/vitest/node_modules/vite@8.0.3` |
-| frontend / vite | [GHSA-fx2h-pf6j-xcff](https://github.com/advisories/GHSA-fx2h-pf6j-xcff) (high) | `>=8.0.0 <=8.0.15` | `node_modules/vitest/node_modules/vite@8.0.3` |
 | backend / braces | [GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm) (high) | `<=3.0.3` | `node_modules/braces@3.0.3` |
 | backend / qs | [GHSA-x5fp-wj9c-mxmx](https://github.com/advisories/GHSA-x5fp-wj9c-mxmx) (moderate) | `>=6.14.2 <=6.15.3` | `node_modules/express/node_modules/body-parser/node_modules/qs@6.15.3` |
 | backend / qs | [GHSA-4mjr-xmp4-gh2g](https://github.com/advisories/GHSA-4mjr-xmp4-gh2g) (moderate) | `>=2.2.5 <6.16.0` | `node_modules/express/node_modules/body-parser/node_modules/qs@6.15.3` |
 | backend / uuid | [GHSA-w5hq-g745-h8pq](https://github.com/advisories/GHSA-w5hq-g745-h8pq) (moderate) | `<11.1.1` | `node_modules/uuid@9.0.1` |
 
-## Exact remaining cache request
+## Cache blocker resolved
 
-Root Vite/Sentry closures are complete. Nested Vite **8.0.16** requires cached
-**rolldown 1.0.3**; its following registry-declared children lack metadata. Request
-these public packuments/versions plus any newly revealed required/optional descendants.
-All 15 binding names are required in the lock, not only this host's platform. Nothing
-was written outside the task workspace, and no dist/integrity was invented. Until
-supplied, nested Vite remains 8.0.3 and the five ranges above remain conditional/open.
-
-- `@oxc-project/types@0.133.0`
-- `@rolldown/pluginutils@^1.0.0`
-- `@rolldown/binding-darwin-x64@1.0.3`
-- `@rolldown/binding-freebsd-x64@1.0.3`
-- `@rolldown/binding-wasm32-wasi@1.0.3`
-- `@rolldown/binding-darwin-arm64@1.0.3`
-- `@rolldown/binding-android-arm64@1.0.3`
-- `@rolldown/binding-linux-x64-gnu@1.0.3`
-- `@rolldown/binding-linux-x64-musl@1.0.3`
-- `@rolldown/binding-win32-x64-msvc@1.0.3`
-- `@rolldown/binding-linux-arm64-gnu@1.0.3`
-- `@rolldown/binding-linux-ppc64-gnu@1.0.3`
-- `@rolldown/binding-linux-s390x-gnu@1.0.3`
-- `@rolldown/binding-linux-arm64-musl@1.0.3`
-- `@rolldown/binding-win32-arm64-msvc@1.0.3`
-- `@rolldown/binding-openharmony-arm64@1.0.3`
-- `@rolldown/binding-linux-arm-gnueabihf@1.0.3`
+The host supplied `../registry-g/rolldown-1.0.3-complete-closure.json` (24 manifests)
+and full public packuments in `../npm-cache-g`. G4 made no changes because WASM
+metadata was missing; G5 now resolves the entire closure offline, including all 15
+optional bindings and the WASM descendants. **No missing metadata remains.**
+The helper reused already-compatible cached/locked wasm-runtime **1.1.6** and wasm-util
+**0.10.3**, rather than the host prefetch receipt's **1.2.5**/**0.10.4** selections;
+the actual selected versions' registry metadata and all Arborist edges were verified.
+No invented integrity, omitted platform dependency or new metadata request.
 
 ## Historical Phase G graph evidence (not a G2/G3 execution)
 
@@ -236,7 +233,7 @@ Node Axios adapter, form-data and follow-redirects were absent. Axios had 50 res
 modules; Router/DOM/remix one each. Sentry browser/react resolved 22/10 modules but emitted
 zero under the empty synthetic DSN; this does not prove exclusion for an enabled production
 SDK. Repeat with host-approved configuration without exposing values. This historical
-graph supports conditional exposure only and cannot validate changed G2/G3 packages.
+graph supports conditional exposure only and cannot validate changed G2/G3/G5 packages.
 
 Existing tests exercise real proxy-addr, IPv6 rate-limit keys, bounded loopback Express
 forwarding/rate limiting/JSON400/413/form parameter limits/raw bytes; real Nodemailer
@@ -246,8 +243,8 @@ Router navigation with only network primitives mocked. These tests remain host g
 
 ## Hermes completion gate
 
-1. Cache the exact nested-Vite closure, finish its compatible patch without downgrades,
-   and revalidate registry metadata/Arborist and all 187 saved ranges.
+1. G5 lock/cache completion and saved-range validation are complete locally; Hermes
+   verifies this two-file diff and preserves the recorded registry/Arborist evidence.
 2. Plain fresh `npm ci` in both roots on Node22; inspect installed versions against locks.
    Rerun frontend dependencySecurity + Layout.navigation and backend dependencySecurity
    + email.production on the final installed graph. Preserve genuine nonzero audit results.
@@ -255,5 +252,5 @@ Router navigation with only network primitives mocked. These tests remain host g
    production build, actual final Rollup module graph and relevant browser QA are mandatory.
    Recheck ingress/trusted-input/tool-server conditions and retain all original A–F gates.
 4. Hermes commits and records exact SHA/gate receipts, obtains valid Spark advisory and
-   routes the independent exact-SHA review. G2 Spark failed scope binding; no standalone
+   routes the independent exact-SHA review. The saved full-scope Spark result failed scope binding; no standalone
    security PASS, reviewer verdict, final full acceptance or shipping is claimed here.
