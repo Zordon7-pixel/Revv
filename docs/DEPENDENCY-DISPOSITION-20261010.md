@@ -183,7 +183,7 @@ All remaining range details follow the matrix. H/O/E/B/A/R/T/D/U refer to eviden
 | backend / **form-data** (high) | `node_modules/axios/node_modules/form-data@4.0.6` | `GHSA-hmw2-7cc7-3qxx` | — | H/O/D: patched saved ranges; G2 host targeted pass; final full gates |
 | backend / **ip-address** (high) | `node_modules/ip-address@10.7.1` | `GHSA-v2v4-37r5-5v8g`, `GHSA-mwp4-54f8-5fhr`, `GHSA-rpw4-54j3-4h4q`, `GHSA-j6r3-76f7-8jcv`, `GHSA-h3mg-xc3c-68pw` | — | H/O/D: patched saved ranges; G2 host targeted pass; final full gates |
 | backend / **nanoid** (high) | `node_modules/postcss/node_modules/nanoid@3.3.18` | `GHSA-28wg-ghj8-5hjv`, `GHSA-2v37-7h3g-55p8` | — | H/O/D: patched saved ranges; G2 host targeted pass; final full gates |
-| backend / **nodemailer** (high) | `node_modules/nodemailer@10.0.6` | `GHSA-vvjj-xcjg-gr5g`, `GHSA-268h-hp4c-crq3`, `GHSA-wqvq-jvpq-h66f`, `GHSA-p6gq-j5cr-w38f`, `GHSA-8m3c-c648-2xjj`, `GHSA-wmmp-3585-3rmp`, `GHSA-2x7j-588g-ccc2`, `GHSA-cc9r-2j5m-2m83`, `GHSA-6vj9-mwq6-2f5v`, `GHSA-8vvx-rff5-p5rq`, `GHSA-v53p-9fqp-m79j`, `GHSA-r7g4-qg5f-qqm2` | — | E: G2 installed offline gates passed; retain service bounds |
+| backend / **nodemailer** (high) | `node_modules/nodemailer@10.0.9` | `GHSA-vvjj-xcjg-gr5g`, `GHSA-268h-hp4c-crq3`, `GHSA-wqvq-jvpq-h66f`, `GHSA-p6gq-j5cr-w38f`, `GHSA-8m3c-c648-2xjj`, `GHSA-wmmp-3585-3rmp`, `GHSA-2x7j-588g-ccc2`, `GHSA-cc9r-2j5m-2m83`, `GHSA-6vj9-mwq6-2f5v`, `GHSA-8vvx-rff5-p5rq`, `GHSA-v53p-9fqp-m79j`, `GHSA-r7g4-qg5f-qqm2` | — | E: G2 gates passed on 10.0.6; 10.0.9 host rerun pending; retain service bounds |
 | backend / **nodemon** (high) | `node_modules/nodemon@3.1.14` | — | `GHSA-vfj7-8cjw-p6xm` | T: conditional trusted patterns/CSS |
 | backend / **postcss** (high) | `node_modules/postcss@8.5.23` | `GHSA-fxqj-rqcc-2cmp`, `GHSA-r28c-9q8g-f849` | — | H/O/D: patched saved ranges; G2 host targeted pass; final full gates |
 | backend / **proxy-addr** (critical) | `node_modules/proxy-addr@2.0.8` | `GHSA-jqcg-44mw-7w3h` | — | H/O/D: patched saved ranges; G2 host targeted pass; final full gates |
@@ -254,3 +254,33 @@ Router navigation with only network primitives mocked. These tests remain host g
 4. Hermes commits and records exact SHA/gate receipts, obtains valid Spark advisory and
    routes the independent exact-SHA review. The saved full-scope Spark result failed scope binding; no standalone
    security PASS, reviewer verdict, final full acceptance or shipping is claimed here.
+
+## G6 fresh-audit addendum — 2026-10-10
+
+The supplied fresh final audit identified additional moderate **GHSA-g57g-f23g-4646**,
+quoted-local-part comment parsing, affecting Nodemailer **>=9.1.0 <10.0.9**.
+This ID was **not included in the original 187 saved range occurrences**. The original
+**50 rows / 187 occurrences / 135 unique IDs**, **175 nonmatches / 12 conditional
+matches**, and their saved-ID dispositions remain unchanged; this additional ID is
+tracked separately here. Nodemailer **10.0.6** is affected; **10.0.9** exits this range.
+The available compatible patch is applied now, with no deferral or override.
+
+G6 starts from `6900cad9728dd82d00a1ed4fbd92d684a8677913` on the same branch and
+changes only `backend/package.json`, `backend/package-lock.json`, and this document.
+The manifest and lock root require **^10.0.9**; the sole Nodemailer lock node is
+**10.0.9**. Tarball URL and SHA512 integrity come directly from the supplied exact
+`../registry-g/nodemailer-10.0.9.json` and match the full public registry packument
+in `../npm-cache-g`, whose cached content digest was verified offline. No runtime,
+optional, or peer dependencies are declared; license **MIT-0** and Node engine
+**>=20.0.0** are unchanged. All other dependency nodes and all frontend files remain
+unchanged. No network access, package installation, or runtime tests were performed.
+
+The supplied prior-SHA host results (1475 backend, 7 parser, 658 frontend, production
+build, disposable PostgreSQL, and both fresh npm ci exits 0) and module graph
+(1889 resolved / 440 emitted, real Firestore browser modules, no Node gRPC transports)
+apply to the prior candidate. They do **not** validate Nodemailer 10.0.9; neither do
+the historical G2 checks against installed 10.0.6. Hermes must rerun fresh installation,
+audit, and the required host gates on the final candidate, then own commit, exact-SHA
+review, board reporting and shipping. This security-sensitive dependency correction
+spans **three files**; no new test PASS, fresh audit execution, reviewer verdict,
+commit, push, or deployment is claimed by this local metadata-only change.
