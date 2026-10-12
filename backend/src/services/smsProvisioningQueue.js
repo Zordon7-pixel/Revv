@@ -72,7 +72,7 @@ class PgStore {
     try {
       locked = (await c.query('SELECT pg_try_advisory_lock(hashtextextended($1, 71931)) AS locked', [shopId])).rows[0].locked;
       if (!locked) return;
-      const job = (await c.query(`SELECT *,routing_published_at::text AS routing_published_at FROM sms_provision_jobs WHERE shop_id=$1
+      const job = (await c.query(`SELECT *,xmin::text AS version,routing_published_at::text AS routing_published_at FROM sms_provision_jobs WHERE shop_id=$1
         AND state != 'failed' AND next_at <= now()`, [shopId])).rows[0];
       if (!job || !enabled(this.env)) return;
       return await fn(this.session(c), job);
@@ -84,50 +84,84 @@ class PgStore {
   }
   session(c) {
     const env = this.env;
+    let inTransaction = false;
+    const current = async shopId => (await c.query(`SELECT *,xmin::text AS version,
+      routing_published_at::text AS routing_published_at FROM sms_provision_jobs WHERE shop_id=$1`, [shopId])).rows[0];
+    const transaction = async (job, fn) => {
+      if (!enabled(env)) fail('OFF');
+      const version = job.version; const published = job.routing_published_at;
+      await c.query('BEGIN');
+      try {
+        // Shared lock order with the event receiver, including failure saves.
+        const control = (await c.query('SELECT * FROM sms_provision_control WHERE singleton FOR UPDATE')).rows[0];
+        if (!enabled(env) || !control?.enabled) fail('OFF');
+        const shop = (await c.query('SELECT * FROM shops WHERE id::text=$1 FOR UPDATE', [job.shop_id])).rows[0];
+        const m = (await c.query('SELECT * FROM sms_provision_mapping WHERE shop_id=$1 FOR SHARE', [job.shop_id])).rows[0];
+        const persisted = (await c.query('SELECT xmin::text AS version FROM sms_provision_jobs WHERE shop_id=$1 FOR UPDATE', [job.shop_id])).rows[0];
+        if (!job.version || persisted?.version !== job.version) fail('STALE_JOB');
+        inTransaction = true;
+        const result = await fn(shop, m, control);
+        if (!enabled(env)) fail('OFF');
+        await c.query('COMMIT');
+        return result;
+      } catch (e) {
+        await c.query('ROLLBACK');
+        job.version = version; job.routing_published_at = published;
+        throw e;
+      } finally { inTransaction = false; }
+    };
     const save = async job => {
+      if (!inTransaction) return transaction(job, async shop => {
+        // Downgrade wins even when mapping/config validation failed first.
+        if (!entitled(shop)) { job.reason = 'INELIGIBLE'; job.admin_attention = true; }
+        if (job.state !== 'active' && job.reason !== 'INELIGIBLE') {
+          // Use persisted identity and publication timestamp, not mutable job data.
+          // Only routing is withdrawn; provider resources and acquisition stay held.
+          await c.query(`UPDATE shops s SET twilio_phone_sid=NULL,twilio_phone_number=NULL,
+            twilio_messaging_service_sid=NULL,twilio_sender_mode=NULL,twilio_sender_updated_at=now()
+            FROM sms_provision_jobs j WHERE s.id::text=$1 AND j.shop_id=$1
+              AND j.routing_published_at IS NOT NULL AND s.twilio_phone_sid=j.phone_sid
+              AND s.twilio_phone_number=j.phone_number
+              AND s.twilio_messaging_service_sid=j.binding->>'service_sid'
+              AND s.twilio_sender_mode='managed' AND s.twilio_sender_updated_at=j.routing_published_at`, [job.shop_id]);
+        }
+        return save(job);
+      });
       if (!REASONS.has(job.reason)) fail('QUEUE_FAILURE');
-      await c.query(`WITH changed AS (
+      const saved = await c.query(`WITH changed AS (
         UPDATE sms_provision_jobs SET state=$2,reason=$3,attempts=$4,next_at=$5,
           admin_attention=$6,binding=$7,intent_id=$8,candidate=$9,run_id=$10,
           phone_sid=$11,phone_number=$12,registration_source=$13,routing_published_at=$14,updated_at=now()
-        WHERE shop_id=$1 RETURNING *
-      ) INSERT INTO sms_provision_history(shop_id,event,evidence)
+        WHERE shop_id=$1 AND xmin::text=$15 RETURNING *,xmin::text AS version
+      ), history AS (INSERT INTO sms_provision_history(shop_id,event,evidence)
         SELECT shop_id,reason,jsonb_build_object('state',state,'attempts',attempts,'binding',binding,
           'intent_id',intent_id,'candidate',candidate,'run_id',run_id,'phone_sid',phone_sid,
-          'phone_number',phone_number,'registration_source',registration_source) FROM changed`,
+          'phone_number',phone_number,'registration_source',registration_source) FROM changed)
+      SELECT version FROM changed`,
       [job.shop_id,job.state,job.reason,job.attempts,job.next_at,job.admin_attention,job.binding,
-        job.intent_id,job.candidate,job.run_id,job.phone_sid,job.phone_number,job.registration_source,job.routing_published_at]);
+        job.intent_id,job.candidate,job.run_id,job.phone_sid,job.phone_number,job.registration_source,job.routing_published_at,job.version]);
+      if (!saved.rows.length) fail('STALE_JOB');
+      job.version = saved.rows[0].version;
     };
     return {
-      save,
+      save, current,
       registration: (shopId, phoneSid, binding) => registration(c, shopId, phoneSid, binding),
       async mapping(shopId) {
         return (await c.query('SELECT * FROM sms_provision_mapping WHERE shop_id=$1', [shopId])).rows[0];
       },
       async guard(job, fn) {
-        await c.query('BEGIN');
-        try {
-          if (!enabled(env)) fail('OFF');
-          // Deliberately coarse serialization: control first, shop second, mapping
-          // third. Entitlement UPDATE/DELETE must wait until the effect completes.
-          const control = (await c.query('SELECT * FROM sms_provision_control WHERE singleton FOR UPDATE')).rows[0];
-          if (!control?.enabled) fail('OFF');
+        return transaction(job, async (shop, m, control) => {
           const cfg = runConfig(env);
           if (control.run_id !== cfg.id || control.purchase_cap !== cfg.cap) fail('RUN_CONFIG');
-          const shop = (await c.query('SELECT * FROM shops WHERE id::text=$1 FOR UPDATE', [job.shop_id])).rows[0];
           if (!entitled(shop)) fail('INELIGIBLE');
-          // Publishing a phone activates any previously dormant per-shop credentials
-          // in sms.js. They must belong to the very same bound account.
+          // Publishing activates per-shop credentials in sms.js.
           if (shop.twilio_account_sid && shop.twilio_account_sid !== job.binding.account_sid) fail('ACCOUNT_MISMATCH');
-          const m = (await c.query('SELECT * FROM sms_provision_mapping WHERE shop_id=$1 FOR SHARE', [job.shop_id])).rows[0];
           const callback = require('./smsWebhookConfig').inboundWebhookUrl();
           if (!callback || (env.TWILIO_INBOUND_WEBHOOK_URL && env.TWILIO_INBOUND_WEBHOOK_URL !== callback)) fail('CALLBACK_MISMATCH');
           if (!sameBinding(job.binding, { ...m, callback })) fail('CONFIG_DRIFT');
           if (!enabled(env)) fail('OFF');
-          const result = await fn(shop);
-          await c.query('COMMIT');
-          return result;
-        } catch (e) { await c.query('ROLLBACK'); throw e; }
+          return fn(shop);
+        });
       },
       async reserve(job) {
         const { rows } = await c.query(`UPDATE sms_provision_control SET consumed=consumed+1
@@ -270,6 +304,8 @@ async function processJob(s, job, { env = process.env, provider = createProvider
       await s.publish(job, shop);
     });
   } catch (e) {
+    if (e.reason === 'OFF' || !enabled(env)) return job;
+    if (e.reason === 'STALE_JOB') return s.current(job.shop_id);
     const reason = reasonFor(e);
     job.reason = reason;
     job.state = 'pending';
@@ -280,7 +316,12 @@ async function processJob(s, job, { env = process.env, provider = createProvider
     }
     job.admin_attention = true;
     job.next_at = new Date(now() + (DEFERRED.has(reason) ? CADENCE_MS : Math.min(3600000, CADENCE_MS * 2 ** job.attempts)));
-    await s.save(job);
+    try { await s.save(job); }
+    catch (saveError) {
+      if (saveError.reason === 'OFF') return job;
+      if (saveError.reason === 'STALE_JOB') return s.current(job.shop_id);
+      throw saveError;
+    }
   }
   return job;
 }

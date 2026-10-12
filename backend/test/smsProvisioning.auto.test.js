@@ -185,3 +185,47 @@ test('REGISTERED evidence must match exact phone and complete binding', async ()
   f.p.registration = async () => ({ status: 'REGISTERED', source: 'synthetic', phone_sid: 'different', binding: { ...mapping, callback } });
   await f.run(); assert.equal(f.publications, 0); assert.equal(f.job.reason, 'REGISTRATION_SOURCE_REQUIRED');
 });
+
+// These mocks exercise processJob's catch behavior; real SQL custody/version
+// assertions live in smsProvisioning.pg.test.js and require the host database.
+test('active provider failure saves pending/failed while retaining acquisition; first-publish failure stays unrouted', async () => {
+  for (const reason of ['CAMPAIGN_FAILED', 'CALLBACK_MISMATCH', 'PROVIDER_TRANSIENT']) {
+    const f = fixture(); f.registered = 'REGISTERED'; await f.run();
+    assert.equal(f.job.state, 'active');
+    const before = structuredClone(f.job);
+    f.p.prerequisite = async () => fail(reason);
+    await f.run();
+    assert.equal(f.saved.at(-1).reason, reason);
+    assert.equal(f.saved.at(-1).state, reason === 'PROVIDER_TRANSIENT' ? 'pending' : 'failed');
+    for (const field of ['phone_sid', 'phone_number', 'intent_id', 'candidate', 'run_id', 'binding']) {
+      assert.deepEqual(f.saved.at(-1)[field], before[field]);
+    }
+    assert.equal(f.purchased, 1);
+    const fresh = fixture(); fresh.p.prerequisite = async () => fail(reason);
+    await fresh.run(); assert.equal(fresh.publications, 0); assert.equal(fresh.purchased, 0);
+    assert.equal(fresh.shop.twilio_phone_number, undefined);
+  }
+});
+test('stale guard or failure save returns the fresh persisted result without retrying a stale write', async () => {
+  for (const phase of ['guard', 'failure-save']) {
+    const f = fixture();
+    const fresh = { ...f.job, state: 'failed', reason: 'REGISTRATION_REVOKED', version: 'new' };
+    f.s.current = async () => fresh;
+    let saves = 0;
+    if (phase === 'guard') f.s.guard = async () => fail('STALE_JOB');
+    else f.s.guard = async () => fail('CAMPAIGN_FAILED');
+    f.s.save = async () => { saves++; fail('STALE_JOB'); };
+    assert.equal(await f.run(), fresh);
+    assert.equal(saves, phase === 'guard' ? 0 : 1); assert.equal(f.purchased, 0);
+  }
+});
+test('OFF at guard and after a provider failure never enters the failure save', async () => {
+  for (const disabled of ['control', 'environment']) {
+    const f = fixture(); const save = f.s.save;
+    f.s.save = async j => { assert.equal(j.reason, 'DISCOVERED'); return save(j); };
+    if (disabled === 'control') f.s.guard = async () => fail('OFF');
+    else f.p.prerequisite = async () => { f.env.REVV_SMS_AUTOPROVISION = 'false'; fail('PROVIDER_TRANSIENT'); };
+    await f.run(); assert.equal(f.purchased, 0);
+    assert.ok(f.saved.every(j => j.reason === 'DISCOVERED'));
+  }
+});

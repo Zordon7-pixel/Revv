@@ -112,7 +112,7 @@ for (const idType of ['TEXT', 'UUID']) test(`real PG ${idType}: migration, resta
   await pool.query("UPDATE shops SET twilio_phone_number='+12025550199' WHERE id=$1", [ids[2]]);
   const evidenceClient = await pool.connect();
   try {
-    const j = (await evidenceClient.query('SELECT * FROM sms_provision_jobs WHERE shop_id=$1', [ids[2]])).rows[0];
+    const j = (await evidenceClient.query('SELECT *,xmin::text AS version FROM sms_provision_jobs WHERE shop_id=$1', [ids[2]])).rows[0];
     j.phone_sid = sid('PN', 9); j.phone_number = '+12025550199'; j.reason = 'ACQUIRED';
     await store.session(evidenceClient).save(j);
   } finally { evidenceClient.release(); }
@@ -187,6 +187,12 @@ for (const idType of ['TEXT', 'UUID']) test(`real PG ${idType}: signed receipt t
     await pool.query('UPDATE shops SET twilio_phone_sid=NULL WHERE id=$1', [other.shop_id]);
     assert.equal(await count(), 0);
   });
+  await t.test('campaignless negative cannot authorize an unknown PN or seed a batch binding', async () => {
+    const missing = receipt('number-deregistration.successful', ts, 'unowned-negative');
+    assert.equal((await request(app, [missing])).status, 403);
+    assert.equal((await request(app, [successful(ts, 'uncommitted-binding'), missing])).status, 403);
+    assert.equal(await count(), 0);
+  });
   await t.test('receipt may precede purchase DB write; no raw phone/data/error is persisted', async () => {
     assert.equal((await job()).phone_sid, null);
     assert.equal((await request(app, [successful(ts, 'before-db-write')])).status, 204);
@@ -211,6 +217,15 @@ for (const idType of ['TEXT', 'UUID']) test(`real PG ${idType}: signed receipt t
     assert.equal((await status()).status, 'FAILURE');
     assert.equal((await request(app, [successful(ts + 10, 'newer-success')])).status, 204);
   });
+  await t.test('campaignless negative resolves prior receipt before acquisition and retains exact campaign', async () => {
+    assert.equal((await job()).phone_sid, null);
+    const negative = receipt('number-deregistration.successful', ts + 10, 'prior-receipt-negative');
+    assert.equal((await request(app, [negative])).status, 204);
+    assert.equal((await status()).status, 'FAILURE'); // equal-time conflict is fail-closed
+    const saved = (await pool.query('SELECT * FROM sms_provision_receipts WHERE event_id=$1', ['prior-receipt-negative'])).rows[0];
+    assert.deepEqual(saved.binding, binding); assert.equal(saved.event_campaign_sid, m.event_campaign_sid);
+    assert.equal((await row()).twilio_phone_sid, null);
+  });
   const f = fakeClient(m);
   const provider = (id, b, context) => createProvider(id, b, { ...context, clientFactory: () => f.client });
   const run = async () => {
@@ -228,6 +243,19 @@ for (const idType of ['TEXT', 'UUID']) test(`real PG ${idType}: signed receipt t
     assert.equal((await job()).reason, 'EVENT_SETUP_REQUIRED');
     assert.equal((await pool.query('SELECT consumed FROM sms_provision_control')).rows[0].consumed, 0);
     await pool.query('UPDATE shops SET twilio_auth_token=$2 WHERE id=$1', [m.shop_id,token]);
+  });
+  await t.test('failure before first automatic publication cannot clear an existing legacy sender', async () => {
+    assert.equal((await job()).routing_published_at, null);
+    await pool.query(`UPDATE shops SET twilio_phone_sid=$2,twilio_phone_number=$3,
+      twilio_messaging_service_sid=$4,twilio_sender_mode='managed',twilio_sender_updated_at=now() WHERE id=$1`,
+    [m.shop_id,sid('PN', 'e'),'+12025550188',m.service_sid]);
+    const legacy = await row();
+    f.campaignStatus = 'FAILED'; await run(); f.campaignStatus = 'VERIFIED';
+    assert.equal((await job()).reason, 'CAMPAIGN_FAILED');
+    assert.deepEqual(await row(), legacy); assert.equal(f.purchases, 0);
+    await pool.query(`UPDATE shops SET twilio_phone_sid=NULL,twilio_phone_number=NULL,
+      twilio_messaging_service_sid=NULL,twilio_sender_mode=NULL,twilio_sender_updated_at=NULL WHERE id=$1`, [m.shop_id]);
+    await pool.query("UPDATE sms_provision_jobs SET state='pending',attempts=0 WHERE shop_id=$1", [m.shop_id]);
   });
   await t.test('production adapter recovers purchased inventory from durable intent and publishes only after signed receipt', async () => {
     // Simulate provider success followed by process death before DB acquisition write.
@@ -257,7 +285,8 @@ for (const idType of ['TEXT', 'UUID']) test(`real PG ${idType}: signed receipt t
   });
   await t.test('plain entitlement downgrade retains active routing and acquired history with admin attention', async () => {
     await pool.query("UPDATE shops SET plan='free' WHERE id=$1", [m.shop_id]);
-    await store.discover();
+    await store.discover(); await run();
+    assert.equal((await job()).reason, 'INELIGIBLE');
     assert.equal((await row()).twilio_phone_sid, sid('PN'));
     assert.equal((await job()).phone_sid, sid('PN')); assert.equal((await job()).admin_attention, true);
     await pool.query("UPDATE shops SET plan='pro' WHERE id=$1", [m.shop_id]);
@@ -285,6 +314,109 @@ for (const idType of ['TEXT', 'UUID']) test(`real PG ${idType}: signed receipt t
       assert.equal((await row()).sms_consent, true); assert.equal(f.purchases, 1);
     }
   });
+  await t.test('campaignless negative rejects tamper, wrong account/service/PN, drift and ambiguous prior binding', async () => {
+    const negative = receipt('number-deregistration.successful', ts + 24, 'negative-auth');
+    const before = await count();
+    for (const field of ['accountsid', 'messagingservicesid', 'phonenumbersid']) {
+      const changed = structuredClone(negative); changed.data[field] = sid(changed.data[field].slice(0, 2), 'c');
+      assert.equal((await request(app, [changed])).status, 403);
+    }
+    assert.equal((await request(app, [receipt('number-deregistration.successful', ts + 24, 'negative-other', other)],
+      { token: 'other-account-token' })).status, 403);
+    const raw = JSON.stringify([negative]);
+    assert.equal((await request(app, [negative], { raw: raw.replace('negative-auth', 'tampered-auth'),
+      hash: require('twilio').getExpectedBodyHash(raw) })).status, 403);
+    await pool.query("UPDATE sms_provision_mapping SET authorization_ref='changed' WHERE shop_id=$1", [m.shop_id]);
+    assert.equal((await request(app, [negative])).status, 403);
+    await pool.query('UPDATE sms_provision_mapping SET authorization_ref=$2 WHERE shop_id=$1', [m.shop_id,m.authorization_ref]);
+    await pool.query('UPDATE sms_provision_jobs SET binding=$2 WHERE shop_id=$1', [m.shop_id,{ ...binding, authorization_ref: 'other-history' }]);
+    assert.equal((await request(app, [negative])).status, 403);
+    await pool.query('UPDATE sms_provision_jobs SET binding=$2 WHERE shop_id=$1', [m.shop_id,binding]);
+    assert.equal(await count(), before);
+  });
+  const reactivate = async (time, id) => {
+    await pool.query("UPDATE sms_provision_jobs SET state='pending',attempts=0 WHERE shop_id=$1", [m.shop_id]);
+    assert.equal((await request(app, [successful(time, id)])).status, 204);
+    await run(); assert.equal((await job()).state, 'active');
+    assert.equal((await row()).twilio_phone_sid, sid('PN'));
+  };
+  await t.test('processJob active to campaign FAILED, callback/config drift and transient failure withdraws routing only', async () => {
+    for (const reason of ['CAMPAIGN_FAILED', 'CALLBACK_MISMATCH', 'CONFIG_DRIFT', 'PROVIDER_TRANSIENT', 'RETRIES_EXHAUSTED']) {
+      await reactivate(ts + 24, `failure-setup-${reason}`);
+      const before = await job();
+      const fetch = f.service.fetch;
+      if (reason === 'CAMPAIGN_FAILED') f.campaignStatus = 'FAILED';
+      if (reason === 'CALLBACK_MISMATCH') f.service.fetch = async () => ({ ...await fetch(), inboundRequestUrl: 'https://drift.invalid' });
+      if (reason === 'CONFIG_DRIFT') await pool.query("UPDATE sms_provision_mapping SET authorization_ref='drift' WHERE shop_id=$1", [m.shop_id]);
+      if (['PROVIDER_TRANSIENT', 'RETRIES_EXHAUSTED'].includes(reason)) f.service.fetch = async () => { throw { status: 503 }; };
+      if (reason === 'RETRIES_EXHAUSTED') await pool.query('UPDATE sms_provision_jobs SET attempts=4 WHERE shop_id=$1', [m.shop_id]);
+      await run();
+      const after = await job(); const shop = await row();
+      assert.equal(after.reason, reason); assert.notEqual(after.state, 'active');
+      assert.equal(shop.twilio_phone_sid, null); assert.equal(shop.twilio_phone_number, null);
+      assert.equal(shop.twilio_messaging_service_sid, null); assert.equal(shop.twilio_sender_mode, null);
+      assert.equal(shop.sms_consent, true); assert.equal(after.admin_attention, true);
+      for (const key of ['phone_sid', 'phone_number', 'intent_id', 'candidate', 'run_id', 'binding', 'routing_published_at']) assert.deepEqual(after[key], before[key]);
+      assert.ok((await pool.query('SELECT 1 FROM sms_provision_history WHERE shop_id=$1 AND event=$2', [m.shop_id,reason])).rows.length);
+      assert.equal(f.purchases, 1);
+      assert.equal((await pool.query('SELECT consumed FROM sms_provision_control')).rows[0].consumed, 1);
+      f.campaignStatus = 'VERIFIED'; f.service.fetch = fetch;
+      await pool.query('UPDATE sms_provision_mapping SET authorization_ref=$2 WHERE shop_id=$1', [m.shop_id,m.authorization_ref]);
+    }
+  });
+  await t.test('stale worker cannot save or publish over a negative event or a newer publication', async () => {
+    await reactivate(ts + 25, 'stale-setup');
+    const c = await pool.connect();
+    try {
+      const session = store.session(c);
+      const stale = await session.current(m.shop_id);
+      assert.equal((await request(app, [receipt('number-deregistration.successful', ts + 26, 'stale-revoke')])).status, 204);
+      const revoked = await job();
+      stale.state = 'pending'; stale.reason = 'PROVIDER_TRANSIENT';
+      await assert.rejects(session.save(stale), /STALE_JOB/);
+      assert.deepEqual(await job(), revoked); assert.equal((await row()).twilio_phone_sid, null);
+      const result = await processJob(session, stale, { env, provider: () => assert.fail('stale provider call'), callback: () => callback });
+      assert.equal(result.reason, 'REGISTRATION_REVOKED');
+      const beforePublish = await session.current(m.shop_id);
+      await reactivate(ts + 27, 'fresh-publication');
+      const fresh = await job(); const routed = await row();
+      beforePublish.state = 'failed'; beforePublish.reason = 'CAMPAIGN_FAILED';
+      await assert.rejects(session.save(beforePublish), /STALE_JOB/);
+      await assert.rejects(session.guard(beforePublish, shop => session.publish(beforePublish, shop)), /STALE_JOB/);
+      assert.deepEqual(await job(), fresh); assert.deepEqual(await row(), routed);
+      // A negative arriving between a provider failure and its catch save wins too.
+      const racing = await session.current(m.shop_id);
+      const originalGuard = session.guard;
+      let guards = 0;
+      session.guard = async (...args) => {
+        if (++guards === 2) {
+          assert.equal((await request(app, [receipt('number-deregistration.successful', ts + 28, 'catch-race')])).status, 204);
+          throw { reason: 'CAMPAIGN_FAILED' };
+        }
+        return originalGuard(...args);
+      };
+      const result2 = await processJob(session, racing, { env, provider, callback: () => callback });
+      assert.equal(result2.reason, 'REGISTRATION_REVOKED'); assert.equal((await job()).reason, 'REGISTRATION_REVOKED');
+    } finally { c.release(); }
+  });
+  await t.test('OFF and downgrade concurrent with config failure retain active custody and history', async () => {
+    await reactivate(ts + 29, 'exceptions-setup');
+    const before = await job(); const shop = await row();
+    const c = await pool.connect();
+    try {
+      const offEnv = { ...env, REVV_SMS_AUTOPROVISION: 'false' };
+      const offSession = new PgStore(pool, offEnv).session(c);
+      const offJob = await store.session(c).current(m.shop_id);
+      await processJob(offSession, offJob, { env: offEnv, provider: () => assert.fail('OFF provider') });
+      assert.deepEqual(await job(), before); assert.deepEqual(await row(), shop);
+      await pool.query("UPDATE shops SET plan='free' WHERE id=$1", [m.shop_id]);
+      await pool.query("UPDATE sms_provision_mapping SET authorization_ref='drift' WHERE shop_id=$1", [m.shop_id]);
+      await run(); assert.equal((await job()).reason, 'INELIGIBLE');
+      assert.equal((await row()).twilio_phone_sid, sid('PN')); assert.equal((await job()).phone_sid, sid('PN'));
+      await pool.query("UPDATE shops SET plan='pro' WHERE id=$1", [m.shop_id]);
+      await pool.query('UPDATE sms_provision_mapping SET authorization_ref=$2 WHERE shop_id=$1', [m.shop_id,m.authorization_ref]);
+    } finally { c.release(); }
+  });
   await t.test('manual replacement including same PN with changed publication timestamp is retained', async () => {
     // Explicit synthetic operator retry; receiver never resets a failed job itself.
     await pool.query("UPDATE sms_provision_jobs SET state='pending' WHERE shop_id=$1", [m.shop_id]);
@@ -295,6 +427,9 @@ for (const idType of ['TEXT', 'UUID']) test(`real PG ${idType}: signed receipt t
     assert.equal((await request(app, [receipt('number-deregistration.successful', ts + 40, 'manual-same-number')])).status, 204);
     assert.equal((await row()).twilio_phone_sid, sid('PN'));
     await pool.query('UPDATE shops SET twilio_phone_sid=$2,twilio_phone_number=$3 WHERE id=$1', [m.shop_id,sid('PN', 'd'),'+12025550199']);
+    await pool.query("UPDATE sms_provision_jobs SET state='pending' WHERE shop_id=$1", [m.shop_id]);
+    f.campaignStatus = 'FAILED'; await run(); f.campaignStatus = 'VERIFIED';
+    assert.equal((await job()).reason, 'CAMPAIGN_FAILED');
     assert.equal((await request(app, [receipt('number-registration.failed', ts + 50, 'manual-other-number')])).status, 204);
     assert.equal((await row()).twilio_phone_sid, sid('PN', 'd'));
     assert.equal((await job()).phone_sid, sid('PN'));

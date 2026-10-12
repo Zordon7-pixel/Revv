@@ -108,6 +108,17 @@ authorization reference and both callbacks. Wrong/changed mapping receipts canno
 activate or clear a different binding. No matching receipt means pending, even
 when attachment succeeds. Pending callbacks do not terminate a preactivation job.
 
+The official `number-deregistration.successful` payload omits `campaignsid`.
+Only this negative variant may omit it (null/empty/malformed values are rejected).
+The receiver resolves exactly one previously recorded PN binding from the job or
+retained receipts, then verifies the entire binding against the current mapping,
+canonical callbacks, account signature and tenant ownership. This also covers a
+receipt recorded before the acquisition write. Unknown PN, ambiguous historical
+bindings, changed authorization/mapping, and cross-tenant ownership fail closed.
+The retained negative receipt records the resolved campaign; omission never gives
+wildcard authority and cannot authorize positive registration. A binding first
+supplied in the same uncommitted batch does not qualify as prior evidence.
+
 ## Publication, revocation and manual custody
 
 The worker verifies campaign, attachment, number and callbacks, reads receipt
@@ -128,6 +139,19 @@ is retained and cannot be reclaimed on a later worker tick. An unchanged legacy
 sender with no automatic publication marker cannot be cleared by a callback.
 Manual database writers must preserve the existing convention of updating
 `twilio_sender_updated_at`; an indistinguishable rewrite cannot establish new custody.
+
+Worker transitions from active to pending/failed also withdraw only routing under
+the same timestamp/PN/phone/MG/mode custody check. Campaign failure, callback or
+configuration drift, registration loss and transient failures restore shared
+fallback without releasing the number or losing acquisition/history. Failure
+saves acquire control, shop, mapping and job locks in publication order, even if
+the current configuration cannot pass provider preflight. Each claimed job carries
+PostgreSQL's `xmin` row version; guards and saves reject stale snapshots and return
+the fresh persisted result. A negative event or newer publication cannot be undone
+by an older worker's failure save. Transaction rollback restores the in-memory
+version/publication marker. No schema addition is needed. OFF performs no failure
+save or routing withdrawal; locked entitlement loss takes precedence over other
+failure reasons and retains the assignment with attention.
 
 Plain entitlement downgrade retains sender assignment and acquisition history,
 sets admin attention, and prevents subsequent provider effects. Reconciliation
@@ -200,6 +224,9 @@ subscription setup, token validation, purchase or provider network request occur
 | Whole-batch rollback, exact tenant/PN, duplicates/order/equal conflict | disposable TEXT and UUID PG tests |
 | Callback before DB write, inventory recovery, production adapter to active | signed HTTP receiver + fake Twilio + real PG |
 | All five nonregistered outcomes revoke automatic routing only | real PG, retained consent/resource/history |
+| Active → campaign FAILED, callback/config drift, transient/exhausted failure | real PG; retained PN/intent/history and shared routing fallback |
+| Manual/same-PN rewrite, downgrade, OFF, stale negative/fresh-publication saves | real PG; timestamp custody and row-version rejection |
+| Campaignless official negative, prior receipt recovery, ambiguous/changed binding | signed HTTP + real PG; exact retained campaign |
 | Manual replacement, failed-job downgrade, missing/new mapping | real PG; legacy/consent regressions |
 | Campaign mock/binding/callback and final status recheck | synthetic provider tests |
 | Migration up/up/down/up and receipt retention | real PG; no skips accepted |

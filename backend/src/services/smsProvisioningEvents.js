@@ -35,8 +35,10 @@ function parseEvents(raw) {
     if (!t || e.specversion !== '1.0' || e.datacontenttype !== 'application/json'
         || e.dataschema !== `https://events-schemas.twilio.com/A2P.${t.schema}/1`
         || typeof e.id !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(e.id) || !d
-        || ![['accountsid', 'AC'], ['messagingservicesid', 'MG'], ['campaignsid', 'CM'], ['phonenumbersid', 'PN']]
+        || ![['accountsid', 'AC'], ['messagingservicesid', 'MG'], ['phonenumbersid', 'PN']]
           .every(([k, prefix]) => new RegExp(`^${prefix}[0-9a-fA-F]{32}$`).test(d[k]))
+        || (!(t.kind === 'number-deregistration.successful' && !Object.hasOwn(d, 'campaignsid'))
+          && !/^CM[0-9a-fA-F]{32}$/.test(d.campaignsid))
         || d.externalstatus !== t.external || typeof e.time !== 'string'
         || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/.test(e.time)
         || !Number.isSafeInteger(d.timestamp) || !Number.isSafeInteger(d.updateddate)
@@ -101,20 +103,34 @@ class PgEventStore {
       const verified = [];
       // ALL objects, bindings and account signatures are checked before INSERT.
       for (const e of events) {
+        let prior;
+        if (e.event_campaign_sid === undefined) {
+          if (e.kind !== 'number-deregistration.successful' || e.status !== 'unregistered') fail('EVENT_UNAUTHORIZED');
+          // Resolve a single recorded PN binding, never an account/service wildcard.
+          // Receipts cover the callback-before-acquisition-write recovery window.
+          const candidates = (await c.query(`SELECT shop_id,binding FROM sms_provision_jobs
+            WHERE phone_sid=$1 AND binding->>'account_sid'=$2 AND binding->>'service_sid'=$3
+            UNION SELECT shop_id,binding FROM sms_provision_receipts
+            WHERE phone_sid=$1 AND account_sid=$2 AND service_sid=$3`,
+          [e.phone_sid,e.account_sid,e.service_sid])).rows;
+          if (candidates.length !== 1) fail('EVENT_UNAUTHORIZED');
+          prior = candidates[0];
+        }
         const m = (await c.query(`SELECT * FROM sms_provision_mapping
           WHERE account_sid=$1 AND service_sid=$2 AND event_campaign_sid=$3`,
-        [e.account_sid, e.service_sid, e.event_campaign_sid])).rows[0];
+        [e.account_sid, e.service_sid, prior ? prior.binding.event_campaign_sid : e.event_campaign_sid])).rows[0];
         if (!validMapping(m)) fail('EVENT_UNAUTHORIZED');
         const shop = (await c.query('SELECT * FROM shops WHERE id::text=$1 FOR UPDATE', [m.shop_id])).rows[0];
         const locked = (await c.query('SELECT * FROM sms_provision_mapping WHERE shop_id=$1 FOR SHARE', [m.shop_id])).rows[0];
         if (!locked || !sameBinding(m, locked) || locked.event_callback_url !== eventUrl(this.env)
             || shop?.twilio_account_sid !== e.account_sid || typeof shop.twilio_auth_token !== 'string'
             || !shop.twilio_auth_token.trim() || !authenticate(shop.twilio_auth_token)) fail('EVENT_UNAUTHORIZED');
+        const binding = bindingOf(locked, eventUrl(this.env).replace(PATH, '/api/sms/webhook'));
+        if (prior && (prior.shop_id !== m.shop_id || !sameBinding(prior.binding, binding))) fail('EVENT_UNAUTHORIZED');
         const owners = (await c.query(`SELECT shop_id FROM sms_provision_jobs WHERE phone_sid=$1
           UNION SELECT id::text AS shop_id FROM shops WHERE twilio_phone_sid=$1`, [e.phone_sid])).rows;
         if (owners.some(owner => owner.shop_id !== m.shop_id)) fail('EVENT_UNAUTHORIZED');
-        verified.push({ ...e, shop_id: m.shop_id,
-          binding: bindingOf(locked, eventUrl(this.env).replace(PATH, '/api/sms/webhook')) });
+        verified.push({ ...e, shop_id: m.shop_id, event_campaign_sid: binding.event_campaign_sid, binding });
       }
       if (!enabled(this.env)) fail('OFF');
       for (const e of verified) {

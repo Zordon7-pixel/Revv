@@ -29,7 +29,7 @@ function event(kind = 'number-registration.successful', time = 1791800000000, id
   return { specversion: '1.0', id, type: `com.twilio.messaging.compliance.${kind}`,
     time: new Date(time).toISOString(), dataschema: `https://events-schemas.twilio.com/A2P.${specs[kind][0]}/1`,
     datacontenttype: 'application/json', data: { accountsid: m.account_sid, timestamp: time,
-      id: 'synthetic-data-id', campaignsid: m.event_campaign_sid, externalstatus: specs[kind][1],
+      id: 'synthetic-data-id', ...(kind === 'number-deregistration.successful' ? {} : { campaignsid: m.event_campaign_sid }), externalstatus: specs[kind][1],
       phonenumbersid: pn, updateddate: time, messagingservicesid: m.service_sid,
       phonenumber: '+12025550100', error: 'NEVER-PERSIST-THIS' } };
 }
@@ -99,6 +99,34 @@ if (require.main === module) {
     assert.equal(JSON.stringify(writes).includes('+12025550100'), false);
     assert.equal(JSON.stringify(writes).includes('NEVER-PERSIST'), false);
     assert.equal(writes[0].occurred_at, event().data.updateddate);
+  });
+  test('official campaignless deregistration shape reaches signed HTTP; other missing campaigns are rejected', async () => {
+    const writes = [];
+    const app = appFor({ accept: async (events, auth) => {
+      if (!auth(token)) throw { reason: 'EVENT_UNAUTHORIZED' };
+      writes.push(...events);
+    } });
+    // Official sample timestamps/shape, with synthetic valid SIDs instead of X placeholders.
+    const negative = event('number-deregistration.successful', 1710345070552);
+    negative.data.updateddate = 1710345070476;
+    negative.source = 'CA000000000000000000000000000000';
+    assert.equal(Object.hasOwn(negative.data, 'campaignsid'), false);
+    assert.equal((await request(app, [negative])).status, 204);
+    assert.equal(writes[0].event_campaign_sid, undefined);
+    assert.equal(writes[0].status, 'unregistered');
+    for (const kind of Object.keys(specs).filter(k => k !== 'number-deregistration.successful')) {
+      const missing = event(kind); delete missing.data.campaignsid;
+      assert.equal((await request(app, [missing])).status, 403);
+    }
+    for (const campaign of [null, '', sid('QE')]) {
+      assert.equal((await request(app, [{ ...negative, data: { ...negative.data, campaignsid: campaign } }])).status, 403);
+    }
+    assert.equal((await request(app, [negative], { token: 'wrong-account-token' })).status, 403);
+    const raw = JSON.stringify([negative]);
+    assert.equal((await request(app, [negative], {
+      raw: raw.replace('unregistered', 'registered'), hash: twilio.getExpectedBodyHash(raw),
+    })).status, 403);
+    assert.equal(writes.length, 1);
   });
   test('invalid signature, hash, query, Host signing, token, encoding and mixed batch cannot write', async () => {
     let writes = 0;
