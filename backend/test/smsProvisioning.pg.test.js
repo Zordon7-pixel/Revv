@@ -172,6 +172,33 @@ for (const idType of ['TEXT', 'UUID']) test(`real PG ${idType}: signed receipt t
   const successful = (time, id, b, pn) => receipt('number-registration.successful', time, id, b, pn);
   const ts = 1791800000000;
 
+  await t.test('all six V2 contracts reject old/unknown version, missing or wrong MG, wrong CM and signed-body tamper without writes', async () => {
+    const { corpus } = require('./fixtures/smsProvisioning.v2');
+    for (const { kind } of corpus.events) {
+      const good = receipt(kind, ts, `contract-${kind.replace('.', '-')}`);
+      assert.equal(require('../src/services/smsProvisioningEvents').parseEvents(JSON.stringify([good]))[0].kind, kind);
+      const invalids = [];
+      for (const version of ['1', '3']) {
+        const changed = structuredClone(good); changed.dataschema = changed.dataschema.replace('/2', `/${version}`);
+        invalids.push(changed);
+        if (version === '1') {
+          const officialV1 = structuredClone(changed); delete officialV1.data.messagingservicesid;
+          invalids.push(officialV1);
+        }
+      }
+      for (const mg of [undefined, null, '', '*', sid('MG', 'c')]) {
+        const changed = structuredClone(good); changed.data.messagingservicesid = mg; invalids.push(changed);
+      }
+      const wrongCampaign = structuredClone(good); wrongCampaign.data.campaignsid = sid('CM', 'c');
+      invalids.push(wrongCampaign);
+      for (const invalid of invalids) assert.equal((await request(app, [invalid])).status, 403, kind);
+      const raw = JSON.stringify([good]);
+      assert.equal((await request(app, [good], { raw: raw.replace('contract-', 'tampered-'),
+        hash: require('twilio').getExpectedBodyHash(raw) })).status, 403, kind);
+    }
+    assert.equal(await count(), 0); assert.equal((await row()).twilio_phone_sid, null);
+  });
+
   await t.test('unknown tenant/token/account, hash, signature and a mixed batch produce zero receipts', async () => {
     for (const options of [{ signature: 'bad' }, { token: 'api-secret' }, { hash: '0'.repeat(64) },
       { signBase: 'https://host-spoof.invalid' }]) assert.equal((await request(app, [successful(ts, 'invalid')], options)).status, 403);
@@ -309,9 +336,25 @@ for (const idType of ['TEXT', 'UUID']) test(`real PG ${idType}: signed receipt t
       await pool.query("UPDATE sms_provision_jobs SET state='pending' WHERE shop_id=$1", [m.shop_id]);
       assert.equal((await request(app, [successful(ts + 13 + i * 2, `cycle-success-${i}`)])).status, 204);
       await run(); assert.equal((await row()).twilio_phone_sid, sid('PN'));
-      assert.equal((await request(app, [receipt(kinds[i], ts + 14 + i * 2, `cycle-negative-${i}`)])).status, 204);
+      const negative = receipt(kinds[i], ts + 14 + i * 2, `cycle-negative-${i}`);
+      const raw = JSON.stringify([negative]);
+      assert.equal((await request(app, [negative], { raw: raw.replace('cycle-negative', 'tampered-negative'),
+        hash: require('twilio').getExpectedBodyHash(raw) })).status, 403);
+      assert.equal((await row()).twilio_phone_sid, sid('PN'));
+      assert.equal((await request(app, [negative])).status, 204);
       assert.equal((await row()).twilio_phone_sid, null); assert.equal((await job()).phone_sid, sid('PN'));
       assert.equal((await row()).sms_consent, true); assert.equal(f.purchases, 1);
+      const saved = (await pool.query('SELECT * FROM sms_provision_receipts WHERE event_id=$1', [negative.id])).rows[0];
+      assert.equal(saved.kind, kinds[i]); assert.deepEqual(saved.binding, binding);
+      assert.equal(saved.event_campaign_sid, m.event_campaign_sid);
+      if (kinds[i] === 'number-deregistration.successful') assert.equal(Object.hasOwn(negative.data, 'campaignsid'), false);
+      const beforeReplay = await count();
+      assert.equal((await request(app, [negative])).status, 204);
+      assert.equal(await count(), beforeReplay); assert.equal((await row()).twilio_phone_sid, null);
+      // A stale successful receipt cannot revive routing after any of the five outcomes.
+      assert.equal((await request(app, [successful(ts + 13 + i * 2, `cycle-success-${i}`)])).status, 204);
+      assert.notEqual((await status()).status, 'REGISTERED');
+      assert.equal((await row()).twilio_phone_sid, null);
     }
   });
   await t.test('campaignless negative rejects tamper, wrong account/service/PN, drift and ambiguous prior binding', async () => {
@@ -424,8 +467,11 @@ for (const idType of ['TEXT', 'UUID']) test(`real PG ${idType}: signed receipt t
     await run(); assert.equal((await row()).twilio_phone_sid, sid('PN'));
     await pool.query("UPDATE shops SET twilio_sender_updated_at=twilio_sender_updated_at+interval '1 second' WHERE id=$1", [m.shop_id]);
     await run(); assert.equal((await job()).reason, 'CONFIG_DRIFT');
-    assert.equal((await request(app, [receipt('number-deregistration.successful', ts + 40, 'manual-same-number')])).status, 204);
-    assert.equal((await row()).twilio_phone_sid, sid('PN'));
+    const manual = await row();
+    for (const [i, { kind }] of require('./fixtures/smsProvisioning.v2').corpus.events.entries()) {
+      assert.equal((await request(app, [receipt(kind, ts + 40 + i, `manual-same-number-${i}`)])).status, 204);
+      assert.deepEqual(await row(), manual);
+    }
     await pool.query('UPDATE shops SET twilio_phone_sid=$2,twilio_phone_number=$3 WHERE id=$1', [m.shop_id,sid('PN', 'd'),'+12025550199']);
     await pool.query("UPDATE sms_provision_jobs SET state='pending' WHERE shop_id=$1", [m.shop_id]);
     f.campaignStatus = 'FAILED'; await run(); f.campaignStatus = 'VERIFIED';

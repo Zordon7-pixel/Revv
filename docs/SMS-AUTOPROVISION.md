@@ -1,4 +1,4 @@
-# Automatic SMS provisioning — phase 2 candidate
+# Automatic SMS provisioning — phase 4 candidate
 
 Default OFF. Only `REVV_SMS_AUTOPROVISION=true` enables discovery, workers and the
 new `/api/sms/provisioning-events` receiver. OFF acknowledges events without DB or
@@ -40,7 +40,7 @@ Streams sink/subscription creation, or number release in this implementation.
    use `<origin>/api/sms/webhook`, POST, `useInboundWebhookOnNumber=false`.
    The configured inbound override, if any, must match exactly.
 5. Configure a Twilio Event Streams webhook sink at exactly
-   `<origin>/api/sms/provisioning-events` and subscribe to **all six** schema-v1
+   `<origin>/api/sms/provisioning-events` and subscribe to **all six** schema-V2
    types below, using the matching account's signed JSON webhook delivery.
    Confirm delivery/retries and operational monitoring outside this build. Only
    then populate `event_callback_url` with that exact URL as the operator's setup
@@ -69,19 +69,30 @@ validation uses the installed Twilio SDK's
 which checks signature **and** body SHA256. Request Host/forwarded headers cannot
 supply the verification URL. No parsed JSON is treated as form parameters.
 
+Subscribe with `schema_version: 2` for every event type below; a V1 subscription
+cannot supply the required MG binding. V1 (including fabricated V1+MG hybrids),
+unknown versions, and absent/null/empty/malformed MG are rejected with 403. There
+is no version fallback or account/service wildcard. Missing local mapping, account
+token, or matching callback attestation blocks acquisition; the worker cannot
+detect an incorrectly configured live subscription, so confirm V2 delivery before
+attesting setup. Schema conformance alone does not authorize an event: the public
+data schemas have empty `required` lists, while this receiver requires exact
+authority and timestamps.
+
 Each CloudEvent must have specversion 1.0, a bounded safe ID, the matching official
-schema-v1 URL, `datacontenttype=application/json`, a valid occurrence time and exact
-AC/MG/CM/PN identities. `time` must match the millisecond `timestamp`;
+schema-V2 URL (`https://events-schemas.twilio.com/A2P.<Name>/2`),
+`datacontenttype=application/json`, a valid occurrence time and exact AC/MG/CM/PN
+identities. `time` must match the millisecond `timestamp`;
 `updateddate` must be positive and no later than `timestamp`.
 
-| Event suffix after `com.twilio.messaging.compliance.` | Required externalstatus | Receipt state |
-| --- | --- | --- |
-| number-registration.successful | registered | registered |
-| number-registration.pending | pending_registration | pending |
-| number-registration.failed | failure | failed |
-| number-deregistration.successful | unregistered | unregistered |
-| number-deregistration.pending | pending_deregistration | pending |
-| number-deregistration.failed | failure | failed |
+| Event suffix after `com.twilio.messaging.compliance.` | V2 schema name (`A2P.<Name>/2`) | Required externalstatus | Receipt state |
+| --- | --- | --- | --- |
+| number-registration.successful | NumberRegistrationSuccessful | registered | registered |
+| number-registration.pending | NumberRegistrationPending | pending_registration | pending |
+| number-registration.failed | NumberRegistrationFailed | failure | failed |
+| number-deregistration.successful | NumberDeregistrationSuccessful | unregistered | unregistered |
+| number-deregistration.pending | NumberDeregistrationPending | pending_deregistration | pending |
+| number-deregistration.failed | NumberDeregistrationFailed | failure | failed |
 
 Every object is mapped by exact persisted AC/MG/CM and verified using that shop's
 matching account token before any batch writes. Unknown mappings/accounts/tokens,
@@ -108,7 +119,9 @@ authorization reference and both callbacks. Wrong/changed mapping receipts canno
 activate or clear a different binding. No matching receipt means pending, even
 when attachment succeeds. Pending callbacks do not terminate a preactivation job.
 
-The official `number-deregistration.successful` payload omits `campaignsid`.
+The official V2 `number-deregistration.successful` schema allows `campaignsid`
+to be omitted. The campaignless fixture exercises that successful deregistration
+variant; an explicitly supplied campaign must still be valid and exactly bound.
 Only this negative variant may omit it (null/empty/malformed values are rejected).
 The receiver resolves exactly one previously recorded PN binding from the job or
 retained receipts, then verifies the entire binding against the current mapping,
@@ -197,9 +210,22 @@ cannot prove current provider status: sink delivery/retention monitoring is requ
 
 ## Evidence and provenance
 
-Official sources retrieved by Hermes via browser October 12, 2026; supplied full
+Official documentation retrieved by Hermes via browser October 12, 2026; supplied full
 Event Streams text and retrieval evidence were read locally. No real account query,
 subscription setup, token validation, purchase or provider network request occurred.
+
+The offline corpus `backend/test/fixtures/smsProvisioning.v2.json` contains six
+unchanged public V2 schema objects and synthetic CloudEvents, with per-schema URL,
+retrieval date, retained source filename and SHA256 provenance. Hermes run503
+retrieved these schemas with public unauthenticated curl on October 12, 2026; this
+correction copied the retained files without provider access. Upstream schema
+titles/descriptions are preserved verbatim even where their labels are surprising.
+`backend/test/fixtures/smsProvisioning.v2.js` checks schema hashes and fully validates
+the pinned schema dialect offline (every field type, required field, and forbidden
+additional property; unknown constraint keywords fail the validator). Every normal
+HTTP/PG event fixture is validated after synthetic identity/time substitution.
+Deliberately invalid mutations are tested separately. The schema documents constrain
+`data`, not the CloudEvents envelope or REVV authorization rules.
 
 - [A2P Event Streams](https://www.twilio.com/docs/messaging/compliance/a2p-10dlc/event-streams-setup):
   six number event types, CloudEvents JSON arrays and AC/MG/CM/PN/status/time fields.
@@ -220,6 +246,7 @@ subscription setup, token validation, purchase or provider network request occur
 | Gate | Evidence required |
 | --- | --- |
 | OFF, entitlement, budget/restarts, uncertainty, alerts | auto tests; durable PG tests |
+| Six schema-validated V2 types; V1/unknown version/missing or wrong MG rejection | offline corpus, signed HTTP and real PG |
 | Signed raw JSON, hash/query/Host/unknown-token rejection, bounds | events tests and real PG receiver |
 | Whole-batch rollback, exact tenant/PN, duplicates/order/equal conflict | disposable TEXT and UUID PG tests |
 | Callback before DB write, inventory recovery, production adapter to active | signed HTTP receiver + fake Twilio + real PG |
@@ -237,15 +264,15 @@ and Twilio signing helpers over an in-memory HTTP transport, not a listening soc
 Every provider client is fake. Real-PG suites add actual persistence/transactions.
 
 ```sh
-env -i PATH="$PATH" APP_URL=https://synthetic.invalid \
-  node --test backend/test/smsProvisioning.auto.test.js backend/test/smsProvisioning.events.test.js
+env -i HOME=/Users/zordon PATH=/opt/homebrew/opt/node@22/bin:/opt/homebrew/bin:/usr/bin:/bin \
+  TMPDIR=/private/tmp NODE_ENV=test node --test --test-concurrency=1 backend/test/smsProvisioning.auto.test.js backend/test/smsProvisioning.events.test.js
 
-env -i PATH="$PATH" APP_URL=https://synthetic.invalid \
-  SMS_PROVISION_TEST_DATABASE_URL=postgresql://zordon@127.0.0.1:55462/revv_sms_provision_test \
-  node --test backend/test/smsProvisioning.auto.test.js backend/test/smsProvisioning.events.test.js backend/test/smsProvisioning.pg.test.js
+env -i HOME=/Users/zordon PATH=/opt/homebrew/opt/node@22/bin:/opt/homebrew/bin:/usr/bin:/bin \
+  TMPDIR=/private/tmp NODE_ENV=test SMS_PROVISION_TEST_DATABASE_URL=postgresql://zordon@127.0.0.1:55462/revv_sms_provision_test \
+  node --test --test-concurrency=1 backend/test/smsProvisioning.auto.test.js backend/test/smsProvisioning.events.test.js backend/test/smsProvisioning.pg.test.js
 
-env -i PATH="$PATH" APP_URL=https://synthetic.invalid \
-  node --test backend/test/smsConsent.phase2.test.js \
+env -i HOME=/Users/zordon PATH=/opt/homebrew/opt/node@22/bin:/opt/homebrew/bin:/usr/bin:/bin \
+  TMPDIR=/private/tmp NODE_ENV=test node --test --test-concurrency=1 backend/test/smsConsent.phase2.test.js \
   backend/src/__tests__/smsTierGate.test.js backend/src/__tests__/smsAutoReply.test.js
 ```
 

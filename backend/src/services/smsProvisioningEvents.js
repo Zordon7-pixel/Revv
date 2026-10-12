@@ -32,13 +32,15 @@ function parseEvents(raw) {
   if (!Array.isArray(events) || !events.length || events.length > 100) fail('EVENT_INVALID');
   return events.map(e => {
     const t = Object.hasOwn(TYPES, e?.type) ? TYPES[e.type] : null; const d = e?.data;
+    // V2 is the first official version with messagingservicesid. V1 cannot
+    // establish exact MG authority; never accept its omission as a wildcard.
     if (!t || e.specversion !== '1.0' || e.datacontenttype !== 'application/json'
-        || e.dataschema !== `https://events-schemas.twilio.com/A2P.${t.schema}/1`
+        || e.dataschema !== `https://events-schemas.twilio.com/A2P.${t.schema}/2`
         || typeof e.id !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(e.id) || !d
         || ![['accountsid', 'AC'], ['messagingservicesid', 'MG'], ['phonenumbersid', 'PN']]
-          .every(([k, prefix]) => new RegExp(`^${prefix}[0-9a-fA-F]{32}$`).test(d[k]))
+          .every(([k, prefix]) => typeof d[k] === 'string' && new RegExp(`^${prefix}[0-9a-fA-F]{32}$`).test(d[k]))
         || (!(t.kind === 'number-deregistration.successful' && !Object.hasOwn(d, 'campaignsid'))
-          && !/^CM[0-9a-fA-F]{32}$/.test(d.campaignsid))
+          && (typeof d.campaignsid !== 'string' || !/^CM[0-9a-fA-F]{32}$/.test(d.campaignsid)))
         || d.externalstatus !== t.external || typeof e.time !== 'string'
         || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/.test(e.time)
         || !Number.isSafeInteger(d.timestamp) || !Number.isSafeInteger(d.updateddate)

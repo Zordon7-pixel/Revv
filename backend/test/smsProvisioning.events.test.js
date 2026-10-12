@@ -17,21 +17,10 @@ const callback = `${env.APP_URL}/api/sms/webhook`;
 const mapping = { shop_id: 'synthetic-shop', account_sid: sid('AC'), service_sid: sid('MG'),
   campaign_sid: sid('QE'), brand_sid: sid('BN'), event_campaign_sid: sid('CM'),
   authorization_ref: 'synthetic-only', event_callback_url: eventUrl(env) };
-const specs = {
-  'number-registration.successful': ['NumberRegistrationSuccessful','registered'],
-  'number-registration.pending': ['NumberRegistrationPending','pending_registration'],
-  'number-registration.failed': ['NumberRegistrationFailed','failure'],
-  'number-deregistration.successful': ['NumberDeregistrationSuccessful','unregistered'],
-  'number-deregistration.pending': ['NumberDeregistrationPending','pending_deregistration'],
-  'number-deregistration.failed': ['NumberDeregistrationFailed','failure'],
-};
+const { corpus, validateData, validateFixture, fixture } = require('./fixtures/smsProvisioning.v2');
+const specs = Object.fromEntries(corpus.events.map(e => [e.kind, e.sourceUrl]));
 function event(kind = 'number-registration.successful', time = 1791800000000, id = 'CE-synthetic-1', m = mapping, pn = sid('PN')) {
-  return { specversion: '1.0', id, type: `com.twilio.messaging.compliance.${kind}`,
-    time: new Date(time).toISOString(), dataschema: `https://events-schemas.twilio.com/A2P.${specs[kind][0]}/1`,
-    datacontenttype: 'application/json', data: { accountsid: m.account_sid, timestamp: time,
-      id: 'synthetic-data-id', ...(kind === 'number-deregistration.successful' ? {} : { campaignsid: m.event_campaign_sid }), externalstatus: specs[kind][1],
-      phonenumbersid: pn, updateddate: time, messagingservicesid: m.service_sid,
-      phonenumber: '+12025550100', error: 'NEVER-PERSIST-THIS' } };
+  return fixture(kind, time, id, m, pn);
 }
 
 // Real Express/raw-body middleware and Node HTTP request/response objects, with
@@ -86,6 +75,54 @@ function fakeClient(m = mapping) {
 }
 
 if (require.main === module) {
+  test('pinned official V2 corpus validates every field, required and additionalProperties offline', () => {
+    for (const { schema, fixture: sample } of corpus.events) {
+      validateFixture(sample);
+      assert.equal(Date.parse(sample.time), sample.data.timestamp);
+      assert.equal(schema.required.length, 0); // Twilio optionality does not grant application authority.
+      validateData(schema, {});
+      for (const data of [null, [], 'object', 1]) assert.throws(() => validateData(schema, data));
+      assert.throws(() => validateData(schema, { ...sample.data, error: 'old-hybrid-field' }));
+      for (const [key, definition] of Object.entries(schema.properties)) {
+        const valid = definition.type === 'integer' ? 1791800000000 : 'synthetic';
+        validateData(schema, { ...sample.data, [key]: valid });
+        const wrong = definition.type === 'integer' ? ['1791800000000', 1.5, null, [], {}, Infinity, NaN]
+          : [1, null, [], {}, false];
+        for (const value of wrong) assert.throws(() => validateData(schema, { ...sample.data, [key]: value }), key);
+        const required = { ...schema, required: [key] };
+        validateData(required, { ...sample.data, [key]: valid });
+        const missing = { ...sample.data }; delete missing[key];
+        assert.throws(() => validateData(required, missing), key);
+      }
+      assert.throws(() => validateData({ ...schema, allOf: [] }, sample.data));
+      const unsupported = structuredClone(schema); unsupported.properties.accountsid.minLength = 1;
+      assert.throws(() => validateData(unsupported, sample.data));
+    }
+  });
+  test('all six schema-validated V2 events reach signed HTTP; V1, unknown versions and missing MG fail closed', async () => {
+    const writes = [];
+    const app = appFor({ accept: async (events, auth) => {
+      assert.ok(auth(token)); writes.push(...events);
+    } });
+    for (const kind of Object.keys(specs)) {
+      assert.equal((await request(app, [event(kind)])).status, 204, kind);
+      for (const version of ['1', '3', '02']) {
+        const invalid = event(kind); invalid.dataschema = invalid.dataschema.replace('/2', `/${version}`);
+        assert.equal((await request(app, [invalid])).status, 403, `${kind} version ${version}`);
+        if (version === '1') {
+          delete invalid.data.messagingservicesid; // Actual V1 shape as well as the old hybrid.
+          assert.equal((await request(app, [invalid])).status, 403);
+        }
+      }
+      for (const mg of [undefined, null, '', '*', [sid('MG')]]) {
+        const invalid = event(kind); invalid.data.messagingservicesid = mg;
+        assert.equal((await request(app, [invalid])).status, 403, `${kind} missing/invalid MG`);
+      }
+    }
+    assert.equal(writes.length, 6);
+    assert.equal(JSON.stringify(writes).includes('NEVER-PERSIST'), false);
+    assert.equal(JSON.stringify(writes).includes('synthetic-data-id'), false);
+  });
   test('app mounts the receiver before the generic JSON parser', () => {
     const source = require('node:fs').readFileSync(require('node:path').join(__dirname, '../src/app.js'), 'utf8');
     const mount = source.indexOf("app.use('/api/sms/provisioning-events'");
@@ -106,10 +143,10 @@ if (require.main === module) {
       if (!auth(token)) throw { reason: 'EVENT_UNAUTHORIZED' };
       writes.push(...events);
     } });
-    // Official sample timestamps/shape, with synthetic valid SIDs instead of X placeholders.
+    // Schema-conforming campaignless data with synthetic identities.
     const negative = event('number-deregistration.successful', 1710345070552);
     negative.data.updateddate = 1710345070476;
-    negative.source = 'CA000000000000000000000000000000';
+    validateFixture(negative);
     assert.equal(Object.hasOwn(negative.data, 'campaignsid'), false);
     assert.equal((await request(app, [negative])).status, 204);
     assert.equal(writes[0].event_campaign_sid, undefined);
@@ -153,6 +190,8 @@ if (require.main === module) {
   test('six official types whitelist statuses; inconsistent or malformed identities/times fail closed', () => {
     for (const kind of Object.keys(specs)) assert.equal(parseEvents(JSON.stringify([event(kind)]))[0].kind, kind);
     for (const mutate of [e => { e.data.campaignsid = sid('QE'); }, e => { e.data.phonenumbersid = 'PNx'; },
+      e => { e.data.accountsid = [sid('AC')]; }, e => { e.data.phonenumbersid = [sid('PN')]; },
+      e => { e.data.campaignsid = [sid('CM')]; },
       e => { e.data.externalstatus = 'REGISTERED'; }, e => { e.data.updateddate++; },
       e => { e.data.timestamp = '1791800000000'; }, e => { e.time = 'bad'; },
       e => { e.id = 123; }, e => { e.type = '__proto__'; },
