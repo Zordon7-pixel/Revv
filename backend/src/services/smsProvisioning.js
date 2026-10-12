@@ -146,7 +146,15 @@ async function attachNumberToMessagingService(client, messagingServiceSid, phone
   }
 }
 
-async function provisionSmsSenderForShop({ shopId, force = false, webhookUrl } = {}) {
+async function provisionSmsSenderForShop({ shopId, force = false, webhookUrl, mode, automatic } = {}) {
+  if (mode === 'automatic') {
+    const { enabled, processJob } = require('./smsProvisioningQueue');
+    if (!enabled(automatic?.env)) return { ok: false, reason: 'OFF' };
+    if (force || !automatic?.session || automatic.job?.shop_id !== shopId) {
+      throw new Error('Invalid automatic provisioning context');
+    }
+    return processJob(automatic.session, automatic.job, automatic);
+  }
   if (!shopId) throw new Error('shopId is required');
 
   const shop = await dbGet(

@@ -33,6 +33,7 @@ async function runMigrations() {
 
     await ensureShopTwilioNumber({ query });
     await require('./customerConsent').up({ query });
+    if (process.env.REVV_SMS_AUTOPROVISION === 'true') await require('./smsProvisioning').up({ query });
     await require('./paymentReservations').up(require('./postgres').pool);
 
     // ── Idempotent column additions ──────────────────────────────────────────
