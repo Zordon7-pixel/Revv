@@ -2,25 +2,31 @@
 
 const fail = reason => { throw Object.assign(new Error(reason), { reason }); };
 function validMapping(m) {
-  return m && [['account_sid', 'AC'], ['service_sid', 'MG'], ['campaign_sid', 'QE'], ['brand_sid', 'BN']]
+  return m && [['account_sid', 'AC'], ['service_sid', 'MG'], ['campaign_sid', 'QE'], ['brand_sid', 'BN'], ['event_campaign_sid', 'CM']]
     .every(([key, prefix]) => new RegExp(`^${prefix}[0-9a-fA-F]{32}$`).test(m[key]))
-    && typeof m.authorization_ref === 'string' && m.authorization_ref.length > 0;
+    && typeof m.event_callback_url === 'string' && m.event_callback_url.length > 0
+    && typeof m.authorization_ref === 'string' && m.authorization_ref.trim().length > 0;
 }
 
 // SDK access is lazy: OFF never loads Twilio, credentials, or the legacy service.
-async function createProvider(shopId, binding) {
-  const { getTwilioConfigForShop } = require('./sms');
-  const config = await getTwilioConfigForShop(shopId);
-  if (!config || config.accountSid !== binding.account_sid) fail('ACCOUNT_MISMATCH');
-  const twilio = require('twilio');
-  const options = { accountSid: config.accountSid, autoRetry: false, timeout: 10000 };
-  const client = config.apiKey && config.apiSecret
-    ? twilio(config.apiKey, config.apiSecret, options)
-    : twilio(config.accountSid, config.authToken, options);
-  return providerFromClient(client, binding);
+async function createProvider(shopId, binding, { shop, registration, env = process.env, clientFactory } = {}) {
+  // Only the locked, persisted shop/account supplies the webhook auth token.
+  // An API-key secret and the shared-account fallback cannot authenticate events.
+  if (!shop || String(shop.id) !== shopId) fail('ACCOUNT_MISMATCH');
+  if (!shop.twilio_account_sid) fail('EVENT_SETUP_REQUIRED');
+  if (shop.twilio_account_sid !== binding.account_sid) fail('ACCOUNT_MISMATCH');
+  if (typeof shop.twilio_auth_token !== 'string' || !shop.twilio_auth_token.trim()) fail('EVENT_SETUP_REQUIRED');
+  const { eventUrl } = require('./smsProvisioningEvents');
+  if (!validMapping(binding) || !eventUrl(env) || binding.event_callback_url !== eventUrl(env)) fail('EVENT_SETUP_REQUIRED');
+  const twilio = clientFactory || require('twilio');
+  const options = { accountSid: binding.account_sid, autoRetry: false, timeout: 10000 };
+  const client = shop.twilio_api_key && shop.twilio_api_secret
+    ? twilio(shop.twilio_api_key, shop.twilio_api_secret, options)
+    : twilio(binding.account_sid, shop.twilio_auth_token, options);
+  return providerFromClient(client, binding, registration);
 }
 
-function providerFromClient(client, binding) {
+function providerFromClient(client, binding, registration) {
   const service = () => client.messaging.v1.services(binding.service_sid);
   const checkNumber = n => {
     if (!n || n.accountSid !== binding.account_sid || !/^PN[0-9a-fA-F]{32}$/.test(n.sid)
@@ -34,6 +40,7 @@ function providerFromClient(client, binding) {
       if (s.sid !== binding.service_sid || s.accountSid !== binding.account_sid
           || c.sid !== binding.campaign_sid || c.accountSid !== binding.account_sid
           || c.messagingServiceSid !== binding.service_sid || c.brandRegistrationSid !== binding.brand_sid) fail('BINDING_MISMATCH');
+      if (c.mock !== false) fail('CAMPAIGN_FAILED');
       if (c.campaignStatus !== 'VERIFIED') fail(c.campaignStatus === 'FAILED' ? 'CAMPAIGN_FAILED' : 'CAMPAIGN_PENDING');
       // Require an already correctly configured service; never change shared settings.
       if (s.inboundRequestUrl !== callback || s.inboundMethod !== 'POST' || s.useInboundWebhookOnNumber !== false) fail('CALLBACK_MISMATCH');
@@ -72,9 +79,10 @@ function providerFromClient(client, binding) {
     async callback(sid, callback) {
       await client.incomingPhoneNumbers(sid).update({ smsUrl: callback, smsMethod: 'POST' });
     },
-    // The documented PhoneNumbers resource has no number registration field.
-    // A future authenticated status adapter must prove the complete binding.
-    async registration() { return { status: 'UNAVAILABLE', source: null }; },
+    // Only the durable authenticated receiver supplies number-level status.
+    async registration(sid) {
+      return registration ? registration(sid, binding) : { status: 'UNAVAILABLE', source: null };
+    },
   };
 }
 module.exports = { createProvider, providerFromClient, validMapping, fail };

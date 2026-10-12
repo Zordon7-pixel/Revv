@@ -25,6 +25,10 @@ async function up(db) {
       brand_sid TEXT NOT NULL,
       authorization_ref TEXT NOT NULL CHECK (length(authorization_ref) > 0)
     );
+    ALTER TABLE sms_provision_mapping ADD COLUMN IF NOT EXISTS event_campaign_sid TEXT;
+    ALTER TABLE sms_provision_mapping ADD COLUMN IF NOT EXISTS event_callback_url TEXT;
+    CREATE UNIQUE INDEX IF NOT EXISTS sms_provision_event_campaign_unique
+      ON sms_provision_mapping(account_sid,event_campaign_sid) WHERE event_campaign_sid IS NOT NULL;
     CREATE TABLE IF NOT EXISTS sms_provision_jobs (
       shop_id TEXT PRIMARY KEY,
       state TEXT NOT NULL DEFAULT 'pending' CHECK (state IN ('pending','active','failed')),
@@ -42,6 +46,23 @@ async function up(db) {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       CHECK ((intent_id IS NULL) = (candidate IS NULL))
     );
+    ALTER TABLE sms_provision_jobs ADD COLUMN IF NOT EXISTS routing_published_at TIMESTAMPTZ;
+    CREATE TABLE IF NOT EXISTS sms_provision_receipts (
+      event_id TEXT PRIMARY KEY,
+      shop_id TEXT NOT NULL,
+      account_sid TEXT NOT NULL,
+      service_sid TEXT NOT NULL,
+      event_campaign_sid TEXT NOT NULL,
+      phone_sid TEXT NOT NULL,
+      binding JSONB NOT NULL,
+      kind TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('registered','pending','failed','unregistered')),
+      occurred_at BIGINT NOT NULL,
+      emitted_at BIGINT NOT NULL,
+      received_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS sms_provision_receipt_binding
+      ON sms_provision_receipts(shop_id,phone_sid,occurred_at DESC);
     CREATE UNIQUE INDEX IF NOT EXISTS sms_provision_candidate_unique
       ON sms_provision_jobs ((binding->>'account_sid'), candidate) WHERE candidate IS NOT NULL;
     CREATE UNIQUE INDEX IF NOT EXISTS sms_provision_phone_unique

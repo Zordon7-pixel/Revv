@@ -3,9 +3,9 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { processJob, enabled, entitled, runConfig, reasonFor, tick } = require('../src/services/smsProvisioningQueue');
 const { providerFromClient, validMapping, fail } = require('../src/services/smsProvisioningProvider');
-const env = () => ({ REVV_SMS_AUTOPROVISION: 'true', REVV_SMS_AUTOPROVISION_RUN_ID: 'synthetic-run-001', REVV_SMS_AUTOPROVISION_PURCHASE_CAP: '1' });
+const env = () => ({ APP_URL: 'https://synthetic.invalid', REVV_SMS_AUTOPROVISION: 'true', REVV_SMS_AUTOPROVISION_RUN_ID: 'synthetic-run-001', REVV_SMS_AUTOPROVISION_PURCHASE_CAP: '1' });
 const sid = prefix => prefix + 'a'.repeat(32);
-const mapping = { account_sid: sid('AC'), service_sid: sid('MG'), campaign_sid: sid('QE'), brand_sid: sid('BN'), authorization_ref: 'synthetic-approval' };
+const mapping = { event_campaign_sid: sid('CM'), event_callback_url: 'https://synthetic.invalid/api/sms/provisioning-events', account_sid: sid('AC'), service_sid: sid('MG'), campaign_sid: sid('QE'), brand_sid: sid('BN'), authorization_ref: 'synthetic-approval' };
 const callback = 'https://synthetic.invalid/api/sms/webhook';
 function fixture() {
   const f = { env: env(), shop: { plan: 'pro' }, purchased: 0, consumed: 0, attached: false,
@@ -125,7 +125,7 @@ test('flag or entitlement changes after intent prevent purchase', async () => {
 });
 test('tick alerts contain only enum and opaque shop id, use automatic entry', async () => {
   const f = fixture(); const alerts = [];
-  const store = { configure: async () => {}, discover: async () => {}, due: async () => [{ shop_id: 'opaque-shop' }],
+  const store = { configure: async () => {}, discover: async () => {}, attention: async () => [], due: async () => [{ shop_id: 'opaque-shop' }],
     claim: async (_, fn) => fn(f.s, f.job), alert: async (reason, id, notify) => notify('high', reason, { shop_id: id }) };
   await tick({ store, env: f.env, notify: async (...args) => alerts.push(args), entry: async args => {
     assert.equal(args.mode, 'automatic'); return { reason: 'PROVIDER_PERMANENT', admin_attention: true };
@@ -137,7 +137,7 @@ test('Twilio SDK adapter uses documented campaign/attachment fields, never deriv
   const n = { accountSid: mapping.account_sid, sid: sid('PN'), phoneNumber: '+12025550100', capabilities: { sms: true }, friendlyName: 'REVV-AUTO:intent' };
   let campaignStatus = 'VERIFIED'; let attached = false; const calls = [];
   const service = { fetch: async () => ({ sid: mapping.service_sid, accountSid: mapping.account_sid, inboundRequestUrl: callback, inboundMethod: 'POST', useInboundWebhookOnNumber: false }),
-    usAppToPerson: campaign => { assert.equal(campaign, mapping.campaign_sid); return { fetch: async () => ({ sid: campaign, accountSid: mapping.account_sid, messagingServiceSid: mapping.service_sid, brandRegistrationSid: mapping.brand_sid, campaignStatus }) }; },
+    usAppToPerson: campaign => { assert.equal(campaign, mapping.campaign_sid); return { fetch: async () => ({ sid: campaign, accountSid: mapping.account_sid, messagingServiceSid: mapping.service_sid, brandRegistrationSid: mapping.brand_sid, mock: false, campaignStatus }) }; },
     phoneNumbers: Object.assign(phone => ({ fetch: async () => { if (!attached) throw { status: 404, code: 20404 }; return { sid: phone, accountSid: mapping.account_sid, serviceSid: mapping.service_sid }; } }), { create: async args => { calls.push(args); attached = true; } }) };
   const incoming = Object.assign(() => ({ fetch: async () => n, update: async args => calls.push(args) }), { list: async () => [n], create: async args => { calls.push(args); return n; } });
   const p = providerFromClient({ messaging: { v1: { services: () => service } }, incomingPhoneNumbers: incoming }, mapping);

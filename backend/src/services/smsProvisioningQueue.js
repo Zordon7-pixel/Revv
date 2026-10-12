@@ -1,17 +1,18 @@
 'use strict';
 const { randomUUID } = require('node:crypto');
 const { createProvider, validMapping, fail } = require('./smsProvisioningProvider');
+const { bindingOf, sameBinding, registration, eventUrl } = require('./smsProvisioningEvents');
 const enabled = (env = process.env) => env.REVV_SMS_AUTOPROVISION === 'true';
 const entitled = shop => !!shop && (shop.plan === 'pro' || shop.plan === 'agency' || shop.sms_comp === true);
 const MAX_ATTEMPTS = 5;
 const CADENCE_MS = 60000;
 const REASONS = new Set(['DISCOVERED', 'OFF', 'INELIGIBLE', 'MAPPING_REQUIRED', 'CONFIG_DRIFT',
-  'RUN_CONFIG', 'CAP_DEFERRED', 'PURCHASE_INTENT', 'PURCHASE_UNCERTAIN', 'ACQUIRED', 'REUSED',
+  'EVENT_SETUP_REQUIRED', 'REGISTRATION_REVOKED', 'RUN_CONFIG', 'CAP_DEFERRED', 'PURCHASE_INTENT', 'PURCHASE_UNCERTAIN', 'ACQUIRED', 'REUSED',
   'ACCOUNT_MISMATCH', 'BINDING_MISMATCH', 'NUMBER_MISMATCH', 'ATTACHMENT_MISMATCH',
   'CAMPAIGN_PENDING', 'CAMPAIGN_FAILED', 'CALLBACK_MISMATCH', 'NO_NUMBER',
   'REGISTRATION_SOURCE_REQUIRED', 'REGISTRATION_PENDING', 'REGISTRATION_FAILED',
   'ACTIVE', 'PROVIDER_TRANSIENT', 'PROVIDER_PERMANENT', 'RETRIES_EXHAUSTED', 'QUEUE_FAILURE']);
-const DEFERRED = new Set(['OFF', 'INELIGIBLE', 'MAPPING_REQUIRED', 'CAP_DEFERRED', 'CAMPAIGN_PENDING',
+const DEFERRED = new Set(['EVENT_SETUP_REQUIRED', 'OFF', 'INELIGIBLE', 'MAPPING_REQUIRED', 'CAP_DEFERRED', 'CAMPAIGN_PENDING',
   'REGISTRATION_SOURCE_REQUIRED', 'REGISTRATION_PENDING']);
 const TERMINAL = new Set(['CONFIG_DRIFT', 'RUN_CONFIG', 'PURCHASE_UNCERTAIN', 'ACCOUNT_MISMATCH',
   'BINDING_MISMATCH', 'NUMBER_MISMATCH', 'ATTACHMENT_MISMATCH', 'CAMPAIGN_FAILED',
@@ -26,10 +27,6 @@ function runConfig(env) {
   const cap = env.REVV_SMS_AUTOPROVISION_PURCHASE_CAP;
   if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{7,79}$/.test(id || '') || !/^(0|[1-9]\d{0,3})$/.test(cap || '') || Number(cap) > 1000) fail('RUN_CONFIG');
   return { id, cap: Number(cap) };
-}
-function sameBinding(a, b) {
-  return ['account_sid', 'service_sid', 'campaign_sid', 'brand_sid', 'authorization_ref', 'callback']
-    .every(k => a?.[k] === b?.[k]);
 }
 
 class PgStore {
@@ -47,6 +44,20 @@ class PgStore {
     await this.pool.query(`INSERT INTO sms_provision_jobs(shop_id)
       SELECT id::text FROM shops WHERE plan IN ('pro','agency') OR sms_comp IS TRUE
       ON CONFLICT (shop_id) DO NOTHING`);
+    // Failed jobs do not retry provider work, but acquired resources still need
+    // durable attention after a later entitlement downgrade (including deletion).
+    await this.pool.query(`WITH changed AS (
+      UPDATE sms_provision_jobs j SET admin_attention=TRUE,reason='INELIGIBLE',updated_at=now()
+      WHERE phone_sid IS NOT NULL AND reason != 'INELIGIBLE' AND NOT EXISTS
+        (SELECT 1 FROM shops s WHERE s.id::text=j.shop_id AND (plan IN ('pro','agency') OR sms_comp IS TRUE))
+      RETURNING shop_id,phone_sid
+    ) INSERT INTO sms_provision_history(shop_id,event,evidence)
+      SELECT shop_id,'INELIGIBLE',jsonb_build_object('phone_sid',phone_sid) FROM changed`);
+  }
+  async attention() {
+    if (!enabled(this.env)) return [];
+    return (await this.pool.query(`SELECT DISTINCT ON (reason) shop_id,reason FROM sms_provision_jobs
+      WHERE admin_attention IS TRUE ORDER BY reason,updated_at DESC,shop_id`)).rows;
   }
   async due() {
     return (await this.pool.query(`SELECT shop_id FROM sms_provision_jobs
@@ -61,7 +72,7 @@ class PgStore {
     try {
       locked = (await c.query('SELECT pg_try_advisory_lock(hashtextextended($1, 71931)) AS locked', [shopId])).rows[0].locked;
       if (!locked) return;
-      const job = (await c.query(`SELECT * FROM sms_provision_jobs WHERE shop_id=$1
+      const job = (await c.query(`SELECT *,routing_published_at::text AS routing_published_at FROM sms_provision_jobs WHERE shop_id=$1
         AND state != 'failed' AND next_at <= now()`, [shopId])).rows[0];
       if (!job || !enabled(this.env)) return;
       return await fn(this.session(c), job);
@@ -78,17 +89,18 @@ class PgStore {
       await c.query(`WITH changed AS (
         UPDATE sms_provision_jobs SET state=$2,reason=$3,attempts=$4,next_at=$5,
           admin_attention=$6,binding=$7,intent_id=$8,candidate=$9,run_id=$10,
-          phone_sid=$11,phone_number=$12,registration_source=$13,updated_at=now()
+          phone_sid=$11,phone_number=$12,registration_source=$13,routing_published_at=$14,updated_at=now()
         WHERE shop_id=$1 RETURNING *
       ) INSERT INTO sms_provision_history(shop_id,event,evidence)
         SELECT shop_id,reason,jsonb_build_object('state',state,'attempts',attempts,'binding',binding,
           'intent_id',intent_id,'candidate',candidate,'run_id',run_id,'phone_sid',phone_sid,
           'phone_number',phone_number,'registration_source',registration_source) FROM changed`,
       [job.shop_id,job.state,job.reason,job.attempts,job.next_at,job.admin_attention,job.binding,
-        job.intent_id,job.candidate,job.run_id,job.phone_sid,job.phone_number,job.registration_source]);
+        job.intent_id,job.candidate,job.run_id,job.phone_sid,job.phone_number,job.registration_source,job.routing_published_at]);
     };
     return {
       save,
+      registration: (shopId, phoneSid, binding) => registration(c, shopId, phoneSid, binding),
       async mapping(shopId) {
         return (await c.query('SELECT * FROM sms_provision_mapping WHERE shop_id=$1', [shopId])).rows[0];
       },
@@ -125,13 +137,23 @@ class PgStore {
         await save(job);
       },
       async publish(job, shop) {
+        // Do not reclaim a manual rewrite of even the same PN/MG on a later tick.
+        const replaced = await c.query(`SELECT 1 FROM shops s JOIN sms_provision_jobs j ON j.shop_id=s.id::text
+          WHERE j.shop_id=$1 AND j.routing_published_at IS NOT NULL
+            AND (s.twilio_phone_sid IS NOT NULL OR s.twilio_phone_number IS NOT NULL OR s.twilio_messaging_service_sid IS NOT NULL)
+            AND (s.twilio_sender_updated_at IS DISTINCT FROM j.routing_published_at OR s.twilio_sender_mode IS DISTINCT FROM 'managed')`, [job.shop_id]);
+        if (replaced.rows.length) fail('CONFIG_DRIFT');
+        const otherOwner = await c.query(`SELECT 1 FROM shops WHERE id::text != $1
+          AND (twilio_phone_sid=$2 OR twilio_phone_number=$3)`, [job.shop_id,job.phone_sid,job.phone_number]);
+        if (otherOwner.rows.length) fail('NUMBER_MISMATCH');
         // Never replace a subsequently manually assigned sender.
         if ((shop.twilio_phone_sid && shop.twilio_phone_sid !== job.phone_sid)
           || (shop.twilio_phone_number && shop.twilio_phone_number !== job.phone_number)
           || (shop.twilio_messaging_service_sid && shop.twilio_messaging_service_sid !== job.binding.service_sid)) fail('CONFIG_DRIFT');
-        await c.query(`UPDATE shops SET twilio_phone_number=$2,twilio_phone_sid=$3,
+        const published = await c.query(`UPDATE shops SET twilio_phone_number=$2,twilio_phone_sid=$3,
           twilio_messaging_service_sid=$4,twilio_sender_mode='managed',twilio_sender_updated_at=now()
-          WHERE id::text=$1`, [job.shop_id,job.phone_number,job.phone_sid,job.binding.service_sid]);
+          WHERE id::text=$1 RETURNING twilio_sender_updated_at::text AS published_at`, [job.shop_id,job.phone_number,job.phone_sid,job.binding.service_sid]);
+        job.routing_published_at = published.rows[0].published_at;
         await save(job);
       },
     };
@@ -153,12 +175,15 @@ async function processJob(s, job, { env = process.env, provider = createProvider
     if (!enabled(env)) fail('OFF');
     return fn(shop);
   });
-  const call = fn => g(async shop => fn(await provider(job.shop_id, job.binding), shop));
+  const call = fn => g(async shop => fn(await provider(job.shop_id, job.binding, {
+    shop, env, registration: s.registration && ((sid, binding) => s.registration(job.shop_id, sid, binding)),
+  }), shop));
   try {
     const mapping = await s.mapping(job.shop_id);
     if (!validMapping(mapping)) fail('MAPPING_REQUIRED');
-    const binding = { ...mapping, callback: callback() };
+    const binding = bindingOf(mapping, callback());
     if (!binding.callback) fail('CALLBACK_MISMATCH');
+    if (!eventUrl(env) || binding.event_callback_url !== eventUrl(env)) fail('EVENT_SETUP_REQUIRED');
     if (job.binding && !sameBinding(job.binding, binding)) fail('CONFIG_DRIFT');
     job.binding = binding;
     await g(async () => s.save(job));
@@ -228,7 +253,6 @@ async function processJob(s, job, { env = process.env, provider = createProvider
     if (registration.status !== 'REGISTERED') fail('REGISTRATION_PENDING');
     if (!registration.source || registration.phone_sid !== job.phone_sid
         || !sameBinding(registration.binding, binding)) fail('REGISTRATION_SOURCE_REQUIRED');
-    // Production adapter deliberately cannot reach here in phase 1.
     job.registration_source = registration.source;
     await call(async (p, shop) => {
       await p.prerequisite(binding.callback);
@@ -236,6 +260,10 @@ async function processJob(s, job, { env = process.env, provider = createProvider
       const finalNumber = await p.number(job.phone_sid);
       if (finalNumber.phoneNumber !== job.phone_number || finalNumber.smsUrl !== binding.callback
           || finalNumber.smsMethod !== 'POST') fail('CALLBACK_MISMATCH');
+      const latest = await p.registration(job.phone_sid);
+      if (latest.status !== 'REGISTERED' || !latest.source || latest.phone_sid !== job.phone_sid
+          || !sameBinding(latest.binding, binding)) fail('REGISTRATION_PENDING');
+      job.registration_source = latest.source;
       if (!enabled(env)) fail('OFF');
       job.state = 'active'; job.reason = 'ACTIVE'; job.attempts = 0; job.admin_attention = false;
       job.next_at = new Date(now() + CADENCE_MS);
@@ -265,6 +293,12 @@ async function tick({ store, env = process.env, provider, notify,
   try {
     await store.configure();
     await store.discover();
+    // Includes failed jobs revoked by the receiver and later entitlement changes.
+    // Existing persisted per-enum cooldown bounds notifications across restarts.
+    for (const job of await store.attention()) {
+      if (!enabled(env)) break;
+      await store.alert(job.reason, job.shop_id, notify);
+    }
     for (const { shop_id: shopId } of await store.due()) {
       if (!enabled(env)) break;
       await store.claim(shopId, async (session, job) => {
