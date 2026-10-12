@@ -1,3 +1,34 @@
+## Dispatch Log — 2026-10-12 SMS test recipient PREP ONLY
+
+Task `t_e147d8b2`, run501 sole owner; 15:04 EDT / 19:04 UTC dispatch note.
+Implemented only in the assigned isolated `codex/t_e147d8b2/sms-test-allowlist`
+worktree, base `2d1c5e1e6bc6a934a3674c3cafbd277889604153`. New additive
+`REVV_SMS_TEST_RECIPIENT` / `REVV_SMS_TEST_MODE` guard fails closed, including
+fresh checks after awaits, and covers the existing staff wrapper. Existing
+consent, STOP, entitlement, footer and audit behavior remain unchanged.
+
+Six files: this note; `backend/src/services/sms.js`;
+`backend/src/services/smsTestRecipient.js`;
+`backend/scripts/inspect-sms-test-recipient.js`;
+`backend/test/smsTestRecipient.test.js`; `docs/SMS-TEST-RECIPIENT.md`.
+Node v22.23.2, scrubbed environment: `node --test backend/test/smsTestRecipient.test.js`
+exit 0 (28 passed, 0 failed/skipped); all four JS files pass `node --check`;
+`git diff --check` passes. All sends/DB lookups in the new suite are mocks.
+Additional existing consent suite, excluding real PostgreSQL, exited 1: 49 cases
+blocked by absent `uuid`; no dependency install or shared DB tests performed.
+
+Status: implementation and focused deterministic QA complete, PREP ONLY; not
+reviewed/configured/deployed/delivered. Safety-sensitive SMS restriction, over
+two files. Baseline 52-file integrated candidate remains Remy HOLD, not release
+PASS. Current sequence is Codex → deterministic QA → Spark advisory → ONE Remy
+exact-SHA review; historical Claude QA does not apply. Hermes owns board/release
+and later gates. No agents, board/review requests, provider/live calls, production
+or installed configuration changes, or feature enablement. The runbook requires
+Professor X confirmation of Bryan's direct OK before any future live execution;
+its separate executor must enforce the cumulative maximum of three owner-only
+messages. This recipient guard does not implement that budget or establish
+recipient provenance, permission or consent.
+
 ## REVV AI provider policy — Bryan, 2026-09-26
 
 Use OpenAI for all current and future REVV AI workloads. Use the shared server-side

@@ -148,6 +148,23 @@ async function sendSMS(phone, message, options = {}, audienceToken) {
     // Only local pre-provider exits establish that no send was attempted.
     return { ok: false, reason, body: finalMessage, provider_attempted: false };
   };
+  let testRestrictionEnabled = false;
+  let providerTarget = phone;
+  const checkTestRecipient = () => {
+    // Lazy pure dependency keeps the unset baseline path unchanged. Inspect again
+    // after awaits, even if neither setting existed at entry.
+    if (!testRestrictionEnabled
+      && !Object.prototype.hasOwnProperty.call(process.env, 'REVV_SMS_TEST_RECIPIENT')
+      && !Object.prototype.hasOwnProperty.call(process.env, 'REVV_SMS_TEST_MODE')) return null;
+    const { checkSmsTestRecipient } = require('./smsTestRecipient');
+    const result = checkSmsTestRecipient(phone, process.env, testRestrictionEnabled);
+    testRestrictionEnabled = result.enabled;
+    if (!result.allowed) return result.reason;
+    providerTarget = result.target;
+    return null;
+  };
+  const initialRestriction = checkTestRecipient();
+  if (initialRestriction) return suppress(initialRestriction);
   const key = phoneKey(phone);
   if (!shopId || !key) return suppress('missing_recipient_scope');
   try {
@@ -197,6 +214,10 @@ async function sendSMS(phone, message, options = {}, audienceToken) {
     return { ok: false, reason: 'not configured', body: finalMessage, provider_attempted: false };
   }
 
+  // No await between this fresh check, client construction and messages.create.
+  // A restriction observed at entry cannot be disabled while consent/config awaits.
+  const finalRestriction = checkTestRecipient();
+  if (finalRestriction) return suppress(finalRestriction);
   try {
     // API Key auth: twilio(apiKeySid, apiKeySecret, { accountSid })
     // Auth Token auth: twilio(accountSid, authToken)
@@ -206,7 +227,7 @@ async function sendSMS(phone, message, options = {}, audienceToken) {
       : twilio(config.accountSid, config.authToken);
 
     const result = await client.messages.create({
-      to: phone,
+      to: providerTarget,
       from: config.phoneNumber,
       body: finalMessage,
     });
