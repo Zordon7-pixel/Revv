@@ -1,0 +1,464 @@
+{
+  "provenance": {
+    "retrievedBy": "Hermes run503 public unauthenticated curl; retained review-official-*-v2.json",
+    "retrievedOn": "2026-10-12",
+    "sourceEvidence": "REVIEW-RUN503-FINDINGS.md and review-schema-repro.cjs retained outside source",
+    "schemaPreservation": "All six schema objects unchanged, including upstream titles/descriptions; sourceFileSha256 hashes retained file bytes; schemaSha256 hashes JSON.stringify(schema).",
+    "fixtures": "Synthetic CloudEvents, not captured deliveries. Campaign omitted only for successful deregistration; schemas constrain data, not the CloudEvents envelope."
+  },
+  "events": [
+    {
+      "kind": "number-registration.successful",
+      "sourceUrl": "https://events-schemas.twilio.com/A2P.NumberRegistrationSuccessful/2",
+      "sourceFile": "review-official-NumberRegistrationSuccessful-v2.json",
+      "sourceFileSha256": "092f89f427e70e4c5619670a62491a0e8893bc067d81d8d92ba0dbe0ac35ca89",
+      "schemaSha256": "7bb772a68b3e9bf3ad532463f0e9de33e63f70fe6660f49ae49e3b892768bed5",
+      "schema": {
+        "$id": "https://events-schemas.twilio.com/A2P.NumberRegistrationSuccessful/2",
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "description": "A2P Phone Number is in Successful Registration State event",
+        "properties": {
+          "accountsid": {
+            "description": "Account SID",
+            "type": "string"
+          },
+          "campaignsid": {
+            "description": "Campaign SID",
+            "type": "string"
+          },
+          "externalstatus": {
+            "description": "External Status of the Phone Number",
+            "type": "string"
+          },
+          "id": {
+            "description": "ID for this event",
+            "type": "string"
+          },
+          "messagingservicesid": {
+            "description": "Messaging Service SID",
+            "type": "string"
+          },
+          "phonenumber": {
+            "description": "Phone number in E.164 format",
+            "type": "string"
+          },
+          "phonenumbersid": {
+            "description": "Phone Number SID",
+            "type": "string"
+          },
+          "timestamp": {
+            "description": "Phone Number registration event timestamp",
+            "type": "integer"
+          },
+          "updateddate": {
+            "description": "Last updated date",
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "title": "ExternalNumberRegistrationSuccessful",
+        "type": "object"
+      },
+      "fixture": {
+        "specversion": "1.0",
+        "id": "CE-synthetic-NumberRegistrationSuccessful",
+        "type": "com.twilio.messaging.compliance.number-registration.successful",
+        "source": "/synthetic-account-events",
+        "time": "2026-10-12T10:13:20.000Z",
+        "dataschema": "https://events-schemas.twilio.com/A2P.NumberRegistrationSuccessful/2",
+        "datacontenttype": "application/json",
+        "data": {
+          "accountsid": "ACaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "campaignsid": "CMaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "externalstatus": "registered",
+          "id": "synthetic-data-id",
+          "messagingservicesid": "MGaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "phonenumber": "+12025550100",
+          "phonenumbersid": "PNaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "timestamp": 1791800000000,
+          "updateddate": 1791800000000
+        }
+      }
+    },
+    {
+      "kind": "number-registration.pending",
+      "sourceUrl": "https://events-schemas.twilio.com/A2P.NumberRegistrationPending/2",
+      "sourceFile": "review-official-NumberRegistrationPending-v2.json",
+      "sourceFileSha256": "37939c022318a3ab63c40bb9f47dda7d6bae4ec2610f461f43dea2143783389d",
+      "schemaSha256": "cd43f1d87ac16fc1c8d213124259dc598273aecb162ef3a8d582ddad81908902",
+      "schema": {
+        "$id": "https://events-schemas.twilio.com/A2P.NumberRegistrationPending/2",
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "description": "A2P Phone Number is in Pending Registration State event",
+        "properties": {
+          "accountsid": {
+            "description": "Account SID",
+            "type": "string"
+          },
+          "campaignsid": {
+            "description": "Campaign SID",
+            "type": "string"
+          },
+          "externalstatus": {
+            "description": "External Status of the Phone Number",
+            "type": "string"
+          },
+          "id": {
+            "description": "ID for this event",
+            "type": "string"
+          },
+          "messagingservicesid": {
+            "description": "Messaging Service SID",
+            "type": "string"
+          },
+          "phonenumber": {
+            "description": "Phone number in E.164 format",
+            "type": "string"
+          },
+          "phonenumbersid": {
+            "description": "Phone Number SID",
+            "type": "string"
+          },
+          "timestamp": {
+            "description": "Phone Number registration event timestamp",
+            "type": "integer"
+          },
+          "updateddate": {
+            "description": "Last updated date",
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "title": "ExternalNumberRegistrationPending",
+        "type": "object"
+      },
+      "fixture": {
+        "specversion": "1.0",
+        "id": "CE-synthetic-NumberRegistrationPending",
+        "type": "com.twilio.messaging.compliance.number-registration.pending",
+        "source": "/synthetic-account-events",
+        "time": "2026-10-12T10:13:20.000Z",
+        "dataschema": "https://events-schemas.twilio.com/A2P.NumberRegistrationPending/2",
+        "datacontenttype": "application/json",
+        "data": {
+          "accountsid": "ACaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "campaignsid": "CMaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "externalstatus": "pending_registration",
+          "id": "synthetic-data-id",
+          "messagingservicesid": "MGaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "phonenumber": "+12025550100",
+          "phonenumbersid": "PNaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "timestamp": 1791800000000,
+          "updateddate": 1791800000000
+        }
+      }
+    },
+    {
+      "kind": "number-registration.failed",
+      "sourceUrl": "https://events-schemas.twilio.com/A2P.NumberRegistrationFailed/2",
+      "sourceFile": "review-official-NumberRegistrationFailed-v2.json",
+      "sourceFileSha256": "313e03eac623f7bed6b87aea39fc7574f160b1c328e132064d2dcb80409f6363",
+      "schemaSha256": "d712489934e50a3d011d7a3d679a29d75fe95cc5e46dd730f88fd203b31cdb88",
+      "schema": {
+        "$id": "https://events-schemas.twilio.com/A2P.NumberRegistrationFailed/2",
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "description": "A2P Phone Number is in Failed Registration State event",
+        "properties": {
+          "accountsid": {
+            "description": "Account SID",
+            "type": "string"
+          },
+          "campaignsid": {
+            "description": "Campaign SID",
+            "type": "string"
+          },
+          "externalstatus": {
+            "description": "External Status of the Phone Number",
+            "type": "string"
+          },
+          "failurereason": {
+            "description": "Phone Number registration failure reason",
+            "type": "string"
+          },
+          "id": {
+            "description": "ID for this event",
+            "type": "string"
+          },
+          "messagingservicesid": {
+            "description": "Messaging Service SID",
+            "type": "string"
+          },
+          "phonenumber": {
+            "description": "Phone number in E.164 format",
+            "type": "string"
+          },
+          "phonenumbersid": {
+            "description": "Phone Number SID",
+            "type": "string"
+          },
+          "timestamp": {
+            "description": "Phone Number registration event timestamp",
+            "type": "integer"
+          },
+          "updateddate": {
+            "description": "Last updated date",
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "title": "ExternalNumberRegistrationFailed",
+        "type": "object"
+      },
+      "fixture": {
+        "specversion": "1.0",
+        "id": "CE-synthetic-NumberRegistrationFailed",
+        "type": "com.twilio.messaging.compliance.number-registration.failed",
+        "source": "/synthetic-account-events",
+        "time": "2026-10-12T10:13:20.000Z",
+        "dataschema": "https://events-schemas.twilio.com/A2P.NumberRegistrationFailed/2",
+        "datacontenttype": "application/json",
+        "data": {
+          "accountsid": "ACaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "campaignsid": "CMaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "externalstatus": "failure",
+          "id": "synthetic-data-id",
+          "messagingservicesid": "MGaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "phonenumber": "+12025550100",
+          "phonenumbersid": "PNaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "timestamp": 1791800000000,
+          "updateddate": 1791800000000,
+          "failurereason": "NEVER-PERSIST-THIS"
+        }
+      }
+    },
+    {
+      "kind": "number-deregistration.successful",
+      "sourceUrl": "https://events-schemas.twilio.com/A2P.NumberDeregistrationSuccessful/2",
+      "sourceFile": "review-official-NumberDeregistrationSuccessful-v2.json",
+      "sourceFileSha256": "51d5e3a2b653fd3ee19563292571ddcb88c37574df6a801c2f21cfc90812c482",
+      "schemaSha256": "6558da464a887cc68071271e76a009f17c4aceb9feac655ffdbde4bc246f6a00",
+      "schema": {
+        "$id": "https://events-schemas.twilio.com/A2P.NumberDeregistrationSuccessful/2",
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "description": "A2P Phone Number is in Failed Deregistration State event",
+        "properties": {
+          "accountsid": {
+            "description": "Account SID",
+            "type": "string"
+          },
+          "campaignsid": {
+            "description": "Campaign SID",
+            "type": "string"
+          },
+          "externalstatus": {
+            "description": "External Status of the Phone Number",
+            "type": "string"
+          },
+          "id": {
+            "description": "ID for this event",
+            "type": "string"
+          },
+          "messagingservicesid": {
+            "description": "Messaging Service SID",
+            "type": "string"
+          },
+          "phonenumber": {
+            "description": "Phone number in E.164 format",
+            "type": "string"
+          },
+          "phonenumbersid": {
+            "description": "Phone Number SID",
+            "type": "string"
+          },
+          "timestamp": {
+            "description": "Phone Number deregistration event timestamp",
+            "type": "integer"
+          },
+          "updateddate": {
+            "description": "Last updated date",
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "title": "ExternalNumberDeregistrationFailed",
+        "type": "object"
+      },
+      "fixture": {
+        "specversion": "1.0",
+        "id": "CE-synthetic-NumberDeregistrationSuccessful",
+        "type": "com.twilio.messaging.compliance.number-deregistration.successful",
+        "source": "/synthetic-account-events",
+        "time": "2026-10-12T10:13:20.000Z",
+        "dataschema": "https://events-schemas.twilio.com/A2P.NumberDeregistrationSuccessful/2",
+        "datacontenttype": "application/json",
+        "data": {
+          "accountsid": "ACaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "externalstatus": "unregistered",
+          "id": "synthetic-data-id",
+          "messagingservicesid": "MGaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "phonenumber": "+12025550100",
+          "phonenumbersid": "PNaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "timestamp": 1791800000000,
+          "updateddate": 1791800000000
+        }
+      }
+    },
+    {
+      "kind": "number-deregistration.pending",
+      "sourceUrl": "https://events-schemas.twilio.com/A2P.NumberDeregistrationPending/2",
+      "sourceFile": "review-official-NumberDeregistrationPending-v2.json",
+      "sourceFileSha256": "95107619800af77561f24867a5944550a36a4f93da57b899e8d18600cc47777d",
+      "schemaSha256": "9b0fcebddc22d50eb2e6c1a79707a4ffab6061f283f72125c8a0f0d7b66635ae",
+      "schema": {
+        "$id": "https://events-schemas.twilio.com/A2P.NumberDeregistrationPending/2",
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "description": "A2P Phone Number is in Deleted event",
+        "properties": {
+          "accountsid": {
+            "description": "Account SID",
+            "type": "string"
+          },
+          "campaignsid": {
+            "description": "Campaign SID",
+            "type": "string"
+          },
+          "externalstatus": {
+            "description": "External Status of the Phone Number",
+            "type": "string"
+          },
+          "id": {
+            "description": "ID for this event",
+            "type": "string"
+          },
+          "messagingservicesid": {
+            "description": "Messaging Service SID",
+            "type": "string"
+          },
+          "phonenumber": {
+            "description": "Phone number in E.164 format",
+            "type": "string"
+          },
+          "phonenumbersid": {
+            "description": "Phone Number SID",
+            "type": "string"
+          },
+          "timestamp": {
+            "description": "Phone Number deregistration event timestamp",
+            "type": "integer"
+          },
+          "updateddate": {
+            "description": "Last updated date",
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "title": "ExternalNumberDeregistrationSuccessful",
+        "type": "object"
+      },
+      "fixture": {
+        "specversion": "1.0",
+        "id": "CE-synthetic-NumberDeregistrationPending",
+        "type": "com.twilio.messaging.compliance.number-deregistration.pending",
+        "source": "/synthetic-account-events",
+        "time": "2026-10-12T10:13:20.000Z",
+        "dataschema": "https://events-schemas.twilio.com/A2P.NumberDeregistrationPending/2",
+        "datacontenttype": "application/json",
+        "data": {
+          "accountsid": "ACaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "campaignsid": "CMaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "externalstatus": "pending_deregistration",
+          "id": "synthetic-data-id",
+          "messagingservicesid": "MGaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "phonenumber": "+12025550100",
+          "phonenumbersid": "PNaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "timestamp": 1791800000000,
+          "updateddate": 1791800000000
+        }
+      }
+    },
+    {
+      "kind": "number-deregistration.failed",
+      "sourceUrl": "https://events-schemas.twilio.com/A2P.NumberDeregistrationFailed/2",
+      "sourceFile": "review-official-NumberDeregistrationFailed-v2.json",
+      "sourceFileSha256": "cc632b62026c62bab3e57cd3416e86192164adec201dfb71af41c765a2754cc2",
+      "schemaSha256": "df199e99b8c9203f98fa676d95200719762873448340b379be8c3bfba7014eb3",
+      "schema": {
+        "$id": "https://events-schemas.twilio.com/A2P.NumberDeregistrationFailed/2",
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "description": "A2P Phone Number is in Pending Deregistration State event",
+        "properties": {
+          "accountsid": {
+            "description": "Account SID",
+            "type": "string"
+          },
+          "campaignsid": {
+            "description": "Campaign SID",
+            "type": "string"
+          },
+          "externalstatus": {
+            "description": "External Status of the Phone Number",
+            "type": "string"
+          },
+          "failurereason": {
+            "description": "Phone Number deregistration failure reason",
+            "type": "string"
+          },
+          "id": {
+            "description": "ID for this event",
+            "type": "string"
+          },
+          "messagingservicesid": {
+            "description": "Messaging Service SID",
+            "type": "string"
+          },
+          "phonenumber": {
+            "description": "Phone number in E.164 format",
+            "type": "string"
+          },
+          "phonenumbersid": {
+            "description": "Phone Number SID",
+            "type": "string"
+          },
+          "timestamp": {
+            "description": "Phone Number deregistration event timestamp",
+            "type": "integer"
+          },
+          "updateddate": {
+            "description": "Last updated date",
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "title": "ExternalNumberDeregistrationPending",
+        "type": "object"
+      },
+      "fixture": {
+        "specversion": "1.0",
+        "id": "CE-synthetic-NumberDeregistrationFailed",
+        "type": "com.twilio.messaging.compliance.number-deregistration.failed",
+        "source": "/synthetic-account-events",
+        "time": "2026-10-12T10:13:20.000Z",
+        "dataschema": "https://events-schemas.twilio.com/A2P.NumberDeregistrationFailed/2",
+        "datacontenttype": "application/json",
+        "data": {
+          "accountsid": "ACaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "campaignsid": "CMaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "externalstatus": "failure",
+          "id": "synthetic-data-id",
+          "messagingservicesid": "MGaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "phonenumber": "+12025550100",
+          "phonenumbersid": "PNaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "timestamp": 1791800000000,
+          "updateddate": 1791800000000,
+          "failurereason": "NEVER-PERSIST-THIS"
+        }
+      }
+    }
+  ]
+}

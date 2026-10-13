@@ -42,6 +42,7 @@ app.use(cors({
 
 app.use('/api/payments/webhook', express.raw({ type: 'application/json' }));
 app.use('/api/subscriptions/webhook', express.raw({ type: 'application/json' }), subscriptionsRouter);
+app.use('/api/sms/provisioning-events', require('./services/smsProvisioningEvents').router());
 app.use(express.json({ limit: '1mb' }));
 app.use(panelBearerParserError);
 
@@ -241,6 +242,7 @@ initDb()
       console.log(`🔧 REVV running on http://localhost:${PORT}`);
       console.log(`   PostgreSQL: ${process.env.DATABASE_URL ? 'connected' : 'local'}`);
       console.log(`   Media bucket: ${isObjectStorageConfigured() ? 'configured' : 'not configured'}`);
+      require('./services/smsProvisioningQueue').start();
       setImmediate(runCarryoverForActiveShops);
       setImmediate(runDailyFeedbackAudit);
       setImmediate(runDailyOwnerActivityDigest);
