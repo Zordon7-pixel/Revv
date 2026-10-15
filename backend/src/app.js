@@ -231,13 +231,6 @@ initDb()
       }
     }
 
-    // Seed demo data on first run (safe to call every startup — skips if already seeded)
-    try {
-      await require('./db/seed').runSeed();
-    } catch (e) {
-      console.error('Seed error:', e.message);
-    }
-
     app.listen(PORT, '0.0.0.0', () => {
       console.log(`🔧 REVV running on http://localhost:${PORT}`);
       console.log(`   PostgreSQL: ${process.env.DATABASE_URL ? 'connected' : 'local'}`);
