@@ -9,6 +9,39 @@ const nodemailer = require('nodemailer');
 const addressparser = require('nodemailer/lib/addressparser');
 const semver = require('semver');
 const { createRequire } = require('node:module');
+const { posix } = require('node:path');
+
+test('production lockfile keeps Express 4 and body-parser 1 on patched qs resolutions', () => {
+  const { packages } = require('../package-lock.json');
+  // Follow Node's nearest-ancestor resolution in the lockfile, including nested
+  // copies. This also checks clean-install input rather than only node_modules.
+  const resolve = (consumer, name) => {
+    for (let directory = consumer; ; directory = posix.dirname(directory)) {
+      const key = posix.join(directory, 'node_modules', name);
+      if (posix.basename(directory) !== 'node_modules' && packages[key]) return packages[key];
+      if (directory === '.') break;
+    }
+    assert.fail(`${consumer}: missing locked ${name}`);
+  };
+  const rootExpress = resolve('.', 'express');
+  assert.equal(semver.satisfies(rootExpress.version, require('../package.json').dependencies.express), true);
+  const consumers = Object.entries(packages).filter(([path, pkg]) =>
+    !pkg.dev && /(?:^|\/)node_modules\/(?:express|body-parser)$/.test(path));
+  assert.ok(consumers.some(([path]) => path.endsWith('/express')));
+  assert.ok(consumers.some(([path]) => path.endsWith('/body-parser')));
+  for (const [path, pkg] of consumers) {
+    const isExpress = path.endsWith('/express');
+    assert.equal(semver.major(pkg.version), isExpress ? 4 : 1, `${path}: compatible major`);
+    if (isExpress) {
+      const parser = resolve(path, 'body-parser');
+      assert.equal(semver.satisfies(parser.version, pkg.dependencies['body-parser']), true, path);
+      assert.equal(semver.satisfies(parser.version, '>=1.20.8 <2'), true, `${path}: patched body-parser 1.x`);
+    }
+    const qs = resolve(path, 'qs');
+    assert.equal(semver.satisfies(qs.version, pkg.dependencies.qs), true, `${path}: compatible qs`);
+    assert.equal(semver.gte(qs.version, '6.16.0'), true, `${path}: qs >=6.16.0 required`);
+  }
+});
 
 // No app bootstrap, dotenv, DB, credentials, SMTP, or provider client requests.
 // Listening failures are real failures: Hermes must run the loopback tests on host.
@@ -171,9 +204,13 @@ test('security-target parent ranges are checked with npm semver, without incompa
   const fromParser = createRequire(fromExpress.resolve('body-parser'));
   assert.equal(semver.satisfies('2.0.8', expressPackage.dependencies['proxy-addr']), true);
   assert.equal(semver.satisfies('1.20.6', expressPackage.dependencies['body-parser']), true);
+  assert.equal(semver.satisfies('1.20.8', expressPackage.dependencies['body-parser']), true);
+  assert.equal(semver.major(expressPackage.version), 4);
+  assert.equal(semver.satisfies(parser.version, '>=1.20.8 <2'), true);
   assert.equal(semver.satisfies('1.20.0', twilioPackage.dependencies.axios), true);
-  // Express and body-parser intentionally resolve different compatible qs minors.
   // Resolve from each real consumer so a hoisted copy cannot conceal a stale child.
+  assert.equal(semver.gte(fromExpress('qs/package.json').version, '6.16.0'), true);
+  assert.equal(semver.gte(fromParser('qs/package.json').version, '6.16.0'), true);
   assert.equal(semver.satisfies('6.16.0', expressPackage.dependencies.qs), true);
   assert.equal(semver.satisfies(fromParser('qs/package.json').version, parser.dependencies.qs), true);
   for (const name of ['proxy-addr', 'body-parser', 'qs']) {
