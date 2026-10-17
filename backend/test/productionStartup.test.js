@@ -138,6 +138,19 @@ if (process.argv[2] === '--fake-runtime') {
     assert.equal(syntax.status, 0, syntax.stderr);
   });
 
+  test('Nixpacks startup execs only the app without seeding', t => {
+    const config = fs.readFileSync(path.join(root, 'nixpacks.toml'), 'utf8');
+    const sections = config.split(/^\[start\][ \t]*\r?$/m);
+    assert.equal(sections.length, 2, 'exactly one Nixpacks start section is required');
+    const start = sections[1].split(/^\[/m)[0];
+    const commands = [...start.matchAll(/^cmd\s*=\s*("[^"\\\r\n]*")[ \t]*\r?$/gm)];
+    assert.equal(commands.length, 1, 'one literal Nixpacks start command is required');
+    const command = JSON.parse(commands[0][1]);
+    assert.equal(command, 'cd backend && exec node src/app.js');
+    assert.doesNotMatch(command, /seed/i);
+    assertSeedless(runStartup(t, { command }), 0, [entrypoint, 'initDb', 'migrations', 'listen']);
+  });
+
   test('production startup initializes and migrates once without any seed/credential path', t => {
     assertSeedless(runStartup(t), 0, [entrypoint, 'initDb', 'migrations', 'listen']);
   });

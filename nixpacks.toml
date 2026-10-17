@@ -8,7 +8,7 @@ cmds = ["cd backend && npm install --build-from-source"]
 cmds = ["cd frontend && npm install --include=dev && npm run build"]
 
 [start]
-cmd = "cd backend && node src/db/seed.js; node src/app.js"
+cmd = "cd backend && exec node src/app.js"
 
 [variables]
 NPM_CONFIG_PRODUCTION = "false"
