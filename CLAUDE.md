@@ -1,3 +1,143 @@
+## Dispatch Log — 2026-10-21 13:05 EDT Phase 8B partial regression closure (t_6002e02f)
+
+SOURCE ONLY, **NOT CLOSED**. Started clean at exact
+`fb938e6cbca639669462d48654f6390d945dc310`, branch
+`codex/t_6002e02f-revv-test-shop`, verified worktree derived from canonical REVV.
+Prior accepted history was not amended/rebased/reset/reverted. TRUE designation,
+database hold and requested account remain HELD. No provisioning, phase9, final QA
+PASS, review readiness, release or installation is claimed.
+
+Fixed a real import transaction bug: guarded profit previously looked for a newly
+inserted RO through the pool before COMMIT. Guarded helpers now accept a server-owned
+row reader; the import handler passes its existing transaction client for both
+policy checks and the scoped resource check. Strict false policy, exact persisted
+identity, duplicate/malformed rejection and late refusal remain mandatory. Pure
+synchronous arithmetic and existing guarded exports remain available. There is no
+runtime fallback if a guarded helper disappears; a regression proves no financial
+write in that case. A transaction-reader regression proves ordinary writes succeed
+and flagged/unavailable/late-flip/wrong-resource cases write nothing.
+
+Payment, SMS and invoice/QuickBooks fixtures now run the actual guarded profit
+service with persisted policy/resource rows. Parts consent fixtures return persisted
+policy independently from delivery context. Missing scope is refused before any
+cooldown claim; STOP, provider exceptions, consent, entitlement and cooldown release
+assertions remain. The flagged RO test pins its existing 500/INTERNAL_TEST_SHOP
+response rather than masking a missing function. Role/assigned-to fixtures supply
+strict-false rows without replacing the policy implementation. Status refresh retains
+its parent lock and COMMIT, followed by a response-time policy recheck; new tests
+prove a post-COMMIT flag/removal suppresses the response with no provider/ledger/audit
+effects. Other transaction COMMIT assertions remain unchanged.
+
+Exactly ten tracked paths in this session (cap reached):
+- `CLAUDE.md`
+- `backend/src/__tests__/redesign.phase4.test.js`
+- `backend/src/__tests__/ros.assignedToScope.test.js`
+- `backend/src/__tests__/ros.roleVisibility.test.js`
+- `backend/src/routes/ros.js`
+- `backend/src/services/profit.js`
+- `backend/test/estimateImport.test.js`
+- `backend/test/paymentReservations.remyA.test.js`
+- `backend/test/remainingParityPolicy.test.js`
+- `backend/test/smsConsent.phase2.test.js`
+
+Verification uses installed Node v22.23.2, scrubbed synthetic environment and
+`/private/tmp/revv-phase8b/deny-network.cjs`: sockets/listeners/HTTP/fetch denied,
+dotenv disabled, pg pool query/connect denied. No adapted test copies were used.
+All candidate tests ran from tracked canonical paths. The parent comparison uses
+an exact, unmodified Git archive of 901b44587fb402dc70575b406265751f33e2580a, with
+existing dependencies linked and read-only Git object access for tests that inspect
+historical source. No dependency install or real database was used.
+
+Exact argv, cwd and environment are recorded in matching `*.command.json` files
+under `/private/tmp/revv-phase8b/`; stdout/stderr and exit files are alongside them.
+The explicit sorted 94-file inventory is `backend.files`, generated solely from
+`backend/src/__tests__/*.test.js` and `backend/test/*.test.js`. No bare node --test
+or frontend file discovery was used. The three backend Vitest files in that exact
+inventory remain visible as runner mismatches, not product failures or exclusions.
+
+| Receipt | Exit | Tests | Pass | Fail | Skip |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| affected-verified | 0 | 635 | 635 | 0 | 0 |
+| focused-final (remainingParityPolicy) | 0 | 198 | 198 | 0 | 0 |
+| selected-final (previous exact eleven-file set) | 0 | 1723 | 1715 | 0 | 8 |
+| broad-verified (explicit 94 files) | 1 | 2690 | 2567 | 110 | 13 |
+| baseline-corrected (exact parent, 93 files) | 1 | 2490 | 2361 | 116 | 13 |
+
+Commands (the runner expands the explicit files, never automatic discovery):
+```text
+python3 /private/tmp/revv-phase8b/run.py affected-verified /Users/zordon/.hermes/kanban/workspaces/t_6002e02f/source backend/test/paymentReservations.remyA.test.js backend/test/smsConsent.phase2.test.js backend/src/__tests__/redesign.phase4.test.js backend/test/estimateImport.test.js backend/src/__tests__/ros.roleVisibility.test.js backend/src/__tests__/ros.assignedToScope.test.js backend/test/remainingParityPolicy.test.js
+python3 /private/tmp/revv-phase8b/run.py focused-final /Users/zordon/.hermes/kanban/workspaces/t_6002e02f/source backend/test/remainingParityPolicy.test.js
+python3 /private/tmp/revv-phase8b/run.py broad-verified /Users/zordon/.hermes/kanban/workspaces/t_6002e02f/source
+python3 /private/tmp/revv-phase8b/run.py baseline-corrected /private/tmp/revv-phase8b/parent
+```
+The selected command is the previous selected-node22-final argv, including its sole
+payment real-PG skip pattern, recorded verbatim in `selected-final.command.json`.
+The broad runner uses `--test-reporter=tap --test-concurrency=1`, and only dedicated
+real-PG/initDb name filtering. Exact regex is in each command manifest. All nine
+changed JS files pass `/opt/homebrew/opt/node@22/bin/node --check <path>`; exact
+commands/status/output are in `syntax.json`. `git diff --check` passes.
+
+Real PG: **NOT RUN**. Sixty named dedicated cases are filtered; thirteen additional
+dedicated cases retain their own absent-infrastructure skips. Every exact name is
+in `/private/tmp/revv-phase8b/real-pg-NOT-RUN.txt` (73 entries). These are not passes.
+The selected receipt retains its eight internalTestShop skips and filters only
+`real PostgreSQL payment reservations, parallel creation and settlement (mock Stripe only)`.
+Hermes must supply disposable loopback infrastructure later; no ambient DB was used.
+
+Parent classification: 106 of the 110 remaining broad failures also fail at the
+exact parent (105 leaf tests plus the estimateAiPolicy failed-subtest aggregate).
+Those include 97 inherited leaf fixture/dependency failures, five HTTP integration
+checks blocked by the required socket denial, and three backend Vitest files run
+under Node. Email/AI/provider-looking failures reproduce as missing policy fixtures
+or strict dependency mocks; they are not evidence to loosen production gates or
+introduce credentials. The prior raw-log PDF failures do not reproduce on Node22.
+Ten parent failures now pass (nine publicIntake cases from phase8, plus estimate
+import). Detailed per-test diagnostics, names, files and comparison are preserved
+in `failure-classification.json`. These inherited cumulative-policy fixture failures
+remain real outstanding work, not an approved baseline waiver.
+
+Four phase8 regressions remain in three untouched files because this session's
+10-path ceiling is exhausted:
+- `backend/src/__tests__/ros.totalLoss.test.js`: total_loss status handler and
+  completed/open classification (2); missing guarded-profit/persisted-policy fixtures.
+- `backend/src/__tests__/status.gates.test.js`: legitimate paid close (1); stale
+  guarded-profit mock.
+- `backend/test/panelEstimator.economics.test.js`: L3 owner/admin job-cost projection
+  (1); missing persisted-policy fixture.
+No blanket skip or test deletion hides these. Full regression closure needs another
+source session. Firestore direct lead write/read/export remains a separate known
+residual. Real-PG, full host/browser QA, independent review and release remain undone.
+
+Failure history retained: initial oversized reads were truncated; a speculative
+shared-loader path was absent; a root node_modules listing was absent (backend
+node_modules was present). Corrected parent snapshot initially lacked root files
+and Git lookup context (initial baseline 2315 pass/162 fail/13 skip); the complete
+exact archive plus read-only Git context recovered those harness-only failures.
+Initial phase8 broad: 2507 pass/162 fail/13 skip. affected1: 621 pass/6 fail from an
+over-broad COMMIT assertion edit, corrected without changing production ordering.
+affected2: 633/633. Two newly added status tests initially omitted existing reason/
+suppressed fields (affected-final 633 pass/2 fail); corrected assertions now pass
+in affected-verified 635/635. The earlier broad-final was 2565 pass/112 fail/13 skip;
+broad-verified is the final 2567/110/13 receipt. All red logs remain intact.
+The full supplied mixed-discovery log is unchanged, copied as
+`host-broad-original.log`; its original path and SHA-256 are in
+`host-broad-original.sha256`. Frontend/Vitest discovery signals were ignored.
+
+Safety-sensitive persisted tenant/financial policy, over two files; Hermes/Oracle
+owns lifecycle/QA/review/release. No Hermes/Kanban/messaging/delegation calls,
+provider delivery, account/customer/production DB operations, secrets/.env access,
+config/provider/model/profile/cron changes, push/merge/deploy/install were performed.
+No supplied deadline; Bryan needs no action for these source fixes. Completion and
+commit status follow below; this receipt is not a request to ship.
+
+Phase8B commit blocked: `git add -- <the ten paths above>` exited 128:
+`fatal: Unable to create '/Volumes/Zordon Storage /openclaw-workspace/Revv/.git/worktrees/source2/index.lock': Operation not permitted`.
+The non-amending commit command did not run. No staging, escalation or lock bypass
+was attempted. HEAD remains `fb938e6cbca639669462d48654f6390d945dc310`; ten files are
+modified and unstaged. Exact argv, error and exit are in
+`/private/tmp/revv-phase8b/commit.log`. Hermes commit guard owns the next commit;
+regression closure still has the four new and 106 inherited failures above.
+
 ## Dispatch Log — 2026-10-21 Phase 8 compatibility recovery (t_6002e02f)
 
 12:52 EDT / 16:52 UTC. SOURCE ONLY, partial implementation; requested account

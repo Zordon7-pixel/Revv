@@ -79,26 +79,28 @@ function calculateTrueProfit(ro, costProfile, opts = {}) {
 // The synchronous calculators above are pure arithmetic, not authorization.
 // Route/service boundaries use the guarded variants below with server-owned
 // persisted RO snapshots. Pending monetary edits cannot override DB identity.
-async function persistedProfit(ro, calculate) {
+// readRows is a server-owned adapter: imports use their uncommitted transaction,
+// and all policy/resource reads (including the late recheck) stay on that adapter.
+async function persistedProfit(ro, calculate, readRows = (sql, params) => require('../db').dbAll(sql, params)) {
   const { assertExternalEffectsAllowed } = require('./shopPolicy');
   const unavailable = () => Object.assign(new Error('SHOP_POLICY_UNAVAILABLE'), { reason: 'SHOP_POLICY_UNAVAILABLE', excluded: true });
-  await assertExternalEffectsAllowed(ro?.shop_id);
+  await assertExternalEffectsAllowed(ro?.shop_id, readRows);
   if (typeof ro?.id !== 'string' || !ro.id.trim()) throw unavailable();
   let rows;
-  try { rows = await require('../db').dbAll(
+  try { rows = await readRows(
     'SELECT id::text AS id, shop_id::text AS shop_id FROM repair_orders WHERE id::text = $1 AND shop_id::text = $2',
     [ro.id, ro.shop_id]);
   } catch (_) { throw unavailable(); }
   if (!Array.isArray(rows) || rows.length !== 1 || rows[0]?.id !== ro.id || rows[0]?.shop_id !== ro.shop_id) throw unavailable();
   const result = calculate();
-  await assertExternalEffectsAllowed(rows[0].shop_id);
+  await assertExternalEffectsAllowed(rows[0].shop_id, readRows);
   return result;
 }
-async function calculatePersistedProfit(ro) {
-  return persistedProfit(ro, () => calculateProfit(ro));
+async function calculatePersistedProfit(ro, readRows) {
+  return persistedProfit(ro, () => calculateProfit(ro), readRows);
 }
-async function calculatePersistedTrueProfit(ro, costProfile, opts = {}) {
-  return persistedProfit(ro, () => calculateTrueProfit(ro, costProfile, opts));
+async function calculatePersistedTrueProfit(ro, costProfile, opts = {}, readRows) {
+  return persistedProfit(ro, () => calculateTrueProfit(ro, costProfile, opts), readRows);
 }
 
 // Versioned explicit-cost path; legacy functions and serialized shapes stay unchanged.

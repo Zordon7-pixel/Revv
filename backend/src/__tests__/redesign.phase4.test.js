@@ -295,7 +295,7 @@ function fixture(rows) {
     };
     if (file === 'routes/ros.js') Object.assign(extra, {
       '../services/customerConsent': {}, '../services/panelEstimatorEconomics': { selectedEconomics: async () => new Map(), redactSelectedRO: x => x },
-      '../services/profit': { calculateProfit: () => ({}) }, '../services/paymentReservations': {}, '../services/sms': {},
+      '../services/profit': load('services/profit.js', { './panelEstimator': {} }), '../services/paymentReservations': {}, '../services/sms': {},
       '../services/emailTemplates': {}, '../services/ownerActivity': {}, '../services/notifications': {},
       '../services/customerBilling': {}, '../services/customerOptInConfirmation': {}, '../middleware/roLimitGuard': noop,
       './insuranceOcr': { insuranceOcrLimiter: noop }, '../services/panelEstimatorApproval': { panelPublicHandler: () => noop, publicRequestError: () => noop },

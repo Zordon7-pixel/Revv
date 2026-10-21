@@ -230,3 +230,50 @@ test('caller migrations await guarded profit with persisted identity before fina
     }
   }
 });
+
+for (const scenario of ['ordinary', 'flagged', 'unavailable', 'late flip', 'wrong resource']) {
+  test(`import profit uses the uncommitted transaction reader: ${scenario}`, async () => {
+    const f = fixture();
+    // The separate pool cannot see this new row. Never mask that with a fixture
+    // that lets uncommitted data leak into global reads.
+    f.db.dbAll = async () => assert.fail('Import escaped its transaction');
+    const sync = f.route('ros').queues.syncImportedRoFinancials;
+    const reads = [], writes = [];
+    let policyReads = 0;
+    const readRows = async (sql, params) => {
+      reads.push({ sql, params });
+      if (sql.includes('is_internal_test_shop')) {
+        assert.deepEqual(params, [shop]);
+        policyReads++;
+        if (scenario === 'unavailable') throw Error('Synthetic transaction failure');
+        return scenario === 'flagged' || (scenario === 'late flip' && policyReads === 2) ? variants.fixture : ordinary;
+      }
+      assert.match(sql, /WHERE id::text = \$1 AND shop_id::text = \$2$/);
+      assert.deepEqual(params, ['new-ro', shop]);
+      return [{ id: 'new-ro', shop_id: scenario === 'wrong resource' ? 'other' : shop }];
+    };
+    const queryOne = async sql => sql.includes('FROM repair_orders') ? { id: 'new-ro' }
+      : sql.includes('FROM shops') ? { tax_rate: 0 } : { labor_total: 100, subtotal: 100 };
+    const run = () => sync('new-ro', shop, queryOne, async (sql, params) => { writes.push({ sql, params }); }, readRows);
+    if (scenario === 'ordinary') {
+      await run();
+      assert.equal(reads.length, 3);
+      assert.equal(writes.length, 1);
+      assert.match(writes[0].sql, /WHERE id = \$8 AND shop_id = \$9/);
+      assert.equal(writes[0].params[6], 100);
+      assert.deepEqual(writes[0].params.slice(-2), ['new-ro', shop]);
+    } else {
+      await assert.rejects(run, e => ['INTERNAL_TEST_SHOP', 'SHOP_POLICY_UNAVAILABLE'].includes(e.reason));
+      assert.deepEqual(writes, []);
+    }
+  });
+}
+
+test('a missing guarded profit export cannot make routes fall back to pure arithmetic', async () => {
+  const f = fixture();
+  delete f.profit.calculatePersistedProfit;
+  const sync = f.route('ros').queues.syncImportedRoFinancials;
+  await assert.rejects(() => sync('ro', shop), /calculatePersistedProfit is not a function/);
+  assert.deepEqual(f.writes, []);
+  assert.deepEqual(f.effects, []);
+});

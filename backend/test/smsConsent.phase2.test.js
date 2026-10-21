@@ -28,13 +28,14 @@ function load(file, mocks, suffix = '', runtimeProcess = process) {
 }
 
 function harness(customer = good()) {
-  const state = { customers: customer ? [customer] : [], optedOut: false, calls: [], writes: [], queries: [], failLookup: false, providerEntries: 0, staffPhone: phone };
+  const state = { customers: customer ? [customer] : [], optedOut: false, calls: [], writes: [], queries: [], failLookup: false, providerEntries: 0, staffPhone: phone, ros: [{ id: 'ro', shop_id: 'shop-a' }] };
   const shop = { id: 'shop-a', is_internal_test_shop: false, name: 'Test shop', plan: 'pro', twilio_account_sid: 'test', twilio_auth_token: 'test', twilio_phone_number: '+15550000000' };
   const key = value => { const d = String(value || '').replace(/\D/g, ''); return d.length === 10 ? `1${d}` : d; };
   const db = {
     dbAll: async (sql, params) => {
       state.queries.push({ sql, params });
       if (sql.includes('is_internal_test_shop')) return state.missingShop || params[0] !== shop.id ? [] : [shop];
+      if (sql.startsWith('SELECT id::text AS id, shop_id::text AS shop_id FROM repair_orders')) return state.ros.filter(r => r.id === params[0] && r.shop_id === params[1]);
       if (/FROM customers WHERE/.test(sql)) {
         assert.match(sql, /sms_consent_at, sms_consent_method, sms_consent_by/);
         assert.match(sql, /shop_id = \$1/);
@@ -67,6 +68,7 @@ function harness(customer = good()) {
     },
     dbRun: async (sql, params) => {
       state.writes.push({ sql, params });
+      if (/INSERT INTO repair_orders/.test(sql)) state.ros.push({ id: params[0], shop_id: params[1] });
       if (/INSERT INTO sms_opt_outs/.test(sql)) state.optedOut = true;
       if (/DELETE FROM sms_opt_outs/.test(sql)) state.optedOut = false;
       if (/UPDATE customers SET sms_consent = FALSE/.test(sql)) {
@@ -84,6 +86,7 @@ function harness(customer = good()) {
       if (/INSERT INTO customers/.test(sql)) {
         state.customers = [{ shop_id: params[1], phone: params[3], sms_consent: params[4], sms_consent_at: params[9], sms_consent_method: params[10], sms_consent_by: params[11] }];
       }
+      if (sql.startsWith('SELECT id::text AS id,')) return { rows: await db.dbAll(sql, params) };
       await db.dbRun(sql, params);
       return { rows: /SELECT/.test(sql) ? [{ id: 'ro', shop_id: 'shop-a' }] : [], rowCount: 1 };
     }, release() {},
@@ -120,7 +123,8 @@ function routes(h) {
     '../middleware/roles': { requireAdmin: noop, requireTechnician: noop, ROLE_RANK: {}, getRoleRank: () => 2 },
     '../middleware/roLimitGuard': noop, './insuranceOcr': { insuranceOcrLimiter: noop },
     '../services/panelEstimatorEconomics': { selectedEconomics: async () => new Map(), redactSelectedRO: r => r },
-    '../services/profit': { calculateProfit: () => ({}) },
+    '../services/profit': load('services/profit.js', { '../db': h.db, './shopPolicy': load('services/shopPolicy.js', { '../db': h.db }), './panelEstimator': {} }),
+    '../services/shopPolicy': load('services/shopPolicy.js', { '../db': h.db }),
     '../services/paymentReservations': {
       PaymentError: class PaymentError extends Error {},
       withLockedRo: async () => { throw new Error('Unexpected payment transaction in SMS test'); },
@@ -291,7 +295,7 @@ test('parts notification provenance gate and actual mocked provider acceptance',
     const h = harness(c);
     const parts = load('services/partsNotifications.js', { './partsDelivery': { ensureDelivery: async () => {} }, './sms': h.sms });
     const context = { ...c, customer_id: 'customer', preferred_contact_method: 'sms', before_state: { status: 'ordered' }, after_state: { status: 'received', quantity: 1, received_quantity: 1 } };
-    const db = { query: async sql => ({ rows: /SELECT/.test(sql) ? [context] : [], rowCount: 1 }) };
+    const db = { query: async (sql, params) => ({ rows: sql.includes('is_internal_test_shop') ? await h.db.dbAll(sql, params) : /SELECT/.test(sql) ? [context] : [], rowCount: 1 }) };
     const result = await parts.notifyPartUpdate(db, 'shop-a', { id: 'part', delivery_revision: 1 }, 0);
     const allowed = consent.hasConfirmedSmsConsent(c);
     assert.equal(result.channels[0].status, allowed ? 'accepted' : 'skipped');
@@ -392,14 +396,13 @@ async function notifyWithRealSms(h, shopId = 'shop-a') {
   const queries = [];
   const db = { query: async (sql, params) => {
     queries.push({ sql, params });
-    return { rows: sql.startsWith('SELECT') ? [context] : [], rowCount: 1 };
+    return { rows: sql.includes('is_internal_test_shop') ? await h.db.dbAll(sql, params) : sql.startsWith('SELECT') ? [context] : [], rowCount: 1 };
   } };
   const result = await parts.notifyPartUpdate(db, shopId, { id: 'part', delivery_revision: 1 }, 0);
   return { result, queries };
 }
 
 for (const [label, setup, reason, shopId] of [
-  ['scope', () => {}, 'missing_contact', ''],
   ['STOP', h => { h.state.optedOut = true; }, 'opted_out'],
   ['lookup', h => { h.state.failLookup = true; }, 'consent_unavailable'],
   ['consent', h => { h.state.customers = []; }, 'no_consent'],
@@ -484,7 +487,9 @@ test('real PostgreSQL phone/shop matching, STOP revocation and reconfirmation su
 test('persisted test shop blocks actual RO, portal, direct, status, opt-in, parts and staff send paths', async () => {
   const h = harness(); h.shop.is_internal_test_shop = true;
   const r = routes(h);
-  assert.equal((await call(r.ro, '/', { customer_id: 'customer', vehicle_id: 'vehicle' })).statusCode, 201);
+  const created = await call(r.ro, '/', { customer_id: 'customer', vehicle_id: 'vehicle' });
+  assert.equal(created.statusCode, 500);
+  assert.equal(created.body.error, 'INTERNAL_TEST_SHOP');
   await call(r.portal, '/magic-link/:ro_id', {}, { ro_id: 'ro' });
   assert.equal((await call(r.direct, '/send', { to_phone: phone, message: 'Synthetic' })).statusCode, 502);
   r.ro.queueStatusSMSForTest('ro', 'shop-a', 'repair');
@@ -498,4 +503,12 @@ test('persisted test shop blocks actual RO, portal, direct, status, opt-in, part
   assert.notEqual(reply.action, 'auto_reply');
   assert.equal(h.state.providerEntries, 0);
   assert.equal(h.state.calls.length, 0);
+});
+
+test('parts policy refuses missing scope before claiming cooldown', async () => {
+  const h = harness();
+  const { result, queries } = await notifyWithRealSms(h, '');
+  assert.equal(result.reason, 'SHOP_POLICY_UNAVAILABLE');
+  assert.equal(queries.some(q => /INSERT|UPDATE|DELETE/.test(q.sql)), false);
+  assert.equal(h.state.providerEntries, 0);
 });

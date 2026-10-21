@@ -73,7 +73,7 @@ function wire(db, p, auth = (_q,_s,next)=>next()) {
   const mocks={...shared, '../middleware/roLimitGuard':(_q,_s,next)=>next(),
     'express-rate-limit':()=> (_q,_s,next)=>next(), './insuranceOcr':{insuranceOcrLimiter:(_q,_s,next)=>next()},
     '../services/panelEstimatorApproval':{panelPublicHandler:()=> (_q,_s,next)=>next(),publicRequestError:()=> (_q,_s,next)=>next(),noStore:(_q,_s,next)=>next()},
-    '../services/profit':{calculateProfit:()=>({})}, '../services/roMoney':money,
+    '../services/profit':load('services/profit.js',{'../db':db,'./shopPolicy':policy,'./panelEstimator':{}}), '../services/roMoney':money,
     '../services/panelEstimatorEconomics':{selectedEconomics:async()=>new Map(),redactSelectedRO:r=>r},
     '../services/sms':{isConfiguredForShop:async()=>false},
     '../services/mailer':{sendMail:async()=>{}},'../services/emailTemplates':{statusChangeEmail:()=>({subject:'Status',html:'Status'})},
@@ -97,6 +97,7 @@ function memoryFixture() {
   const query=async(sql,a=[])=> {
     queries.push(sql);let rows=[];
     if (/SELECT id::text AS id, is_internal_test_shop FROM shops/.test(sql)) rows=state.shops.filter(r=>r.id===a[0]);
+    else if (/SELECT id::text AS id, shop_id::text AS shop_id FROM repair_orders/.test(sql)) rows=state.ro.id===a[0] && state.ro.shop_id===a[1]?[state.ro]:[];
     else if (/SELECT \* FROM repair_orders/.test(sql)) rows=a[1] && a[1]!=='shop'?[]:[state.ro];
     else if (/SELECT \* FROM ro_payment_attempts/.test(sql)) {
       rows=state.attempts.filter(r=> /WHERE id =/.test(sql)?r.id===a[0]:/WHERE shop_id =/.test(sql)?
@@ -395,7 +396,8 @@ for (const [status, paid, remaining, canCollect] of [
   assert.equal(JSON.stringify(f.state),before);assert.equal(f.calls.length,0);
   assert.ok(f.queries.includes('BEGIN ISOLATION LEVEL READ COMMITTED'));
   assert.match(f.queries.find(sql=>sql.includes('FOR UPDATE')), /id = \$1 AND shop_id = \$2 FOR UPDATE/);
-  assert.equal(f.queries.at(-1),'COMMIT');
+  assert.equal(f.queries.at(-2),'COMMIT');
+  assert.equal(f.queries.at(-1),'SELECT id::text AS id, is_internal_test_shop FROM shops WHERE id::text = $1');
 });
 
 test('status refresh keeps unknown attempts held and unidentified pending state fails closed', async () => {
@@ -639,3 +641,30 @@ for (const flag of [true, null]) for (const route of ['/:id/mark-paid', '/:id/ap
     assert.equal(f.queries.at(-1), 'ROLLBACK');
   });
 }
+
+for (const unavailable of [false, true]) test(`status refresh rechecks persisted policy after COMMIT: ${unavailable ? 'unavailable' : 'flagged'}`, async () => {
+  const f = memoryFixture();
+  const connect = f.db.pool.connect;
+  f.db.pool.connect = async () => {
+    const client = await connect(), query = client.query;
+    client.query = async (sql, params) => {
+      const result = await query(sql, params);
+      if (sql === 'COMMIT') {
+        if (unavailable) f.state.shops = [];
+        else f.state.shops[0].is_internal_test_shop = true;
+      }
+      return result;
+    };
+    return client;
+  };
+  const r = await invoke(f.payments, '/ro/:roId');
+  assert.equal(r.statusCode, unavailable ? 503 : 409);
+  const reason = unavailable ? 'SHOP_POLICY_UNAVAILABLE' : 'INTERNAL_TEST_SHOP';
+  assert.deepEqual(r.body, { error: reason, reason, suppressed: true, excluded: true });
+  assert.equal(f.queries.at(-2), 'COMMIT');
+  assert.equal(f.queries.at(-1), 'SELECT id::text AS id, is_internal_test_shop FROM shops WHERE id::text = $1');
+  assert.deepEqual(f.calls, []);
+  assert.deepEqual(f.state.audit, []);
+  assert.deepEqual(f.state.ledger, []);
+  assert.equal(f.state.ro.amount_paid_cents, 0);
+});

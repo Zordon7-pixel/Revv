@@ -37,9 +37,14 @@ function createDbMock() {
   const calls = [];
   let roId = null;
   let roNumber = null;
+  let committed = false;
   const client = {
     async query(sql, params = []) {
       calls.push({ source: 'client', sql: String(sql), params });
+      if (sql === 'BEGIN') committed = false;
+      if (sql === 'COMMIT') committed = true;
+      if (sql === 'SELECT id::text AS id, is_internal_test_shop FROM shops WHERE id::text = $1') return { rows: params[0] === 'shop-1' ? [{ id: 'shop-1', is_internal_test_shop: false }] : [] };
+      if (sql.startsWith('SELECT id::text AS id, shop_id::text AS shop_id FROM repair_orders')) return { rows: params[0] === roId && params[1] === 'shop-1' ? [{ id: roId, shop_id: 'shop-1' }] : [] };
       if (/INSERT INTO repair_orders/i.test(sql)) {
         roId = params[0];
         roNumber = params[2];
@@ -119,6 +124,9 @@ function createDbMock() {
     },
     async dbAll(sql, params = []) {
       calls.push({ source: 'dbAll', sql: String(sql), params });
+      if (sql === 'SELECT id::text AS id, is_internal_test_shop FROM shops WHERE id::text = $1') return params[0] === 'shop-1' ? [{ id: 'shop-1', is_internal_test_shop: false }] : [];
+      // A separate pool reader cannot see a newly inserted, uncommitted RO.
+      if (sql.startsWith('SELECT id::text AS id, shop_id::text AS shop_id FROM repair_orders')) return committed && params[0] === roId && params[1] === 'shop-1' ? [{ id: roId, shop_id: 'shop-1' }] : [];
       return [];
     },
     async dbRun(sql, params = []) {

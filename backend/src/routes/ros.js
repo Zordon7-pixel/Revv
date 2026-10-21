@@ -550,7 +550,7 @@ async function getEstimateSummaryForRo(roId, shopId, queryOne = dbGet) {
   };
 }
 
-async function syncImportedRoFinancials(roId, shopId, queryOne = dbGet, queryRun = dbRun) {
+async function syncImportedRoFinancials(roId, shopId, queryOne = dbGet, queryRun = dbRun, readRows = dbAll) {
   const current = await queryOne(
     `SELECT id, deductible_waived, referral_fee, goodwill_repair_cost
      FROM repair_orders
@@ -559,7 +559,7 @@ async function syncImportedRoFinancials(roId, shopId, queryOne = dbGet, queryRun
   );
   if (!current) return null;
   const summary = await getEstimateSummaryForRo(roId, shopId, queryOne);
-  const profit = await calculatePersistedProfit({ ...current, ...summary, id: roId, shop_id: shopId });
+  const profit = await calculatePersistedProfit({ ...current, ...summary, id: roId, shop_id: shopId }, readRows);
   await queryRun(
     `UPDATE repair_orders
      SET parts_cost = $1,
@@ -2254,7 +2254,10 @@ async function importEstimateHandler(req, res) {
       }
     }
 
-    const summary = await syncImportedRoFinancials(roId, req.user.shop_id, txGet, txRun);
+    // The new RO is not visible outside this transaction until COMMIT. Policy
+    // and resource checks must use the same server-owned client as its writes.
+    const summary = await syncImportedRoFinancials(roId, req.user.shop_id, txGet, txRun,
+      async (sql, params) => (await client.query(sql, params)).rows);
     await txRun(
       'INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by, note) VALUES ($1, $2, $3, $4, $5, $6)',
       [uuidv4(), roId, null, 'intake', req.user.id, `Created from estimate import (${lineItems.length} line items)`]

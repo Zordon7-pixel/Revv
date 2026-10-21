@@ -18,6 +18,10 @@ mockModule('../db', {
   dbGet: async () => null,
   dbRun: async () => ({ rowCount: 1 }),
   dbAll: async (sql, params) => {
+    if (sql === 'SELECT id::text AS id, is_internal_test_shop FROM shops WHERE id::text = $1') {
+      assert.deepEqual(params, ['shop-1']);
+      return [{ id: 'shop-1', is_internal_test_shop: false }];
+    }
     calls.push({ sql, params });
     return [];
   },
