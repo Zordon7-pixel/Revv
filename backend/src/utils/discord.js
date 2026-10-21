@@ -15,7 +15,7 @@ async function sendDiscordEmbed({ title, description, color = 0x6366f1, fields =
   return deliverEmbed({ title, description, color, fields, footer });
 }
 
-async function deliverEmbed({ title, description, color = 0x6366f1, fields = [], footer }, timeoutMs) {
+async function deliverEmbed({ title, description, color = 0x6366f1, fields = [], footer }, { timeoutMs, prospect = false } = {}) {
   const url = process.env.DISCORD_WEBHOOK_URL;
   if (!url) return;
 
@@ -23,6 +23,7 @@ async function deliverEmbed({ title, description, color = 0x6366f1, fields = [],
   if (footer) embed.footer = { text: footer };
 
   let timer;
+  const timeoutError = new Error('DISCORD_TIMEOUT');
   const controller = timeoutMs ? new AbortController() : null;
   try {
     const delivery = fetch(url, {
@@ -35,14 +36,17 @@ async function deliverEmbed({ title, description, color = 0x6366f1, fields = [],
     // keep the background task pending. Promise.race observes late rejections.
     const response = timeoutMs ? await Promise.race([delivery, new Promise((_, reject) => {
       timer = setTimeout(() => {
-        reject(new Error('DISCORD_TIMEOUT'));
+        reject(timeoutError);
         controller.abort();
       }, timeoutMs);
       timer.unref?.();
     })]) : await delivery;
-    if (!response.ok) console.error('[Discord] Webhook rejected');
-  } catch {
-    console.error('[Discord] Webhook failed or timed out');
+    if (!response.ok) console.error(prospect ? '[Discord] PROSPECT_DELIVERY_NON_2XX' : '[Discord] Webhook rejected');
+  } catch (error) {
+    // Only our own deadline identifies a timeout. Never inspect/log arbitrary
+    // transport errors, response bodies or configuration to classify failures.
+    if (prospect) console.error(error === timeoutError ? '[Discord] PROSPECT_DELIVERY_TIMEOUT' : '[Discord] PROSPECT_DELIVERY_FAILED');
+    else console.error('[Discord] Webhook failed or timed out');
   } finally {
     if (timer) clearTimeout(timer);
   }
@@ -66,11 +70,13 @@ function prospectIdentity(req, res, next) {
 }
 
 async function sendProspectDiscordEmbed(embed, authenticatedUserId) {
+  let failureCode = 'PROSPECT_IDENTITY_UNAVAILABLE';
   try {
     if (authenticatedUserId !== undefined) {
       if (typeof authenticatedUserId !== 'string' || !authenticatedUserId.trim()) {
         throw new Error('SHOP_POLICY_UNAVAILABLE');
       }
+      failureCode = 'PROSPECT_POLICY_UNAVAILABLE';
       // Even signed JWT shop/flag claims may be stale: current user membership and
       // shop policy come from persisted server-owned rows at the send boundary.
       const rows = await require('../db').dbAll(`SELECT u.id::text AS user_id, s.is_internal_test_shop
@@ -82,9 +88,10 @@ async function sendProspectDiscordEmbed(embed, authenticatedUserId) {
       }
     }
     // Email, source, shop_id and is_test never classify anonymous submissions.
-    return await deliverEmbed(embed, 5000);
+    failureCode = 'PROSPECT_DELIVERY_FAILED';
+    return await deliverEmbed(embed, { timeoutMs: 5000, prospect: true });
   } catch {
-    console.error('[Discord] Prospect policy unavailable; alert suppressed');
+    console.error(`[Discord] ${failureCode}`);
     return { ok: false, suppressed: true, provider_attempted: false, reason: 'SHOP_POLICY_UNAVAILABLE' };
   }
 }

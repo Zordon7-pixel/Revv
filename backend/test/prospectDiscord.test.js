@@ -9,7 +9,10 @@ const express = require('express');
 const { Readable, Writable } = require('node:stream');
 const root = path.resolve(__dirname, '../src');
 const secret = 'synthetic-test-signing-key-never-deployed';
-const privateError = 'synthetic@example.invalid Bearer PRIVATE_TOKEN private SQL and stack';
+const webhook = 'https://discord.example.invalid/mock';
+const privateValues = ['synthetic@example.invalid', 'PRIVATE_TOKEN', webhook, 'PRIVATE_RESPONSE_BODY',
+  'Synthetic', '+15555550100', '192.0.2.42', 'synthetic-user', 'forged-shop', 'private SQL and stack'];
+const privateError = privateValues.join(' ');
 const flush = () => new Promise(resolve => setImmediate(resolve));
 function deferred() {
   let resolve, reject;
@@ -18,8 +21,8 @@ function deferred() {
 }
 function harness(route, options = {}) {
   const { flag = false, rows, revoked = false, fail = false, transport, insertFail = false,
-    revokeAll = false, authStoreFail = false, policyPending } = options;
-  const sends = [], queries = [], writes = [], handlers = [], logs = [], saved = new Map(), timers = new Set();
+    revokeAll = false, authStoreFail = false, policyPending, webhookEnabled = true } = options;
+  const sends = [], queries = [], authQueries = [], writes = [], handlers = [], logs = [], saved = new Map(), timers = new Set();
   function load(file, mocks, fetch) {
     const module = { exports: {} };
     vm.runInNewContext(`(function(require,module,exports,process,fetch){${fs.readFileSync(path.join(root,file),'utf8')}\n})`, {
@@ -28,12 +31,13 @@ function harness(route, options = {}) {
       setTimeout(callback, ms) { assert.equal(ms, 5000); const timer = { callback, unref() {} }; timers.add(timer); return timer; },
       clearTimeout(timer) { timers.delete(timer); },
     })(name => { assert.ok(Object.hasOwn(mocks,name), `Unapproved dependency: ${name}`); return mocks[name]; },
-      module,module.exports,{env:{JWT_SECRET:secret,DISCORD_WEBHOOK_URL:'https://discord.example.invalid/mock'}},fetch);
+      module,module.exports,{env:{JWT_SECRET:secret,DISCORD_WEBHOOK_URL:webhookEnabled ? webhook : undefined}},fetch);
     return module.exports;
   }
   const db = {
     dbGet: async sql => {
-      if (authStoreFail) throw Error(privateError);
+      authQueries.push(sql);
+      if (authStoreFail === true || (authStoreFail && sql.includes(authStoreFail))) throw Error(privateError);
       if (/revoked_tokens/.test(sql)) return revoked ? { id:'revoked' } : null;
       return revokeAll ? { revoke_all_before: '2099-01-01' } : null;
     },
@@ -76,7 +80,7 @@ function harness(route, options = {}) {
     await auth(req,res,()=>{admitted=true;res.json({ok:true});});
     return {res,admitted,user:req.user};
   }
-  return {sends,queries,writes,logs,saved,timers,invoke,protectedRequest,handlers,auth,
+  return {sends,queries,authQueries,writes,logs,saved,timers,invoke,protectedRequest,handlers,auth,discord,
     expire() { for (const timer of [...timers]) timer.callback(); }};
 }
 
@@ -139,11 +143,13 @@ function success(route, res) {
   assert.equal(JSON.stringify(res.body),JSON.stringify(route==='leads'?{success:true}:{ok:true}));
   assert.equal(res.jsonCalls,1);
 }
-function sanitized(h) {
-  assert.ok(h.logs.length, 'failure is logged');
+function sanitized(h, message) {
+  assert.deepEqual(h.logs, [[message]], 'exact stable diagnostic, once');
   for (const log of h.logs) {
     assert.equal(log.length,1);
-    assert.match(log[0], /^\[(Discord|waitlist)\] (Prospect policy unavailable; alert suppressed|Webhook failed or timed out|Webhook rejected|Submission failed)$/);
+    assert.equal(typeof log[0], 'string', 'no raw error/object logging');
+    for (const value of [...privateValues, secret]) assert.ok(!log[0].includes(value), 'no private fixture value in logs');
+    assert.doesNotMatch(log[0], /Bearer|https?:\/\/|Error:|\n\s*at\s|eyJ/, 'no token, URL or stack leakage');
   }
 }
 for(const route of ['leads','waitlist']) {
@@ -152,6 +158,7 @@ for(const route of ['leads','waitlist']) {
       const h=harness(route,options),res=await h.invoke({authorization});
       success(route,res); await flush(); assert.equal(h.sends.length,1);assert.equal(h.queries.length,0);
       assert.equal(h.timers.size,0);
+      assert.deepEqual(h.logs, [], 'anonymous fallback is not an identity/policy outage');
       const embed=JSON.parse(h.sends[0].args.body).embeds[0];assert.match(embed.title,route==='leads'?/New Lead/:/Waitlist/);
       if(route==='waitlist') assert.equal(h.saved.size,1);
     });
@@ -169,6 +176,7 @@ for(const route of ['leads','waitlist']) {
   test(`${route}: trusted internal fixture has zero transport despite forged ordinary claims`,async()=>{
     const h=harness(route,{flag:true});success(route,await h.invoke({token:token(),body:{shop_id:'ordinary',is_test:false,is_internal_test_shop:false}}));
     await flush();assert.equal(h.sends.length,0);assert.equal(h.queries.length,1);assert.equal(h.timers.size,0);
+    assert.deepEqual(h.logs, [], 'trusted fixture suppression is not a failure');
   });
   test(`${route}: public flags, email, source and shop IDs cannot suppress alerts`,async()=>{
     const h=harness(route,{flag:true});const res=await h.invoke({body:{is_test:true,is_internal_test_shop:true,shop_id:'fixture',source:'internal-test',email:'test+fixture@example.invalid'},
@@ -177,10 +185,18 @@ for(const route of ['leads','waitlist']) {
   });
   for(const [name,options] of [ ['missing',{rows:[]}],['malformed',{flag:null}],['wrong user',{rows:[{user_id:'other',is_internal_test_shop:false}]}],
     ['duplicate',{rows:[{user_id:'synthetic-user',is_internal_test_shop:false},{user_id:'synthetic-user',is_internal_test_shop:false}]}],['unavailable',{fail:true}],
-    ['verification store unavailable',{authStoreFail:true}] ]) {
+    ['verification store unavailable',{authStoreFail:true}],
+    ['token revocation store unavailable',{authStoreFail:'revoked_tokens',claims:{jti:'synthetic-jti'}}],
+    ['user revocation store unavailable after token check',{authStoreFail:'FROM users',claims:{jti:'synthetic-jti'}}] ]) {
     test(`${route}: ${name} stored identity preserves success without unsafe transport`,async()=>{
-      const h=harness(route,options);success(route,await h.invoke({token:token()}));await flush();
-      assert.equal(h.sends.length,0);sanitized(h);
+      const h=harness(route,options);success(route,await h.invoke({token:token(options.claims)}));await flush();
+      assert.equal(h.sends.length,0);
+      sanitized(h,options.authStoreFail ? '[Discord] PROSPECT_IDENTITY_UNAVAILABLE' : '[Discord] PROSPECT_POLICY_UNAVAILABLE');
+      assert.equal(h.queries.length,options.authStoreFail ? 0 : 1);
+      if(options.claims) {
+        assert.match(h.authQueries[0],/revoked_tokens/);
+        assert.equal(h.authQueries.length,options.authStoreFail==='FROM users' ? 2 : 1);
+      }
       if(route==='waitlist') {assert.equal(h.saved.size,1);assert.equal(h.writes.filter(w=>/INSERT/.test(w.sql)).length,1);}
     });
   }
@@ -189,21 +205,30 @@ for(const route of ['leads','waitlist']) {
     const res=await h.invoke();success(route,res);assert.equal(h.sends.length,1);assert.equal(h.timers.size,1);
     pending.resolve({ok:true});await flush();success(route,res);assert.equal(h.sends.length,1);assert.equal(h.timers.size,0);
   });
-  for (const mode of ['reject','throw','http rejection','timeout with late rejection','timeout with late success']) {
+  for (const mode of ['reject','throw','timeout-like transport error','http rejection','timeout with late rejection','timeout with late success','timeout with abort rejection']) {
     test(`${route}: ${mode} is contained with one send and one successful response`,async()=>{
-      const pending=deferred();
-      const h=harness(route,{transport:()=>{
+      const pending=deferred();let responseBodyReads=0;
+      const h=harness(route,{transport:({signal})=>{
         if(mode==='throw') throw Error(privateError);
-        if(mode==='http rejection') return Promise.resolve({ok:false,status:429});
+        if(mode==='timeout-like transport error') return Promise.reject(Object.assign(Error('DISCORD_TIMEOUT'),{name:'AbortError',code:'DISCORD_TIMEOUT',cause:Error(privateError)}));
+        if(mode==='http rejection') return Promise.resolve({ok:false,status:429,
+          get body(){responseBodyReads++;return privateError;},
+          text(){responseBodyReads++;return Promise.resolve(privateError);},
+          json(){responseBodyReads++;return Promise.resolve({error:privateError});}});
+        if(mode==='timeout with abort rejection') signal.addEventListener('abort',()=>pending.reject(Error(privateError)),{once:true});
         return pending.promise;
       }});
       const res=await h.invoke();success(route,res);
       if(mode==='reject') pending.reject(Error(privateError));
-      if(mode.startsWith('timeout')) {
+      if(mode.startsWith('timeout with')) {
         h.expire();await flush();assert.equal(h.sends[0].args.signal.aborted,true);assert.equal(h.timers.size,0);
-        if(mode.endsWith('rejection')) pending.reject(Error(privateError));else pending.resolve({ok:true});
+        if(mode==='timeout with late rejection') pending.reject(Error(privateError));
+        if(mode==='timeout with late success') pending.resolve({ok:true});
       }
-      await flush();success(route,res);assert.equal(h.sends.length,1);assert.equal(h.timers.size,0);sanitized(h);
+      await flush();success(route,res);assert.equal(h.sends.length,1);assert.equal(h.timers.size,0);
+      const code=mode.startsWith('timeout with') ? 'PROSPECT_DELIVERY_TIMEOUT' : mode==='http rejection' ? 'PROSPECT_DELIVERY_NON_2XX' : 'PROSPECT_DELIVERY_FAILED';
+      sanitized(h,`[Discord] ${code}`);assert.equal(responseBodyReads,0,'response bodies are never read');
+      if(route==='waitlist') assert.equal(h.saved.size,1,'delivery failure retains the persisted signup');
       assert.equal(h.logs.length,1,'late settlement does not log or send again');
     });
   }
@@ -211,7 +236,7 @@ for(const route of ['leads','waitlist']) {
     const pending=deferred(),h=harness(route,{policyPending:pending});
     const res=await h.invoke({token:token()});success(route,res);assert.equal(h.sends.length,0);
     if(route==='waitlist') assert.equal(h.saved.size,1);
-    pending.reject(Error(privateError));await flush();success(route,res);sanitized(h);assert.equal(h.sends.length,0);
+    pending.reject(Error(privateError));await flush();success(route,res);sanitized(h,'[Discord] PROSPECT_POLICY_UNAVAILABLE');assert.equal(h.sends.length,0);
     if(route==='waitlist') {assert.equal(h.saved.size,1);assert.equal(h.writes.filter(w=>/INSERT/.test(w.sql)).length,1);}
   });
   test(`${route}: invalid ordinary input does not send`,async()=>{
@@ -221,7 +246,7 @@ for(const route of ['leads','waitlist']) {
 test('waitlist: actual insert failure returns 500, saves nothing, and starts no policy lookup or alert',async()=>{
   const h=harness('waitlist',{insertFail:true}),res=await h.invoke({token:token()});
   assert.equal(res.statusCode,500);await flush();assert.equal(h.saved.size,0);assert.equal(h.queries.length,0);assert.equal(h.sends.length,0);
-  assert.equal(h.writes.filter(w=>/INSERT/.test(w.sql)).length,1);sanitized(h);
+  assert.equal(h.writes.filter(w=>/INSERT/.test(w.sql)).length,1);sanitized(h,'[waitlist] Submission failed');
 });
 for (const [name,authorization,options] of invalidCredentials) {
   test(`protected auth: ${name} still rejects with 401`,async()=>{
@@ -236,4 +261,35 @@ test('protected auth: valid identity remains intact',async()=>{
 test('protected auth: verification storage failure still rejects',async()=>{
   const h=harness('leads',{authStoreFail:true}),{res,admitted}=await h.protectedRequest(`Bearer ${token()}`);
   assert.equal(res.statusCode,401);assert.equal(admitted,false);
+});
+
+test('prospect helper preserves suppression result contracts for fixture, policy and identity gates',async()=>{
+  for(const [options,id,reason,diagnostic] of [
+    [{flag:true},'synthetic-user','INTERNAL_TEST_SHOP',null],
+    [{fail:true},'synthetic-user','SHOP_POLICY_UNAVAILABLE','PROSPECT_POLICY_UNAVAILABLE'],
+    [{},null,'SHOP_POLICY_UNAVAILABLE','PROSPECT_IDENTITY_UNAVAILABLE'],
+  ]) {
+    const h=harness('leads',options);
+    const result=await h.discord.sendProspectDiscordEmbed({title:'Synthetic'},id);
+    assert.deepEqual(JSON.parse(JSON.stringify(result)),{ok:false,suppressed:true,provider_attempted:false,reason});
+    assert.equal(h.sends.length,0);assert.equal(h.timers.size,0);
+    if(diagnostic) sanitized(h,`[Discord] ${diagnostic}`);else assert.deepEqual(h.logs,[]);
+  }
+});
+test('prospect helper preserves undefined delivery results, including absent configuration and contained failures',async()=>{
+  for(const mode of ['success','unconfigured','non-2xx','failure','timeout']) {
+    const pending=deferred();
+    const h=harness('leads',{webhookEnabled:mode!=='unconfigured',transport:()=>{
+      if(mode==='timeout') return pending.promise;
+      if(mode==='failure') throw Error(privateError);
+      return Promise.resolve({ok:mode!=='non-2xx'});
+    }});
+    const result=h.discord.sendProspectDiscordEmbed({title:'Synthetic'});
+    if(mode==='timeout') h.expire();
+    assert.equal(await result,undefined);
+    assert.equal(h.sends.length,mode==='unconfigured' ? 0 : 1);assert.equal(h.timers.size,0);
+    const code={ 'non-2xx':'PROSPECT_DELIVERY_NON_2XX',failure:'PROSPECT_DELIVERY_FAILED',timeout:'PROSPECT_DELIVERY_TIMEOUT' }[mode];
+    if(code) sanitized(h,`[Discord] ${code}`);else assert.deepEqual(h.logs,[]);
+    if(mode==='timeout') {pending.reject(Error(privateError));await flush();sanitized(h,`[Discord] ${code}`);}
+  }
 });
