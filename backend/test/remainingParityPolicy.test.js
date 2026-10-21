@@ -19,7 +19,7 @@ const ref = '12345678-1234-1234-1234-123456789abc';
 function load(file, deps={}, options={}) {
   const code = options.parent ? execFileSync('git',['show',`${parent}:backend/src/${file}`],{encoding:'utf8'}) : fs.readFileSync(path.join(root,file),'utf8');
   const module = {exports:{}};
-  const env = {NODE_ENV:'test',RESEND_API_KEY:'synthetic-only',JWT_SECRET:'synthetic-only'};
+  const env = {NODE_ENV:'test',RESEND_API_KEY:'synthetic-only',JWT_SECRET:'synthetic-only',DISCORD_WEBHOOK_URL:'https://discord.example.invalid/mock'};
   vm.runInThisContext(`(function(require,module,exports,process,console,setImmediate,fetch){${code}\n${options.expose||''}\n})`,{filename:file})(name => {
     if (Object.hasOwn(deps,name)) return deps[name];
     throw Error(`Unapproved dependency: ${name}`);
@@ -95,6 +95,7 @@ function fixture(options={}) {
     '../services/panelEstimatorApproval':{panelPublicHandler:()=>noop,publicRequestError:()=>noop},
     './partsDelivery':{ensureDelivery:async()=>effects.push({kind:'schema'}),fail:Error},
     './panelEstimator':{createPanelEstimatorRouter:()=>({})}};
+  deps['../utils/discord']=load('utils/discord.js',{'../services/shopPolicy':policy,'../db':db,'../middleware/auth':noop},{fetch:async(...args)=>effects.push({kind:'discord',args})});
   const route=(name,baseline=false)=>load(`routes/${name}.js`,baseline?{...deps,'../services/profit':load('services/profit.js',{'./panelEstimator':{calculateEstimate:()=>({})}},{parent:true})}:deps,{parent:baseline,immediate:fn=>pending.push(fn),
     expose:name==='ros'?'module.exports.queues={queueQuickBooksSync, syncImportedRoFinancials};':name==='estimateLineItems'?'module.exports.sync=syncRepairOrderFinancials;':''});
   const parts=load('services/partsNotifications.js',deps);
@@ -205,10 +206,10 @@ test('RO invoice/QB ordinary and late policy outcomes',async()=>{
   assert.equal(f.effects.filter(e=>e.kind==='mail').length,1);assert.deepEqual(f.effects.find(e=>e.kind==='qb').args,[shop,'ro']);
   const g=fixture({sequence:[ordinary,variants.fixture]}),s=g.route('ros');s.queues.queueQuickBooksSync('ro',shop);await g.drain();assert.deepEqual(g.effects,[]);
 });
-for(const name of ['leads','waitlist'])for(const user of [undefined,{shop_id:shop,role:'owner',is_internal_test_shop:false}])test(`${name} no global capability for public/authenticated fixture/forged intake`,async()=>{
+for(const name of ['leads','waitlist'])for(const user of [undefined,{shop_id:shop,role:'owner',is_internal_test_shop:false}])test(`${name} anonymous prospect alerts ignore unverified request identity and client flags`,async()=>{
   for(const rows of [ordinary,variants.fixture,variants.missing]){
     const f=fixture({rows});const res=await invoke(f.route(name),'post','/',{user});await f.drain();assert.equal(res.statusCode,200);
-    assert.deepEqual(res.body,name==='leads'?{success:true}:{ok:true});assert.deepEqual(f.effects,[]);assert.deepEqual(f.policyCalls,[]);
+    assert.deepEqual(res.body,name==='leads'?{success:true}:{ok:true});assert.equal(f.effects.length,1);assert.equal(f.effects[0].kind,'discord');assert.deepEqual(f.policyCalls,[]);
     if(name==='waitlist'){const insert=f.writes.find(w=>w.sql.startsWith('INSERT INTO waitlist'));assert.deepEqual(insert.params,['fixture@example.invalid','landing']);}
   }
 });

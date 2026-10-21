@@ -44,6 +44,9 @@ function harness({ shops = [], users = [], related = [], schema = {}, failAt, ro
         if (sql === 'ROLLBACK' && rollbackFails) throw Error('private rollback detail');
         return { rows: [] };
       }
+      if (sql.startsWith('SELECT\n    EXISTS')) return { rows: [{
+        present: state.schema.type !== 'absent', hold: state.schema.hold !== null,
+      }] };
       if (/^LOCK TABLE/.test(sql)) return { rows: [] };
       if (/^ALTER TABLE shops ADD COLUMN/.test(sql)) {
         if (state.schema.type === 'absent') Object.assign(state.schema, { type: 'boolean', notNull: true, default: 'false' });
@@ -207,7 +210,8 @@ for (const hold of [null, 'exact']) test(`startup safely transitions hold=${hold
   assert.equal(h.state.schema.hold, null); assert.equal(h.state.writes, 0); assert.equal(h.state.hashes, 0);
   assert.deepEqual({ shops: h.state.shops, users: h.state.users }, before);
   const sql = h.state.queries.map(q => q.sql);
-  assert.ok(sql.findIndex(q => q.includes('NOT (TRUE AND')) < sql.indexOf('ALTER TABLE shops DROP CONSTRAINT IF EXISTS shops_internal_test_shop_hold'));
+  if (hold) assert.ok(sql.findIndex(q => q.includes('NOT (TRUE AND')) < sql.indexOf('ALTER TABLE shops DROP CONSTRAINT shops_internal_test_shop_hold'));
+  else assert.equal(sql.some(q => /ALTER TABLE|LOCK TABLE|pg_advisory/.test(q)), false);
   assert.match(sql.join('\n'), /convalidated AND NOT connoinherit/);
   assert.match(sql.join('\n'), /conislocal AND coninhcount=0/);
   assert.doesNotMatch(sql.join('\n'), /ALTER COLUMN.*(?:SET DEFAULT|SET NOT NULL)/);
@@ -226,10 +230,13 @@ test('absent policy column receives FALSE, existing default is not silently repa
   const h = harness({ schema: { type: 'absent', notNull: false, default: null } });
   await up(h.adapters.pool); assert.equal(h.state.schema.default, 'false'); assert.equal(h.state.schema.notNull, true);
 });
-test('startup refuses malformed TRUE fixture and rolls back hold transition', async () => {
-  const h = harness({ shops: [safeShop()], schema: { hold: 'exact' } });
-  await assert.rejects(up(h.adapters.pool), { code: 'INTERNAL_TEST_SHOP_SCHEMA_REQUIRED' });
-  assert.equal(h.state.schema.hold, 'exact'); assert.equal(h.state.writes, 0);
+test('startup permits used TRUE fixtures without invoking pristine provisioning checks', async () => {
+  const h = harness({ shops: [{ ...safeShop(), onboarded: true }], users: [safeUser()],
+    related: [{ present: true }] });
+  await up(h.adapters.pool);
+  assert.equal(h.state.writes, 0);
+  assert.equal(h.state.queries.some(q => /to_jsonb|SELECT DISTINCT n.nspname/.test(q.sql)), false);
+  await assert.rejects(h.run(), { code: 'FIXTURE_COLLISION' });
 });
 for (const schema of [{ hold: 'exact' }, { default: 'true' }, { idType: 'integer' }, { idType: 'varchar(12)' }, { insertTrigger: true }, { rls: true }, { rule: true }]) {
   test(`CLI requires completed compatible transition ${JSON.stringify(schema)}`, async () => {
@@ -270,11 +277,6 @@ for (const overrides of [
   assert.equal(h.state.shops.length, 0); assert.equal(h.state.users.length, 0);
   assert.equal(h.state.queries.at(-1).sql, 'ROLLBACK');
 });
-test('startup rejects NULL policy rows even with claimed compatible metadata', async () => {
-  const h = harness({ shops: [{ ...safeShop(), is_internal_test_shop: null }] });
-  await assert.rejects(up(h.adapters.pool), { code: 'INTERNAL_TEST_SHOP_SCHEMA_REQUIRED' });
-  assert.equal(h.state.queries.some(q => /DROP CONSTRAINT/.test(q.sql)), false);
-});
 test('unused alternate password fields cannot supply input', async () => {
   const h = harness();
   await assert.rejects(h.run(env({ REVV_INTERNAL_TEST_SHOP_PASSWORD: undefined,
@@ -307,8 +309,9 @@ test('asynchronous pool errors cannot emit DB details or a success receipt', asy
   assert.equal(output, '{"error":"PROVISIONING_FAILED"}\n');
   assert.equal(events.listenerCount('error'), 0);
 });
-test('startup rejects a TRUE fixture on incompatible identity schema', async () => {
+test('only provisioning rejects incompatible fixture identity schema', async () => {
   const h = harness({ shops: [safeShop()], users: [safeUser()], schema: { idType: 'varchar(12)' } });
-  await assert.rejects(up(h.adapters.pool), { code: 'INTERNAL_TEST_SHOP_SCHEMA_REQUIRED' });
+  await up(h.adapters.pool);
+  await assert.rejects(h.run(), { code: 'PROVISIONING_FAILED' });
   assert.equal(h.state.queries.at(-1).sql, 'ROLLBACK');
 });

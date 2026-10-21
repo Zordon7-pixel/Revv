@@ -1,293 +1,3 @@
-## Dispatch Log — 2026-10-21 13:24 EDT / 17:24 UTC Phase 9 source-only provisioning
-
-Task t_6002e02f, sole implementation lane. Clean exact parent
-`c1704619988e63625a861776bd6ae443ca07347f`, branch
-`codex/t_6002e02f-revv-test-shop`. No amend/rebase/reset/revert.
-Added a dedicated server-only CLI and import-safe synthetic-adapter core: env-only
-password capture/deletion, normal lazy DB config, normalized-email advisory lock,
-exact one-owner/free fixture creation, conservative collision rollback, no-mutation
-idempotence and stable non-secret JSON. No public setter or account creation here.
-Required startup now validates existing schema without repairs and removes only
-the exact known hold, accepting complete compatible TRUE fixtures. Fresh FALSE,
-public registration FALSE, ordinary update allowlists and phase1–8 exclusions stay.
-
-Exactly ten paths and full source/hold/safety/command receipt:
-`docs/INTERNAL-TEST-SHOP.md` phase9 section. Seven touched JS syntax checks, diff
-and secret/path scan are recorded in `/private/tmp/revv-phase9/checks.json`.
-Canonical scrubbed/deny-network final runs: focused 158/158, policy 1715/1715,
-affected 646/646; all exit0, no failures/skips. Eleven named dedicated real-PG
-top-level gates NOT RUN, excluded explicitly, not passes. Models are synthetic,
-not proof of actual SQL/locks. No final host QA/review verdict or release claim.
-
-Requested account HELD. Public Firestore lead flows remain unsupported for fixture
-validation until separately isolated; backend lead/waitlist delivery stays closed.
-No DB/config/secret/provider/account access, runtime provisioning, notification,
-Hermes/Kanban/messaging/delegation, config/provider/model/cron changes or shipment.
-Hermes/Oracle owns lifecycle/QA/review/release. Safety-sensitive auth/tenant schema,
-over two files; preserve job5feaddc2bfaf and task t_59894b65 DO NOT APPLY.
-Commit blocked: git add exit128, cannot create canonical linked-worktree
-`.git/worktrees/source2/index.lock` (Operation not permitted). No staging/commit,
-escalation or bypass. HEAD remains c1704619988e63625a861776bd6ae443ca07347f;
-seven modified + three new paths, dirty. Hermes commit guard owns the next step.
-Exact evidence: `/private/tmp/revv-phase9/commit-add.json`.
-
-## Dispatch Log — 2026-10-21 13:05 EDT Phase 8B partial regression closure (t_6002e02f)
-
-SOURCE ONLY, **NOT CLOSED**. Started clean at exact
-`fb938e6cbca639669462d48654f6390d945dc310`, branch
-`codex/t_6002e02f-revv-test-shop`, verified worktree derived from canonical REVV.
-Prior accepted history was not amended/rebased/reset/reverted. TRUE designation,
-database hold and requested account remain HELD. No provisioning, phase9, final QA
-PASS, review readiness, release or installation is claimed.
-
-Fixed a real import transaction bug: guarded profit previously looked for a newly
-inserted RO through the pool before COMMIT. Guarded helpers now accept a server-owned
-row reader; the import handler passes its existing transaction client for both
-policy checks and the scoped resource check. Strict false policy, exact persisted
-identity, duplicate/malformed rejection and late refusal remain mandatory. Pure
-synchronous arithmetic and existing guarded exports remain available. There is no
-runtime fallback if a guarded helper disappears; a regression proves no financial
-write in that case. A transaction-reader regression proves ordinary writes succeed
-and flagged/unavailable/late-flip/wrong-resource cases write nothing.
-
-Payment, SMS and invoice/QuickBooks fixtures now run the actual guarded profit
-service with persisted policy/resource rows. Parts consent fixtures return persisted
-policy independently from delivery context. Missing scope is refused before any
-cooldown claim; STOP, provider exceptions, consent, entitlement and cooldown release
-assertions remain. The flagged RO test pins its existing 500/INTERNAL_TEST_SHOP
-response rather than masking a missing function. Role/assigned-to fixtures supply
-strict-false rows without replacing the policy implementation. Status refresh retains
-its parent lock and COMMIT, followed by a response-time policy recheck; new tests
-prove a post-COMMIT flag/removal suppresses the response with no provider/ledger/audit
-effects. Other transaction COMMIT assertions remain unchanged.
-
-Exactly ten tracked paths in this session (cap reached):
-- `CLAUDE.md`
-- `backend/src/__tests__/redesign.phase4.test.js`
-- `backend/src/__tests__/ros.assignedToScope.test.js`
-- `backend/src/__tests__/ros.roleVisibility.test.js`
-- `backend/src/routes/ros.js`
-- `backend/src/services/profit.js`
-- `backend/test/estimateImport.test.js`
-- `backend/test/paymentReservations.remyA.test.js`
-- `backend/test/remainingParityPolicy.test.js`
-- `backend/test/smsConsent.phase2.test.js`
-
-Verification uses installed Node v22.23.2, scrubbed synthetic environment and
-`/private/tmp/revv-phase8b/deny-network.cjs`: sockets/listeners/HTTP/fetch denied,
-dotenv disabled, pg pool query/connect denied. No adapted test copies were used.
-All candidate tests ran from tracked canonical paths. The parent comparison uses
-an exact, unmodified Git archive of 901b44587fb402dc70575b406265751f33e2580a, with
-existing dependencies linked and read-only Git object access for tests that inspect
-historical source. No dependency install or real database was used.
-
-Exact argv, cwd and environment are recorded in matching `*.command.json` files
-under `/private/tmp/revv-phase8b/`; stdout/stderr and exit files are alongside them.
-The explicit sorted 94-file inventory is `backend.files`, generated solely from
-`backend/src/__tests__/*.test.js` and `backend/test/*.test.js`. No bare node --test
-or frontend file discovery was used. The three backend Vitest files in that exact
-inventory remain visible as runner mismatches, not product failures or exclusions.
-
-| Receipt | Exit | Tests | Pass | Fail | Skip |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| affected-verified | 0 | 635 | 635 | 0 | 0 |
-| focused-final (remainingParityPolicy) | 0 | 198 | 198 | 0 | 0 |
-| selected-final (previous exact eleven-file set) | 0 | 1723 | 1715 | 0 | 8 |
-| broad-verified (explicit 94 files) | 1 | 2690 | 2567 | 110 | 13 |
-| baseline-corrected (exact parent, 93 files) | 1 | 2490 | 2361 | 116 | 13 |
-
-Commands (the runner expands the explicit files, never automatic discovery):
-```text
-python3 /private/tmp/revv-phase8b/run.py affected-verified /Users/zordon/.hermes/kanban/workspaces/t_6002e02f/source backend/test/paymentReservations.remyA.test.js backend/test/smsConsent.phase2.test.js backend/src/__tests__/redesign.phase4.test.js backend/test/estimateImport.test.js backend/src/__tests__/ros.roleVisibility.test.js backend/src/__tests__/ros.assignedToScope.test.js backend/test/remainingParityPolicy.test.js
-python3 /private/tmp/revv-phase8b/run.py focused-final /Users/zordon/.hermes/kanban/workspaces/t_6002e02f/source backend/test/remainingParityPolicy.test.js
-python3 /private/tmp/revv-phase8b/run.py broad-verified /Users/zordon/.hermes/kanban/workspaces/t_6002e02f/source
-python3 /private/tmp/revv-phase8b/run.py baseline-corrected /private/tmp/revv-phase8b/parent
-```
-The selected command is the previous selected-node22-final argv, including its sole
-payment real-PG skip pattern, recorded verbatim in `selected-final.command.json`.
-The broad runner uses `--test-reporter=tap --test-concurrency=1`, and only dedicated
-real-PG/initDb name filtering. Exact regex is in each command manifest. All nine
-changed JS files pass `/opt/homebrew/opt/node@22/bin/node --check <path>`; exact
-commands/status/output are in `syntax.json`. `git diff --check` passes.
-
-Real PG: **NOT RUN**. Sixty named dedicated cases are filtered; thirteen additional
-dedicated cases retain their own absent-infrastructure skips. Every exact name is
-in `/private/tmp/revv-phase8b/real-pg-NOT-RUN.txt` (73 entries). These are not passes.
-The selected receipt retains its eight internalTestShop skips and filters only
-`real PostgreSQL payment reservations, parallel creation and settlement (mock Stripe only)`.
-Hermes must supply disposable loopback infrastructure later; no ambient DB was used.
-
-Parent classification: 106 of the 110 remaining broad failures also fail at the
-exact parent (105 leaf tests plus the estimateAiPolicy failed-subtest aggregate).
-Those include 97 inherited leaf fixture/dependency failures, five HTTP integration
-checks blocked by the required socket denial, and three backend Vitest files run
-under Node. Email/AI/provider-looking failures reproduce as missing policy fixtures
-or strict dependency mocks; they are not evidence to loosen production gates or
-introduce credentials. The prior raw-log PDF failures do not reproduce on Node22.
-Ten parent failures now pass (nine publicIntake cases from phase8, plus estimate
-import). Detailed per-test diagnostics, names, files and comparison are preserved
-in `failure-classification.json`. These inherited cumulative-policy fixture failures
-remain real outstanding work, not an approved baseline waiver.
-
-Four phase8 regressions remain in three untouched files because this session's
-10-path ceiling is exhausted:
-- `backend/src/__tests__/ros.totalLoss.test.js`: total_loss status handler and
-  completed/open classification (2); missing guarded-profit/persisted-policy fixtures.
-- `backend/src/__tests__/status.gates.test.js`: legitimate paid close (1); stale
-  guarded-profit mock.
-- `backend/test/panelEstimator.economics.test.js`: L3 owner/admin job-cost projection
-  (1); missing persisted-policy fixture.
-No blanket skip or test deletion hides these. Full regression closure needs another
-source session. Firestore direct lead write/read/export remains a separate known
-residual. Real-PG, full host/browser QA, independent review and release remain undone.
-
-Failure history retained: initial oversized reads were truncated; a speculative
-shared-loader path was absent; a root node_modules listing was absent (backend
-node_modules was present). Corrected parent snapshot initially lacked root files
-and Git lookup context (initial baseline 2315 pass/162 fail/13 skip); the complete
-exact archive plus read-only Git context recovered those harness-only failures.
-Initial phase8 broad: 2507 pass/162 fail/13 skip. affected1: 621 pass/6 fail from an
-over-broad COMMIT assertion edit, corrected without changing production ordering.
-affected2: 633/633. Two newly added status tests initially omitted existing reason/
-suppressed fields (affected-final 633 pass/2 fail); corrected assertions now pass
-in affected-verified 635/635. The earlier broad-final was 2565 pass/112 fail/13 skip;
-broad-verified is the final 2567/110/13 receipt. All red logs remain intact.
-The full supplied mixed-discovery log is unchanged, copied as
-`host-broad-original.log`; its original path and SHA-256 are in
-`host-broad-original.sha256`. Frontend/Vitest discovery signals were ignored.
-
-Safety-sensitive persisted tenant/financial policy, over two files; Hermes/Oracle
-owns lifecycle/QA/review/release. No Hermes/Kanban/messaging/delegation calls,
-provider delivery, account/customer/production DB operations, secrets/.env access,
-config/provider/model/profile/cron changes, push/merge/deploy/install were performed.
-No supplied deadline; Bryan needs no action for these source fixes. Completion and
-commit status follow below; this receipt is not a request to ship.
-
-Phase8B commit blocked: `git add -- <the ten paths above>` exited 128:
-`fatal: Unable to create '/Volumes/Zordon Storage /openclaw-workspace/Revv/.git/worktrees/source2/index.lock': Operation not permitted`.
-The non-amending commit command did not run. No staging, escalation or lock bypass
-was attempted. HEAD remains `fb938e6cbca639669462d48654f6390d945dc310`; ten files are
-modified and unstaged. Exact argv, error and exit are in
-`/private/tmp/revv-phase8b/commit.log`. Hermes commit guard owns the next commit;
-regression closure still has the four new and 106 inherited failures above.
-
-## Dispatch Log — 2026-10-21 Phase 8 compatibility recovery (t_6002e02f)
-
-12:52 EDT / 16:52 UTC. SOURCE ONLY, partial implementation; requested account
-HELD and TRUE designation/database hold unchanged. Same sole implementation lane,
-branch `codex/t_6002e02f-revv-test-shop`, parent
-`901b44587fb402dc70575b406265751f33e2580a`. No phases 1–7 were rewritten.
-The interrupted patch hash was verified against the supplied checkpoint:
-`4159f0ce79fcea07a099f539418f68cbd4428e938f3f34dd02d3d8451d3bd1e4`.
-
-Restored synchronous `calculateProfit`/`calculateTrueProfit` arithmetic and added
-explicit `calculatePersistedProfit`/`calculatePersistedTrueProfit` service boundaries.
-All production callers use the guarded variants, await them, and preserve scoped
-persisted identity checks and late policy refusal. Malformed resource rows also
-fail with `SHOP_POLICY_UNAVAILABLE`. The focused canonical harness verifies pure
-arithmetic parity, guarded resource rejection, and zero financial writes on denial.
-Payment policy responses retain `excluded: true`; canonical payment assertions pin
-that contract without changing subscription responses. Ordinary parts fixtures now
-supply persisted strict-false policy; STOP, cooldown, timeout, provider-reference,
-no-resend and consent assertions remain intact. Canonical email tests assert restored
-ordinary receipt/parts delivery and zero fixture/unavailable delivery or markers.
-Public-intake fixtures handle policy queries and retain unknown/unavailable policy
-503 exclusion rather than inventing ordinary rows. Production public-intake code
-from earlier phases is unchanged; anonymous leads/waitlist notifications stay closed.
-
-Recovery changed exactly ten paths (the entire candidate also includes preserved
-interrupted work, so its total diff is fifteen paths):
-- `CLAUDE.md`
-- `backend/src/services/profit.js`
-- `backend/src/routes/ros.js`
-- `backend/src/routes/estimateLineItems.js`
-- `backend/src/__tests__/publicIntake.test.js`
-- `backend/test/billingShopPolicy.test.js`
-- `backend/test/emailShopPolicy.test.js`
-- `backend/test/partsNotifications.test.js`
-- `backend/test/payments.phase4.test.js`
-- `backend/test/remainingParityPolicy.test.js`
-
-The other five interrupted paths (planGuard, leads, payments, waitlist and
-partsNotifications production service) remain byte-for-byte checkpoint-preserved.
-The old synchronous math test file is unchanged. No manifests, lockfiles or
-generated outputs were edited.
-
-Verification: Node **v22.23.2**, scrubbed synthetic environment, preloaded deny-network
-and deny-real-PG/ dotenv adapter. Canonical tests ran directly from this worktree;
-no adapted copies were used. Evidence and exact argv/env JSON receipts:
-`/private/tmp/revv-t6002-phase8-recovery/`.
-- `selected-node22-final.log`: exit 0; 1717 tests, 1709 pass, 0 fail, 8 skipped.
-  Exact eleven files from checkpoint1 `selected-tests.files`, using only
-  `--test-skip-pattern=real PostgreSQL payment reservations, parallel creation and settlement \(mock Stripe only\)`.
-- `focused-node22-final.log`: exit 0; 192 tests, 192 pass, 0 fail, 0 skipped.
-- `affected-node22-final.log`: exit 0; 464 tests, 464 pass, 0 fail, 0 skipped.
-- `arithmetic-node22.log`: unchanged panelEstimator.calc suite, exit 0;
-  26 tests, 26 pass, 0 fail, 0 skipped.
-- `syntax-node22.log`: all fourteen changed JS files pass `node --check`.
-  `git diff --check` passes. Diff-only secret-pattern/path review found no
-  credential material or prohibited paths; added values are synthetic fixtures.
-
-NOT RUN: the dedicated real PostgreSQL payment-reservation test was excluded by
-name, not counted as PASS or in the final 1717. Its source reads
-`PANEL_ESTIMATOR_TEST_DATABASE_URL` (handoff called it `PAYMENTS_TEST_DATABASE_URL`);
-both variables stayed absent. Eight pre-existing internalTestShop real-PG cases
-retain their own absent-socket skips. No existing/real DB was connected. Hermes
-must later supply disposable synthetic infrastructure and perform these gates.
-
-Failures retained honestly: checkpoint selected run was exit 1, 1718 tests,
-1641 pass/69 fail/8 skipped. Recovery's first affected run was 462 pass/2 fail
-(stale profit helper mock); its first selected run was 1705 pass/5 fail/8 skipped
-(four matching payment-helper mocks and the expected real-PG precondition).
-The initial negative name regex failed to omit that real-PG test; explicit skip
-pattern corrected it, verified by final output. Initial runs used the checkpoint's
-Node path, which resolves to v26.7.0; all required commands were rerun with the
-installed Node22 binary. Initial oversized reads were truncated and replaced with
-bounded reads; read-only baseline Git calls emitted a confstr temporary-directory
-warning and used /tmp. An alternate /usr/local/bin/node probe was absent; installed
-Node22 was used without installation or configuration changes. Red logs are retained.
-
-Remaining: phase9 provisioning; complete host/browser/DB QA; independent exact-SHA
-review and release gates. Frontend direct Firestore lead write/read/export remains
-an unresolved bypass; no global-intake notification capability was established.
-Do not enable TRUE designation or provision the requested account. These checks
-are not final feature completeness, QA PASS or review readiness. Safety-sensitive
-billing/tenant-policy/metrics scope, over two files; Hermes/Oracle owns follow-through.
-No Hermes/Kanban/delegation/messaging, provider calls, account changes, installation,
-configuration changes, outbound delivery, push, merge or deployment performed.
-
-## Dispatch Log — 2026-10-21 Internal test-shop foundation (t_6002e02f)
-
-10:25 EDT / 14:25 UTC. PARTIAL IMPLEMENTATION, no provisioning or release.
-Started clean on assigned `codex/t_6002e02f-revv-test-shop` at immutable base
-`35e49ddc01d6ef7605f602d85faa9591308915ff`. Consumer scope exceeds ten files;
-this ten-file slice adds default-false schema, public registration FALSE,
-transactional startup validation and an explicit database hold rejecting ALL true
-flags until exclusions are complete. Existing ordinary update allowlists are tested.
-No supported designation/provisioning path is enabled; the requested account stays HELD.
-
-Files: this log; `docs/INTERNAL-TEST-SHOP.md`; backend `src/app.js`,
-`src/db/{index.js,migrate.js,schema.pg.sql,internalTestShop.js}`,
-`src/routes/auth.js`, `src/__tests__/publicIntake.test.js`, `test/internalTestShop.test.js`.
-Consumer inventory, acceptance gaps and SAME-lane continuation are in the new doc.
-Focused synthetic/real disposable PostgreSQL TEXT+UUID/startup/id-type suite:
-49 passed, 0 failed/skipped, exit 0. Final native suite: 283/283 passed;
-ordinary SMS/provisioning/settings/payments/parts tests: 560/560 passed;
-parser suite: 3 files/7 tests passed; all exit 0. Pre-existing real-DB startup,
-consent and payment suites explicitly excluded, not claimed passed. Initial
-missing-dependency failures recovered through exact-lockfile public npm install
-with empty task-only configs, no credentials or version change. Two regression
-failures corrected: old registration SQL assertion, existing migration check order.
-Full failure history and exact commands are in the inventory/receipt document.
-Local PostgreSQL sandbox/locale/socket failures recovered with narrow test-only
-escalation and LC_ALL=C; no existing database was accessed. No review verdict claimed.
-
-Safety-sensitive schema/auth/billing-policy preparation; over two files. No agents,
-Hermes/kanban calls, external messages, account installation, customer mutation,
-provider/live sends, push/merge/deploy, canonical edits, protected task/job changes,
-credential access, or cron/provider/model/profile changes. Hermes/Oracle owns
-lifecycle, remaining gates and release; this candidate is not feature-complete.
-
 ## Dispatch Log — 2026-10-12 SMS test recipient PREP ONLY
 
 Task `t_e147d8b2`, run501 sole owner; 15:04 EDT / 19:04 UTC dispatch note.
@@ -4247,6 +3957,57 @@ Git worktree index.lock (Operation not permitted). Chained commit did not run;
 no staging or new SHA. HEAD remains `05153fb000b4fb8aa8feee222ad180622c0ec875`.
 No bypass attempted. Hermes must inspect/commit on top and run full exact-SHA gates;
 completion/block is reported here for t_3ead3bd0 without a prohibited board call.
+
+## Internal test-shop runtime and rollback
+
+- Startup/migration validates the policy column's Boolean type, NOT NULL, FALSE
+  default and compatible constraints. Used TRUE fixtures (onboarding, customers,
+  repair orders and related rows) must boot normally. Pristine state/no-related-row
+  verification belongs only to the server-only provisioning CLI.
+- `backend/src/db/internalTestShop.js` uses a catalog-only fast path: an already
+  correct policy schema causes no shop-row scan, table lock, advisory lock or DDL.
+  Only an absent column or the exact historical hold triggers schema transition.
+  Other existing app initializers still issue DDL/locks; this is not a claim that
+  the entire app boot is DDL-free.
+- Public backend lead/waitlist Discord alerts remain ON for ordinary prospects.
+  Optional bearer authentication uses the normal signature/revocation verifier;
+  suppression requires current persisted user membership in a TRUE shop. Never
+  classify using body/query flags, client shop IDs, email text or source labels.
+  Anonymous traffic has no trusted fixture identity and receives ordinary alerts.
+- Direct frontend Firestore `LeadCaptureForm` writes and `LeadsDashboard`
+  reads/exports remain an unresolved isolation gap. Fixtures must not use these
+  public flows. The requested account remains **HELD**.
+
+### Explicit down-migration runbook
+
+`require('./backend/src/db/internalTestShop').down(pool)` is the explicit down
+entry, consistent with the existing exported up/down convention. It is not called
+by startup and has no automatic CLI or ambient connection discovery. The operator
+must supply a deliberately selected database pool in an approved maintenance job.
+
+1. Coordinate rollback with Hermes/Oracle. Confirm the target database and a
+   verified restorable backup. Stop application writers and startup/migration
+   runners before schema removal; current policy consumers require this column.
+   Select compatible application code as part of the same maintenance plan.
+2. Inventory TRUE fixtures and all associated customer/RO/evidence rows. **If any
+   TRUE fixture exists, do not run down.** The implementation refuses under a
+   transaction/table lock, including a concurrent TRUE write, and preserves rows.
+   Do not clear flags, delete fixtures, or discard evidence to force rollback.
+   Retain the column and use a separately reviewed data-preserving plan instead.
+3. With no TRUE fixtures, invoke `down(pool)` through the explicitly configured
+   maintenance harness. It validates the schema, takes the lock required for DROP,
+   rechecks TRUE rows, then drops only `is_internal_test_shop` with RESTRICT.
+   Unknown schema, dependent views and other dependencies abort/roll back; never
+   change RESTRICT to CASCADE. No customer/user/RO/evidence rows are modified.
+4. Verify column removal, retained business/evidence row counts and compatible
+   application behavior before resuming service. A second down is a no-op. If
+   rollback fails, retain the schema and inspect the blocker; do not retry with
+   data deletion. Reapplying up restores a missing column with FALSE defaults,
+   but never reconstructs prior TRUE designations from email or other guesses.
+5. Rehearse only on disposable synthetic infrastructure. The real-PG tests in
+   `backend/test/internalTestShop.test.js` accept only a task-only UNIX socket,
+   never ambient DATABASE_URL. Synthetic tests may clear their own fixture flag
+   to exercise the no-TRUE branch; that is not a production rollback procedure.
 
 ## Runtime safeguards: payments, financial history and SMS
 

@@ -6,7 +6,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 const crypto = require('node:crypto');
 const { spawnSync } = require('node:child_process');
-const { up, INTERNAL_TEST_SHOP_SCHEMA_REQUIRED } = require('../src/db/internalTestShop');
+const { up, down, INTERNAL_TEST_SHOP_SCHEMA_REQUIRED } = require('../src/db/internalTestShop');
 const roles = require('../src/middleware/roles');
 const sourceRoot = path.resolve(__dirname, '../src');
 
@@ -133,13 +133,16 @@ test('retired public customer registration cannot designate or create anything',
   assert.deepEqual(h.writes, []); assert.deepEqual(h.events, []);
 });
 
-function migrationPool({ fail, rollbackFails = false, connectFails = false } = {}) {
+function migrationPool({ fail, rollbackFails = false, connectFails = false, present = false, hold = false } = {}) {
   const queries = [], releases = [];
   return { queries, releases, async connect() {
     if (connectFails) throw Error('synthetic-private-database-detail');
     return { async query(sql) {
       queries.push(sql);
       if (fail?.(sql) || (rollbackFails && sql === 'ROLLBACK')) throw Error('synthetic-private-database-detail');
+      if (sql.startsWith('SELECT\n    EXISTS')) return { rows: [{ present, hold }] };
+      if (sql.startsWith('ALTER TABLE shops ADD COLUMN')) present = true;
+      if (sql.startsWith('ALTER TABLE shops DROP CONSTRAINT')) hold = false;
       return { rows: [] };
     }, release: discard => releases.push(discard) };
   } };
@@ -219,9 +222,26 @@ test('app cannot listen or start jobs after a required designation migration fai
   assert.deepEqual(events, ['init', 'migration', 1]);
 });
 
-// Optional real PostgreSQL gate: dedicated task-only UNIX socket, no TCP or app DB.
-// Tests execute the exact SQL emitted by up(), in one psql session/transaction.
+// Dedicated disposable UNIX socket only; never read DATABASE_URL or .env.
 const socket = process.env.REVV_INTERNAL_TEST_PG_SOCKET;
+function pgPool(schema = 'public', queries = []) {
+  assert.match(socket || '', /^\/private\/tmp\/revv-t6002-[A-Za-z0-9_-]+\/socket$/);
+  assert.match(schema, /^[a-z0-9_]+$/);
+  const { Pool } = require('pg');
+  const pool = new Pool({ host: socket, port: 55462, database: 'revv_internal_test_shop_test',
+    user: 'revv_test', password: '', ssl: false, options: `-c search_path=${schema}`, max: 4 });
+  const connect = pool.connect.bind(pool);
+  pool.connect = async function (...args) {
+    // pg's internal pool.query uses the callback form.
+    if (args.length) return connect(...args);
+    const client = await connect();
+    const query = client.query.bind(client), release = client.release.bind(client);
+    client.query = (sql, ...rest) => { queries.push(sql); return query(sql, ...rest); };
+    client.release = (...rest) => { client.query = query; return release(...rest); };
+    return client;
+  };
+  return pool;
+}
 function psql(sql, expectedStatus = 0) {
   assert.match(socket || '', /^\/private\/tmp\/revv-t6002-[A-Za-z0-9_-]+\/socket$/);
   const result = spawnSync('/opt/homebrew/bin/psql', ['-X', '-qAt', '-v', 'ON_ERROR_STOP=1'], {
@@ -233,70 +253,182 @@ function psql(sql, expectedStatus = 0) {
   assert.equal(result.status, expectedStatus, result.stderr);
   return result.stdout.trim();
 }
+async function disposable(fn) {
+  const schema = `test_shop_${crypto.randomUUID().replaceAll('-', '')}`;
+  psql(`CREATE SCHEMA ${schema}`);
+  const queries = [], pool = pgPool(schema, queries);
+  try { await fn(pool, schema, queries); }
+  finally { await pool.end(); psql(`DROP SCHEMA ${schema} CASCADE`); }
+}
 
 for (const [label, definition, value] of [
   ['wrong true default', 'BOOLEAN NOT NULL DEFAULT TRUE', 'TRUE'],
   ['existing null', 'BOOLEAN', 'NULL'],
   ['wrong type', 'TEXT', "'false'"],
-  ['weakened constraint', 'BOOLEAN CONSTRAINT shops_internal_test_shop_hold CHECK (TRUE)', 'FALSE'],
-]) {
-  test(`real PostgreSQL refuses ${label} without rewriting existing policy`, { skip: !socket }, async () => {
-    const pool = migrationPool(); await up(pool);
-    const schema = `test_shop_${crypto.randomUUID().replaceAll('-', '')}`;
-    try {
-      psql(`CREATE SCHEMA ${schema}; SET search_path=${schema};
-        CREATE TABLE shops (id TEXT PRIMARY KEY, is_internal_test_shop ${definition});
-        INSERT INTO shops VALUES ('synthetic',${value});`);
-      const snapshot = `SET search_path=${schema};
-        SELECT row_to_json(s)::text || ':' || xmin::text FROM shops s;
-        SELECT attnotnull::text || ':' || atttypid::regtype::text FROM pg_attribute
-          WHERE attrelid='shops'::regclass AND attname='is_internal_test_shop';`;
-      const before = psql(snapshot);
-      psql(`SET search_path=${schema}; ${pool.queries.join(';\n')};`, 3);
-      assert.equal(psql(snapshot), before, 'failed transaction preserves rows, types and nullability');
-    } finally { psql(`DROP SCHEMA IF EXISTS ${schema} CASCADE;`); }
+  ['weakened constraint', 'BOOLEAN NOT NULL DEFAULT FALSE CONSTRAINT shops_internal_test_shop_hold CHECK (TRUE)', 'FALSE'],
+  ['unknown constraint', 'BOOLEAN NOT NULL DEFAULT FALSE CHECK (is_internal_test_shop IS FALSE)', 'FALSE'],
+]) test(`real PostgreSQL refuses ${label} without rewriting existing policy`, { skip: !socket }, async () => {
+  await disposable(async pool => {
+    await pool.query(`CREATE TABLE shops (id TEXT PRIMARY KEY, is_internal_test_shop ${definition});
+      INSERT INTO shops VALUES ('synthetic',${value});`);
+    const snapshot = async () => (await pool.query(`SELECT row_to_json(s)::text || ':' || xmin::text AS state FROM shops s`)).rows;
+    const before = await snapshot();
+    await assert.rejects(up(pool), { code: INTERNAL_TEST_SHOP_SCHEMA_REQUIRED });
+    await assert.rejects(down(pool), { code: INTERNAL_TEST_SHOP_SCHEMA_REQUIRED });
+    assert.deepEqual(await snapshot(), before);
   });
-}
+});
 
 for (const file of ['db/index.js', 'db/schema.pg.sql']) {
-  test(`real PostgreSQL fresh shops declaration in ${file} defaults false before migrations`, { skip: !socket }, () => {
-    const sql = fs.readFileSync(path.join(sourceRoot, file), 'utf8')
-      .match(/CREATE TABLE IF NOT EXISTS shops \([\s\S]*?\n\s*\);/)[0];
-    const schema = `test_shop_${crypto.randomUUID().replaceAll('-', '')}`;
-    const id = crypto.randomUUID();
-    try {
-      psql(`CREATE SCHEMA ${schema}; SET search_path=${schema};
-        CREATE FUNCTION public_intake_new_slug() RETURNS TEXT LANGUAGE sql AS $$ SELECT 'synthetic-slug'::text $$;
-        ${sql}
-        INSERT INTO shops(id,name) VALUES ('${id}','synthetic');`);
-      assert.equal(psql(`SET search_path=${schema}; SELECT is_internal_test_shop FROM shops;`), 'f');
-      psql(`SET search_path=${schema}; UPDATE shops SET is_internal_test_shop=TRUE WHERE id='${id}';`);
-      assert.equal(psql(`SET search_path=${schema}; SELECT is_internal_test_shop FROM shops;`), 't');
-    } finally { psql(`DROP SCHEMA IF EXISTS ${schema} CASCADE;`); }
+  test(`real PostgreSQL fresh shops declaration in ${file} defaults false before migrations`, { skip: !socket }, async () => {
+    await disposable(async pool => {
+      const sql = fs.readFileSync(path.join(sourceRoot, file), 'utf8')
+        .match(/CREATE TABLE IF NOT EXISTS shops \([\s\S]*?\n\s*\);/)[0];
+      await pool.query(`CREATE FUNCTION public_intake_new_slug() RETURNS TEXT LANGUAGE sql AS $$ SELECT 'synthetic-slug'::text $$;
+        ${sql}`);
+      const result = await pool.query("INSERT INTO shops(id,name) VALUES ($1,'synthetic') RETURNING is_internal_test_shop", [crypto.randomUUID()]);
+      assert.equal(result.rows[0].is_internal_test_shop, false);
+    });
   });
 }
 for (const type of ['TEXT', 'UUID']) {
-  test(`real PostgreSQL ${type}: defaults, repeat migration, row preservation, NULL rejection`, { skip: !socket }, async () => {
-    const pool = migrationPool(); await up(pool);
-    const schema = `test_shop_${crypto.randomUUID().replaceAll('-', '')}`;
-    const id = type === 'TEXT' ? 'synthetic-existing' : crypto.randomUUID();
-    const fresh = type === 'TEXT' ? 'synthetic-new' : crypto.randomUUID();
-    try {
-      psql(`CREATE SCHEMA ${schema}; SET search_path = ${schema};
-        CREATE TABLE shops (id ${type} PRIMARY KEY, name TEXT NOT NULL);
-        INSERT INTO shops VALUES ('${id}', 'preserve-me');`);
-      const before = psql(`SET search_path=${schema}; SELECT xmin::text || ':' || name FROM shops;`);
-      for (let i = 0; i < 2; i++) psql(`SET search_path=${schema}; ${pool.queries.join(';\n')};`);
-      assert.equal(psql(`SET search_path=${schema}; SELECT xmin::text || ':' || name FROM shops;`), before);
-      assert.equal(psql(`SET search_path=${schema}; INSERT INTO shops(id,name) VALUES ('${fresh}','new') RETURNING is_internal_test_shop;`), 'f');
-      assert.equal(psql(`SET search_path=${schema}; SELECT bool_and(is_internal_test_shop IS FALSE) FROM shops;`), 't');
-      psql(`SET search_path=${schema}; DO $gate$ BEGIN
-        BEGIN
-          UPDATE shops SET is_internal_test_shop=NULL WHERE id='${id}';
-          RAISE EXCEPTION 'null accepted';
-        EXCEPTION WHEN not_null_violation THEN NULL; END;
-      END $gate$;`);
-      assert.equal(psql(`SET search_path=${schema}; SELECT count(*) FROM shops;`), '2');
-    } finally { psql(`DROP SCHEMA IF EXISTS ${schema} CASCADE;`); }
+  test(`real PostgreSQL ${type}: transition, used fixture, catalog-only repeat boot and safe rollback`, { skip: !socket }, async () => {
+    await disposable(async (pool, schema, queries) => {
+      const id = crypto.randomUUID(), ordinary = crypto.randomUUID();
+      await pool.query(`CREATE TABLE shops (id ${type} PRIMARY KEY, name TEXT, onboarded BOOLEAN DEFAULT FALSE);
+        CREATE TABLE customers (id TEXT PRIMARY KEY, shop_id ${type} REFERENCES shops);
+        CREATE TABLE repair_orders (id TEXT PRIMARY KEY, shop_id ${type} REFERENCES shops, customer_id TEXT REFERENCES customers);`);
+      await pool.query("INSERT INTO shops(id,name) VALUES ($1,'fixture'),($2,'ordinary')", [id, ordinary]);
+      await up(pool);
+      await pool.query('UPDATE shops SET is_internal_test_shop=TRUE,onboarded=TRUE WHERE id=$1', [id]);
+      await pool.query("INSERT INTO customers VALUES ('synthetic-customer',$1);", [id]);
+      await pool.query("INSERT INTO repair_orders VALUES ('synthetic-ro',$1,'synthetic-customer')", [id]);
+      const snapshot = async () => (await pool.query(`SELECT row_to_json(s) AS row, xmin::text FROM shops s ORDER BY name`)).rows;
+      const before = await snapshot();
+      // A concurrent reader must not block an already-correct boot.
+      const reader = await pool.connect();
+      try {
+        await reader.query('BEGIN'); await reader.query('SELECT * FROM shops');
+        queries.length = 0;
+        await pool.query("SET statement_timeout='1500ms'");
+        for (let i = 0; i < 3; i++) await up(pool);
+        assert.equal(queries.some(sql => /ALTER TABLE|LOCK TABLE|pg_advisory/.test(sql)), false);
+        assert.equal(queries.some(sql => /FROM shops|FROM users/.test(sql)), false);
+      } finally { await reader.query('ROLLBACK'); reader.release(); }
+      assert.deepEqual(await snapshot(), before);
+      await assert.rejects(down(pool), { code: INTERNAL_TEST_SHOP_SCHEMA_REQUIRED });
+      assert.deepEqual(await snapshot(), before);
+      assert.equal((await pool.query('SELECT count(*)::int AS n FROM repair_orders')).rows[0].n, 1);
+      await assert.rejects(pool.query('UPDATE shops SET is_internal_test_shop=NULL WHERE id=$1', [ordinary]), { code: '23502' });
+      // Disposable fixture ONLY: clearing its flag models a separately approved
+      // rollback data plan. Production down never does this for the operator.
+      await pool.query('UPDATE shops SET is_internal_test_shop=FALSE WHERE id=$1', [id]);
+      const safeBefore = await snapshot();
+      await down(pool); await down(pool); await up(pool);
+      assert.deepEqual(await snapshot(), safeBefore);
+      assert.equal((await pool.query('SELECT count(*)::int AS n FROM repair_orders')).rows[0].n, 1);
+    });
   });
 }
+
+test('real PostgreSQL exact historical hold transition and dependency-safe rollback', { skip: !socket }, async () => {
+  await disposable(async pool => {
+    await pool.query(`CREATE TABLE shops(id TEXT PRIMARY KEY, is_internal_test_shop BOOLEAN NOT NULL DEFAULT FALSE
+      CONSTRAINT shops_internal_test_shop_hold CHECK(is_internal_test_shop IS FALSE));
+      INSERT INTO shops(id) VALUES ('ordinary');`);
+    await up(pool);
+    await pool.query('CREATE VIEW synthetic_policy_evidence AS SELECT is_internal_test_shop FROM shops');
+    await assert.rejects(down(pool), { code: INTERNAL_TEST_SHOP_SCHEMA_REQUIRED });
+    assert.equal((await pool.query('SELECT * FROM synthetic_policy_evidence')).rows[0].is_internal_test_shop, false);
+  });
+});
+
+// Run the actual initDb and migration runner SQL, with ONLY transports/jobs and
+// configuration replaced. The failing internalTestShop path is never mocked.
+test('real PostgreSQL used flagged shop survives actual initDb, migrate and app boot', { skip: !socket }, async () => {
+  await disposable(async pool => {
+    const real = file => require(path.join(sourceRoot, file));
+    const common = {
+      './internalTestShop': real('db/internalTestShop'), './customerConsent': real('db/customerConsent'),
+      './paymentReservations': real('db/paymentReservations'), './estimateAiPolicy': real('db/estimateAiPolicy'),
+      './shopTwilioNumber': real('db/shopTwilioNumber'), './panelEstimator': real('db/panelEstimator'),
+    };
+    const db = load('db/index.js', { ...common, dotenv: { config() {} }, pg: { Pool: function () { return pool; } },
+      '../services/publicShop': { newPublicIntakeSlug: () => crypto.randomBytes(13).toString('hex') },
+      '../services/stockCapture': real('services/stockCapture'), '../services/partsDelivery': real('services/partsDelivery'),
+    });
+    const runner = load('db/migrate.js', { ...common, fs, path, './index': db,
+      './postgres': { pool, query: pool.query.bind(pool) },
+    }, { DATABASE_URL: 'synthetic-isolated-adapter' });
+    await db.initDb(); await runner.runMigrations();
+    const fixture = crypto.randomUUID(), ordinary = crypto.randomUUID(), customer = crypto.randomUUID(), ro = crypto.randomUUID();
+    await pool.query("INSERT INTO shops(id,name,is_internal_test_shop,onboarded) VALUES ($1,'used synthetic',TRUE,TRUE),($2,'ordinary',FALSE,TRUE)", [fixture, ordinary]);
+    await pool.query("INSERT INTO customers(id,shop_id,name) VALUES ($1,$2,'synthetic customer')", [customer, fixture]);
+    await pool.query("INSERT INTO repair_orders(id,shop_id,customer_id,ro_number) VALUES ($1,$2,$3,'SYN-USED')", [ro, fixture, customer]);
+    const snapshot = async () => (await pool.query(`SELECT s.id,s.is_internal_test_shop,s.onboarded,c.id AS customer_id,r.id AS ro_id
+      FROM shops s LEFT JOIN customers c ON c.shop_id=s.id LEFT JOIN repair_orders r ON r.customer_id=c.id ORDER BY s.id`)).rows;
+    const before = await snapshot();
+    await db.initDb(); await runner.runMigrations();
+    assert.deepEqual(await snapshot(), before);
+    const events = [], noop = () => {};
+    let finish, fail;
+    const boot = new Promise((resolve, reject) => { finish = resolve; fail = reject; });
+    const app = { set: noop, use: noop, get: noop, listen: () => { events.push('listen'); finish(); } };
+    const deps = {
+      dotenv: { config: noop }, express: Object.assign(() => app, { raw: noop, json: noop, static: noop }),
+      cors: noop, path, helmet: noop, 'express-rate-limit': noop,
+      './lib/sentry': { init: noop, requestHandler: noop, errorHandler: noop },
+      './services/mediaStorage': {}, './services/panelEstimatorApproval': {},
+      './services/smsProvisioningEvents': { router: noop }, './db': db, './db/migrate': runner,
+    };
+    vm.runInNewContext(fs.readFileSync(path.join(sourceRoot, 'app.js'), 'utf8'), {
+      __dirname: sourceRoot, console: { log: noop, error: noop },
+      process: { env: { JWT_SECRET: 'synthetic-only', DATABASE_URL: 'synthetic-isolated-adapter' }, exit: code => fail(Error(`boot exit ${code}`)) },
+      require: name => {
+        if (Object.hasOwn(deps, name)) return deps[name];
+        if (name.startsWith('./routes/') || name.startsWith('./jobs/')) return {};
+        throw Error(`Forbidden startup dependency: ${name}`);
+      },
+    });
+    await boot;
+    assert.deepEqual(events, ['listen']);
+    assert.deepEqual(await snapshot(), before);
+    assert.deepEqual((await db.dbAll('SELECT id::text FROM shops WHERE is_internal_test_shop IS FALSE')).map(r => r.id), [ordinary]);
+    assert.equal((await pool.query("INSERT INTO shops(id,name) VALUES ($1,'new ordinary') RETURNING is_internal_test_shop", [crypto.randomUUID()])).rows[0].is_internal_test_shop, false);
+    const { resolveShopPolicy } = real('services/shopPolicy');
+    assert.equal((await resolveShopPolicy(ordinary, db.dbAll)).allowExternalEffects, true);
+    assert.equal((await resolveShopPolicy(fixture, db.dbAll)).reason, 'INTERNAL_TEST_SHOP');
+    await pool.query('ALTER TABLE shops ALTER COLUMN is_internal_test_shop SET DEFAULT TRUE');
+    await assert.rejects(db.initDb(), { code: INTERNAL_TEST_SHOP_SCHEMA_REQUIRED });
+    await assert.rejects(runner.runMigrations(), { code: INTERNAL_TEST_SHOP_SCHEMA_REQUIRED });
+  });
+});
+
+test('real PostgreSQL concurrent installers issue one transition and down refuses a racing TRUE write', { skip: !socket, timeout: 15000 }, async () => {
+  await disposable(async (pool, schema, queries) => {
+    await pool.query("CREATE TABLE shops(id TEXT PRIMARY KEY); INSERT INTO shops VALUES ('synthetic')");
+    await Promise.all(Array.from({length: 4}, () => up(pool)));
+    assert.equal(queries.filter(sql => sql.startsWith('ALTER TABLE shops ADD COLUMN')).length, 1);
+    const writer = await pool.connect();
+    let outcome;
+    try {
+      await writer.query('BEGIN');
+      await writer.query("UPDATE shops SET is_internal_test_shop=TRUE WHERE id='synthetic'");
+      outcome = down(pool).then(() => null, error => error);
+      let blocked = false;
+      for (let attempt = 0; attempt < 100; attempt++) {
+        const result = await pool.query(`SELECT EXISTS(SELECT 1 FROM pg_locks
+          WHERE relation='shops'::regclass AND mode='AccessExclusiveLock' AND NOT granted) AS blocked`);
+        if (result.rows[0].blocked) { blocked = true; break; }
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
+      assert.equal(blocked, true, 'down waits for concurrent policy writer');
+      await writer.query('COMMIT');
+      assert.equal((await outcome)?.code, INTERNAL_TEST_SHOP_SCHEMA_REQUIRED);
+      assert.equal((await pool.query('SELECT is_internal_test_shop FROM shops')).rows[0].is_internal_test_shop, true);
+    } finally {
+      await writer.query('ROLLBACK'); writer.release();
+      if (outcome) await outcome;
+    }
+  });
+});

@@ -16,9 +16,6 @@ function policySql(allowHold) {
       AND a.attnotnull AND a.attgenerated='' AND a.attidentity=''
       AND pg_get_expr(d.adbin, d.adrelid)='false';
     IF policy_attnum IS NULL THEN RAISE EXCEPTION 'Invalid policy schema'; END IF;
-    IF EXISTS (SELECT 1 FROM shops WHERE is_internal_test_shop IS NULL) THEN
-      RAISE EXCEPTION 'Invalid policy state';
-    END IF;
     IF EXISTS (
       SELECT 1 FROM pg_constraint WHERE conrelid='shops'::regclass
         AND (policy_attnum=ANY(conkey) OR conname='shops_internal_test_shop_hold')
@@ -51,22 +48,24 @@ async function validateSchema(client) {
   END;
   $identity$;`);
 }
-async function up(pool) {
+// Catalog-only inspection: no shop rows, table lock or DDL on the steady path.
+async function transitionState(client) {
+  const { rows: [state] } = await client.query(`SELECT
+    EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid='shops'::regclass
+      AND attname='is_internal_test_shop' AND NOT attisdropped) AS present,
+    EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='shops'::regclass
+      AND conname='shops_internal_test_shop_hold') AS hold`);
+  if (!state || typeof state.present !== 'boolean' || typeof state.hold !== 'boolean') throw schemaFailure();
+  return state;
+}
+async function transaction(pool, action) {
   let client;
   let discard = false;
   try {
     client = await pool.connect();
     await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
     await client.query('SET LOCAL row_security = off');
-    await client.query("SELECT pg_advisory_xact_lock(hashtext('revv.internal-test-shop.v1'))");
-    await client.query('LOCK TABLE shops IN ACCESS EXCLUSIVE MODE');
-    await client.query('ALTER TABLE shops ADD COLUMN IF NOT EXISTS is_internal_test_shop BOOLEAN NOT NULL DEFAULT FALSE');
-    await client.query(policySql(true));
-    // Only the exact validated historical CHECK (is_internal_test_shop IS FALSE)
-    // can reach this DROP. Unknown/weakened/inherited shapes abort unchanged.
-    await client.query('ALTER TABLE shops DROP CONSTRAINT IF EXISTS shops_internal_test_shop_hold');
-    await client.query(policySql(false));
-    await require('../services/internalTestShopProvisioning').verifyExistingFixtures(client, validateSchema);
+    await action(client);
     await client.query('COMMIT');
   } catch {
     if (client) {
@@ -77,4 +76,44 @@ async function up(pool) {
     if (client) { try { client.release(discard); } catch { throw schemaFailure(); } }
   }
 }
-module.exports = { up, validateSchema, INTERNAL_TEST_SHOP_SCHEMA_REQUIRED };
+async function up(pool) {
+  return transaction(pool, async client => {
+    let state = await transitionState(client);
+    if (!state.present || state.hold) {
+      await client.query("SELECT pg_advisory_xact_lock(hashtext('revv.internal-test-shop.v1'))");
+      // Another initializer may have completed the transition while we waited.
+      state = await transitionState(client);
+      if (!state.present) {
+        // ADD COLUMN requires ACCESS EXCLUSIVE; let PostgreSQL acquire it only
+        // for this actual transition, rather than locking every startup.
+        await client.query('ALTER TABLE shops ADD COLUMN is_internal_test_shop BOOLEAN NOT NULL DEFAULT FALSE');
+      }
+      await client.query(policySql(true));
+      if (state.hold) {
+        // Only the exact validated historical CHECK can reach this DROP.
+        await client.query('ALTER TABLE shops DROP CONSTRAINT shops_internal_test_shop_hold');
+      }
+    }
+    await client.query(policySql(false));
+    // Fixture contents belong exclusively to the server-only provisioning CLI.
+  });
+}
+
+// Explicit operator rollback, never called by startup. No CASCADE or row edits.
+// TRUE fixtures must first be dealt with under a separately reviewed data plan.
+async function down(pool) {
+  return transaction(pool, async client => {
+    if (!(await transitionState(client)).present) return;
+    await client.query(policySql(true));
+    await client.query("SELECT pg_advisory_xact_lock(hashtext('revv.internal-test-shop.v1'))");
+    if (!(await transitionState(client)).present) return;
+    // DROP COLUMN requires this lock; it also closes the concurrent TRUE-write
+    // race between the refusal check and schema removal.
+    await client.query('LOCK TABLE shops IN ACCESS EXCLUSIVE MODE');
+    await client.query(policySql(true));
+    const { rows } = await client.query('SELECT 1 FROM shops WHERE is_internal_test_shop IS TRUE LIMIT 1');
+    if (rows.length) throw schemaFailure();
+    await client.query('ALTER TABLE shops DROP COLUMN is_internal_test_shop RESTRICT');
+  });
+}
+module.exports = { up, down, validateSchema, INTERNAL_TEST_SHOP_SCHEMA_REQUIRED };

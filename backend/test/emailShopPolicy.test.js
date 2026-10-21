@@ -351,19 +351,19 @@ test('ordinary Discord and ops preserve payload, sanitization and cooldown', asy
   assert.equal(h.state.fetches.length, 2);
   assert.equal(JSON.parse(h.state.fetches[1].options.body).content, `[OPS:high] SYNTHETIC :: ${JSON.stringify({ shop_id: shopId, ro_id: 'ro' })}`);
 });
-test('public lead and waitlist cannot authorize fixture notifications using body flags or email spelling', async () => {
+test('public prospects retain alerts; body identity cannot suppress or classify test traffic', async () => {
   const h = harness();
   for (const file of ['routes/leads.js', 'routes/waitlist.js']) {
     const router = h.router(file, { '../db/postgres': { pool: null } });
     const result = await router.call('/', { name: 'Synthetic', email: 'fixture+test@example.invalid', shopId,
-      shop_id: shopId, is_internal_test_shop: false, operational: true });
+      shop_id: shopId, is_internal_test_shop: false, operational: true }, null);
     assert.equal(result.statusCode, 200);
   }
-  zero(h);
+  assert.equal(h.state.fetches.length, 2, 'ordinary anonymous prospects retain Discord alerts');
   assert.equal(h.state.queries.length, 0, 'body tenancy never reaches the policy resolver');
   const hold = fs.readFileSync(path.join(root, 'db/internalTestShop.js'), 'utf8');
-  assert.match(hold, /DROP CONSTRAINT IF EXISTS shops_internal_test_shop_hold/);
-  assert.match(hold, /verifyExistingFixtures/);
+  assert.match(hold, /DROP CONSTRAINT shops_internal_test_shop_hold/);
+  assert.doesNotMatch(hold, /verifyExistingFixtures/);
   const form = fs.readFileSync(path.join(root, '../../frontend/src/components/LeadCaptureForm.jsx'), 'utf8');
   assert.match(form, /addDoc/); // Explicit unresolved bypass: these public flows remain unsupported for fixtures.
 });
