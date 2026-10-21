@@ -4,7 +4,7 @@ const { pool, dbGet, dbAll, dbRun } = require('../db');
 const auth = require('../middleware/auth');
 const { selectedEconomics, redactSelectedRO, redactROs, redactRO, summarizeEconomics, aggregateMetadata } = require('../services/panelEstimatorEconomics');
 const { ROLE_RANK, getRoleRank, requireAdmin, requireTechnician } = require('../middleware/roles');
-const { calculateProfit, calculateTrueProfit } = require('../services/profit');
+const { calculatePersistedProfit, calculatePersistedTrueProfit } = require('../services/profit');
 const { isPaidStatus, roundToIntCents, dollarsToCents } = require('../services/roMoney');
 const { withLockedRo, getPaymentBalance, reconcileLocked, PaymentError } = require('../services/paymentReservations');
 const { sendSMS, isConfiguredForShop } = require('../services/sms');
@@ -25,6 +25,10 @@ const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
 const { insuranceOcrLimiter } = require('./insuranceOcr');
+
+const assertOrdinaryShop = shopId => require('../services/shopPolicy').assertExternalEffectsAllowed(shopId);
+const excludedPolicy = (res, error) => res.status(error.reason === 'INTERNAL_TEST_SHOP' ? 409 : 503)
+  .json({ error: error.reason, excluded: true });
 
 const STATUSES = ['intake','estimate','approval','parts','repair','paint','qc','delivery','closed','total_loss','siu_hold'];
 const NORMAL_WORKFLOW_STATUSES = ['intake','estimate','approval','parts','repair','paint','qc','delivery','closed'];
@@ -555,7 +559,7 @@ async function syncImportedRoFinancials(roId, shopId, queryOne = dbGet, queryRun
   );
   if (!current) return null;
   const summary = await getEstimateSummaryForRo(roId, shopId, queryOne);
-  const profit = calculateProfit({ ...current, ...summary });
+  const profit = await calculatePersistedProfit({ ...current, ...summary, id: roId, shop_id: shopId });
   await queryRun(
     `UPDATE repair_orders
      SET parts_cost = $1,
@@ -870,7 +874,7 @@ async function enrichRO(ro) {
     [ro.id]
   );
   const selected = await selectedEconomics(ro.shop_id, [ro.id]);
-  const profit = selected.has(String(ro.id)) ? null : calculateProfit(ro);
+  const profit = selected.has(String(ro.id)) ? null : await calculatePersistedProfit(ro);
   const assigned_tech = enriched?.assigned_tech || null;
   const vehicle = enriched?.vehicle || null;
   const customer = enriched?.customer
@@ -886,6 +890,7 @@ async function enrichRO(ro) {
 
 router.get('/', auth, async (req, res) => {
   try {
+    await assertOrdinaryShop(req.user.shop_id);
     const {
       search = '',
       status = '',
@@ -987,14 +992,18 @@ router.get('/', auth, async (req, res) => {
       WHERE ${where.join('\n        AND ')}
       ORDER BY ro.created_at DESC
     `, params);
-    res.json({ ros: await redactROs(ros, req.user.shop_id) });
+    const payload = { ros: await redactROs(ros, req.user.shop_id) };
+    await assertOrdinaryShop(req.user.shop_id);
+    res.json(payload);
   } catch (err) {
+    if (require('../services/shopPolicy').isShopPolicyError(err)) return excludedPolicy(res, err);
     res.status(500).json({ error: err.message });
   }
 });
 
 router.get('/carryover-pending', auth, requireAdmin, async (req, res) => {
   try {
+    await assertOrdinaryShop(req.user.shop_id);
     const ros = await dbAll(
       `
         SELECT
@@ -1016,8 +1025,10 @@ router.get('/carryover-pending', auth, requireAdmin, async (req, res) => {
       `,
       [req.user.shop_id]
     );
+    await assertOrdinaryShop(req.user.shop_id);
     return res.json({ ros });
   } catch (err) {
+    if (require('../services/shopPolicy').isShopPolicyError(err)) return excludedPolicy(res, err);
     return res.status(500).json({ error: err.message });
   }
 });
@@ -1165,6 +1176,7 @@ router.put('/:id/revenue-period', auth, requireAdmin, async (req, res) => {
 
 router.get('/job-cost/summary', auth, requireAdmin, async (req, res) => {
   try {
+    await assertOrdinaryShop(req.user.shop_id);
     const { from, to } = req.query;
     let dateFilter = '';
     const params = [req.user.shop_id];
@@ -1191,6 +1203,7 @@ router.get('/job-cost/summary', auth, requireAdmin, async (req, res) => {
     const grossProfit = economics.profit_cents === null ? null : economics.profit_cents / 100;
     const avgMargin = grossProfit === null ? null : revenueCents > 0
       ? Math.round(economics.profit_cents * 10000 / revenueCents) / 100 : 0;
+    await assertOrdinaryShop(req.user.shop_id);
     res.json({ totalJobs, totalRevenue: revenueCents / 100,
       totalCost: economics.cost_cents === null ? null : economics.cost_cents / 100,
       grossProfit, avgMargin, profitableCount: economics.profitable_count,
@@ -1201,6 +1214,7 @@ router.get('/job-cost/summary', auth, requireAdmin, async (req, res) => {
           ? { ...redacted, panel_economics: panelEconomics } : redacted;
       }) });
   } catch (err) {
+    if (require('../services/shopPolicy').isShopPolicyError(err)) return excludedPolicy(res, err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -1208,6 +1222,7 @@ router.get('/job-cost/summary', auth, requireAdmin, async (req, res) => {
 // GET /api/ros/turnaround-estimate?job_type=collision&shop_id=...
 router.get('/turnaround-estimate', auth, async (req, res) => {
   try {
+    await assertOrdinaryShop(req.user.shop_id);
     const { job_type } = req.query;
     const shopId = req.user.shop_id;
 
@@ -1276,6 +1291,7 @@ router.get('/turnaround-estimate', auth, async (req, res) => {
     const fmt = (d) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     const isoDate = (d) => d.toISOString().split('T')[0];
 
+    await assertOrdinaryShop(req.user.shop_id);
     res.json({
       minDays,
       maxDays,
@@ -1288,6 +1304,7 @@ router.get('/turnaround-estimate', auth, async (req, res) => {
       activeROs: activeCount,
     });
   } catch (err) {
+    if (require('../services/shopPolicy').isShopPolicyError(err)) return excludedPolicy(res, err);
     console.error('[Turnaround]', err.message);
     res.status(500).json({ error: err.message });
   }
@@ -1349,6 +1366,7 @@ router.get('/:id/supplement-audit', auth, async (req, res) => {
 
 router.get('/:id', auth, async (req, res) => {
   try {
+    await assertOrdinaryShop(req.user.shop_id);
     const ro = await dbGet('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
     if (!ro) return res.status(404).json({ error: 'Not found' });
     const payload = await enrichRO(ro);
@@ -1379,24 +1397,27 @@ router.get('/:id', auth, async (req, res) => {
         if (laborHoursRow?.labor_hours != null) {
           opts.laborHours = Number(laborHoursRow.labor_hours);
         }
-        const profitBreakdown = calculateTrueProfit(ro, costProfile, opts);
+        const profitBreakdown = await calculatePersistedTrueProfit(ro, costProfile, opts);
         payload.profit_breakdown = profitBreakdown.costProfileApplied === false
           ? { ...profitBreakdown, costProfileApplied: false }
           : profitBreakdown;
       } catch (profitError) {
+        if (require('../services/shopPolicy').isShopPolicyError(profitError)) throw profitError;
         console.error('[RO Profit Breakdown] failed:', profitError);
       }
     }
 
+    await assertOrdinaryShop(req.user.shop_id);
     res.json(payload);
   } catch (err) {
+    if (require('../services/shopPolicy').isShopPolicyError(err)) return excludedPolicy(res, err);
     res.status(500).json({ error: err.message });
   }
 });
 
 router.get('/:id/invoice', auth, async (req, res) => {
   try {
-    await require('../services/shopPolicy').assertExternalEffectsAllowed(req.user.shop_id);
+    await assertOrdinaryShop(req.user.shop_id);
     const ro = await dbGet('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
     if (!ro) return res.status(404).json({ error: 'Not found' });
     const shop = await dbGet('SELECT * FROM shops WHERE id = $1', [ro.shop_id]);
@@ -1415,17 +1436,18 @@ router.get('/:id/invoice', auth, async (req, res) => {
       invoice_total_with_delivery: invoiceTotalWithDelivery,
     });
   } catch (err) {
+    if (require('../services/shopPolicy').isShopPolicyError(err)) return excludedPolicy(res, err);
     res.status(500).json({ error: err.message });
   }
 });
 
 router.post('/:id/email-invoice', auth, requireTechnician, async (req, res) => {
   try {
-    await require('../services/shopPolicy').assertExternalEffectsAllowed(req.user.shop_id);
+    await assertOrdinaryShop(req.user.shop_id);
     const ro = await dbGet('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
     if (!ro) return res.status(404).json({ error: 'Not found' });
 
-    const customer = await dbGet('SELECT name, email FROM customers WHERE id = $1', [ro.customer_id]);
+    const customer = await dbGet('SELECT name, email FROM customers WHERE id = $1 AND shop_id = $2', [ro.customer_id, ro.shop_id]);
     if (!customer?.email) return res.status(400).json({ error: 'Customer email not found' });
 
     const shop = await dbGet('SELECT name, phone FROM shops WHERE id = $1', [ro.shop_id]);
@@ -1445,8 +1467,10 @@ router.post('/:id/email-invoice', auth, requireTechnician, async (req, res) => {
       console.log('[InvoiceEmail] Email skipped: mail not configured', { roId: ro.id, customer: customer.email });
       return res.json({ ok: true, skipped: true, reason: 'email_not_configured' });
     }
+    await assertOrdinaryShop(ro.shop_id);
     return res.json({ ok: true });
   } catch (err) {
+    if (require('../services/shopPolicy').isShopPolicyError(err)) return excludedPolicy(res, err);
     return res.status(500).json({ error: err.message });
   }
 });
@@ -2324,7 +2348,7 @@ router.put('/:id', auth, requireTechnician, async (req, res) => {
         // Selected economics are immutable; generic edits cannot restore manual profit.
         delete updates.true_profit;
       } else if (!Object.prototype.hasOwnProperty.call(body, 'true_profit')) {
-        const profit = calculateProfit({ ...ro, ...updates });
+        const profit = await calculatePersistedProfit({ ...ro, ...updates, id: ro.id, shop_id: req.user.shop_id });
         updates.true_profit = profit.trueProfit;
       }
       updates.updated_at = new Date().toISOString();

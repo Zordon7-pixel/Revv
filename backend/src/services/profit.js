@@ -76,6 +76,32 @@ function calculateTrueProfit(ro, costProfile, opts = {}) {
   };
 }
 
+// The synchronous calculators above are pure arithmetic, not authorization.
+// Route/service boundaries use the guarded variants below with server-owned
+// persisted RO snapshots. Pending monetary edits cannot override DB identity.
+async function persistedProfit(ro, calculate) {
+  const { assertExternalEffectsAllowed } = require('./shopPolicy');
+  const unavailable = () => Object.assign(new Error('SHOP_POLICY_UNAVAILABLE'), { reason: 'SHOP_POLICY_UNAVAILABLE', excluded: true });
+  await assertExternalEffectsAllowed(ro?.shop_id);
+  if (typeof ro?.id !== 'string' || !ro.id.trim()) throw unavailable();
+  let rows;
+  try { rows = await require('../db').dbAll(
+    'SELECT id::text AS id, shop_id::text AS shop_id FROM repair_orders WHERE id::text = $1 AND shop_id::text = $2',
+    [ro.id, ro.shop_id]);
+  } catch (_) { throw unavailable(); }
+  if (!Array.isArray(rows) || rows.length !== 1 || rows[0]?.id !== ro.id || rows[0]?.shop_id !== ro.shop_id) throw unavailable();
+  const result = calculate();
+  await assertExternalEffectsAllowed(rows[0].shop_id);
+  return result;
+}
+async function calculatePersistedProfit(ro) {
+  return persistedProfit(ro, () => calculateProfit(ro));
+}
+async function calculatePersistedTrueProfit(ro, costProfile, opts = {}) {
+  return persistedProfit(ro, () => calculateTrueProfit(ro, costProfile, opts));
+}
+
 // Versioned explicit-cost path; legacy functions and serialized shapes stay unchanged.
 const { calculateEstimate } = require('./panelEstimator');
-module.exports = { calculateProfit, calculateTrueProfit, calculateEstimateProfit: calculateEstimate };
+module.exports = { calculateProfit, calculateTrueProfit, calculatePersistedProfit, calculatePersistedTrueProfit,
+  calculateEstimateProfit: calculateEstimate };

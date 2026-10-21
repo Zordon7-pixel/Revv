@@ -158,7 +158,8 @@ for (const [label, rows, reason] of [['flagged', flagged, 'INTERNAL_TEST_SHOP'],
         body: { ro_id: 'ro', roId: 'ro', shop_id: 'ordinary-forged', is_internal_test_shop: false, plan: 'pro', role: 'superadmin' },
         user: { is_internal_test_shop: false, plan: 'agency', admin: true } });
       assert.equal(res.statusCode, reason === 'INTERNAL_TEST_SHOP' ? 409 : 503);
-      assert.deepEqual(res.body, { error: reason, reason, suppressed: true }); zero(f);
+      assert.deepEqual(res.body, { error: reason, reason, suppressed: true,
+        ...(kind === 'payments' ? { excluded: true } : {}) }); zero(f);
     });
   }
 }

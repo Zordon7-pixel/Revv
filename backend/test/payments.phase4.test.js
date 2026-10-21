@@ -141,7 +141,7 @@ function rosRouter(db, reservations = {}) {
   };
   for (const name of ['customerConsent','panelEstimatorEconomics','profit','roMoney','sms','mailer','emailTemplates','ownerActivity','notifications','deliveryFees','customerBilling','quickbooks','customerOptInConfirmation']) mocks[`../services/${name}`]={};
   mocks['../services/panelEstimatorEconomics']={selectedEconomics:async()=>new Map(),redactSelectedRO:r=>r};
-  mocks['../services/profit']={calculateProfit:()=>({})};
+  mocks['../services/profit']={calculatePersistedProfit:async()=>({})};
   mocks['../services/customerBilling']={sendClosedPaidInvoiceEmail:async()=>{}};
   return load('routes/ros.js',mocks);
 }

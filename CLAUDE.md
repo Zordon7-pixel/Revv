@@ -1,3 +1,88 @@
+## Dispatch Log — 2026-10-21 Phase 8 compatibility recovery (t_6002e02f)
+
+12:52 EDT / 16:52 UTC. SOURCE ONLY, partial implementation; requested account
+HELD and TRUE designation/database hold unchanged. Same sole implementation lane,
+branch `codex/t_6002e02f-revv-test-shop`, parent
+`901b44587fb402dc70575b406265751f33e2580a`. No phases 1–7 were rewritten.
+The interrupted patch hash was verified against the supplied checkpoint:
+`4159f0ce79fcea07a099f539418f68cbd4428e938f3f34dd02d3d8451d3bd1e4`.
+
+Restored synchronous `calculateProfit`/`calculateTrueProfit` arithmetic and added
+explicit `calculatePersistedProfit`/`calculatePersistedTrueProfit` service boundaries.
+All production callers use the guarded variants, await them, and preserve scoped
+persisted identity checks and late policy refusal. Malformed resource rows also
+fail with `SHOP_POLICY_UNAVAILABLE`. The focused canonical harness verifies pure
+arithmetic parity, guarded resource rejection, and zero financial writes on denial.
+Payment policy responses retain `excluded: true`; canonical payment assertions pin
+that contract without changing subscription responses. Ordinary parts fixtures now
+supply persisted strict-false policy; STOP, cooldown, timeout, provider-reference,
+no-resend and consent assertions remain intact. Canonical email tests assert restored
+ordinary receipt/parts delivery and zero fixture/unavailable delivery or markers.
+Public-intake fixtures handle policy queries and retain unknown/unavailable policy
+503 exclusion rather than inventing ordinary rows. Production public-intake code
+from earlier phases is unchanged; anonymous leads/waitlist notifications stay closed.
+
+Recovery changed exactly ten paths (the entire candidate also includes preserved
+interrupted work, so its total diff is fifteen paths):
+- `CLAUDE.md`
+- `backend/src/services/profit.js`
+- `backend/src/routes/ros.js`
+- `backend/src/routes/estimateLineItems.js`
+- `backend/src/__tests__/publicIntake.test.js`
+- `backend/test/billingShopPolicy.test.js`
+- `backend/test/emailShopPolicy.test.js`
+- `backend/test/partsNotifications.test.js`
+- `backend/test/payments.phase4.test.js`
+- `backend/test/remainingParityPolicy.test.js`
+
+The other five interrupted paths (planGuard, leads, payments, waitlist and
+partsNotifications production service) remain byte-for-byte checkpoint-preserved.
+The old synchronous math test file is unchanged. No manifests, lockfiles or
+generated outputs were edited.
+
+Verification: Node **v22.23.2**, scrubbed synthetic environment, preloaded deny-network
+and deny-real-PG/ dotenv adapter. Canonical tests ran directly from this worktree;
+no adapted copies were used. Evidence and exact argv/env JSON receipts:
+`/private/tmp/revv-t6002-phase8-recovery/`.
+- `selected-node22-final.log`: exit 0; 1717 tests, 1709 pass, 0 fail, 8 skipped.
+  Exact eleven files from checkpoint1 `selected-tests.files`, using only
+  `--test-skip-pattern=real PostgreSQL payment reservations, parallel creation and settlement \(mock Stripe only\)`.
+- `focused-node22-final.log`: exit 0; 192 tests, 192 pass, 0 fail, 0 skipped.
+- `affected-node22-final.log`: exit 0; 464 tests, 464 pass, 0 fail, 0 skipped.
+- `arithmetic-node22.log`: unchanged panelEstimator.calc suite, exit 0;
+  26 tests, 26 pass, 0 fail, 0 skipped.
+- `syntax-node22.log`: all fourteen changed JS files pass `node --check`.
+  `git diff --check` passes. Diff-only secret-pattern/path review found no
+  credential material or prohibited paths; added values are synthetic fixtures.
+
+NOT RUN: the dedicated real PostgreSQL payment-reservation test was excluded by
+name, not counted as PASS or in the final 1717. Its source reads
+`PANEL_ESTIMATOR_TEST_DATABASE_URL` (handoff called it `PAYMENTS_TEST_DATABASE_URL`);
+both variables stayed absent. Eight pre-existing internalTestShop real-PG cases
+retain their own absent-socket skips. No existing/real DB was connected. Hermes
+must later supply disposable synthetic infrastructure and perform these gates.
+
+Failures retained honestly: checkpoint selected run was exit 1, 1718 tests,
+1641 pass/69 fail/8 skipped. Recovery's first affected run was 462 pass/2 fail
+(stale profit helper mock); its first selected run was 1705 pass/5 fail/8 skipped
+(four matching payment-helper mocks and the expected real-PG precondition).
+The initial negative name regex failed to omit that real-PG test; explicit skip
+pattern corrected it, verified by final output. Initial runs used the checkpoint's
+Node path, which resolves to v26.7.0; all required commands were rerun with the
+installed Node22 binary. Initial oversized reads were truncated and replaced with
+bounded reads; read-only baseline Git calls emitted a confstr temporary-directory
+warning and used /tmp. An alternate /usr/local/bin/node probe was absent; installed
+Node22 was used without installation or configuration changes. Red logs are retained.
+
+Remaining: phase9 provisioning; complete host/browser/DB QA; independent exact-SHA
+review and release gates. Frontend direct Firestore lead write/read/export remains
+an unresolved bypass; no global-intake notification capability was established.
+Do not enable TRUE designation or provision the requested account. These checks
+are not final feature completeness, QA PASS or review readiness. Safety-sensitive
+billing/tenant-policy/metrics scope, over two files; Hermes/Oracle owns follow-through.
+No Hermes/Kanban/delegation/messaging, provider calls, account changes, installation,
+configuration changes, outbound delivery, push, merge or deployment performed.
+
 ## Dispatch Log — 2026-10-21 Internal test-shop foundation (t_6002e02f)
 
 10:25 EDT / 14:25 UTC. PARTIAL IMPLEMENTATION, no provisioning or release.

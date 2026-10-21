@@ -14,7 +14,7 @@ const { getRoMoneySummary, getPaidCents } = require('../services/roMoney');
 const { assertExternalEffectsAllowed, isShopPolicyError } = require('../services/shopPolicy');
 const router = express.Router();
 const policyResponse = (res, err) => res.status(err.reason === 'INTERNAL_TEST_SHOP' ? 409 : 503)
-  .json({ error: err.reason, reason: err.reason, suppressed: true });
+  .json({ error: err.reason, reason: err.reason, suppressed: true, excluded: true });
 
 function normalizedPaymentStatus(ro) {
   if (ro?.payment_status) return ro.payment_status;
@@ -137,10 +137,11 @@ router.post('/webhook', async (req, res) => {
       // Send payment confirmation email to customer
       setImmediate(async () => {
         try {
+          await assertExternalEffectsAllowed(shopId);
           const customer = await dbGet(
             `SELECT c.email, c.name, s.name AS shop_name
              FROM customers c
-             JOIN repair_orders ro ON c.id = ro.customer_id
+             JOIN repair_orders ro ON c.id = ro.customer_id AND c.shop_id = ro.shop_id
              JOIN shops s ON s.id = ro.shop_id
              WHERE ro.id = $1 AND ro.shop_id = $2`,
             [roId, shopId]
@@ -156,10 +157,12 @@ router.post('/webhook', async (req, res) => {
               email: customer.email,
             });
 
-            await sendMail(customer.email, subject, html).catch((e) => {
+            await assertExternalEffectsAllowed(shopId);
+            await sendMail(customer.email, subject, html, shopId).catch((e) => {
               console.error('[Email] Payment confirmation failed');
             });
           }
+          await assertExternalEffectsAllowed(shopId);
           await sendClosedPaidInvoiceEmail({ roId, shopId }).catch((e) => {
             console.error('[Email] Closed+paid invoice email failed');
           });
@@ -181,6 +184,7 @@ router.get('/history/:shopId', auth, requireTechnician, async (req, res) => {
     const { shopId } = req.params;
     if (shopId !== req.user.shop_id) return res.status(403).json({ error: 'Forbidden' });
 
+    await assertExternalEffectsAllowed(shopId);
     const payments = await dbAll(
       `SELECT
          p.id,
@@ -198,13 +202,14 @@ router.get('/history/:shopId', auth, requireTechnician, async (req, res) => {
          ro.ro_number,
          c.name AS customer_name
        FROM ro_payments p
-       LEFT JOIN repair_orders ro ON ro.id = p.ro_id
-       LEFT JOIN customers c ON c.id = ro.customer_id
+       LEFT JOIN repair_orders ro ON ro.id = p.ro_id AND ro.shop_id = p.shop_id
+       LEFT JOIN customers c ON c.id = ro.customer_id AND c.shop_id = p.shop_id
        WHERE p.shop_id = $1
        ORDER BY COALESCE(p.paid_at::timestamptz, p.created_at) DESC`,
       [shopId]
     );
 
+    await assertExternalEffectsAllowed(shopId);
     return res.json({ payments });
   } catch (err) {
     if (isShopPolicyError(err)) return policyResponse(res, err);
@@ -214,6 +219,7 @@ router.get('/history/:shopId', auth, requireTechnician, async (req, res) => {
 
 router.get('/ro/:roId', auth, requireTechnician, async (req, res) => {
   try {
+    await assertExternalEffectsAllowed(req.user.shop_id);
     res.set('Cache-Control', 'no-store');
     const payload = await withLockedRo(req.params.roId, req.user.shop_id, async (client, ro) => {
       let collectionBalance;
@@ -255,6 +261,7 @@ router.get('/ro/:roId', auth, requireTechnician, async (req, res) => {
         latestPayment,
       };
     });
+    await assertExternalEffectsAllowed(req.user.shop_id);
     return res.json(payload);
   } catch (err) {
     if (isShopPolicyError(err)) return policyResponse(res, err);

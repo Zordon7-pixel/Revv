@@ -12,6 +12,7 @@ function requirePlan(minPlan) {
       const shopId = req.user?.shop_id;
       if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
 
+      await require('../services/shopPolicy').assertExternalEffectsAllowed(shopId);
       const requiredRank = PLAN_RANK[minPlan];
       if (requiredRank === undefined) {
         return res.status(500).json({ error: 'Invalid plan guard configuration' });
@@ -35,8 +36,12 @@ function requirePlan(minPlan) {
         });
       }
 
+      await require('../services/shopPolicy').assertExternalEffectsAllowed(shopId);
       return next();
     } catch (err) {
+      if (require('../services/shopPolicy').isShopPolicyError(err)) {
+        return res.status(err.reason === 'INTERNAL_TEST_SHOP' ? 409 : 503).json({ error: err.reason, excluded: true });
+      }
       return res.status(500).json({ error: err.message });
     }
   };

@@ -69,8 +69,8 @@ function inject(app, { method, url, headers = {}, body = Buffer.alloc(0), ip = '
 
 function fixture() {
   const shops = [
-    { id: A, name: 'Oldest private shop', logo_url: '/uploads/old.png', public_intake_slug: 'aaaaaaaaaaaaaaaaaaaaaaaaaa' },
-    { id: B, name: 'Selected private shop', logo_url: '/uploads/selected.png', public_intake_slug: 'bbbbbbbbbbbbbbbbbbbbbbbbbb' },
+    { id: A, is_internal_test_shop: false, name: 'Oldest private shop', logo_url: '/uploads/old.png', public_intake_slug: 'aaaaaaaaaaaaaaaaaaaaaaaaaa' },
+    { id: B, is_internal_test_shop: false, name: 'Selected private shop', logo_url: '/uploads/selected.png', public_intake_slug: 'bbbbbbbbbbbbbbbbbbbbbbbbbb' },
   ];
   const calls = [], writes = [], embeds = [], estimates = [], appointments = [];
   let fail = false;
@@ -111,6 +111,12 @@ function fixture() {
       return { rowCount: 1 };
     },
     async dbAll(sql, params) {
+      calls.push({ sql, params });
+      if (fail) throw new Error('Private DB detail synthetic@example.test');
+      if (sql === 'SELECT id::text AS id, is_internal_test_shop FROM shops WHERE id::text = $1') {
+        return shops.filter(shop => shop.id === params[0])
+          .map(({ id, is_internal_test_shop }) => ({ id, is_internal_test_shop }));
+      }
       if (sql.includes('FROM ro_ratings')) return [];
       assert.match(sql, /WHERE shop_id = \$1 AND status = \$2/);
       return estimates.filter(row => row.shop_id === params[0] && row.status === params[1]);
@@ -211,7 +217,7 @@ test('metadata selects only name/logo after resolution; logs contain mode and in
   const r = await f.request('GET', `/api/public/intake/${slug}`);
   assert.equal(r.status, 200);
   assert.deepEqual(r.json, { name: f.shops[1].name, logo_url: f.shops[1].logo_url });
-  assert.equal(f.calls[1].sql, 'SELECT name, logo_url FROM shops WHERE id = $1');
+  assert.ok(f.calls.some(call => call.sql === 'SELECT name, logo_url FROM shops WHERE id = $1 AND is_internal_test_shop IS FALSE'));
   assert.deepEqual(logs, [['[Public Intake]', { mode: 'slug', shop_id: B }]]);
   for (const link of ['garbage', 'cccccccccccccccccccccccccc']) {
     const r = await f.request('GET', `/api/public/intake/${link}`);
@@ -292,7 +298,9 @@ test('actual public profile returns DB slug before/after rotation; malformed IDs
     assert.equal(response.status, 404);
   }
   assert.equal(f.calls.length, 0);
-  assert.equal((await f.request('GET', `/api/public/shop/${UNKNOWN}`)).status, 404);
+  const unknown = await f.request('GET', `/api/public/shop/${UNKNOWN}`);
+  assert.equal(unknown.status, 503);
+  assert.deepEqual(unknown.json, { error: 'SHOP_POLICY_UNAVAILABLE', excluded: true });
   const before = await f.request('GET', `/api/public/shop/${B}`);
   assert.equal(before.status, 200);
   assert.equal(before.json.shop.public_intake_slug, f.shops[1].public_intake_slug);
@@ -304,8 +312,10 @@ test('actual public profile returns DB slug before/after rotation; malformed IDs
   const logs = [];
   t.mock.method(console, 'error', (...args) => logs.push(args));
   f.setFail();
-  assert.deepEqual((await f.request('GET', `/api/public/shop/${B}`)).json, { error: 'Internal server error' });
-  assert.deepEqual(logs, [['[Public Shop] Internal server error']]);
+  const unavailable = await f.request('GET', `/api/public/shop/${B}`);
+  assert.equal(unavailable.status, 503);
+  assert.deepEqual(unavailable.json, { error: 'SHOP_POLICY_UNAVAILABLE', excluded: true });
+  assert.deepEqual(logs, []);
 });
 
 test('SQL base32 final masking matches RFC 4648 known bytes; helper uses all 128 random bits', t => {

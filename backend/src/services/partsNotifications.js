@@ -71,9 +71,22 @@ async function releaseCooldown(db, shopId, customerId, channel, claimId) {
   [String(shopId),String(customerId),channel,claimId]);
 }
 async function notifyPartUpdate(db, shopId, part, previousRevision, providers = {}) {
+  const { assertExternalEffectsAllowed, isShopPolicyError } = require('./shopPolicy');
+  const read = connection => async (sql, params) => (await connection.query(sql, params)).rows;
+  try {
+    const check = () => assertExternalEffectsAllowed(shopId, read(db));
+    await check();
+    if (part.delivery_revision <= previousRevision) return {status:'skipped',reason:'no_customer_change',channels:[]};
+    await ensureDelivery(db);
+    return await notifyOrdinaryPartUpdate(db, shopId, part, previousRevision, providers, check);
+  } catch (error) {
+    if (isShopPolicyError(error)) return {status:'suppressed',reason:error.reason,channels:[]};
+    throw error;
+  }
+}
+async function notifyOrdinaryPartUpdate(db, shopId, part, previousRevision, providers, check) {
   // Explicit per-update opt-in only. No-op saves cannot re-send the previous event.
   if (part.delivery_revision <= previousRevision) return {status:'skipped',reason:'no_customer_change',channels:[]};
-  await ensureDelivery(db);
   const {rows} = await db.query(`SELECT e.before_state,e.after_state,r.ro_number,c.id AS customer_id,c.phone,c.email,c.sms_consent,c.sms_consent_at,c.sms_consent_method,c.sms_consent_by,c.email_consent,
       c.preferred_contact_method,s.name AS shop_name,s.sms_notifications_enabled,s.email_notifications_enabled
     FROM parts_delivery_events e
@@ -85,6 +98,7 @@ async function notifyPartUpdate(db, shopId, part, previousRevision, providers = 
   [String(part.id),String(shopId),part.delivery_revision]);
   const context = rows[0];
   if (!context || !publicChange(context.before_state,context.after_state)) return {status:'skipped',reason:'no_customer_change',channels:[]};
+  await check();
   const claim = await db.query(`INSERT INTO parts_delivery_notifications(shop_id,part_id,revision,result)
     VALUES($1,$2,$3,$4) ON CONFLICT(shop_id,part_id,revision) DO NOTHING RETURNING revision`,
   [String(shopId),String(part.id),part.delivery_revision,JSON.stringify({status:'pending',channels:[]})]);
@@ -94,13 +108,25 @@ async function notifyPartUpdate(db, shopId, part, previousRevision, providers = 
   for (const channel of ['sms','email']) {
     const reason = channelAllowed(context,channel);
     if (reason) { channels.push({channel,status:'skipped',reason}); continue; }
+    let cooldown;
+    let providerAttempted = false;
     try {
       if (context.customer_id == null) throw new Error('Missing scoped customer');
-      const cooldown = await claimCooldown(db,shopId,context.customer_id,channel,providers.now);
+      await check();
+      cooldown = await claimCooldown(db,shopId,context.customer_id,channel,providers.now);
       if (!cooldown) { channels.push({channel,status:'skipped',reason:'cooldown'}); continue; }
-      const response = await boundedProviderCall(() => channel === 'sms'
+      const response = await boundedProviderCall(async () => {
+        await check();
+        providerAttempted = true;
+        return channel === 'sms'
         ? (providers.sendSMS || require('./sms').sendSMS)(context.phone,message.text,{shopId})
-        : (providers.sendMail || require('./mailer').sendMail)(context.email,message.subject,message.html),providers.timeoutMs);
+        : (providers.sendMail || require('./mailer').sendMail)(context.email,message.subject,message.html,shopId);
+      },providers.timeoutMs);
+      if (response?.provider_attempted === false && ['INTERNAL_TEST_SHOP','SHOP_POLICY_UNAVAILABLE'].includes(response.reason)) {
+        providerAttempted = false;
+        throw Object.assign(new Error(response.reason), {reason:response.reason});
+      }
+      await check();
 
       const reference = providerReference(channel,response);
       const accepted = reference && (channel !== 'sms' || response?.ok === true && !response.simulated);
@@ -115,10 +141,21 @@ async function notifyPartUpdate(db, shopId, part, previousRevision, providers = 
         // The adapter may have attempted a send. Retain the window and event claim.
         channels.push({channel,status:'not_sent',reason:'provider_failed'});
       } else channels.push({channel,status:'unknown',reason:'verify_before_retry'});
-    } catch { channels.push({channel,status:'unknown',reason:'verify_before_retry'}); }
+    } catch (error) {
+      if (require('./shopPolicy').isShopPolicyError(error)) {
+        // Only release this claim with proof no provider was entered. A prior
+        // accepted/ambiguous channel retains its claim and cannot be retried.
+        if (cooldown && (!providerAttempted || error.provider_attempted === false)) {
+          await releaseCooldown(db,shopId,context.customer_id,channel,cooldown);
+        }
+        throw error;
+      }
+      channels.push({channel,status:'unknown',reason:'verify_before_retry'});
+    }
   }
   const result = {status:'complete',channels};
   // If recording fails after provider acceptance, preserve the unique pending claim; never retry automatically.
+  await check();
   await db.query('UPDATE parts_delivery_notifications SET result=$4,updated_at=NOW() WHERE shop_id=$1 AND part_id=$2 AND revision=$3',
     [String(shopId),String(part.id),part.delivery_revision,JSON.stringify(result)]);
   return result;

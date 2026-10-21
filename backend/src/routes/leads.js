@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
 const rateLimit = require('express-rate-limit');
-const { sendDiscordEmbed } = require('../utils/discord');
 
 const leadsLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -18,19 +17,9 @@ router.post('/', leadsLimiter, async (req, res) => {
       return res.status(400).json({ error: 'Name and email are required' });
     }
 
-    sendDiscordEmbed({
-      title: '🔥 New Lead from revvshop.app!',
-      color: 0xff6b35,
-      fields: [
-        { name: 'Name', value: name, inline: true },
-        { name: 'Email', value: email, inline: true },
-        { name: 'Phone', value: phone || 'Not provided', inline: true },
-        { name: 'Business', value: businessName || 'Not provided', inline: true },
-        { name: 'Message', value: message || 'None', inline: false },
-      ],
-      footer: 'REVV Lead Capture',
-    });
-
+    // Public intake has no persisted shop identity (email/source are not tenancy).
+    // No global-notification capability is authorized here. Keep external delivery
+    // fail-closed for anonymous, authenticated and fixture-associated submissions.
     res.json({ success: true });
   } catch (err) {
     console.error('[leads] Error:', err.message);

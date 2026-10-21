@@ -9,6 +9,10 @@ function fakeDb(overrides={}) {
   const calls=[];let claimed=false;
   const db={calls,connect:async()=>({query:async()=>({rows:[]}),release(){}}),query:async(sql,params)=>{
     calls.push({sql,params});
+    if(sql === 'SELECT id::text AS id, is_internal_test_shop FROM shops WHERE id::text = $1') {
+      return {rows:['shop-test','shop-other'].includes(params[0])
+        ? [{id:params[0],is_internal_test_shop:false}] : []};
+    }
     if(sql.startsWith('SELECT e.'))return {rows:overrides.missing?[]:[{...context,...overrides}]};
     if(sql.startsWith('INSERT INTO parts_delivery_notifications')){if(claimed)return {rowCount:0};claimed=true;return {rowCount:1};}
     return {rows:[],rowCount:1};
@@ -39,7 +43,7 @@ test('no-op and missing tenant event never call providers',async()=>{
   const send=async()=>{throw Error('must not send')};
   assert.equal((await notifyPartUpdate(fakeDb(),'shop-test',part,2,{sendSMS:send,sendMail:send})).reason,'no_customer_change');
   const db=fakeDb({missing:true});assert.equal((await notifyPartUpdate(db,'shop-other',part,1,{sendSMS:send,sendMail:send})).reason,'no_customer_change');
-  assert.deepEqual(db.calls[0].params,['part-test','shop-other',2]);
+  assert.deepEqual(db.calls.find(call=>call.sql.startsWith('SELECT e.')).params,['part-test','shop-other',2]);
 });
 test('concurrent same-event requests claim once and report provider acceptance',async()=>{
   const db=fakeDb();let sms=0,email=0;

@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
 const rateLimit = require('express-rate-limit');
-const { sendDiscordEmbed } = require('../utils/discord');
 
 const waitlistLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -53,18 +52,9 @@ router.post('/', waitlistLimiter, async (req, res) => {
       );
     }
 
-    // Fire Discord webhook
-    sendDiscordEmbed({
-      title: '📬 New Waitlist Signup',
-      description: `**${cleanEmail}** joined the waitlist`,
-      color: 0x10b981,
-      fields: [
-        { name: 'Source', value: cleanSource, inline: true },
-        { name: 'Time', value: new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }), inline: true },
-      ],
-      footer: 'REVV Lead Tracking',
-    });
-
+    // Public intake has no persisted shop identity (email/source are not tenancy).
+    // No global-notification capability is authorized here. Keep external delivery
+    // fail-closed for anonymous, authenticated and fixture-associated submissions.
     res.json({ ok: true });
   } catch (err) {
     console.error('[waitlist] Error:', err.message);

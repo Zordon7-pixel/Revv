@@ -2,7 +2,7 @@ const router = require('express').Router();
 const { dbAll, dbGet, dbRun } = require('../db');
 const auth = require('../middleware/auth');
 const { v4: uuidv4 } = require('uuid');
-const { calculateProfit } = require('../services/profit');
+const { calculatePersistedProfit } = require('../services/profit');
 const { centsToDollars, dollarsToCents, getSelectedPanelMoney } = require('../services/roMoney');
 
 router.use(require('./panelEstimator').createPanelEstimatorRouter());
@@ -440,7 +440,7 @@ async function syncRepairOrderFinancials(roId, shopId, summary, options = {}) {
     tax: toNumber(summary?.tax_amount, 0),
     total: toNumber(summary?.grand_total, 0),
   };
-  const profit = calculateProfit({ ...ro, ...nextValues });
+  const profit = await calculatePersistedProfit({ ...ro, ...nextValues, id: ro.id, shop_id: shopId });
 
   await dbRun(
     `UPDATE repair_orders

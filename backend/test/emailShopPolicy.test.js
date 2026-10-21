@@ -126,7 +126,9 @@ function harness(flag = false) {
     return router('routes/ros.js', {
       '../services/customerConsent': {}, '../services/panelEstimatorEconomics': {
         selectedEconomics: async () => new Map(), redactSelectedRO: r => r },
-      '../services/profit': { calculateProfit: () => ({}) }, '../services/roMoney': {},
+      // This harness isolates email boundaries; profit policy is exercised by
+      // remainingParityPolicy with the actual guarded calculator and DB rows.
+      '../services/profit': { calculatePersistedProfit: async () => ({}) }, '../services/roMoney': {},
       '../services/paymentReservations': { PaymentError: class extends Error {},
         withLockedRo: async (_id, _shop, action) => action({ query: db.dbRun }, ro) },
       '../services/sms': {}, '../services/ownerActivity': {}, '../services/notifications': {},
@@ -256,7 +258,8 @@ for (const flag of [false, true]) {
     await router.result.testQueues.queueClosedReviewEmail('ro');
     await h.drain();
     const invoice = await router.call('/:id/email-invoice');
-    assert.equal(invoice.statusCode, flag ? 500 : 200);
+    assert.equal(invoice.statusCode, flag ? 409 : 200);
+    if (flag) assert.deepEqual(plain(invoice.body), { error: 'INTERNAL_TEST_SHOP', excluded: true });
     const approval = await router.call('/:id/approve-estimate');
     assert.equal(approval.statusCode, 200);
     if (flag) { zero(h); assert.equal(h.state.tokens, 0); assert.equal(h.state.checkouts, 0); }
@@ -364,24 +367,36 @@ test('public lead and waitlist cannot authorize fixture notifications using body
   assert.match(form, /addDoc/); // Explicit unresolved bypass: no designated fixture may be enabled.
 });
 
-test('payment receipt is unsupported for ordinary mail and fixture callbacks stop before notifications', async () => {
-  for (const flag of [false, true]) {
+test('payment receipt supports ordinary mail; fixture/unavailable callbacks stop before notifications', async () => {
+  for (const flag of [false, true, null]) {
     const h = harness(flag);
+    let notifications = 0, invoices = 0;
     const router = h.router('routes/payments.js', {
-      '../services/notifications': { createNotification: async () => {} },
+      '../services/notifications': { createNotification: async () => { notifications++; } },
       '../services/stripe': { constructWebhookEvent: () => ({ id: 'synthetic-event' }) },
-      '../services/customerBilling': { sendClosedPaidInvoiceEmail: async () => {} },
+      '../services/customerBilling': { sendClosedPaidInvoiceEmail: async () => { invoices++; } },
       '../services/paymentReservations': { settlePaymentEvent: async () => ({ roId: 'ro', shopId, ro: h.ro, amountPaid: 100 }) },
       '../services/roMoney': {},
     });
     const result = await router.call('/webhook');
-    assert.equal(result.statusCode, flag ? 409 : 200); zero(h);
-    if (flag) assert.equal(result.body.reason, 'INTERNAL_TEST_SHOP');
-    else assert.ok(h.state.logs.some(args => args.includes('SHOP_POLICY_UNAVAILABLE')));
+    assert.equal(result.statusCode, flag === false ? 200 : flag === true ? 409 : 503);
+    if (flag !== false) {
+      zero(h);
+      assert.equal(result.body.reason, flag === true ? 'INTERNAL_TEST_SHOP' : 'SHOP_POLICY_UNAVAILABLE');
+      assert.equal(result.body.excluded, true);
+      assert.equal(notifications, 0); assert.equal(invoices, 0); assert.equal(h.state.writes.length, 0);
+    } else {
+      assert.equal(h.state.fetches.length, 1);
+      const payload = JSON.parse(h.state.fetches[0].options.body);
+      assert.deepEqual(payload.to, [h.ro.customer_email]);
+      assert.match(payload.html, /\$1\.00/);
+      assert.equal(notifications, 1); assert.equal(invoices, 1);
+      assert.ok(h.state.queries.filter(q => q.sql.includes('is_internal_test_shop')).every(q => q.params[0] === shopId));
+    }
   }
 });
-test('unconverted parts email fails closed and retains its conservative unknown outcome/cooldown', async () => {
-  for (const flag of [false, true]) {
+test('parts email records ordinary acceptance; fixture/unavailable policy has zero effects', async () => {
+  for (const flag of [false, true, null]) {
     const h = harness(flag);
     const parts = h.load('services/partsNotifications.js', {
       './customerConsent': h.load('services/customerConsent.js'),
@@ -391,17 +406,27 @@ test('unconverted parts email fails closed and retains its conservative unknown 
     const after = { ...before, status: 'shipped' };
     const writes = [];
     const db = { async query(sql, params) {
-      writes.push({ sql, params });
+      if (sql.includes('is_internal_test_shop')) return { rows: await h.db.dbAll(sql, params) };
       if (sql.startsWith('SELECT e.')) return { rows: [{ before_state: before, after_state: after,
         customer_id: 'customer', email: 'customer@example.invalid', email_consent: true, preferred_contact_method: 'email' }] };
+      writes.push({ sql, params });
       return { rowCount: 1, rows: [] };
     } };
     const result = await parts.notifyPartUpdate(db, shopId, { id: 'part', delivery_revision: 2 }, 1);
-    zero(h);
-    assert.ok(h.state.logs.some(args => args.includes('SHOP_POLICY_UNAVAILABLE')));
-    assert.deepEqual(plain(result.channels.find(c => c.channel === 'email')),
-      { channel: 'email', status: 'unknown', reason: 'verify_before_retry' });
-    assert.equal(writes.some(w => w.sql.startsWith('DELETE FROM parts_notification_cooldowns')), false);
+    if (flag !== false) {
+      zero(h);
+      assert.deepEqual(plain(result), { status: 'suppressed',
+        reason: flag === true ? 'INTERNAL_TEST_SHOP' : 'SHOP_POLICY_UNAVAILABLE', channels: [] });
+      assert.deepEqual(writes, []);
+    } else {
+      assert.equal(h.state.fetches.length, 1);
+      assert.deepEqual(JSON.parse(h.state.fetches[0].options.body).to, ['customer@example.invalid']);
+      assert.deepEqual(plain(result.channels.find(c => c.channel === 'email')),
+        { channel: 'email', status: 'accepted', provider_reference: '12345678-1234-1234-1234-123456789abc' });
+      const recorded = writes.find(w => w.sql.startsWith('UPDATE parts_delivery_notifications'));
+      assert.deepEqual(JSON.parse(recorded.params[3]), plain(result));
+      assert.equal(writes.some(w => w.sql.startsWith('DELETE FROM parts_notification_cooldowns')), false);
+    }
   }
 });
 test('registration notification uses newly persisted shop ID, never body tenancy', async () => {
