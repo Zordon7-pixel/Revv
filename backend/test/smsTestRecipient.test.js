@@ -8,6 +8,7 @@ const vm = require('node:vm');
 const { spawnSync } = require('node:child_process');
 const policy = require('../src/services/smsTestRecipient');
 const consent = require('../src/services/customerConsent');
+const shopPolicy = require('../src/services/shopPolicy');
 
 // Synthetic reserved fictional NANP fixtures; never put values in test titles,
 // assertion diffs or console output. No inherited environment reaches the SUT.
@@ -22,15 +23,15 @@ const policyFile = path.resolve(__dirname, '../src/services/smsTestRecipient.js'
 
 function harness(env = {}) {
   const state = {
-    env, constructions: 0, calls: [], logs: [], queries: [], stopped: false,
+    env, sdkLoads: 0, constructions: 0, calls: [], logs: [], queries: [], stopped: false,
     staffPhone: recipient,
     customers: [consent.consentMutation({ sms_consent: true, sms_consent_method: 'written' }, 'synthetic-staff')],
-    shop: { plan: 'pro', twilio_account_sid: 'synthetic-account',
+    shop: { id: 'synthetic-shop', is_internal_test_shop: false, plan: 'pro', twilio_account_sid: 'synthetic-account',
       twilio_auth_token: 'synthetic-token', twilio_phone_number: sender },
   };
   async function beforeQuery(kind, sql, params) {
     state.queries.push(kind);
-    assert.ok(sql.includes('shop_id = $1') || sql.includes('shop_id = $2') || sql.includes('WHERE id = $1'));
+    assert.ok(sql.includes('shop_id = $1') || sql.includes('shop_id = $2') || sql.includes('WHERE id = $1') || sql.includes('WHERE id::text = $1'));
     if (kind === 'staff') {
       assert.ok(params[1] === 'synthetic-shop');
     } else {
@@ -56,6 +57,10 @@ function harness(env = {}) {
       throw new Error('Unexpected mock query');
     },
     dbAll: async (sql, params) => {
+      if (sql.includes('is_internal_test_shop')) {
+        await beforeQuery('policy', sql, params);
+        return state.policyRows || (state.shop ? [state.shop] : []);
+      }
       assert.ok(sql.includes('FROM customers'));
       await beforeQuery('consent', sql, params);
       return state.customers;
@@ -64,6 +69,7 @@ function harness(env = {}) {
   const mocks = {
     '../db': db,
     './customerConsent': consent,
+    './shopPolicy': shopPolicy,
     './smsTestRecipient': policy,
     twilio: () => {
       state.constructions++;
@@ -79,6 +85,7 @@ function harness(env = {}) {
     module, exports: module.exports, process: { env },
     console: { log, warn: log, error: log },
     require(name) {
+      if (name === 'twilio') state.sdkLoads++;
       if (Object.hasOwn(mocks, name)) return mocks[name];
       throw new Error('Unexpected dependency; real DB/provider/network prohibited');
     },
@@ -167,7 +174,7 @@ test('one exact recipient and trim-only variant reach the mock with existing gat
       assert.equal(h.state.calls.length, 1);
       assert.ok(h.state.calls[0].to === recipient, 'Provider must receive exactly the validated target');
       assert.ok(h.state.calls[0].from === sender);
-      assert.deepEqual(h.state.queries, ['stop', 'consent', 'shop']);
+      assert.deepEqual(h.state.queries, ['policy', 'stop', 'consent', 'shop', 'policy']);
       assert.equal(result.body, 'Synthetic message\n\nReply STOP to opt out, HELP for help.');
       assertPrivate(h.state.logs);
     }
@@ -211,7 +218,7 @@ test('allowlisted customer still needs scope, confirmed consent, STOP clearance 
     ['consent_lookup_failed', s => { s.failQuery = 'stop'; }],
     ['consent_lookup_failed', s => { s.failQuery = 'consent'; }],
     ['sms_not_entitled', s => { s.shop.plan = 'starter'; }],
-    ['sms_not_entitled', s => { s.shop = null; }, { shopId: 'synthetic-shop', twilioConfig: { accountSid: 'synthetic' } }],
+    ['SHOP_POLICY_UNAVAILABLE', s => { s.shop = null; }, { shopId: 'synthetic-shop', twilioConfig: { accountSid: 'synthetic' } }],
     ['sms_not_entitled', () => {}, { shopId: 'synthetic-shop', twilioConfig: { plan: 'starter' } }],
     ['not configured', s => { s.shop.twilio_auth_token = null; }],
   ];
@@ -249,11 +256,11 @@ test('staff path uses the same restriction and retains staff lookup, STOP, plan 
   assert.equal(h.state.calls.length, 1);
   assert.equal(h.state.calls[0].body, 'Staff message');
   assert.ok(h.state.calls[0].to === recipient);
-  assert.deepEqual(h.state.queries, ['staff', 'stop', 'shop']);
+  assert.deepEqual(h.state.queries, ['staff', 'policy', 'stop', 'shop', 'policy']);
 });
 
 test('environment changes across each async gate are revalidated before provider construction', async () => {
-  for (const stage of ['stop', 'consent', 'shop']) {
+  for (const stage of ['policy', 'stop', 'consent', 'shop', 'policy']) {
     for (const change of [
       env => { env[policy.SETTING] = other; },
       env => { env[policy.SETTING] = ''; },
@@ -343,4 +350,59 @@ test('dry-run JSON is configuration proof only, masked, and exits nonzero for mi
     assert.equal(output.recipient_count, valid ? 1 : 0);
     assert.ok(output.last4 === (valid ? recipient.slice(-4) : null));
   }
+});
+
+// Test-shop policy uses the real resolver with synthetic database rows. No policy
+// helper is mocked to return ALLOW, and neither SDK loading nor construction is allowed.
+for (const audience of ['customer', 'supplied-config', 'forged-flags', 'staff']) {
+  test(`persisted test shop suppresses ${audience} before config or provider resolution`, async () => {
+    const h = harness(activeEnv());
+    h.state.shop.is_internal_test_shop = true;
+    const options = { shopId: 'synthetic-shop', is_internal_test_shop: false,
+      email: 'ordinary@example.invalid', customerFacing: false, skipOptOutCheck: true };
+    if (audience === 'supplied-config') options.twilioConfig = {
+      plan: 'pro', sms_comp: true, is_internal_test_shop: false,
+      accountSid: 'synthetic', authToken: 'synthetic', phoneNumber: sender,
+    };
+    const result = audience === 'staff'
+      ? await h.sms.sendStaffSMS('synthetic-staff', 'Synthetic', options)
+      : await h.send(recipient, audience === 'customer' ? 'synthetic-shop' : options);
+    denied(h, result, 'INTERNAL_TEST_SHOP');
+    assert.deepEqual(h.state.queries, audience === 'staff' ? ['staff', 'policy'] : ['policy']);
+    assert.equal(h.state.sdkLoads, 0);
+  });
+}
+
+test('persisted policy rejects ambiguous/missing/wrong-type rows and query failures', async () => {
+  const row = { id: 'synthetic-shop', is_internal_test_shop: false };
+  for (const rows of [[], [row, row], [null], [{ ...row, id: 'other-shop' }],
+    ...[undefined, null, 'false', 'true', 0, 1, {}].map(value => [{ ...row, is_internal_test_shop: value }])]) {
+    const h = harness(); h.state.policyRows = rows;
+    denied(h, await h.send(), 'SHOP_POLICY_UNAVAILABLE');
+    assert.equal(h.state.sdkLoads, 0);
+  }
+  const h = harness(); h.state.failQuery = 'policy';
+  denied(h, await h.send(), 'SHOP_POLICY_UNAVAILABLE');
+  assert.equal(h.state.sdkLoads, 0);
+});
+
+test('persisted policy rechecks after consent/config awaits; supplied config cannot bypass a late flag', async () => {
+  for (const stage of ['stop', 'consent', 'shop']) {
+    const h = harness();
+    h.state.onQuery = async kind => { if (kind === stage) h.state.shop.is_internal_test_shop = true; };
+    denied(h, await h.send(), 'INTERNAL_TEST_SHOP');
+    assert.equal(h.state.sdkLoads, 0);
+  }
+  const h = harness();
+  h.state.onQuery = async kind => { if (kind === 'consent') h.state.shop.is_internal_test_shop = true; };
+  denied(h, await h.send(recipient, { shopId: 'synthetic-shop', twilioConfig: { plan: 'pro' } }), 'INTERNAL_TEST_SHOP');
+});
+
+test('ordinary persisted FALSE ignores client test flags and email spelling', async () => {
+  const h = harness();
+  assert.equal((await h.send(recipient, { shopId: 'synthetic-shop', is_internal_test_shop: true,
+    email: 'zordon+revvqa@example.invalid' })).ok, true);
+  assert.equal(h.state.calls.length, 1);
+  assert.equal(h.state.constructions, 1);
+  assert.equal(h.state.sdkLoads, 1);
 });

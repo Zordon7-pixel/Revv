@@ -1,4 +1,5 @@
 'use strict';
+const { assertExternalEffectsAllowed } = require('./shopPolicy');
 
 const fail = reason => { throw Object.assign(new Error(reason), { reason }); };
 function validMapping(m) {
@@ -9,7 +10,8 @@ function validMapping(m) {
 }
 
 // SDK access is lazy: OFF never loads Twilio, credentials, or the legacy service.
-async function createProvider(shopId, binding, { shop, registration, env = process.env, clientFactory } = {}) {
+async function createProvider(shopId, binding, { shop, registration, env = process.env, clientFactory, readShopPolicyRows } = {}) {
+  await assertExternalEffectsAllowed(shopId, readShopPolicyRows);
   // Only the locked, persisted shop/account supplies the webhook auth token.
   // An API-key secret and the shared-account fallback cannot authenticate events.
   if (!shop || String(shop.id) !== shopId) fail('ACCOUNT_MISMATCH');
@@ -23,19 +25,21 @@ async function createProvider(shopId, binding, { shop, registration, env = proce
   const client = shop.twilio_api_key && shop.twilio_api_secret
     ? twilio(shop.twilio_api_key, shop.twilio_api_secret, options)
     : twilio(binding.account_sid, shop.twilio_auth_token, options);
-  return providerFromClient(client, binding, registration);
+  return providerFromClient(client, binding, registration, { shopId, readShopPolicyRows });
 }
 
-function providerFromClient(client, binding, registration) {
+function providerFromClient(client, binding, registration, { shopId = binding?.shop_id, readShopPolicyRows } = {}) {
+  const guard = () => assertExternalEffectsAllowed(shopId, readShopPolicyRows);
   const service = () => client.messaging.v1.services(binding.service_sid);
   const checkNumber = n => {
     if (!n || n.accountSid !== binding.account_sid || !/^PN[0-9a-fA-F]{32}$/.test(n.sid)
         || !/^\+1\d{10}$/.test(n.phoneNumber) || n.capabilities?.sms !== true) fail('NUMBER_MISMATCH');
     return n;
   };
-  return {
+  const provider = {
     async prerequisite(callback) {
       const s = await service().fetch();
+      await guard();
       const c = await service().usAppToPerson(binding.campaign_sid).fetch();
       if (s.sid !== binding.service_sid || s.accountSid !== binding.account_sid
           || c.sid !== binding.campaign_sid || c.accountSid !== binding.account_sid
@@ -84,5 +88,11 @@ function providerFromClient(client, binding, registration) {
       return registration ? registration(sid, binding) : { status: 'UNAVAILABLE', source: null };
     },
   };
+  // Even a retained adapter or directly supplied client must recheck persisted
+  // policy before every SDK operation, including inventory/retry and callbacks.
+  return Object.fromEntries(Object.entries(provider).map(([name, operation]) => [name, async (...args) => {
+    await guard();
+    return operation(...args);
+  }]));
 }
 module.exports = { createProvider, providerFromClient, validMapping, fail };

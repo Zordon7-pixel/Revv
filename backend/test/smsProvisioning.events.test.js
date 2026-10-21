@@ -202,18 +202,19 @@ if (require.main === module) {
       'https://user:secret@x.invalid', 'https://x.invalid/#hash']) assert.equal(eventUrl({ APP_URL }), null);
   });
   test('production credential adapter blocks missing mapping/token/account/callback before SDK construction', async () => {
-    const shop = { id: mapping.shop_id, twilio_account_sid: mapping.account_sid, twilio_auth_token: token };
+    const shop = { id: mapping.shop_id, is_internal_test_shop: false, twilio_account_sid: mapping.account_sid, twilio_auth_token: token };
     for (const options of [ { shop: { ...shop, twilio_auth_token: '' } },
       { shop: { ...shop, twilio_account_sid: null } },
       { shop: { ...shop, twilio_account_sid: sid('AC', 'b') } }, { env: {} },
       { binding: { ...mapping, event_campaign_sid: null } },
       { binding: { ...mapping, event_callback_url: 'https://wrong.invalid' } } ]) {
       await assert.rejects(createProvider(mapping.shop_id, options.binding || mapping, {
-        shop, env, ...options, clientFactory: () => assert.fail('constructed client before setup') }));
+        shop, env, readShopPolicyRows: async () => [shop], ...options, clientFactory: () => assert.fail('constructed client before setup') }));
     }
   });
   test('approved mock campaign, wrong serviceSid/number/capability cannot pass provider verification', async () => {
-    const f = fakeClient(); const p = providerFromClient(f.client, mapping);
+    const f = fakeClient(); const p = providerFromClient(f.client, mapping, undefined, {
+      readShopPolicyRows: async () => [{ id: mapping.shop_id, is_internal_test_shop: false }] });
     f.mock = true; await assert.rejects(p.prerequisite(callback), /CAMPAIGN_FAILED/);
     f.mock = undefined; await assert.rejects(p.prerequisite(callback), /CAMPAIGN_FAILED/);
     f.mock = false; await p.prerequisite(callback);
@@ -230,9 +231,9 @@ if (require.main === module) {
     const app = appFor({ accept: async (events, auth) => {
       assert.ok(auth(token)); receipts.push(...events);
     } });
-    const shop = { id: mapping.shop_id, plan: 'pro', twilio_account_sid: mapping.account_sid, twilio_auth_token: token };
+    const shop = { id: mapping.shop_id, is_internal_test_shop: false, plan: 'pro', twilio_account_sid: mapping.account_sid, twilio_auth_token: token };
     const f = fakeClient(); let publications = 0; let calls = 0;
-    const session = { mapping: async () => mapping, save: async () => {}, reserve: async () => {},
+    const session = { readShopPolicyRows: async () => [shop], mapping: async () => mapping, save: async () => {}, reserve: async () => {},
       guard: async (_, fn) => fn(shop), publish: async () => { publications++; },
       registration: async (_, pn, b) => { calls++; return registration(db, shop.id, pn, b); } };
     const job = { shop_id: shop.id, attempts: 0 };

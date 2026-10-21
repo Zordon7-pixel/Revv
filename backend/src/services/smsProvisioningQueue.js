@@ -2,6 +2,7 @@
 const { randomUUID } = require('node:crypto');
 const { createProvider, validMapping, fail } = require('./smsProvisioningProvider');
 const { bindingOf, sameBinding, registration, eventUrl } = require('./smsProvisioningEvents');
+const { resolveShopPolicy, assertExternalEffectsAllowed, isShopPolicyError } = require('./shopPolicy');
 const enabled = (env = process.env) => env.REVV_SMS_AUTOPROVISION === 'true';
 const entitled = shop => !!shop && (shop.plan === 'pro' || shop.plan === 'agency' || shop.sms_comp === true);
 const MAX_ATTEMPTS = 5;
@@ -42,7 +43,7 @@ class PgStore {
   async discover() {
     if (!enabled(this.env)) return;
     await this.pool.query(`INSERT INTO sms_provision_jobs(shop_id)
-      SELECT id::text FROM shops WHERE plan IN ('pro','agency') OR sms_comp IS TRUE
+      SELECT id::text FROM shops WHERE is_internal_test_shop IS FALSE AND (plan IN ('pro','agency') OR sms_comp IS TRUE)
       ON CONFLICT (shop_id) DO NOTHING`);
     // Failed jobs do not retry provider work, but acquired resources still need
     // durable attention after a later entitlement downgrade (including deletion).
@@ -57,11 +58,15 @@ class PgStore {
   async attention() {
     if (!enabled(this.env)) return [];
     return (await this.pool.query(`SELECT DISTINCT ON (reason) shop_id,reason FROM sms_provision_jobs
-      WHERE admin_attention IS TRUE ORDER BY reason,updated_at DESC,shop_id`)).rows;
+      WHERE admin_attention IS TRUE AND EXISTS
+        (SELECT 1 FROM shops s WHERE s.id::text=sms_provision_jobs.shop_id AND s.is_internal_test_shop IS FALSE)
+      ORDER BY reason,updated_at DESC,shop_id`)).rows;
   }
   async due() {
     return (await this.pool.query(`SELECT shop_id FROM sms_provision_jobs
-      WHERE state != 'failed' AND next_at <= now() ORDER BY next_at,shop_id LIMIT 25`)).rows;
+      WHERE state != 'failed' AND next_at <= now() AND EXISTS
+        (SELECT 1 FROM shops s WHERE s.id::text=sms_provision_jobs.shop_id AND s.is_internal_test_shop IS FALSE)
+      ORDER BY next_at,shop_id LIMIT 25`)).rows;
   }
   async claim(shopId, fn) {
     if (!enabled(this.env)) return;
@@ -72,6 +77,11 @@ class PgStore {
     try {
       locked = (await c.query('SELECT pg_try_advisory_lock(hashtextextended($1, 71931)) AS locked', [shopId])).rows[0].locked;
       if (!locked) return;
+      const policy = await resolveShopPolicy(shopId, async (sql, params) => (await c.query(sql, params)).rows);
+      if (!policy.allowExternalEffects) {
+        console.warn('[SMS_AUTO] Suppressed claim:', policy.reason);
+        return;
+      }
       const job = (await c.query(`SELECT *,xmin::text AS version,routing_published_at::text AS routing_published_at FROM sms_provision_jobs WHERE shop_id=$1
         AND state != 'failed' AND next_at <= now()`, [shopId])).rows[0];
       if (!job || !enabled(this.env)) return;
@@ -84,6 +94,7 @@ class PgStore {
   }
   session(c) {
     const env = this.env;
+    const readShopPolicyRows = async (sql, params) => (await c.query(sql, params)).rows;
     let inTransaction = false;
     const current = async shopId => (await c.query(`SELECT *,xmin::text AS version,
       routing_published_at::text AS routing_published_at FROM sms_provision_jobs WHERE shop_id=$1`, [shopId])).rows[0];
@@ -96,6 +107,7 @@ class PgStore {
         const control = (await c.query('SELECT * FROM sms_provision_control WHERE singleton FOR UPDATE')).rows[0];
         if (!enabled(env) || !control?.enabled) fail('OFF');
         const shop = (await c.query('SELECT * FROM shops WHERE id::text=$1 FOR UPDATE', [job.shop_id])).rows[0];
+        await assertExternalEffectsAllowed(job.shop_id, readShopPolicyRows);
         const m = (await c.query('SELECT * FROM sms_provision_mapping WHERE shop_id=$1 FOR SHARE', [job.shop_id])).rows[0];
         const persisted = (await c.query('SELECT xmin::text AS version FROM sms_provision_jobs WHERE shop_id=$1 FOR UPDATE', [job.shop_id])).rows[0];
         if (!job.version || persisted?.version !== job.version) fail('STALE_JOB');
@@ -144,7 +156,7 @@ class PgStore {
       job.version = saved.rows[0].version;
     };
     return {
-      save, current,
+      save, current, readShopPolicyRows,
       registration: (shopId, phoneSid, binding) => registration(c, shopId, phoneSid, binding),
       async mapping(shopId) {
         return (await c.query('SELECT * FROM sms_provision_mapping WHERE shop_id=$1', [shopId])).rows[0];
@@ -193,12 +205,29 @@ class PgStore {
     };
   }
   async alert(reason, shopId, notify) {
+    if (isShopPolicyError({ reason })) {
+      console.warn('[SMS_AUTO] Suppressed alert:', reason);
+      return;
+    }
+    const readRows = async (sql, params) => (await this.pool.query(sql, params)).rows;
+    const policy = await resolveShopPolicy(shopId, readRows);
+    if (!policy.allowExternalEffects) {
+      console.warn('[SMS_AUTO] Suppressed alert:', policy.reason);
+      return;
+    }
     const code = REASONS.has(reason) ? reason : 'QUEUE_FAILURE';
     // Global enum cooldown also bounds storms across thousands of shops.
     const { rows } = await this.pool.query(`INSERT INTO sms_provision_alerts(code,next_at)
       VALUES($1,now()+interval '1 hour') ON CONFLICT(code) DO UPDATE SET next_at=EXCLUDED.next_at
       WHERE sms_provision_alerts.next_at <= now() RETURNING code`, [code]);
-    if (rows.length) await notify('high', `SMS_AUTO_${code}`, { shop_id: shopId });
+    if (rows.length) {
+      const latest = await resolveShopPolicy(shopId, readRows);
+      if (!latest.allowExternalEffects) {
+        console.warn('[SMS_AUTO] Suppressed alert:', latest.reason);
+        return;
+      }
+      await notify('high', `SMS_AUTO_${code}`, { shop_id: shopId });
+    }
   }
 }
 
@@ -207,12 +236,15 @@ async function processJob(s, job, { env = process.env, provider = createProvider
   if (!enabled(env)) return job;
   const g = fn => s.guard(job, async shop => {
     if (!enabled(env)) fail('OFF');
+    await assertExternalEffectsAllowed(job.shop_id, s.readShopPolicyRows);
     return fn(shop);
   });
   const call = fn => g(async shop => fn(await provider(job.shop_id, job.binding, {
-    shop, env, registration: s.registration && ((sid, binding) => s.registration(job.shop_id, sid, binding)),
+    shop, env, readShopPolicyRows: s.readShopPolicyRows,
+    registration: s.registration && ((sid, binding) => s.registration(job.shop_id, sid, binding)),
   }), shop));
   try {
+    await assertExternalEffectsAllowed(job.shop_id, s.readShopPolicyRows);
     const mapping = await s.mapping(job.shop_id);
     if (!validMapping(mapping)) fail('MAPPING_REQUIRED');
     const binding = bindingOf(mapping, callback());
@@ -263,7 +295,7 @@ async function processJob(s, job, { env = process.env, provider = createProvider
             });
           } catch (e) {
             // Keep intent durable; next invocation reconciles before any progress.
-            if (!['OFF','INELIGIBLE'].includes(e.reason)) {
+            if (!['OFF','INELIGIBLE'].includes(e.reason) && !isShopPolicyError(e)) {
               job.phone_sid = null; job.phone_number = null;
               throw Object.assign(new Error('PROVIDER_TRANSIENT'), { reason: 'PROVIDER_TRANSIENT' });
             }
@@ -304,6 +336,10 @@ async function processJob(s, job, { env = process.env, provider = createProvider
       await s.publish(job, shop);
     });
   } catch (e) {
+    if (isShopPolicyError(e)) {
+      console.warn('[SMS_AUTO] Suppressed job:', e.reason);
+      return { ...job, reason: e.reason, admin_attention: false };
+    }
     if (e.reason === 'OFF' || !enabled(env)) return job;
     if (e.reason === 'STALE_JOB') return s.current(job.shop_id);
     const reason = reasonFor(e);
@@ -318,6 +354,10 @@ async function processJob(s, job, { env = process.env, provider = createProvider
     job.next_at = new Date(now() + (DEFERRED.has(reason) ? CADENCE_MS : Math.min(3600000, CADENCE_MS * 2 ** job.attempts)));
     try { await s.save(job); }
     catch (saveError) {
+      if (isShopPolicyError(saveError)) {
+        console.warn('[SMS_AUTO] Suppressed failure save:', saveError.reason);
+        return { ...job, reason: saveError.reason, admin_attention: false };
+      }
       if (saveError.reason === 'OFF') return job;
       if (saveError.reason === 'STALE_JOB') return s.current(job.shop_id);
       throw saveError;
@@ -347,12 +387,13 @@ async function tick({ store, env = process.env, provider, notify,
         if (result?.admin_attention) await store.alert(result.reason, shopId, notify);
       });
     }
-  } catch (_) {
+  } catch (error) {
     // Never serialize raw DB/provider errors. A DB outage cannot durably dedup an
     // alert; emit a local sanitized failure and retry on the next normal tick.
     console.error('[SMS_AUTO] QUEUE_FAILURE');
-    try { await store.alert('QUEUE_FAILURE', undefined, notify); }
-    catch (_) { console.error('[SMS_AUTO] ALERT_UNAVAILABLE'); }
+    // Unknown tenancy cannot authorize an external ops alert. Policy failures,
+    // including entry/claim failures, also stay local; never fall back globally.
+    if (isShopPolicyError(error)) console.warn('[SMS_AUTO] Suppressed queue:', error.reason);
   }
 }
 function start() {

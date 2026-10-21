@@ -1,6 +1,6 @@
-const twilio = require('twilio');
 const { dbGet, dbAll } = require('../db');
 const { hasConfirmedSmsConsent } = require('./customerConsent');
+const { resolveShopPolicy } = require('./shopPolicy');
 
 // Only the staff wrapper can supply this capability; JSON options cannot.
 const STAFF_NOTIFICATION = Symbol('staff notification');
@@ -167,6 +167,8 @@ async function sendSMS(phone, message, options = {}, audienceToken) {
   if (initialRestriction) return suppress(initialRestriction);
   const key = phoneKey(phone);
   if (!shopId || !key) return suppress('missing_recipient_scope');
+  const policy = await resolveShopPolicy(shopId, dbAll);
+  if (!policy.allowExternalEffects) return suppress(policy.reason);
   try {
     // STOP applies even to reconfirmed customers and internal notifications.
     // skipOptOutCheck/customerFacing from callers are deliberately ignored.
@@ -214,7 +216,9 @@ async function sendSMS(phone, message, options = {}, audienceToken) {
     return { ok: false, reason: 'not configured', body: finalMessage, provider_attempted: false };
   }
 
-  // No await between this fresh check, client construction and messages.create.
+  const finalPolicy = await resolveShopPolicy(shopId, dbAll);
+  if (!finalPolicy.allowExternalEffects) return suppress(finalPolicy.reason);
+  // No await between this fresh recipient check, client construction and messages.create.
   // A restriction observed at entry cannot be disabled while consent/config awaits.
   const finalRestriction = checkTestRecipient();
   if (finalRestriction) return suppress(finalRestriction);
@@ -222,6 +226,7 @@ async function sendSMS(phone, message, options = {}, audienceToken) {
     // API Key auth: twilio(apiKeySid, apiKeySecret, { accountSid })
     // Auth Token auth: twilio(accountSid, authToken)
     console.log('[SMS] Sending');
+    const twilio = require('twilio');
     const client = config.apiKey
       ? twilio(config.apiKey, config.apiSecret, { accountSid: config.accountSid })
       : twilio(config.accountSid, config.authToken);

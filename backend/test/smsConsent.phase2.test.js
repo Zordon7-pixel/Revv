@@ -18,6 +18,7 @@ function load(file, mocks, suffix = '', runtimeProcess = process) {
   const requireLocal = createRequire(filename);
   const resolve = name => {
     if (Object.hasOwn(mocks, name)) return mocks[name];
+    if (name === './shopPolicy') return require('../src/services/shopPolicy');
     if (['express', 'crypto', 'path', 'uuid'].includes(name)) return requireLocal(name);
     if (name.endsWith('/customerConsent') || name === './customerConsent') return consent;
     throw new Error(`Unmocked dependency: ${name} in ${file}`);
@@ -28,11 +29,12 @@ function load(file, mocks, suffix = '', runtimeProcess = process) {
 
 function harness(customer = good()) {
   const state = { customers: customer ? [customer] : [], optedOut: false, calls: [], writes: [], queries: [], failLookup: false, providerEntries: 0, staffPhone: phone };
-  const shop = { id: 'shop-a', name: 'Test shop', plan: 'pro', twilio_account_sid: 'test', twilio_auth_token: 'test', twilio_phone_number: '+15550000000' };
+  const shop = { id: 'shop-a', is_internal_test_shop: false, name: 'Test shop', plan: 'pro', twilio_account_sid: 'test', twilio_auth_token: 'test', twilio_phone_number: '+15550000000' };
   const key = value => { const d = String(value || '').replace(/\D/g, ''); return d.length === 10 ? `1${d}` : d; };
   const db = {
     dbAll: async (sql, params) => {
       state.queries.push({ sql, params });
+      if (sql.includes('is_internal_test_shop')) return state.missingShop || params[0] !== shop.id ? [] : [shop];
       if (/FROM customers WHERE/.test(sql)) {
         assert.match(sql, /sms_consent_at, sms_consent_method, sms_consent_by/);
         assert.match(sql, /shop_id = \$1/);
@@ -322,7 +324,7 @@ const denialCases = [
   ['cross-shop customer', 'no_confirmed_consent', h => { h.state.customers[0].shop_id = 'shop-b'; }],
   ['shared unconfirmed phone', 'no_confirmed_consent', h => { h.state.customers.push({ shop_id: 'shop-a', phone, sms_consent: false }); }],
   ['ineligible plan', 'sms_not_entitled', h => { h.shop.plan = 'starter'; }],
-  ['missing shop', 'sms_not_entitled', h => { h.state.missingShop = true; }],
+  ['missing shop', 'SHOP_POLICY_UNAVAILABLE', h => { h.state.missingShop = true; }],
   ['provided ineligible plan', 'sms_not_entitled', () => {}, { shopId: 'shop-a', twilioConfig: { plan: 'starter' } }],
   ['missing configuration', 'not configured', h => { h.shop.twilio_auth_token = null; }],
 ];
@@ -442,7 +444,9 @@ test('real PostgreSQL phone/shop matching, STOP revocation and reconfirmation su
   let count = 0;
   try {
     await client.query('BEGIN');
-    await client.query(`CREATE TEMP TABLE customers (
+    await client.query(`CREATE TEMP TABLE shops (id TEXT PRIMARY KEY, is_internal_test_shop BOOLEAN NOT NULL DEFAULT FALSE);
+      INSERT INTO shops(id) VALUES ('shop-a'), ('shop-b');
+      CREATE TEMP TABLE customers (
       id TEXT, shop_id TEXT, phone TEXT, sms_consent BOOLEAN, sms_consent_at TIMESTAMPTZ,
       sms_consent_method TEXT, sms_consent_by TEXT);
       CREATE TEMP TABLE sms_opt_outs (shop_id TEXT, phone TEXT, created_at TIMESTAMPTZ DEFAULT now(), UNIQUE(shop_id, phone));`);
@@ -475,4 +479,23 @@ test('real PostgreSQL phone/shop matching, STOP revocation and reconfirmation su
     await client.query('ROLLBACK');
     await client.end();
   }
+});
+
+test('persisted test shop blocks actual RO, portal, direct, status, opt-in, parts and staff send paths', async () => {
+  const h = harness(); h.shop.is_internal_test_shop = true;
+  const r = routes(h);
+  assert.equal((await call(r.ro, '/', { customer_id: 'customer', vehicle_id: 'vehicle' })).statusCode, 201);
+  await call(r.portal, '/magic-link/:ro_id', {}, { ro_id: 'ro' });
+  assert.equal((await call(r.direct, '/send', { to_phone: phone, message: 'Synthetic' })).statusCode, 502);
+  r.ro.queueStatusSMSForTest('ro', 'shop-a', 'repair');
+  await new Promise(resolve => setImmediate(resolve));
+  const optIn = load('services/customerOptInConfirmation.js', { './sms': h.sms });
+  assert.equal((await optIn.sendCustomerOptInConfirmation({ phone, smsConsent: true, shopId: 'shop-a' })).result.reason, 'INTERNAL_TEST_SHOP');
+  await notifyWithRealSms(h);
+  assert.equal((await h.sms.sendStaffSMS('admin-a', 'Synthetic', { shopId: 'shop-a' })).reason, 'INTERNAL_TEST_SHOP');
+  const reply = await h.auto.maybeSendInboundAutoReply({ shop: h.shop, from: phone,
+    to: h.shop.twilio_phone_number, body: 'Synthetic question' });
+  assert.notEqual(reply.action, 'auto_reply');
+  assert.equal(h.state.providerEntries, 0);
+  assert.equal(h.state.calls.length, 0);
 });

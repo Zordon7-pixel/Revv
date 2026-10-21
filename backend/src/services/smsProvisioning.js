@@ -1,5 +1,6 @@
 const { dbGet, dbRun } = require('../db');
 const { getTwilioConfigForShop, createTwilioClient } = require('./sms');
+const { assertExternalEffectsAllowed, isShopPolicyError } = require('./shopPolicy');
 
 const { inboundWebhookUrl: configuredWebhookUrl, CONFIG_ERROR } = require('./smsWebhookConfig');
 
@@ -80,16 +81,20 @@ async function ensureMessagingService(client, shop, requestedWebhookUrl) {
 
   if (existingSid) {
     try {
+      await assertExternalEffectsAllowed(shop.id);
       const existing = await client.messaging.v1.services(existingSid).fetch();
       if (desiredWebhook && existing.inboundRequestUrl !== desiredWebhook) {
+        await assertExternalEffectsAllowed(shop.id);
         await client.messaging.v1.services(existingSid).update({ inboundRequestUrl: desiredWebhook });
       }
       return existing.sid;
-    } catch (_) {
+    } catch (error) {
+      if (isShopPolicyError(error)) throw error;
       // Existing SID may be invalid/deleted; create a new service below.
     }
   }
 
+  await assertExternalEffectsAllowed(shop.id);
   const service = await client.messaging.v1.services.create({
     friendlyName: `REVV ${shop?.name || shop?.id || 'Shop'} SMS`,
     inboundRequestUrl: desiredWebhook,
@@ -98,48 +103,55 @@ async function ensureMessagingService(client, shop, requestedWebhookUrl) {
   return service.sid;
 }
 
-async function findLocalNumber(client, state, areaCodes = []) {
+async function findLocalNumber(client, shopId, state, areaCodes = []) {
   const tried = new Set();
   for (const code of areaCodes) {
     const normalized = String(code || '').trim();
     if (!/^\d{3}$/.test(normalized) || tried.has(normalized)) continue;
     tried.add(normalized);
     try {
+      await assertExternalEffectsAllowed(shopId);
       const candidates = await client.availablePhoneNumbers('US').local.list({
         areaCode: Number(normalized),
         smsEnabled: true,
         limit: 1,
       });
       if (candidates[0]) return candidates[0];
-    } catch (_) {
+    } catch (error) {
+      if (isShopPolicyError(error)) throw error;
       // Keep trying fallbacks.
     }
   }
 
   if (state && /^[A-Z]{2}$/.test(state)) {
     try {
+      await assertExternalEffectsAllowed(shopId);
       const candidates = await client.availablePhoneNumbers('US').local.list({
         inRegion: state,
         smsEnabled: true,
         limit: 1,
       });
       if (candidates[0]) return candidates[0];
-    } catch (_) {
+    } catch (error) {
+      if (isShopPolicyError(error)) throw error;
       // Keep fallback.
     }
   }
 
+  await assertExternalEffectsAllowed(shopId);
   const generic = await client.availablePhoneNumbers('US').local.list({ smsEnabled: true, limit: 1 });
   return generic[0] || null;
 }
 
-async function attachNumberToMessagingService(client, messagingServiceSid, phoneSid) {
+async function attachNumberToMessagingService(client, shopId, messagingServiceSid, phoneSid) {
   try {
+    await assertExternalEffectsAllowed(shopId);
     await client.messaging.v1.services(messagingServiceSid).phoneNumbers.create({
       phoneNumberSid: phoneSid,
     });
     return true;
   } catch (err) {
+    if (isShopPolicyError(err)) throw err;
     const msg = String(err?.message || '').toLowerCase();
     if (msg.includes('already') || msg.includes('duplicate')) return true;
     throw err;
@@ -153,9 +165,11 @@ async function provisionSmsSenderForShop({ shopId, force = false, webhookUrl, mo
     if (force || !automatic?.session || automatic.job?.shop_id !== shopId) {
       throw new Error('Invalid automatic provisioning context');
     }
+    await assertExternalEffectsAllowed(shopId, automatic.session.readShopPolicyRows);
     return processJob(automatic.session, automatic.job, automatic);
   }
   if (!shopId) throw new Error('shopId is required');
+  await assertExternalEffectsAllowed(shopId);
 
   const shop = await dbGet(
     `SELECT
@@ -171,6 +185,7 @@ async function provisionSmsSenderForShop({ shopId, force = false, webhookUrl, mo
   if (!config?.accountSid || !(config?.apiKey || config?.authToken)) {
     throw new Error('Twilio credentials are not configured on REVV server');
   }
+  await assertExternalEffectsAllowed(shopId);
   const client = createTwilioClient(config);
   const desiredWebhook = inboundWebhookUrl();
   // An override must still match the mounted, authenticated callback URL.
@@ -184,16 +199,17 @@ async function provisionSmsSenderForShop({ shopId, force = false, webhookUrl, mo
   let phoneSid = shop.twilio_phone_sid || null;
 
   if (!force && phoneNumber && phoneSid) {
-    await attachNumberToMessagingService(client, messagingServiceSid, phoneSid);
+    await attachNumberToMessagingService(client, shopId, messagingServiceSid, phoneSid);
   } else {
     const preferredAreaCode = areaCodeFromPhone(shop.phone);
     const stateCodes = STATE_AREA_CODES[String(shop.state || '').toUpperCase()] || [];
     const areaCodes = [preferredAreaCode, ...stateCodes].filter(Boolean);
-    const candidate = await findLocalNumber(client, String(shop.state || '').toUpperCase(), areaCodes);
+    const candidate = await findLocalNumber(client, shopId, String(shop.state || '').toUpperCase(), areaCodes);
     if (!candidate?.phoneNumber) {
       throw new Error('No Twilio SMS-capable local number is currently available');
     }
 
+    await assertExternalEffectsAllowed(shopId);
     const purchased = await client.incomingPhoneNumbers.create({
       phoneNumber: candidate.phoneNumber,
       smsUrl: desiredWebhook,
@@ -203,9 +219,10 @@ async function provisionSmsSenderForShop({ shopId, force = false, webhookUrl, mo
     phoneNumber = purchased.phoneNumber || candidate.phoneNumber;
     phoneSid = purchased.sid;
 
-    await attachNumberToMessagingService(client, messagingServiceSid, phoneSid);
+    await attachNumberToMessagingService(client, shopId, messagingServiceSid, phoneSid);
   }
 
+  await assertExternalEffectsAllowed(shopId);
   await dbRun(
     `UPDATE shops
      SET twilio_phone_number = $1,
