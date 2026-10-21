@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const { dbGet, dbRun } = require('../db');
+const { assertExternalEffectsAllowed } = require('./shopPolicy');
 
 const DEFAULT_APP_URL = 'https://revvshop.app';
 const TOKEN_URL = 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer';
@@ -64,7 +65,8 @@ function verifyState(token) {
   return parsed;
 }
 
-function connectUrl({ shopId, userId } = {}) {
+async function connectUrl({ shopId, userId } = {}) {
+  await assertExternalEffectsAllowed(shopId);
   if (!shopId || !userId) throw new Error('shopId and userId are required');
   if (!isConfigured()) throw new Error('QuickBooks app is not configured on server');
 
@@ -92,7 +94,8 @@ function tokenExpiry(secondsFromNow) {
   return new Date(Date.now() + n * 1000).toISOString();
 }
 
-async function exchangeCodeForTokens(code) {
+async function exchangeCodeForTokens(code, shopId) {
+  await assertExternalEffectsAllowed(shopId);
   const cfg = config();
   const basic = Buffer.from(`${cfg.clientId}:${cfg.clientSecret}`).toString('base64');
   const body = new URLSearchParams({
@@ -117,7 +120,8 @@ async function exchangeCodeForTokens(code) {
   return json;
 }
 
-async function refreshTokens(refreshToken) {
+async function refreshTokens(refreshToken, shopId) {
+  await assertExternalEffectsAllowed(shopId);
   const cfg = config();
   const basic = Buffer.from(`${cfg.clientId}:${cfg.clientSecret}`).toString('base64');
   const body = new URLSearchParams({
@@ -142,6 +146,7 @@ async function refreshTokens(refreshToken) {
 }
 
 async function saveTokens(shopId, realmId, tokenData = {}) {
+  await assertExternalEffectsAllowed(shopId);
   await dbRun(
     `UPDATE shops
      SET quickbooks_company_id = $1,
@@ -165,6 +170,7 @@ async function saveTokens(shopId, realmId, tokenData = {}) {
 }
 
 async function getConnection(shopId) {
+  await assertExternalEffectsAllowed(shopId);
   return dbGet(
     `SELECT
        quickbooks_company_id,
@@ -184,6 +190,7 @@ async function getConnection(shopId) {
 }
 
 async function connectionStatus(shopId) {
+  await assertExternalEffectsAllowed(shopId);
   const row = await getConnection(shopId);
   return {
     configured: isConfigured(),
@@ -206,16 +213,18 @@ function isExpired(isoValue, safetyMs = 90 * 1000) {
 }
 
 async function ensureAccessToken(shopId, forceRefresh = false) {
+  await assertExternalEffectsAllowed(shopId);
   const row = await getConnection(shopId);
   if (!row?.quickbooks_realm_id || !row?.quickbooks_refresh_token) {
     throw new Error('QuickBooks is not connected for this shop');
   }
 
+  await assertExternalEffectsAllowed(shopId);
   if (!forceRefresh && row.quickbooks_access_token && !isExpired(row.quickbooks_token_expires_at)) {
     return { accessToken: row.quickbooks_access_token, realmId: row.quickbooks_realm_id };
   }
 
-  const refreshed = await refreshTokens(row.quickbooks_refresh_token);
+  const refreshed = await refreshTokens(row.quickbooks_refresh_token, shopId);
   await saveTokens(shopId, row.quickbooks_realm_id, refreshed);
   return {
     accessToken: refreshed.access_token,
@@ -224,11 +233,13 @@ async function ensureAccessToken(shopId, forceRefresh = false) {
 }
 
 async function qbRequest(shopId, { method = 'GET', path = '', query = null, body = null, retry = true } = {}) {
+  await assertExternalEffectsAllowed(shopId);
   const cfg = config();
   const { accessToken, realmId } = await ensureAccessToken(shopId);
   const qs = query ? `?${new URLSearchParams(query).toString()}` : '';
   const url = `${cfg.apiBase}/v3/company/${encodeURIComponent(realmId)}${path}${qs}`;
 
+  await assertExternalEffectsAllowed(shopId);
   const response = await fetch(url, {
     method,
     headers: {
@@ -255,6 +266,7 @@ function qbLiteral(value) {
 }
 
 async function ensureIncomeItem(shopId) {
+  await assertExternalEffectsAllowed(shopId);
   const existing = await qbRequest(shopId, {
     path: '/query',
     query: {
@@ -291,6 +303,7 @@ async function ensureIncomeItem(shopId) {
 }
 
 async function ensureCustomer(shopId, ro) {
+  await assertExternalEffectsAllowed(shopId);
   const displayName = String(ro.customer_name || `Customer ${ro.ro_number || ro.id}`).trim().slice(0, 100);
   const existing = await qbRequest(shopId, {
     path: '/query',
@@ -374,6 +387,7 @@ function plusDaysISO(input, days = 30) {
 }
 
 async function syncInvoiceForRo(shopId, roId) {
+  await assertExternalEffectsAllowed(shopId);
   const ro = await loadRoForSync(shopId, roId);
   if (!ro) throw new Error('RO not found');
 
@@ -421,6 +435,7 @@ async function syncInvoiceForRo(shopId, roId) {
     });
   }
 
+  await assertExternalEffectsAllowed(shopId);
   await dbRun('UPDATE shops SET quickbooks_last_sync_at = NOW() WHERE id = $1', [shopId]);
   const invoice = response?.Invoice || null;
   return {
@@ -434,12 +449,14 @@ async function syncInvoiceForRo(shopId, roId) {
 }
 
 async function disconnect(shopId) {
+  await assertExternalEffectsAllowed(shopId);
   const row = await getConnection(shopId);
   const token = row?.quickbooks_refresh_token || row?.quickbooks_access_token;
 
   if (isConfigured() && token) {
     const basic = Buffer.from(`${config().clientId}:${config().clientSecret}`).toString('base64');
     const body = new URLSearchParams({ token: String(token) });
+    await assertExternalEffectsAllowed(shopId);
     await fetch(REVOKE_URL, {
       method: 'POST',
       headers: {
@@ -451,6 +468,7 @@ async function disconnect(shopId) {
     }).catch(() => {});
   }
 
+  await assertExternalEffectsAllowed(shopId);
   await dbRun(
     `UPDATE shops
      SET quickbooks_company_id = NULL,
@@ -469,6 +487,7 @@ async function disconnect(shopId) {
 }
 
 async function setSyncEnabled(shopId, enabled) {
+  await assertExternalEffectsAllowed(shopId);
   await dbRun('UPDATE shops SET quickbooks_sync_enabled = $1 WHERE id = $2', [enabled ? true : false, shopId]);
   return { ok: true, sync_enabled: !!enabled };
 }

@@ -1,5 +1,5 @@
 const router = require('express').Router();
-const PDFDocument = require('pdfkit');
+const { assertExternalEffectsAllowed } = require('../services/shopPolicy');
 const fs = require('fs');
 const path = require('path');
 const auth = require('../middleware/auth');
@@ -100,6 +100,7 @@ function resolveShopLogoImage(logoUrl) {
 }
 
 async function loadInvoiceContext(roId, shopId) {
+  await assertExternalEffectsAllowed(shopId);
   const ro = await dbGet(
     'SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2',
     [roId, shopId]
@@ -124,7 +125,9 @@ async function loadInvoiceContext(roId, shopId) {
   return { ro, shop, customer, vehicle, lineItems, moneySummary, deliveryFeeBreakdown };
 }
 
-function streamDocumentPdf(res, context, { documentType = 'invoice' } = {}) {
+async function streamDocumentPdf(res, context, { documentType = 'invoice' } = {}) {
+  await assertExternalEffectsAllowed(context?.ro?.shop_id);
+  const PDFDocument = require('pdfkit');
   const { ro, shop, customer, vehicle, lineItems, moneySummary, deliveryFeeBreakdown } = context;
   const estimateItems = Array.isArray(lineItems) ? lineItems : [];
   const estimateSubtotalCents = Number(moneySummary?.subtotalCents || 0);
@@ -344,7 +347,7 @@ router.get('/public/:token', async (req, res) => {
       return res.status(403).json({ error: 'Invoice is available after the repair order is closed and paid' });
     }
 
-    return streamDocumentPdf(res, context);
+    return await streamDocumentPdf(res, context);
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
@@ -354,7 +357,7 @@ router.get('/:roId/repair-order', auth, async (req, res) => {
   try {
     const context = await loadInvoiceContext(req.params.roId, req.user.shop_id);
     if (!context) return res.status(404).json({ error: 'Repair order not found' });
-    return streamDocumentPdf(res, context, { documentType: 'repair-order' });
+    return await streamDocumentPdf(res, context, { documentType: 'repair-order' });
   } catch (err) {
     if (!res.headersSent) {
       return res.status(500).json({ error: err.message });
@@ -367,7 +370,7 @@ router.get('/:roId', auth, async (req, res) => {
   try {
     const context = await loadInvoiceContext(req.params.roId, req.user.shop_id);
     if (!context) return res.status(404).json({ error: 'Repair order not found' });
-    return streamDocumentPdf(res, context);
+    return await streamDocumentPdf(res, context);
   } catch (err) {
     if (!res.headersSent) {
       return res.status(500).json({ error: err.message });

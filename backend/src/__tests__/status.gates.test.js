@@ -82,6 +82,9 @@ mockModule('../db', {
   },
   dbAll: async (sql, params = []) => {
     calls.dbAll.push({ sql: String(sql), params });
+    if (String(sql) === 'SELECT id::text AS id, is_internal_test_shop FROM shops WHERE id::text = $1') {
+      return params[0] === 'shop-1' ? [{ id: 'shop-1', is_internal_test_shop: false }] : [];
+    }
     return [];
   },
 });

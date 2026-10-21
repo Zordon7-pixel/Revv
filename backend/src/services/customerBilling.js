@@ -23,6 +23,7 @@ async function ensureTrackingToken(roId, shopId) {
     'SELECT token FROM portal_tokens WHERE ro_id = $1 AND shop_id = $2 ORDER BY created_at DESC LIMIT 1',
     [roId, shopId]
   );
+  await assertExternalEffectsAllowed(shopId);
   if (existing?.token) return existing.token;
 
   const token = uuidv4().replace(/-/g, '');

@@ -1,9 +1,9 @@
 # Internal test shops — t_6002e02f staged implementation
 
 Base: `35e49ddc01d6ef7605f602d85faa9591308915ff` (`origin/main`).
-Lane: `codex/t_6002e02f-revv-test-shop`. **Foundation + phase-2 SMS + phase-3 email + phase-4 Stripe/billing boundaries; NOT feature-complete or release-ready.**
+Lane: `codex/t_6002e02f-revv-test-shop`. **Foundation + phase-2 SMS + phase-3 email + phase-4 Stripe/billing + phase-5 invoice/accounting/carryover boundaries; NOT feature-complete or release-ready.**
 Phase 2 starts at `67dbe8fdfa362c5fdb264870fdd4c9ff25f6c1aa` and changes exactly ten files.
-No account installation or designation is included. Phase-2/3/4 dispatch/validation logs are
+No account installation or designation is included. Phase-2/3/4/5 dispatch/validation logs are
 kept here within the user's ten-file cap; the phase-1 `CLAUDE.md` log remains historical.
 
 ## Implemented safety boundary
@@ -73,15 +73,15 @@ Paths below are relative to `backend/src/` unless otherwise stated. “Pending�
 | `routes/payments.js` intent/create-intent aliases, links, reconcile, webhook receipts, history/RO totals; `services/stripe.js` | Phase 4: intent/create-intent, link, reconciliation and signed settlement converge on guarded adapter/reservation boundaries. SDK loading/client creation is lazy and allowed only with persisted FALSE; retained methods recheck. History remains readable (reporting exclusion pending). Payment callbacks verify raw signatures without importing Stripe. |
 | `services/customerBilling.js` checkout link, tracking token and closed-paid invoice email | Phases 3/4: closed-paid mail and force are guarded; phase 4 also guards direct checkout, standalone tracking-token creation and invoice_emailed_at persistence after send. Stripe payload, cents and reservation key remain unchanged. PDF generation is a separate pending consumer. |
 | `services/paymentReservations.js` reserve, settle, reconcileAttempt/reconcileLocked, manual/deletion locks | Phase 4: current policy on the same connection after parent lock, before each service billing mutation, before every reconciliation provider call, and before commit. Direct/locked reconcile, lazy expiry, binding, legacy adoption, settlement, investigations and audit are guarded. Policy refusal is rethrown, never stored as unknown/released. Cash/approval callbacks using withLockedRo reject at entry and roll back at the final policy gate. No standalone scheduled Stripe billing job was found. |
-| `routes/invoice.js` authenticated invoice, repair-order PDF and public token invoice; `routes/ros.js` invoice mail, close/paid/manual settlement and queued QB sync | Pending: deny invoice generation/send for test tenancy through both public and authenticated entry points. Preserve ordinary print and money authority. |
-| `routes/accounting.js`, `services/quickbooks.js` OAuth/token refresh, qbRequest, customer/item creation, single/batch invoice sync, disconnect | Pending: prevent external invoice/customer/provider effects, including queued sync after RO closure. |
+| `routes/invoice.js` authenticated invoice, repair-order PDF and public token invoice; `routes/ros.js` invoice mail, close/paid/manual settlement and queued QB sync | Phase 5: public/authenticated PDF context and final lazy renderer guarded; invoice JSON/email and detached QB queue check persisted policy. Public tenancy comes only from token/RO records. Ordinary content/cents retained. |
+| `routes/accounting.js`, `services/quickbooks.js` OAuth/token refresh, qbRequest, customer/item creation, single/batch invoice sync, disconnect | Phase 5: route and service/provider policy checks guard OAuth URL/exchange, refresh/save/delete, sync enablement, customer/item/invoice creation and manual/batch/detached sync. Current policy is required after asynchronous preparation and before each provider call/write. |
 | `routes/reports.js` summary, monthly JSON/CSV, tech workload, revenue/RO/performance/insurance tabs | Pending: exclude flagged tenancy before aggregation/export, with deliberate empty/excluded response contracts. |
 | `routes/dashboard.js` instruments, monthly supplement opportunity, owner KPIs, weekly revenue/tech/parts/stages | Pending: exclude all business/revenue/performance aggregates. |
 | `routes/performance.js`, `routes/goals.js`, `routes/ros.js` job-costing, carryover/turnaround and active counts; `services/profit.js`, `services/roMoney.js` calculation consumers | Pending: report/goal exclusion without changing ordinary financial math or fixture operational records. |
 | `routes/superadmin.js` shops/detail/stats/ratings/accounts/helpdesk; `routes/diagnostics.js` counts/heal | Pending: filter cross-shop business/customer/usage totals; distinguish administrative inspection from business reporting. Global counts currently include all rows. |
 | `routes/customers.js` customer/vehicle/RO counts; `routes/reviews.js` summary; `routes/public.js` public shop ratings | Pending: customer/review/business metrics exclusion. Ordinary tenant filtering alone is insufficient. |
 | `middleware/roLimitGuard.js`, `middleware/planGuard.js`, `services/estimateAiPolicy.js` admissions/budgets | Pending: usage exclusion and explicit test-shop provider denial; no paid-plan/admin privilege should be granted to bypass ordinary limits. |
-| `app.js` runCarryoverForActiveShops; `jobs/monthCarryover.js` | Pending: startup enumerates ALL shops and marks billing-month carryovers. Guard both enumeration and direct consumer. |
+| `app.js` runCarryoverForActiveShops; `jobs/monthCarryover.js` | Phase 5: startup SQL requires IS FALSE; direct consumer checks on the same transaction connection, locks parent ROs then policy row, and rechecks before carryover write/commit. No billing_month value is changed. Real SQL concurrency QA remains pending. |
 | `jobs/ownerActivityDigest.js`, `services/ownerActivity.js` digest, immediate critical alerts, preference overrides | Phase 3: service entry guard and per-recipient SMTP check cover scheduled/direct digest, overrides and detached critical alerts. Scheduler enumeration and pre-service digest-date claim still include fixtures; local event writes remain. |
 | `jobs/feedbackDailyAudit.js`, `routes/feedback.js`, superadmin helpdesk totals | Pending: prevent fixture feedback contaminating operational reporting/routing. Job updates feedback only; no provider sends found in the job itself. |
 | `services/shopPolicy.js`; `services/sms.js` sendSMS/sendStaffSMS | Phase 2 implemented: strict persisted resolver, entry/final send guards before config/client/provider resolution, including supplied config and staff capability. Getter-only config/diagnostic APIs do not send. Zero-client synthetic tests and ordinary SMS suites pass. |
@@ -99,7 +99,7 @@ Paths below are relative to `backend/src/` unless otherwise stated. “Pending�
 
 ## Next session in this SAME lane
 
-Keep the database hold and account HELD. Phase 4 adds the selected billing boundaries (receipt below), without claiming full billing exclusion. Next address the exact remaining billing/provider paths in the phase-4 table, unsupported payments/parts/public-intake mail consumers and legacy fixtures, scheduler exclusion and a reviewed server-authorized public fixture path. Reuse the persisted resolver; do not accept body/JWT policy flags or infer fixture identity from email. Background jobs, public token routes, unscoped mail and direct Firestore writes still need their own boundaries. Billing/reporting/provider/metrics/scheduler rows marked pending above remain acceptance gaps.
+Keep the database hold and account HELD. Phase 5 closes the selected invoice/QuickBooks/carryover boundaries (receipt below), without claiming full billing/reporting exclusion. Next address owner digest enumeration/pre-service claim, unsupported payments/parts/public-intake mail consumers and legacy fixtures, other scheduler/reporting exclusions and a reviewed server-authorized public fixture path. Reuse the persisted resolver; do not accept body/JWT policy flags or infer fixture identity from email. Background jobs, public token routes, unscoped mail and direct Firestore writes still need their own boundaries. Billing/reporting/provider/metrics/scheduler rows marked pending above remain acceptance gaps.
 
 Subsequent billing/reporting and scheduler batches must cover the rows above. Only after all exclusions and zero-provider tests are complete may a candidate replace the hold and add designated provisioning. That mechanism must use a dedicated server-side script, runtime env/vault password only, transaction + normalized-email concurrency protection, deterministic idempotent receipt, and one owner tenancy with no global/admin role. Refuse collisions with an existing ordinary account/shop; never convert/backfill customers or attach Stripe/Twilio identities. Repeating provisioning must not reset a password or mutate unrelated data. The receipt must contain only identity, true flag and verified exclusions, never credentials. Creating `zordon+revvqa@mail.grokbot.com` remains outside this build and HELD for separately authorized reviewed installation.
 
@@ -588,3 +588,231 @@ remain DO NOT APPLY. Safety-sensitive billing/signature/financial-history change
 more than two files: Hermes/Oracle owns lifecycle, independent QA, review and release.
 No external review verdict is claimed. The deliberate
 `shops_internal_test_shop_hold CHECK (is_internal_test_shop IS FALSE)` is unchanged.
+
+## Phase-5 dispatch and validation receipt — 2026-10-21 11:14 EDT / 15:14 UTC
+
+Sequential phase 5 of `t_6002e02f`, implementation only, same isolated worktree
+`/Users/zordon/.hermes/kanban/workspaces/t_6002e02f/source` and branch
+`codex/t_6002e02f-revv-test-shop`. Preflight verified clean exact parent
+`35b3595a724e23440746fca913ed87b32f5d7463` and ancestor
+`35e49ddc01d6ef7605f602d85faa9591308915ff`. Required guidance/current runtime
+safeguards, QA checklist, phase receipts and ACTIVE-WORK ownership were read.
+This receipt is the current dispatch log; historical CLAUDE.md remains unchanged.
+
+Exactly ten tracked paths in this candidate:
+
+1. `backend/src/routes/invoice.js`
+2. `backend/src/routes/ros.js`
+3. `backend/src/routes/accounting.js`
+4. `backend/src/services/quickbooks.js`
+5. `backend/src/services/customerBilling.js`
+6. `backend/src/jobs/monthCarryover.js`
+7. `backend/src/app.js`
+8. `backend/src/__tests__/redesign.phase4.test.js`
+9. `backend/src/__tests__/status.gates.test.js`
+10. `docs/INTERNAL-TEST-SHOP.md`
+
+### Implemented guarantees and ordinary behavior
+
+The existing strict persisted resolver is unchanged: exactly one matching Boolean
+FALSE row authorizes effects. TRUE, missing/invalid/mismatched/duplicate rows and
+query failures deny. Request/JWT/body/email/token/plan/admin/provider metadata never
+designates policy. Internal trusted tenancy arguments only select the persisted row.
+No missing synthetic fixture is treated as ordinary.
+
+- Invoice PDF context loading checks authenticated or persisted token tenancy;
+  the final renderer rechecks persisted RO tenancy before loading PDFKit, constructing
+  a document, setting PDF headers or piping bytes. All callers await the renderer,
+  preserving error handling. Public token lookup/expiry and scoped RO lookup remain;
+  closed/paid eligibility, PDF content, exact cents, logo/footer and authorization
+  signature text are unchanged. Suppression uses the existing route error response
+  with fixed policy reason; no invoice bytes or success JSON is emitted.
+- RO invoice JSON checks at entry and after asynchronous enrichment before response.
+  Explicit invoice mail checks before preparation and before send; the actual mailer
+  independently checks at its provider boundary. Existing totals/response semantics
+  remain. The existing public-token issuer now rechecks after lookup before returning
+  a retained token; INSERT already had its own current-policy gate. Search found no
+  other production `portal_tokens` INSERT. Tracking/portal operational reads outside
+  public invoice rendering remain a separate inventory item.
+- Accounting routes check before status/connect/disconnect/enable/manual/batch work.
+  Callback tenancy comes from the existing verified signed OAuth state, then current
+  persisted policy; query/provider metadata cannot authorize effects. Connect URL is
+  now awaited. Exchange/refresh require a trusted shop argument; missing arguments
+  fail closed. The service guards direct calls, token reads/refresh/save/delete,
+  access-token return after lookup, customer/item/invoice creation, and every fetch
+  after asynchronous preparation. Each provider-derived persistence step rechecks.
+  Existing OAuth signature/expiry behavior, credential payloads, 401 bounded retry,
+  disconnect semantics, invoice line amounts, and per-RO batch failure isolation
+  are retained. QuickBooks uses native fetch, not an SDK/client factory; suppressed
+  calls reach neither fetch nor any SDK. No financial authority changes were made.
+- Detached RO QuickBooks work checks before connection lookup and again before the
+  independently guarded sync service. Existing catch/log handling is retained;
+  denied or failed queued calls do not become unhandled rejections.
+- Startup carryover SQL now requires `is_internal_test_shop IS FALSE`. Direct job
+  invocation begins a transaction, resolves policy on that same connection, locks
+  qualifying parent ROs in stable ID order, takes a shared shop-row lock, then
+  rechecks policy before UPDATE and COMMIT. The update is restricted to locked IDs
+  and repeats eligibility predicates. Return value is actual rowCount, repeated
+  invocation is idempotent, failures roll back/release, and policy refusal returns
+  zero without a write. The job only marks `carried_over`; it does not rewrite
+  `billing_month`, cents, settlement, signatures, reservations or audit history.
+
+Synthetic late changes stop the *next* boundary. A request previously authorized
+while FALSE may already have reached the provider before a subsequent TRUE/unavailable
+read; later token/accounting writes and calls are suppressed, not compensated by new
+provider effects. Synthetic final-commit refusal rolls back carryover writes. No
+atomic system-wide designation protocol or cancellation of existing external invoices,
+subscriptions, tokens or accounting identities is claimed. The DB TRUE hold remains
+mandatory. Production lock/concurrency behavior still needs independent real-DB QA.
+
+### Explicit gaps / HELD scope
+
+- `backend/src/jobs/ownerActivityDigest.js` remains unchanged and **pending**: SQL
+  enumeration includes fixtures and the INSERT/ON CONFLICT claim can consume
+  `owner_activity_last_digest_date` before the service. The existing guarded
+  `services/ownerActivity.js` and SMTP boundary still prevent fixture sending.
+  No zero-claim guarantee is claimed for that scheduler. Its proposed edit was
+  removed before the candidate, reserving two paths for required ordinary invoice
+  and paid-close regression fixtures. The comprehensive new tests were consolidated
+  into the existing invoice test file to stay within ten paths; no new test file remains.
+- `src/__tests__/moneyAuthority.phase1.test.js` has two pre-existing missing-policy
+  payment fixtures (named below) that return 503 instead of expected 400/200. Both
+  reproduce against exact parent source; they are excluded from the final passing
+  regression run, not fixed or represented as passing.
+- Legacy `test/payments.phase4.test.js` detached RO mocks lack `../services/shopPolicy`.
+  Four queued QB calls log that caught dependency error in the passing regression
+  run. One legacy status-email fixture also logs `SHOP_POLICY_UNAVAILABLE`. Those
+  mocks do not prove delivery. The new actual-service/queue tests and updated
+  `status.gates.test.js` independently verify ordinary FALSE queue success, policy
+  suppression and provider-error handling. No guard was weakened for legacy mocks.
+- Remaining earlier inventory is still pending: reporting/export/metrics and ledger
+  reads, broader schedulers, unsupported payments/parts/public-intake mail, public
+  fixture designation, direct Firestore, other AI/media/catalog providers, and full
+  entitlement isolation. No provisioning/designation was added. Requested account
+  and full feature remain **HELD**, not release-ready.
+
+### Exact deterministic commands and results
+
+Node **v22.23.2**. All tests use scrubbed `env -i`, synthetic DB/providers only,
+no dotenv/secret files, real DB/accounts, listeners or network. Preload
+`/private/tmp/revv-t6002-phase5/deny-network.cjs` replaces `net.Socket.prototype.connect`,
+`tls.connect`, `http[s].request/get` and global fetch with throwing
+`TEST_NETWORK_PROHIBITED`. VM tests have a closed import map and an explicit local
+fetch mock. No package install, manifest/lockfile, frontend or config changes.
+Commands below were executed through Python subprocess with the exact shown env;
+individual return codes were captured and raw logs retained in that temporary directory.
+
+Focused final (`focused-final.log`), **exit 0: tests 310, pass 310, fail 0,
+cancelled 0, skipped 0, todo 0**. Includes 304 new synthetic cases plus 2 existing
+invoice/logo and 4 existing status-gate cases:
+
+```sh
+env -i PATH=/opt/homebrew/opt/node@22/bin:/opt/homebrew/bin:/usr/bin:/bin NODE_ENV=test CI=1 node --require /private/tmp/revv-t6002-phase5/deny-network.cjs --test --test-concurrency=1 backend/src/__tests__/redesign.phase4.test.js backend/src/__tests__/status.gates.test.js
+```
+
+Coverage includes actual public/auth invoice routes, direct renderer, actual RO
+JSON/mail routes, actual QuickBooks routes/service, verified callbacks, manual/batch/
+detached sync, direct token issuer, actual carryover job and exact startup-enumeration
+function executed without booting app/config. Counts assert zero PDF import/construction/
+stream, provider calls and token/accounting/carryover writes for initial suppression;
+late changes/query failures, forged metadata, strict cardinality, ordinary exact
+content/cents, state rejection, refresh/401, entity creation, batch isolation,
+queue errors, parent-lock ordering, rollback/release and repeat idempotency are covered.
+There were no pre-existing standalone accounting or carryover unit suites; the new
+cases execute those actual modules with synthetic adapters.
+
+Regression final (`regression-final.log`), **exit 0: tests 717, pass 717, fail 0,
+cancelled 0, skipped 0, todo 0**:
+
+```sh
+env -i PATH=/opt/homebrew/opt/node@22/bin:/opt/homebrew/bin:/usr/bin:/bin NODE_ENV=test CI=1 node --require /private/tmp/revv-t6002-phase5/deny-network.cjs --test --test-concurrency=1 --test-skip-pattern='real PostgreSQL|payment intent rejects underpayment unless explicitly partial|payment webhook reconciles partial and paid statuses from cents' backend/test/billingShopPolicy.test.js backend/test/emailShopPolicy.test.js backend/test/paymentReservations.remyA.test.js backend/test/payments.phase4.test.js backend/src/__tests__/ros.assignedToScope.test.js backend/src/__tests__/ros.totalLoss.test.js backend/src/__tests__/ros.roleVisibility.test.js backend/src/__tests__/moneyAuthority.phase1.test.js backend/src/__tests__/roMoney.unit.test.js
+```
+
+Node omits name-filtered tests from its counts: the two named legacy payment tests
+and real-PostgreSQL tests were explicitly excluded, not passed. Caught legacy
+notification/queue fixture errors above remain visible in the log.
+
+Foundation final (`foundation-final.log`), **exit 0: tests 57, pass 57, fail 0,
+cancelled 0, skipped 0, todo 0**:
+
+```sh
+env -i PATH=/opt/homebrew/opt/node@22/bin:/opt/homebrew/bin:/usr/bin:/bin NODE_ENV=test CI=1 node --require /private/tmp/revv-t6002-phase5/deny-network.cjs --test --test-concurrency=1 --test-skip-pattern='real PostgreSQL' backend/test/internalTestShop.test.js backend/test/productionStartup.test.js backend/test/idTypeCastGuard.test.js backend/test/partsNotifications.test.js
+```
+
+Real-PostgreSQL foundation cases excluded, not counted as passes. Final selected
+commands total **1,084 passed, zero failed** with those explicit exclusions.
+Full backend, real-DB locking/concurrency, browser/frontend, Spark advisory and
+independent exact-SHA review were not run or claimed.
+
+Nine changed JS paths individually syntax-checked (**9/9 exit 0**); diff check
+**exit 0**. Equivalent exact shell invocations:
+
+```sh
+for file in backend/src/routes/invoice.js backend/src/routes/ros.js backend/src/routes/accounting.js backend/src/services/quickbooks.js backend/src/services/customerBilling.js backend/src/jobs/monthCarryover.js backend/src/app.js backend/src/__tests__/redesign.phase4.test.js backend/src/__tests__/status.gates.test.js; do
+  env -i PATH=/opt/homebrew/opt/node@22/bin:/opt/homebrew/bin:/usr/bin:/bin NODE_ENV=test CI=1 node --check "$file" || exit "$?"
+done
+git diff --check
+git diff --exit-code 35b3595a724e23440746fca913ed87b32f5d7463 -- backend/src/db/internalTestShop.js backend/src/db/index.js backend/src/db/migrate.js backend/src/db/schema.pg.sql backend/src/routes/auth.js backend/src/services/shopPolicy.js backend/src/jobs/ownerActivityDigest.js
+```
+
+The byte comparison exited **0**: hold/schema/initializer/public FALSE/resolver and
+pending digest scheduler are preserved. The sole app.js change is the carryover
+enumeration SQL; startup validation/hold ordering and scheduler configuration stay intact.
+
+### Failure and recovery history
+
+- Combined initial guidance reads and a few subsequent oversized reads were
+  truncated. Bounded reads recovered current instructions, required safeguards,
+  phase-4 gaps and relevant code before implementation; no result inferred from
+  truncated output.
+- First focused run (`focused-first.log`): **296 tests, 292 passed / 4 failed**.
+  Three new queue tests counted the mailer's configuration log as a second error;
+  assertions now count only the queue-error log. One 401 mock assumed query text
+  existed in every `/query` URL; now models the empty query too. Initial shell
+  wrapper ended with `tail` (wrapper exit 0 did not mean the failed Node tests
+  passed); all subsequent drivers captured individual Node exit codes explicitly.
+  Exact initial command used the same scrubbed env/preload and
+  `--test --test-concurrency=1 backend/test/invoiceAccountingPolicy.test.js backend/src/__tests__/redesign.phase4.test.js`.
+  The temporary new suite was later consolidated into redesign.phase4.test.js.
+- Focused recovery (`focused-recovery.log`): **exit 0, 296/296**. Same initial
+  command plus `--test-skip-pattern='real PostgreSQL'`; no exclusions matched.
+- First regression (`regression-first.log`): **exit 1, 723 tests, 720 passed /
+  3 failed**. Command was final regression above with only skip pattern
+  `real PostgreSQL` and with `backend/src/__tests__/status.gates.test.js` also
+  included. Two pre-existing missing-policy payment fixtures failed 503 vs 400/200;
+  paid-close's old fixture had no stored FALSE row and its QB count was zero.
+  Added explicit matching persisted FALSE only to the paid-close synthetic adapter.
+- Exact-parent diagnostic (`parent-money.log`): **exit 1, 4 tests, 2 passed /
+  2 failed**, same two named moneyAuthority payment cases. A temporary
+  `parent-source.cjs` preload substitutes `git show` exact-parent text for the
+  changed production JS modules during CommonJS compilation, preserving their
+  original filenames/import paths. No checkout/worktree change, config, provider
+  or real DB access. Exact command:
+
+```sh
+env -i PATH=/opt/homebrew/opt/node@22/bin:/opt/homebrew/bin:/usr/bin:/bin NODE_ENV=test CI=1 node --require /private/tmp/revv-t6002-phase5/deny-network.cjs --require /private/tmp/revv-t6002-phase5/parent-source.cjs --test backend/src/__tests__/moneyAuthority.phase1.test.js
+```
+
+- After consolidation and paid-close fixture repair (`focused-consolidated.log`):
+  **exit 0, 300/300**, same command as focused final. Ten additional boundary/parity
+  cases yielded final **310/310**. Final regression/foundation results are above.
+  No failed syntax or diff check. Failures were reported as they occurred;
+  two baseline failures and legacy mocked delivery gaps remain explicit.
+
+Safety-sensitive invoice/accounting/scheduled-billing changes across more than two
+files. No financial-authority, cents, settlement, signature or data-loss rule was
+altered. No Hermes/Kanban/messaging/delegation call, push/merge/deploy, real account,
+provider effect, secret read, cron/provider/model/profile/config change, seed/demo,
+production mutation or protected-task/job change. `job5feaddc2bfaf` is preserved;
+`t_59894b65` remains DO NOT APPLY. Hermes/Oracle owns lifecycle, independent QA,
+review and release. No external review verdict is claimed. The requested account
+and full feature remain **HELD** under the unchanged deliberate database TRUE hold.
+
+Local commit recovery: the initial narrow `git add`/`git commit` command exited
+**128** before staging because the sandbox denied creation of
+`/Volumes/Zordon Storage /openclaw-workspace/Revv/.git/worktrees/source2/index.lock`.
+No commit was created by that attempt. Recovery uses the expressly authorized
+narrow Git escalation to stage only the ten listed paths and create one local
+commit on the current branch, with hooks/signing disabled for that invocation.
+No canonical source edit, push, merge or deployment is included. Final handoff
+verifies the resulting full SHA, exact parent, ten paths and clean worktree.

@@ -171,7 +171,7 @@ const MEDIA_INTEGRITY_AUDIT_MS = 24 * 60 * 60 * 1000;
 
 async function runCarryoverForActiveShops() {
   try {
-    const shops = await dbAll('SELECT id FROM shops');
+    const shops = await dbAll('SELECT id FROM shops WHERE is_internal_test_shop IS FALSE');
     for (const shop of shops) {
       const marked = await runMonthCarryover(shop.id);
       if (marked > 0) {

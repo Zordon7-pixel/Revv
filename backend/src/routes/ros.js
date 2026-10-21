@@ -230,6 +230,7 @@ function queueStatusSMS(roId, shopId, toStatus) {
 function queueQuickBooksSync(roId, shopId) {
   setImmediate(async () => {
     try {
+      await require('../services/shopPolicy').assertExternalEffectsAllowed(shopId);
       const qb = await dbGet(
         `SELECT
            COALESCE(quickbooks_sync_enabled, FALSE) AS quickbooks_sync_enabled,
@@ -241,6 +242,7 @@ function queueQuickBooksSync(roId, shopId) {
       );
       if (!qb?.quickbooks_sync_enabled) return;
       if (!qb.quickbooks_realm_id || !qb.quickbooks_refresh_token) return;
+      await require('../services/shopPolicy').assertExternalEffectsAllowed(shopId);
       await syncInvoiceForRo(shopId, roId);
     } catch (err) {
       console.error(`[QuickBooks] Auto-sync failed for RO ${roId}:`, err.message);
@@ -1394,6 +1396,7 @@ router.get('/:id', auth, async (req, res) => {
 
 router.get('/:id/invoice', auth, async (req, res) => {
   try {
+    await require('../services/shopPolicy').assertExternalEffectsAllowed(req.user.shop_id);
     const ro = await dbGet('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
     if (!ro) return res.status(404).json({ error: 'Not found' });
     const shop = await dbGet('SELECT * FROM shops WHERE id = $1', [ro.shop_id]);
@@ -1403,8 +1406,10 @@ router.get('/:id/invoice', auth, async (req, res) => {
       || (Number(ro.parts_cost || 0) + Number(ro.labor_cost || 0) + Number(ro.sublet_cost || 0) + Number(ro.tax || 0))
     );
     const invoiceTotalWithDelivery = toMoney(baseTotal + Number(deliveryFeeBreakdown.total_fee || 0));
+    const enriched = await enrichRO(ro);
+    await require('../services/shopPolicy').assertExternalEffectsAllowed(ro.shop_id);
     res.json({
-      ...await enrichRO(ro),
+      ...enriched,
       shop,
       delivery_fee_breakdown: deliveryFeeBreakdown,
       invoice_total_with_delivery: invoiceTotalWithDelivery,
@@ -1416,6 +1421,7 @@ router.get('/:id/invoice', auth, async (req, res) => {
 
 router.post('/:id/email-invoice', auth, requireTechnician, async (req, res) => {
   try {
+    await require('../services/shopPolicy').assertExternalEffectsAllowed(req.user.shop_id);
     const ro = await dbGet('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
     if (!ro) return res.status(404).json({ error: 'Not found' });
 
@@ -1423,6 +1429,7 @@ router.post('/:id/email-invoice', auth, requireTechnician, async (req, res) => {
     if (!customer?.email) return res.status(400).json({ error: 'Customer email not found' });
 
     const shop = await dbGet('SELECT name, phone FROM shops WHERE id = $1', [ro.shop_id]);
+    await require('../services/shopPolicy').assertExternalEffectsAllowed(ro.shop_id);
     const invoiceTotal = Number(ro.total || (Number(ro.parts_cost || 0) + Number(ro.labor_cost || 0) + Number(ro.sublet_cost || 0)));
     const subject = `Invoice ${ro.ro_number} from ${shop?.name || 'REVV Shop'}`;
     const html = `
@@ -1432,6 +1439,7 @@ router.post('/:id/email-invoice', auth, requireTechnician, async (req, res) => {
       <p>Thank you for your business.${shop?.phone ? ` Contact us: ${shop.phone}` : ''}</p>
     `;
 
+    await require('../services/shopPolicy').assertExternalEffectsAllowed(ro.shop_id);
     const sent = await sendMail(customer.email, subject, html, ro.shop_id);
     if (!sent) {
       console.log('[InvoiceEmail] Email skipped: mail not configured', { roId: ro.id, customer: customer.email });

@@ -2,6 +2,7 @@ const router = require('express').Router();
 const auth = require('../middleware/auth');
 const { requireAdmin } = require('../middleware/roles');
 const { dbAll } = require('../db');
+const { assertExternalEffectsAllowed } = require('../services/shopPolicy');
 const {
   connectUrl,
   verifyState,
@@ -33,6 +34,7 @@ function parseBool(value) {
 
 router.get('/quickbooks/status', auth, requireAdmin, async (req, res) => {
   try {
+    await assertExternalEffectsAllowed(req.user.shop_id);
     const status = await connectionStatus(req.user.shop_id);
     return res.json(status);
   } catch (err) {
@@ -42,7 +44,8 @@ router.get('/quickbooks/status', auth, requireAdmin, async (req, res) => {
 
 router.get('/quickbooks/connect-url', auth, requireAdmin, async (req, res) => {
   try {
-    const url = connectUrl({ shopId: req.user.shop_id, userId: req.user.id });
+    await assertExternalEffectsAllowed(req.user.shop_id);
+    const url = await connectUrl({ shopId: req.user.shop_id, userId: req.user.id });
     return res.json({ url });
   } catch (err) {
     const msg = String(err?.message || 'Unable to start QuickBooks connection');
@@ -69,7 +72,8 @@ router.get('/quickbooks/callback', async (req, res) => {
       return res.redirect(settingsRedirect('?qb=error&reason=missing_callback_data'));
     }
 
-    const tokenData = await exchangeCodeForTokens(code);
+    await assertExternalEffectsAllowed(state.shop_id);
+    const tokenData = await exchangeCodeForTokens(code, state.shop_id);
     await saveTokens(state.shop_id, realmId, tokenData);
     return res.redirect(settingsRedirect('?qb=connected'));
   } catch (err) {
@@ -80,6 +84,7 @@ router.get('/quickbooks/callback', async (req, res) => {
 
 router.post('/quickbooks/disconnect', auth, requireAdmin, async (req, res) => {
   try {
+    await assertExternalEffectsAllowed(req.user.shop_id);
     const result = await disconnect(req.user.shop_id);
     return res.json(result);
   } catch (err) {
@@ -89,6 +94,7 @@ router.post('/quickbooks/disconnect', auth, requireAdmin, async (req, res) => {
 
 router.patch('/quickbooks/sync-enabled', auth, requireAdmin, async (req, res) => {
   try {
+    await assertExternalEffectsAllowed(req.user.shop_id);
     const enabled = parseBool(req.body?.enabled);
     const result = await setSyncEnabled(req.user.shop_id, enabled);
     return res.json(result);
@@ -99,6 +105,7 @@ router.patch('/quickbooks/sync-enabled', auth, requireAdmin, async (req, res) =>
 
 router.post('/quickbooks/sync/ro/:id', auth, requireAdmin, async (req, res) => {
   try {
+    await assertExternalEffectsAllowed(req.user.shop_id);
     const result = await syncInvoiceForRo(req.user.shop_id, req.params.id);
     return res.json(result);
   } catch (err) {
@@ -108,6 +115,7 @@ router.post('/quickbooks/sync/ro/:id', auth, requireAdmin, async (req, res) => {
 
 router.post('/quickbooks/sync/batch', auth, requireAdmin, async (req, res) => {
   try {
+    await assertExternalEffectsAllowed(req.user.shop_id);
     const body = req.body || {};
     const roIds = Array.isArray(body.ro_ids)
       ? body.ro_ids.map((v) => String(v || '').trim()).filter(Boolean)
