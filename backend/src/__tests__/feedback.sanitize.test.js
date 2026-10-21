@@ -1,6 +1,9 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 
+// Loading the router must never load real storage/configuration in this unit test.
+const dbPath = require.resolve('../db');
+require.cache[dbPath] = { id: dbPath, filename: dbPath, loaded: true, exports: {} };
 const feedbackRouter = require('../routes/feedback');
 
 test('feedback auto-reporter sanitizes provider API key failures before storage', () => {

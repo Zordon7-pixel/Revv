@@ -4,7 +4,7 @@ const test = require('node:test');
 const express = require('express');
 const jwt = require('jsonwebtoken');
 
-process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret';
+process.env.JWT_SECRET = 'synthetic-feedback-test-secret';
 
 function installMock(resolvedPath, exportsValue) {
   require.cache[resolvedPath] = {
@@ -101,13 +101,27 @@ test('feedback list requires authentication', async () => {
 
   assert.equal(res.status, 401);
   assert.equal(res.json.error, 'Unauthorized');
+
+  for (const url of ['/api/feedback', '/api/feedback/all']) {
+    const invalid = await inject(app, {
+      method: 'GET', url, headers: { authorization: 'Bearer invalid-token' },
+    });
+    assert.equal(invalid.status, 401);
+    assert.equal(invalid.json.error, 'Invalid token');
+  }
 });
 
 test('feedback list is admin gated and scoped to the current shop', async () => {
   const calls = [];
+  const policyCalls = [];
   const app = buildApp({
     async dbGet() { return null; },
     async dbAll(sql, params = []) {
+      // Exercise the real policy resolver with persisted shop rows, not feedback.
+      if (sql === 'SELECT id::text AS id, is_internal_test_shop FROM shops WHERE id::text = $1') {
+        policyCalls.push(params);
+        return [{ id: 'shop-1', is_internal_test_shop: false }];
+      }
       calls.push({ sql: String(sql), params });
       return [{ id: 'fb-1', shop_id: 'shop-1', message: 'Scoped feedback' }];
     },
@@ -126,6 +140,7 @@ test('feedback list is admin gated and scoped to the current shop', async () => 
   assert.match(calls[0].sql, /WHERE shop_id::text = \$1::text/i);
   assert.doesNotMatch(calls[0].sql, /SELECT\s+\*/i);
   assert.deepEqual(calls[0].params, ['shop-1', 25, 0]);
+  assert.deepEqual(policyCalls, [['shop-1'], ['shop-1']]);
 });
 
 test('non-admin feedback list access is rejected', async () => {
@@ -208,7 +223,7 @@ test('public feedback submission remains available but rate limited', async () =
   const calls = [];
   const app = buildApp({
     async dbGet() { return null; },
-    async dbAll() { return []; },
+    async dbAll() { throw new Error('Anonymous storage must not resolve shop policy'); },
     async dbRun(sql, params = []) {
       calls.push({ sql: String(sql), params });
       return { rowCount: 1 };
@@ -219,12 +234,14 @@ test('public feedback submission remains available but rate limited', async () =
     method: 'POST',
     url: '/api/feedback',
     headers: { 'content-type': 'application/json' },
-    body: Buffer.from(JSON.stringify({ message: 'Button does not work', app: 'revv' })),
+    body: Buffer.from(JSON.stringify({ message: 'Button does not work', app: 'revv',
+      shop_id: 'forged-shop', is_internal_test_shop: false, routed_to: 'Codex' })),
   });
 
   assert.equal(res.status, 201);
   assert.equal(res.json.ok, true);
   assert.equal(calls.length, 1);
+  assert.equal(calls[0].params[8], null);
   assert.equal(calls[0].params[9], null);
 
   for (let i = 0; i < 9; i += 1) {
@@ -244,4 +261,100 @@ test('public feedback submission remains available but rate limited', async () =
     body: Buffer.from(JSON.stringify({ message: 'Too many reports', app: 'revv' })),
   });
   assert.equal(limited.status, 429);
+  assert.equal(calls.length, 10, 'Rate-limited submissions never reach storage');
+});
+
+test('anonymous feedback ignores unverified identity and routing even with invalid optional tokens', async () => {
+  const calls = [];
+  let policyReads = 0;
+  const app = buildApp({
+    async dbGet() { throw new Error('Anonymous intake must not query identity'); },
+    async dbAll() { policyReads += 1; throw new Error('Anonymous intake has no shop policy'); },
+    async dbRun(sql, params) { calls.push({ sql, params }); return { rowCount: 1 }; },
+  });
+  const tokens = [
+    'invalid-token',
+    jwt.sign({ shop_id: 'forged-shop' }, 'synthetic-wrong-key'),
+    jwt.sign({ shop_id: 'shop-1', exp: 1 }, process.env.JWT_SECRET),
+    jwt.sign({ role: 'superadmin' }, process.env.JWT_SECRET),
+  ];
+  for (const token of tokens) {
+    const res = await inject(app, {
+      method: 'POST', url: '/api/feedback?shop_id=forged-shop&routed_to=Codex',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: Buffer.from(JSON.stringify({ message: 'Synthetic report', shop_id: 'forged-shop',
+        is_internal_test_shop: false, email: 'synthetic@example.invalid', routed_to: 'Codex' })),
+    });
+    assert.equal(res.status, 201);
+    assert.deepEqual(calls.at(-1).params.slice(8), [null, null]);
+  }
+  assert.equal(calls.length, tokens.length);
+  assert.equal(policyReads, 0);
+});
+
+test('shop-linked feedback uses real persisted policy and fails closed at both boundaries', async t => {
+  const ordinary = [{ id: 'shop-1', is_internal_test_shop: false }];
+  const cases = [
+    ['ordinary', [ordinary, ordinary], 200],
+    ['internal', [[{ id: 'shop-1', is_internal_test_shop: true }]], 409],
+    ['missing', [[]], 503],
+    ['wrong rows from incomplete mock', [[{ id: 'fb-1', shop_id: 'shop-1' }]], 503],
+    ['unavailable', [new Error('Synthetic policy unavailable')], 503],
+    ['late internal', [ordinary, [{ id: 'shop-1', is_internal_test_shop: true }]], 409],
+    ['late unavailable', [ordinary, new Error('Synthetic policy unavailable')], 503],
+  ];
+  for (const method of ['GET', 'POST']) {
+    for (const [name, sequence, status] of cases) {
+      await t.test(`${method}: ${name}`, async () => {
+        const reads = [], writes = [], policyCalls = [];
+        const app = buildApp({
+          async dbGet() { return null; },
+          async dbAll(sql, params) {
+            if (sql === 'SELECT id::text AS id, is_internal_test_shop FROM shops WHERE id::text = $1') {
+              const rows = sequence[Math.min(policyCalls.length, sequence.length - 1)];
+              policyCalls.push(params);
+              if (rows instanceof Error) throw rows;
+              return rows;
+            }
+            reads.push({ sql, params });
+            return [{ id: 'fb-1', shop_id: 'shop-1' }];
+          },
+          async dbRun(sql, params) { writes.push({ sql, params }); return { rowCount: 1 }; },
+        });
+        const res = await inject(app, {
+          method, url: '/api/feedback',
+          headers: { ...authHeader(), 'content-type': 'application/json' },
+          body: method === 'POST' ? Buffer.from(JSON.stringify({ message: 'Synthetic report',
+            routed_to: 'Codex', shop_id: 'forged-shop', is_internal_test_shop: false })) : Buffer.alloc(0),
+        });
+        assert.equal(res.status, method === 'POST' && status === 200 ? 201 : status);
+        assert.deepEqual(policyCalls, Array.from({ length: sequence.length }, () => ['shop-1']));
+        if (status === 200) {
+          if (method === 'POST') assert.deepEqual(writes[0].params.slice(8), ['Codex', 'shop-1']);
+          else assert.deepEqual(reads[0].params, ['shop-1', 100, 0]);
+        } else {
+          assert.deepEqual(res.json, { error: status === 409 ? 'INTERNAL_TEST_SHOP' : 'SHOP_POLICY_UNAVAILABLE', excluded: true });
+          assert.deepEqual(writes, []);
+          assert.equal(reads.length, method === 'GET' && name.startsWith('late ') ? 1 : 0);
+        }
+      });
+    }
+  }
+});
+
+test('anonymous feedback still validates input and reports storage failure', async () => {
+  let writes = 0;
+  const app = buildApp({
+    async dbAll() { throw new Error('No anonymous policy query'); },
+    async dbRun() { writes += 1; throw new Error('Synthetic insert failure'); },
+  });
+  for (const [message, status] of [[' ', 400], ['Synthetic report', 500]]) {
+    const res = await inject(app, {
+      method: 'POST', url: '/api/feedback', headers: { 'content-type': 'application/json' },
+      body: Buffer.from(JSON.stringify({ message })),
+    });
+    assert.equal(res.status, status);
+    assert.equal(res.json.error, status === 400 ? 'Message required' : 'Synthetic insert failure');
+  }
+  assert.equal(writes, 1);
 });

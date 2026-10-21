@@ -158,7 +158,10 @@ test('public notification rechecks after local insert and again in detached call
   assert.equal(f.writes[0].params[1],shop);
 });
 test('feedback missing verified JWT tenancy cannot use body or email to authorize routing',async()=>{
-  const f=fixture('routes/feedback.js',{jwtShop:null});const res=await invoke(f,'post','/');assert.equal(res.statusCode,503);assert.deepEqual(f.writes,[]);
+  const f=fixture('routes/feedback.js',{jwtShop:null});const res=await invoke(f,'post','/');
+  assert.equal(res.statusCode,201);assert.equal(f.writes.length,1);
+  assert.equal(f.writes[0].params[8],null);assert.equal(f.writes[0].params[9],null);
+  assert.deepEqual(f.policyCalls,[]);assert.deepEqual(f.effects,[]);
 });
 test('public aggregate SQL independently filters shop, ratings count/average and reviews; limit retained',async()=>{
   const f=fixture('routes/public.js');await invoke(f,'get','/shop/:shopId');assert.equal(f.calls.length,3);

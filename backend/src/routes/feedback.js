@@ -100,15 +100,18 @@ router.post('/', feedbackPostLimiter, async (req, res) => {
     const safeMessage = sanitizeFeedbackText(message);
     if (!safeMessage) return res.status(400).json({ error: 'Message required' });
     const shopId = getShopIdFromAuthHeader(req.headers.authorization);
-    if (!await allowShopData(shopId, res)) return;
+    // Anonymous intake is local storage only. Never accept caller-supplied
+    // tenancy or routing; downstream shop-scoped feeds/audits exclude null shops.
+    // A verified shop still requires fresh policy before storing/routing feedback.
+    if (shopId !== null && !await allowShopData(shopId, res)) return;
     const normalizedApp = ['revv', 'payload', 'forge', 'shopcommand'].includes(String(app || '').toLowerCase())
       ? String(app).toLowerCase()
       : 'revv';
     const id = uuidv4();
-    if (!await allowShopData(shopId, res)) return;
+    if (shopId !== null && !await allowShopData(shopId, res)) return;
     await dbRun(
       `INSERT INTO feedback (id, app, tester_name, category, priority, message, expected, page, routed_to, shop_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-      [id, normalizedApp, tester_name || 'Anonymous', category || 'general', priority || 'medium', safeMessage, sanitizeFeedbackText(expected) || null, page || null, routed_to || null, shopId]
+      [id, normalizedApp, tester_name || 'Anonymous', category || 'general', priority || 'medium', safeMessage, sanitizeFeedbackText(expected) || null, page || null, shopId === null ? null : routed_to || null, shopId]
     );
     res.status(201).json({ ok: true, id });
   } catch (err) {
