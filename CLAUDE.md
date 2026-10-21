@@ -1,3 +1,36 @@
+## Dispatch Log — 2026-10-21 13:24 EDT / 17:24 UTC Phase 9 source-only provisioning
+
+Task t_6002e02f, sole implementation lane. Clean exact parent
+`c1704619988e63625a861776bd6ae443ca07347f`, branch
+`codex/t_6002e02f-revv-test-shop`. No amend/rebase/reset/revert.
+Added a dedicated server-only CLI and import-safe synthetic-adapter core: env-only
+password capture/deletion, normal lazy DB config, normalized-email advisory lock,
+exact one-owner/free fixture creation, conservative collision rollback, no-mutation
+idempotence and stable non-secret JSON. No public setter or account creation here.
+Required startup now validates existing schema without repairs and removes only
+the exact known hold, accepting complete compatible TRUE fixtures. Fresh FALSE,
+public registration FALSE, ordinary update allowlists and phase1–8 exclusions stay.
+
+Exactly ten paths and full source/hold/safety/command receipt:
+`docs/INTERNAL-TEST-SHOP.md` phase9 section. Seven touched JS syntax checks, diff
+and secret/path scan are recorded in `/private/tmp/revv-phase9/checks.json`.
+Canonical scrubbed/deny-network final runs: focused 158/158, policy 1715/1715,
+affected 646/646; all exit0, no failures/skips. Eleven named dedicated real-PG
+top-level gates NOT RUN, excluded explicitly, not passes. Models are synthetic,
+not proof of actual SQL/locks. No final host QA/review verdict or release claim.
+
+Requested account HELD. Public Firestore lead flows remain unsupported for fixture
+validation until separately isolated; backend lead/waitlist delivery stays closed.
+No DB/config/secret/provider/account access, runtime provisioning, notification,
+Hermes/Kanban/messaging/delegation, config/provider/model/cron changes or shipment.
+Hermes/Oracle owns lifecycle/QA/review/release. Safety-sensitive auth/tenant schema,
+over two files; preserve job5feaddc2bfaf and task t_59894b65 DO NOT APPLY.
+Commit blocked: git add exit128, cannot create canonical linked-worktree
+`.git/worktrees/source2/index.lock` (Operation not permitted). No staging/commit,
+escalation or bypass. HEAD remains c1704619988e63625a861776bd6ae443ca07347f;
+seven modified + three new paths, dirty. Hermes commit guard owns the next step.
+Exact evidence: `/private/tmp/revv-phase9/commit-add.json`.
+
 ## Dispatch Log — 2026-10-21 13:05 EDT Phase 8B partial regression closure (t_6002e02f)
 
 SOURCE ONLY, **NOT CLOSED**. Started clean at exact

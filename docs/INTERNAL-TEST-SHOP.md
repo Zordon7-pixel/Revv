@@ -1,21 +1,210 @@
-# Internal test shops — t_6002e02f staged implementation
+# Internal test shops — t_6002e02f
 
-Base: `35e49ddc01d6ef7605f602d85faa9591308915ff` (`origin/main`).
-Lane: `codex/t_6002e02f-revv-test-shop`. **Foundation + phase-2 SMS + phase-3 email + phase-4 Stripe/billing + phase-5 invoice/accounting/carryover + phase-6 selected metrics/usage + phase-7 ordinary routes/exports/jobs boundaries; NOT feature-complete or release-ready.**
-Phase 2 starts at `67dbe8fdfa362c5fdb264870fdd4c9ff25f6c1aa` and changes exactly ten files.
-No account installation or designation is included. Phase-2/3/4/5/6/7 dispatch/validation logs are
-kept here within the user's ten-file cap; the phase-1 `CLAUDE.md` log remains historical.
+## Phase-9 source-only provisioning receipt — 2026-10-21 13:24 EDT / 17:24 UTC
 
-## Implemented safety boundary
+Task `t_6002e02f`, sole implementation lane, clean starting SHA
+`c1704619988e63625a861776bd6ae443ca07347f`, branch
+`codex/t_6002e02f-revv-test-shop`, verified canonical REVV linked worktree.
+Read current CLAUDE.md, QA-CHECKLIST.md, this document and ACTIVE-WORK.md.
+Phase8C's accepted closure is retained; no phases1–8 policy boundary was relaxed.
+Hermes/Oracle owns board/lifecycle, independent QA/review and release. No such
+calls, delegation or messaging occurred here.
 
-- `shops.is_internal_test_shop BOOLEAN NOT NULL DEFAULT FALSE` is present in both fresh schema declarations and a required, transactional, idempotent startup initializer.
-- Public `/api/auth/shop-register` explicitly inserts SQL `FALSE`. Test fields and aliases in requests are ignored, never copied into SQL, JWT claims or roles. The resulting tenancy remains `owner`.
-- Existing allowlists/destructuring in onboarding, market shop settings, settings and user updates cannot write the flag. Executed handler tests cover both mixed ordinary/forged fields and designation-only updates.
-- **`shops_internal_test_shop_hold CHECK (is_internal_test_shop IS FALSE)` deliberately prohibits all true flags**, including direct inserts/updates. There is no provisioning script, API, environment enable switch or supported setter in this candidate. Do not remove the hold to test this incomplete feature.
-- The initializer rejects incompatible types, nulls, existing true values or a weakened hold, rolls back, and reports only a fixed error. Both startup paths propagate that required failure; the app cannot listen/start jobs after it. No row UPDATE, backfill, type conversion, deletion or credential handling is added.
-- PostgreSQL default semantics make existing unflagged shops ordinary without rewriting their tuples. Real synthetic TEXT/UUID tests verify unchanged `xmin` and name. Existing true/null policy is refused, never silently rewritten.
+### Installation contract (source only; never executed in this phase)
 
-The hold is an implementation gate, **not a substitute for per-consumer exclusions**. Acceptance 1 and the default-false portion of 2 are implemented. Acceptance 3–6 and full ordinary-behavior parity remain incomplete. Acceptance 7 is established only for this slice; 8 is this inventory. No flagged shop can be enabled in this candidate while those gaps remain.
+The only production entry is `node backend/scripts/provision-internal-test-shop.js`.
+There is no package/install hook, HTTP route, self-service setter, seed/demo reuse,
+JWT/role/plan authority or email-domain authorization. An authorized installer must
+later supply `REVV_INTERNAL_TEST_SHOP_EMAIL` and
+`REVV_INTERNAL_TEST_SHOP_PASSWORD` in its process environment. No example password,
+installation account or environment file is created here. The requested
+`zordon+revvqa@mail.grokbot.com` account remains **HELD**.
+
+All CLI arguments are refused. Password input comes only from the one environment
+entry, which is deleted immediately after capture and again at cleanup. No argv,
+stdin, prompt, file, default or receipt password input exists. The existing auth
+minimum (six characters) and bcrypt implementation/cost 10 are used; NUL and inputs
+exceeding bcrypt's 72-byte limit are refused. Email is trimmed/lowercased, ASCII
+validated with bounded total/local lengths, and control characters are rejected.
+Importing the CLI/core reads no environment/config/DB/secrets and runs nothing.
+The CLI lazily obtains the normal server `db/postgres` pool only after validation;
+no app bootstrap, startup migration, seed, public-slug service or provider loads.
+The existing SQL public-intake slug default supplies the unused local slug.
+
+Provisioning uses one explicit READ COMMITTED transaction (independent of server
+isolation defaults), a transaction-scoped PostgreSQL advisory lock
+from normalized email, and a shops/users table lock that also serializes ordinary
+registration writes. Deterministic, non-secret, versioned email-derived UUID-shaped
+IDs work with TEXT/UUID/VARCHAR(36). This is a dedicated identity namespace, not a
+conversion of existing ordinary IDs. Existing email matches, either deterministic
+ID and all users of the target shop are checked under locks. Only the complete
+one-shop/one-owner fixture with matching IDs, normalized email, safe fields and a
+valid cost-10 bcrypt hash is idempotent. Partial/orphan/duplicate/cross-tenant,
+ordinary, wrong-role, trial/paid, provider/SMS identity and unknown populated fields
+are collisions. No password comparison, rehash/reset, role/settings update or
+unrelated-row mutation occurs on rerun.
+
+The only data writes are one shops INSERT and one users INSERT. Plan is explicitly
+free, role owner, trial/expiry NULL, SMS comp FALSE, SMS/email notifications FALSE,
+onboarded FALSE and internal designation TRUE. No global/admin grant, customer,
+demo, provider, subscription, billing or SMS row is created. Before creation and
+before COMMIT, catalog-derived tenant/user references (including foreign keys and
+optional provider tables) are locked and required empty. Every ID is bound and
+catalog identifiers are quoted. Persisted rows are reread after INSERT, so an
+unexpected populated default or changed identity rolls back. Row-security-filtered
+reads fail closed; unsupported target-table RLS, rules or INSERT triggers are
+refused. This conservative mechanism supports a pristine fixture only: populated
+business/identity rows or changed fixture settings require refusal and review,
+never cleanup/backfill. It does not authorize using public Firestore flows.
+
+Success is one stable JSON line, only persisted normalized email, shop/user IDs,
+owner role, TRUE flag, exclusion version/list, and the explicit limitation:
+**Public Firestore lead flows are not supported for fixture validation until
+separately isolated.** No password/hash/token/provider ID or secret-derived value
+appears. IDs depend on email/version only, never password. All failures emit fixed
+enums; DB/hash/release/pool-error details are discarded. A failure after COMMIT
+(e.g. connection close) is reported as failure, never a successful receipt; a later
+separately authorized retry must verify persisted state. No effects are retried.
+
+### Hold transition and preserved boundaries
+
+Both fresh declarations retain `BOOLEAN NOT NULL DEFAULT FALSE`, without the old
+blanket TRUE hold. Startup takes its advisory lock and shops table lock, adds the
+column only if absent, then validates existing Boolean type, FALSE default,
+NOT NULL, non-generated shape and constraints without repairing or rewriting data.
+Only the exact validated, local, non-inherited historical
+`shops_internal_test_shop_hold CHECK (is_internal_test_shop IS FALSE)` may be dropped.
+Unknown/weakened/unvalidated/inherited constraints fail before DROP; absence is
+idempotent. It validates again after DROP and checks every persisted TRUE fixture's
+complete safe ownership/state before COMMIT. Failure rolls back the entire
+transition. The CLI itself cannot drop the hold or migrate schema.
+
+Public registration still explicitly inserts SQL FALSE. Ordinary updates still
+cannot write designation; their actual-handler tests are retained. Persisted
+consumer exclusions from phases1–8 are unchanged. Lead/waitlist backend notifications
+remain fail-closed. The frontend direct Firestore lead write/read/export residual
+is unsupported; Firebase configuration/credentials were not opened and no runtime
+Firestore coverage is claimed. No fixture or existing account has been designated.
+
+### Canonical verification
+
+Node v22.23.2, `env -i`, only synthetic input/adapters, deny-network preload,
+no dotenv reads and pg query/connect denied. All tests execute tracked canonical
+paths, with no test-source substitutions. The startup suite's subprocesses use
+its existing closed-import fake runtime and empty synthetic environment. The
+synthetic SQL adapter models transactions/serialization and inspects emitted SQL;
+it is not PostgreSQL and is not proof of real SQL/locking behavior.
+
+| Final receipt | Exit | Tests | Pass | Fail | Skip |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| focused-complete-final | 0 | 158 | 158 | 0 | 0 |
+| policy-complete-final (11 files) | 0 | 1715 | 1715 | 0 | 0 |
+| affected-complete-final (10 files) | 0 | 646 | 646 | 0 | 0 |
+
+The policy set includes remainingParityPolicy and the prior eleven-file canonical
+set. The affected set includes the prior 635 checks plus 11 phase8C checks in
+ros.totalLoss, status.gates and panelEstimator.economics. Counts across commands
+overlap and must not be summed as unique tests. No broad/full-host green claim.
+
+Exact commands, cwd/environment JSON, full logs and exit files are in
+`/private/tmp/revv-phase9/`. Commands from the assigned worktree:
+
+```sh
+# focused-complete-final
+env -i PATH=/opt/homebrew/opt/node@22/bin:/opt/homebrew/bin:/usr/bin:/bin NODE_ENV=test CI=1 TZ=UTC NODE_OPTIONS=--require=/private/tmp/revv-phase9/deny-network.cjs /opt/homebrew/opt/node@22/bin/node --test --test-reporter=tap --test-concurrency=1 '--test-skip-pattern=real PostgreSQL' backend/test/internalTestShopProvisioning.test.js backend/test/internalTestShop.test.js backend/test/productionStartup.test.js backend/test/idTypeCastGuard.test.js
+# policy-complete-final
+env -i PATH=/opt/homebrew/opt/node@22/bin:/opt/homebrew/bin:/usr/bin:/bin NODE_ENV=test CI=1 TZ=UTC NODE_OPTIONS=--require=/private/tmp/revv-phase9/deny-network.cjs /opt/homebrew/opt/node@22/bin/node --test --test-reporter=tap --test-concurrency=1 '--test-skip-pattern=real PostgreSQL' backend/test/internalTestShop.test.js backend/test/remainingParityPolicy.test.js backend/test/ordinarySurfacesPolicy.test.js backend/test/billingShopPolicy.test.js backend/test/emailShopPolicy.test.js backend/test/metricsShopPolicy.test.js backend/test/payments.phase4.test.js backend/test/partsNotifications.test.js backend/src/__tests__/publicIntake.test.js backend/src/__tests__/trueShopProfit.costProfile.test.js backend/src/__tests__/trueShopProfit.engine.test.js
+# affected-complete-final
+env -i PATH=/opt/homebrew/opt/node@22/bin:/opt/homebrew/bin:/usr/bin:/bin NODE_ENV=test CI=1 TZ=UTC NODE_OPTIONS=--require=/private/tmp/revv-phase9/deny-network.cjs /opt/homebrew/opt/node@22/bin/node --test --test-reporter=tap --test-concurrency=1 '--test-skip-pattern=real PostgreSQL' backend/test/paymentReservations.remyA.test.js backend/test/smsConsent.phase2.test.js backend/src/__tests__/redesign.phase4.test.js backend/test/estimateImport.test.js backend/src/__tests__/ros.roleVisibility.test.js backend/src/__tests__/ros.assignedToScope.test.js backend/test/remainingParityPolicy.test.js backend/src/__tests__/ros.totalLoss.test.js backend/src/__tests__/status.gates.test.js backend/test/panelEstimator.economics.test.js
+```
+
+Dedicated real PostgreSQL: **NOT RUN**. Eleven top-level gates across the selected
+files are name-filtered (their nested real-PG cases are not executed or counted).
+No PostgreSQL instance, socket, server or psql process was accessed. Exact names:
+
+- `real PostgreSQL refuses wrong true default without rewriting existing policy`
+- `real PostgreSQL refuses existing null without rewriting existing policy`
+- `real PostgreSQL refuses wrong type without rewriting existing policy`
+- `real PostgreSQL refuses weakened constraint without rewriting existing policy`
+- `real PostgreSQL fresh shops declaration in db/index.js defaults false before migrations`
+- `real PostgreSQL fresh shops declaration in db/schema.pg.sql defaults false before migrations`
+- `real PostgreSQL TEXT: defaults, repeat migration, row preservation, NULL rejection`
+- `real PostgreSQL UUID: defaults, repeat migration, row preservation, NULL rejection`
+- `real PostgreSQL payment reservations, parallel creation and settlement (mock Stripe only)`
+- `real PostgreSQL mounted ready -> auto link -> cash, audit/tenant/concurrency witnesses`
+- `real PostgreSQL phone/shop matching, STOP revocation and reconfirmation suppression`
+
+Seven touched JS files receive Node22 `--check`; `git diff --check` and the
+changed-path/secret-pattern scan are recorded in `checks.json`. Canonical tests
+verify import isolation, environment-only input, fixed output, post-write rollback,
+12 concurrent synthetic attempts converging to one shop/owner, zero rerun writes
+or hashing, collisions, identity types, strict schema transition, and preserved
+public/update and consumer gates. No real password/hash/identity was used.
+
+Exactly ten changed paths:
+
+- `CLAUDE.md`
+- `backend/scripts/provision-internal-test-shop.js`
+- `backend/src/db/index.js`
+- `backend/src/db/internalTestShop.js`
+- `backend/src/db/schema.pg.sql`
+- `backend/src/services/internalTestShopProvisioning.js`
+- `backend/test/emailShopPolicy.test.js`
+- `backend/test/internalTestShop.test.js`
+- `backend/test/internalTestShopProvisioning.test.js`
+- `docs/INTERNAL-TEST-SHOP.md`
+
+### Failure history, limits and handoff
+
+Initial combined historical-document reads and one follow-up search output were
+truncated; bounded reads recovered relevant current instructions before editing.
+A password-module filename search had no matches (policy is inline in auth.js),
+and a speculative db/subscriptions.js path was absent (definitions are in
+migrate.js). No code decision relied on missing output. No test assertion has failed.
+Focused runs progressed 142/142, 152/152, 156/156, then final 158/158 as cases were
+added. Initial policy/affected runs also passed 1715/1715 and 646/646. Inspection
+caught and removed an unnecessary public-slug helper DB import before final gates.
+The first final-rerun wrapper incorrectly sliced argv and omitted each group's
+first file: focused 41, policy 1686, affected 579, all exit0 but incomplete and
+not accepted as final verification (`*-verified-final` logs retained). Reported
+immediately, corrected by selecting explicit `.test.js` argv entries and asserting
+4/11/10 files. Verified recovery is `*-complete-final`: 158/1715/646, all exit0.
+No supplied deadline is at risk; Bryan needs no action for these source changes.
+
+Safety-sensitive tenant/auth/schema transition and more than two files: Hermes
+must route the required independent exact-SHA review after its commit guard and
+host QA. Real PostgreSQL transition/locking/concurrency, final host/browser QA,
+Spark/Remy verdicts, installation/account creation, deployment and release are
+unperformed, not claimed. No production/customer/account/provider/network actions,
+secrets/.env/vault/keychain reads, credential generation, sends, config/profile/
+provider/model/cron changes, push/merge/deploy/install or lifecycle calls occurred.
+`job5feaddc2bfaf` is preserved; `t_59894b65` remains **DO NOT APPLY**.
+Final commit status follows.
+
+### Commit-blocked final state
+
+`git add -- <the exact ten paths above>` exited **128** before staging:
+
+```text
+fatal: Unable to create '/Volumes/Zordon Storage /openclaw-workspace/Revv/.git/worktrees/source2/index.lock': Operation not permitted
+```
+
+Exact argv/stdout/stderr: `/private/tmp/revv-phase9/commit-add.json`.
+No commit command ran; no escalation, retry, lock bypass or shared-metadata edit.
+Intended narrow non-amending message: `Add server-only internal test shop provisioning`.
+HEAD remains `c1704619988e63625a861776bd6ae443ca07347f`; worktree is **dirty**:
+seven modified tracked files, three new source/test files, zero staged paths.
+All ten paths are listed above. Hermes commit guard owns the non-amending commit
+and subsequent exact-SHA gates. This is a verified source handoff, not a reviewed,
+installed, provisioned, deployed or released result. The blocker was reported as
+soon as observed; no Bryan action or additional permission is requested.
+
+
+## Historical phase1–8 inventory and receipts
+
+The following inventory/holds/pending statements are historical. The phase-9
+source-only receipt above supersedes their provisioning/hold continuation plan;
+all real installation, host QA and release remain outside this phase.
 
 ## Phase 2 — outbound SMS and autoprovision (2026-10-21)
 

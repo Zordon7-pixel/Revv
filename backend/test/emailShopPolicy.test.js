@@ -362,9 +362,10 @@ test('public lead and waitlist cannot authorize fixture notifications using body
   zero(h);
   assert.equal(h.state.queries.length, 0, 'body tenancy never reaches the policy resolver');
   const hold = fs.readFileSync(path.join(root, 'db/internalTestShop.js'), 'utf8');
-  assert.match(hold, /CHECK \(is_internal_test_shop IS FALSE\)/);
+  assert.match(hold, /DROP CONSTRAINT IF EXISTS shops_internal_test_shop_hold/);
+  assert.match(hold, /verifyExistingFixtures/);
   const form = fs.readFileSync(path.join(root, '../../frontend/src/components/LeadCaptureForm.jsx'), 'utf8');
-  assert.match(form, /addDoc/); // Explicit unresolved bypass: no designated fixture may be enabled.
+  assert.match(form, /addDoc/); // Explicit unresolved bypass: these public flows remain unsupported for fixtures.
 });
 
 test('payment receipt supports ordinary mail; fixture/unavailable callbacks stop before notifications', async () => {

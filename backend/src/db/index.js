@@ -89,18 +89,18 @@ $slug$;`);
 
 async function initDb() {
   const { rows: [parent] } = await pool.query(`
-    SELECT atttypid::regtype::text AS type FROM pg_attribute
+    SELECT atttypid::regtype::text AS type, atttypmod FROM pg_attribute
     WHERE attrelid = to_regclass('shops') AND attname = 'id' AND NOT attisdropped
   `);
-  const shopIdType = parent?.type || 'uuid';
-  if (!['uuid', 'text'].includes(shopIdType)) throw new Error('[DB] Unsupported shops.id type');
+  const shopIdType = parent?.type === 'character varying' && parent.atttypmod === 40
+    ? 'character varying(36)' : parent?.type || 'uuid';
+  if (!['uuid', 'text', 'character varying(36)'].includes(shopIdType)) throw new Error('[DB] Unsupported shops.id type');
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS shops (
       id UUID PRIMARY KEY,
       name TEXT NOT NULL,
-      is_internal_test_shop BOOLEAN NOT NULL DEFAULT FALSE
-        CONSTRAINT shops_internal_test_shop_hold CHECK (is_internal_test_shop IS FALSE),
+      is_internal_test_shop BOOLEAN NOT NULL DEFAULT FALSE,
       onboarded BOOLEAN DEFAULT FALSE,
       phone TEXT,
       logo_url TEXT,

@@ -24,8 +24,7 @@ $slug$;
 CREATE TABLE IF NOT EXISTS shops (
   id UUID PRIMARY KEY,
   name TEXT NOT NULL,
-  is_internal_test_shop BOOLEAN NOT NULL DEFAULT FALSE
-    CONSTRAINT shops_internal_test_shop_hold CHECK (is_internal_test_shop IS FALSE),
+  is_internal_test_shop BOOLEAN NOT NULL DEFAULT FALSE,
   public_intake_slug TEXT UNIQUE NOT NULL DEFAULT public_intake_new_slug(),
   onboarded BOOLEAN DEFAULT FALSE,
   phone TEXT,

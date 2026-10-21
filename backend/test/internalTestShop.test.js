@@ -147,9 +147,9 @@ function migrationPool({ fail, rollbackFails = false, connectFails = false } = {
 test('startup migration is transactional, additive and idempotent without data backfill', async () => {
   const pool = migrationPool(); await up(pool); await up(pool);
   assert.equal(pool.queries.filter(q => q === 'COMMIT').length, 2);
-  assert.equal(pool.queries.filter(q => q === 'BEGIN').length, 2);
+  assert.equal(pool.queries.filter(q => q === 'BEGIN ISOLATION LEVEL READ COMMITTED').length, 2);
   assert.match(pool.queries.join('\n'), /pg_advisory_xact_lock/);
-  assert.doesNotMatch(pool.queries.join('\n'), /\b(?:INSERT|UPDATE|DELETE|DROP|TRUNCATE)\b/);
+  assert.doesNotMatch(pool.queries.join('\n'), /\b(?:INSERT|UPDATE|DELETE|TRUNCATE)\b/);
   assert.deepEqual(pool.releases, [false, false]);
 });
 for (const stage of ['BEGIN', 'pg_advisory', 'ALTER TABLE', 'COMMIT']) {
@@ -168,10 +168,10 @@ test('connection and rollback failures cannot report migration success', async (
   assert.deepEqual(pool.releases, [true]);
 });
 
-test('both schema paths and required initializer preserve the hold', () => {
+test('both fresh schema paths default FALSE without the historical hold', () => {
   for (const file of ['db/index.js', 'db/schema.pg.sql']) {
     assert.match(fs.readFileSync(path.join(sourceRoot, file), 'utf8'),
-      /is_internal_test_shop BOOLEAN NOT NULL DEFAULT FALSE\s+CONSTRAINT shops_internal_test_shop_hold CHECK \(is_internal_test_shop IS FALSE\)/);
+      /is_internal_test_shop BOOLEAN NOT NULL DEFAULT FALSE,/);
   }
   assert.match(fs.readFileSync(path.join(sourceRoot, 'db/index.js'), 'utf8'), /await require\('\.\/internalTestShop'\)\.up\(pool\)/);
 });
@@ -235,7 +235,7 @@ function psql(sql, expectedStatus = 0) {
 }
 
 for (const [label, definition, value] of [
-  ['existing true', 'BOOLEAN DEFAULT TRUE', 'TRUE'],
+  ['wrong true default', 'BOOLEAN NOT NULL DEFAULT TRUE', 'TRUE'],
   ['existing null', 'BOOLEAN', 'NULL'],
   ['wrong type', 'TEXT', "'false'"],
   ['weakened constraint', 'BOOLEAN CONSTRAINT shops_internal_test_shop_hold CHECK (TRUE)', 'FALSE'],
@@ -259,7 +259,7 @@ for (const [label, definition, value] of [
 }
 
 for (const file of ['db/index.js', 'db/schema.pg.sql']) {
-  test(`real PostgreSQL fresh shops declaration in ${file} enforces false before migrations`, { skip: !socket }, () => {
+  test(`real PostgreSQL fresh shops declaration in ${file} defaults false before migrations`, { skip: !socket }, () => {
     const sql = fs.readFileSync(path.join(sourceRoot, file), 'utf8')
       .match(/CREATE TABLE IF NOT EXISTS shops \([\s\S]*?\n\s*\);/)[0];
     const schema = `test_shop_${crypto.randomUUID().replaceAll('-', '')}`;
@@ -270,13 +270,13 @@ for (const file of ['db/index.js', 'db/schema.pg.sql']) {
         ${sql}
         INSERT INTO shops(id,name) VALUES ('${id}','synthetic');`);
       assert.equal(psql(`SET search_path=${schema}; SELECT is_internal_test_shop FROM shops;`), 'f');
-      psql(`SET search_path=${schema}; UPDATE shops SET is_internal_test_shop=TRUE WHERE id='${id}';`, 3);
-      assert.equal(psql(`SET search_path=${schema}; SELECT is_internal_test_shop FROM shops;`), 'f');
+      psql(`SET search_path=${schema}; UPDATE shops SET is_internal_test_shop=TRUE WHERE id='${id}';`);
+      assert.equal(psql(`SET search_path=${schema}; SELECT is_internal_test_shop FROM shops;`), 't');
     } finally { psql(`DROP SCHEMA IF EXISTS ${schema} CASCADE;`); }
   });
 }
 for (const type of ['TEXT', 'UUID']) {
-  test(`real PostgreSQL ${type}: defaults, repeat migration, row preservation, SQL escalation rejection`, { skip: !socket }, async () => {
+  test(`real PostgreSQL ${type}: defaults, repeat migration, row preservation, NULL rejection`, { skip: !socket }, async () => {
     const pool = migrationPool(); await up(pool);
     const schema = `test_shop_${crypto.randomUUID().replaceAll('-', '')}`;
     const id = type === 'TEXT' ? 'synthetic-existing' : crypto.randomUUID();
@@ -291,14 +291,6 @@ for (const type of ['TEXT', 'UUID']) {
       assert.equal(psql(`SET search_path=${schema}; INSERT INTO shops(id,name) VALUES ('${fresh}','new') RETURNING is_internal_test_shop;`), 'f');
       assert.equal(psql(`SET search_path=${schema}; SELECT bool_and(is_internal_test_shop IS FALSE) FROM shops;`), 't');
       psql(`SET search_path=${schema}; DO $gate$ BEGIN
-        BEGIN
-          INSERT INTO shops(id,name,is_internal_test_shop) VALUES ('${crypto.randomUUID()}','blocked',TRUE);
-          RAISE EXCEPTION 'escalation accepted';
-        EXCEPTION WHEN check_violation THEN NULL; END;
-        BEGIN
-          UPDATE shops SET is_internal_test_shop=TRUE WHERE id='${id}';
-          RAISE EXCEPTION 'escalation accepted';
-        EXCEPTION WHEN check_violation THEN NULL; END;
         BEGIN
           UPDATE shops SET is_internal_test_shop=NULL WHERE id='${id}';
           RAISE EXCEPTION 'null accepted';
