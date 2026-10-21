@@ -18,7 +18,7 @@ router.post('/', leadsLimiter, prospectIdentity, async (req, res) => {
       return res.status(400).json({ error: 'Name and email are required' });
     }
 
-    await sendProspectDiscordEmbed({
+    void sendProspectDiscordEmbed({
       title: '🔥 New Lead from revvshop.app!',
       color: 0xff6b35,
       fields: [
@@ -29,11 +29,11 @@ router.post('/', leadsLimiter, prospectIdentity, async (req, res) => {
         { name: 'Message', value: message || 'None', inline: false },
       ],
       footer: 'REVV Lead Capture',
-    }, req.user?.id);
+    }, req.prospectUserId);
 
     res.json({ success: true });
-  } catch (err) {
-    console.error('[leads] Error:', err.message);
+  } catch {
+    console.error('[leads] Submission failed');
     res.status(500).json({ error: 'Server error' });
   }
 });

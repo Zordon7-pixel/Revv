@@ -15,6 +15,7 @@ let pool;
 try {
   pool = require('../db/postgres').pool;
 } catch {
+  console.error('[waitlist] Persistence unavailable');
   pool = null;
 }
 
@@ -30,8 +31,8 @@ async function ensureTable() {
         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       )
     `);
-  } catch (err) {
-    console.error('[waitlist] Table creation error:', err.message);
+  } catch {
+    console.error('[waitlist] Table creation failed');
   }
 }
 ensureTable();
@@ -53,8 +54,8 @@ router.post('/', waitlistLimiter, prospectIdentity, async (req, res) => {
       );
     }
 
-    // Fire Discord webhook
-    await sendProspectDiscordEmbed({
+    // Best-effort alert work cannot turn a saved signup into a failed request.
+    void sendProspectDiscordEmbed({
       title: '📬 New Waitlist Signup',
       description: `**${cleanEmail}** joined the waitlist`,
       color: 0x10b981,
@@ -63,11 +64,11 @@ router.post('/', waitlistLimiter, prospectIdentity, async (req, res) => {
         { name: 'Time', value: new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }), inline: true },
       ],
       footer: 'REVV Lead Tracking',
-    }, req.user?.id);
+    }, req.prospectUserId);
 
     res.json({ ok: true });
-  } catch (err) {
-    console.error('[waitlist] Error:', err.message);
+  } catch {
+    console.error('[waitlist] Submission failed');
     res.status(500).json({ error: 'Server error' });
   }
 });

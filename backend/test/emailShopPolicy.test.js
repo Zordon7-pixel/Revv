@@ -58,7 +58,7 @@ function harness(flag = false) {
     const filename = path.join(root, file);
     vm.runInNewContext(`(function(require,module,exports){${fs.readFileSync(filename, 'utf8')}\n${suffix}\n})`, {
       console: Object.fromEntries(['log', 'warn', 'error'].map(key => [key, (...args) => state.logs.push(args)])),
-      process: { env }, Buffer, setTimeout, clearTimeout,
+      process: { env }, Buffer, setTimeout, clearTimeout, AbortController,
       setImmediate: callback => state.pending.push(callback),
       fetch: async (url, options) => {
         state.fetches.push({ url, options });
