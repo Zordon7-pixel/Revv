@@ -1,3 +1,13 @@
+const { resolveShopPolicy } = require('../services/shopPolicy');
+
+async function allowShopData(shopId, res) {
+  const policy = await resolveShopPolicy(shopId);
+  if (policy.allowExternalEffects) return true;
+  res.status(policy.reason === 'INTERNAL_TEST_SHOP' ? 409 : 503)
+    .json({ error: policy.reason, excluded: true });
+  return false;
+}
+
 const router = require('express').Router();
 const { dbGet, dbAll, dbRun } = require('../db');
 const { v4: uuidv4 } = require('uuid');
@@ -90,10 +100,12 @@ router.post('/', feedbackPostLimiter, async (req, res) => {
     const safeMessage = sanitizeFeedbackText(message);
     if (!safeMessage) return res.status(400).json({ error: 'Message required' });
     const shopId = getShopIdFromAuthHeader(req.headers.authorization);
+    if (!await allowShopData(shopId, res)) return;
     const normalizedApp = ['revv', 'payload', 'forge', 'shopcommand'].includes(String(app || '').toLowerCase())
       ? String(app).toLowerCase()
       : 'revv';
     const id = uuidv4();
+    if (!await allowShopData(shopId, res)) return;
     await dbRun(
       `INSERT INTO feedback (id, app, tester_name, category, priority, message, expected, page, routed_to, shop_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
       [id, normalizedApp, tester_name || 'Anonymous', category || 'general', priority || 'medium', safeMessage, sanitizeFeedbackText(expected) || null, page || null, routed_to || null, shopId]
@@ -107,7 +119,10 @@ router.post('/', feedbackPostLimiter, async (req, res) => {
 router.get('/all', auth, requireSuperadmin, async (req, res) => {
   try {
     const { limit, offset } = paginationParams(req.query);
-    const feedback = await dbAll(`${FEEDBACK_SELECT} ORDER BY created_at DESC LIMIT $1 OFFSET $2`, [limit, offset]);
+    if (req.user?.shop_id && !await allowShopData(req.user.shop_id, res)) return;
+    const feedback = await dbAll(`${FEEDBACK_SELECT}
+      WHERE EXISTS (SELECT 1 FROM shops s WHERE s.id::text = feedback.shop_id::text AND s.is_internal_test_shop IS FALSE) ORDER BY created_at DESC LIMIT $1 OFFSET $2`, [limit, offset]);
+    if (req.user?.shop_id && !await allowShopData(req.user.shop_id, res)) return;
     res.json({ feedback });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -120,11 +135,13 @@ router.get('/', auth, requireAdmin, async (req, res) => {
     if (!shopId) {
       return res.status(403).json({ error: 'Shop context required' });
     }
+    if (!await allowShopData(shopId, res)) return;
     const { limit, offset } = paginationParams(req.query);
     const feedback = await dbAll(
       `${FEEDBACK_SELECT} WHERE shop_id::text = $1::text ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
       [String(shopId), limit, offset]
     );
+    if (!await allowShopData(shopId, res)) return;
     res.json({ feedback });
   } catch (err) {
     res.status(500).json({ error: err.message });

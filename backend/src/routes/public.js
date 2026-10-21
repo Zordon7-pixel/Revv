@@ -1,3 +1,13 @@
+const { resolveShopPolicy } = require('../services/shopPolicy');
+
+async function allowShopData(shopId, res) {
+  const policy = await resolveShopPolicy(shopId);
+  if (policy.allowExternalEffects) return true;
+  res.status(policy.reason === 'INTERNAL_TEST_SHOP' ? 409 : 503)
+    .json({ error: policy.reason, excluded: true });
+  return false;
+}
+
 const router = require('express').Router();
 const { dbGet, dbAll, dbRun } = require('../db');
 const rateLimit = require('express-rate-limit');
@@ -22,8 +32,10 @@ const intakeMetadataLimiter = rateLimit({
 router.get('/intake/:slug', intakeMetadataLimiter, async (req, res) => {
   try {
     const shopId = await resolvePublicShop(req);
-    const shop = await dbGet('SELECT name, logo_url FROM shops WHERE id = $1', [shopId]);
+    if (!await allowShopData(shopId, res)) return;
+    const shop = await dbGet('SELECT name, logo_url FROM shops WHERE id = $1 AND is_internal_test_shop IS FALSE', [shopId]);
     if (!shop) return res.status(404).json({ error: 'Shop not found', code: 'SHOP_NOT_FOUND' });
+    if (!await allowShopData(shopId, res)) return;
     return res.json({ name: shop.name, logo_url: shop.logo_url });
   } catch (err) {
     return sendPublicIntakeError(res, err);
@@ -38,10 +50,12 @@ router.get('/shop/:shopId', async (req, res) => {
       return res.status(404).json({ error: 'Shop not found' });
     }
     
+    if (!await allowShopData(shopId, res)) return;
+
     // Get shop info
     const shop = await dbGet(`
       SELECT id, name, phone, address, city, state, zip, labor_rate, public_intake_slug
-      FROM shops WHERE id = $1
+      FROM shops WHERE id = $1 AND is_internal_test_shop IS FALSE
     `, [shopId]);
     
     if (!shop) {
@@ -55,6 +69,7 @@ router.get('/shop/:shopId', async (req, res) => {
         COUNT(*)::int as review_count
       FROM ro_ratings
       WHERE shop_id = $1
+        AND EXISTS (SELECT 1 FROM shops s WHERE s.id::text = ro_ratings.shop_id::text AND s.is_internal_test_shop IS FALSE)
     `, [shopId]);
     
     // Get recent reviews (last 10)
@@ -65,6 +80,7 @@ router.get('/shop/:shopId', async (req, res) => {
       LEFT JOIN repair_orders ro ON ro.id = r.ro_id
       LEFT JOIN vehicles v ON v.id = ro.vehicle_id
       WHERE r.shop_id = $1
+        AND EXISTS (SELECT 1 FROM shops s WHERE s.id::text = r.shop_id::text AND s.is_internal_test_shop IS FALSE)
       ORDER BY r.created_at DESC
       LIMIT 10
     `, [shopId]);
@@ -81,6 +97,7 @@ router.get('/shop/:shopId', async (req, res) => {
       badges.push({ type: 'perfect_score', label: 'Perfect Score', description: '5.0 average with 5+ reviews' });
     }
     
+    if (!await allowShopData(shopId, res)) return;
     res.json({
       shop: {
         id: shop.id,
@@ -114,6 +131,7 @@ router.get('/shop/:shopId', async (req, res) => {
 router.post('/estimate-request', estimateRequestRateLimit, async (req, res) => {
   try {
     const resolvedShopId = await resolvePublicShop(req);
+    if (!await allowShopData(resolvedShopId, res)) return;
     const {
       name,
       phone,
@@ -169,6 +187,7 @@ router.post('/estimate-request', estimateRequestRateLimit, async (req, res) => {
     const normalizedPhotos = photos || [];
     const requestId = uuidv4();
 
+    if (!await allowShopData(resolvedShopId, res)) return;
     await dbRun(
       `INSERT INTO estimate_requests
         (id, shop_id, name, phone, email, year, make, model, damage_type, description, preferred_date, photos_json, status)
@@ -190,14 +209,22 @@ router.post('/estimate-request', estimateRequestRateLimit, async (req, res) => {
     );
 
     // Only internal identifiers and a fixed request type may leave the app.
-    Promise.resolve().then(() => sendDiscordEmbed({
-      title: 'New intake request',
-      fields: [
-        { name: 'Shop ID', value: resolvedShopId },
-        { name: 'Request ID', value: requestId },
-        { name: 'Type', value: 'estimate' },
-      ],
-    })).catch(() => console.error('[Public Intake] Notification failed'));
+    if (!await allowShopData(resolvedShopId, res)) return;
+    Promise.resolve().then(async () => {
+      const policy = await resolveShopPolicy(resolvedShopId);
+      if (!policy.allowExternalEffects) {
+        console.warn('[Public Intake] Notification suppressed:', policy.reason);
+        return;
+      }
+      return sendDiscordEmbed({
+        title: 'New intake request',
+        fields: [
+          { name: 'Shop ID', value: resolvedShopId },
+          { name: 'Request ID', value: requestId },
+          { name: 'Type', value: 'estimate' },
+        ],
+      }, resolvedShopId);
+    }).catch(() => console.error('[Public Intake] Notification failed'));
 
     return res.status(201).json({ success: true, message: 'Request received' });
   } catch (err) {

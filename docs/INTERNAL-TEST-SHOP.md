@@ -1,9 +1,9 @@
 # Internal test shops — t_6002e02f staged implementation
 
 Base: `35e49ddc01d6ef7605f602d85faa9591308915ff` (`origin/main`).
-Lane: `codex/t_6002e02f-revv-test-shop`. **Foundation + phase-2 SMS + phase-3 email + phase-4 Stripe/billing + phase-5 invoice/accounting/carryover + phase-6 selected metrics/usage boundaries; NOT feature-complete or release-ready.**
+Lane: `codex/t_6002e02f-revv-test-shop`. **Foundation + phase-2 SMS + phase-3 email + phase-4 Stripe/billing + phase-5 invoice/accounting/carryover + phase-6 selected metrics/usage + phase-7 ordinary routes/exports/jobs boundaries; NOT feature-complete or release-ready.**
 Phase 2 starts at `67dbe8fdfa362c5fdb264870fdd4c9ff25f6c1aa` and changes exactly ten files.
-No account installation or designation is included. Phase-2/3/4/5/6 dispatch/validation logs are
+No account installation or designation is included. Phase-2/3/4/5/6/7 dispatch/validation logs are
 kept here within the user's ten-file cap; the phase-1 `CLAUDE.md` log remains historical.
 
 ## Implemented safety boundary
@@ -79,27 +79,27 @@ Paths below are relative to `backend/src/` unless otherwise stated. “Pending�
 | `routes/dashboard.js` instruments, monthly supplement opportunity, owner KPIs, weekly revenue/tech/parts/stages | Phase 6: all four routes and supplement helper guarded; ordinary cents, timestamp casts and calculations retained. |
 | `routes/performance.js`, `routes/goals.js`, `routes/ros.js` job-costing, carryover/turnaround and active counts; `services/profit.js`, `services/roMoney.js` calculation consumers | Phase 6 covers performance and goal GET/PUT/helper, including lazy goal writes. RO job-cost/carryover-pending/turnaround and direct calculation consumers remain pending. |
 | `routes/superadmin.js` shops/detail/stats/ratings/accounts/helpdesk; `routes/diagnostics.js` counts/heal | Phase 6: strict-FALSE membership in every relevant aggregate/list/subquery; selected-shop refusals, linked support-actor guard and diagnostic repair filtering. Filtered absence cannot trigger auto-seeding. Operational user/password/impersonation tools are not a designation mechanism. |
-| `routes/customers.js` customer/vehicle/RO counts; `routes/reviews.js` summary; `routes/public.js` public shop ratings | Pending: customer/review/business metrics exclusion. Ordinary tenant filtering alone is insufficient. |
+| `routes/customers.js` customer/vehicle/RO counts; `routes/reviews.js` summary; `routes/public.js` public shop ratings | Phase 7: strict persisted entry/final guards on customer reads/counts, reviews and public shop metadata/ratings; public rating SQL independently requires strict FALSE. |
 | `middleware/roLimitGuard.js`, `middleware/planGuard.js`, `services/estimateAiPolicy.js` admissions/budgets | Phase 6: RO admission and estimate-AI service reject fixtures before entitlement/count/eligibility/budget work; no paid/admin grant. General planGuard and other provider/usage consumers remain pending. |
 | `app.js` runCarryoverForActiveShops; `jobs/monthCarryover.js` | Phase 5: startup SQL requires IS FALSE; direct consumer checks on the same transaction connection, locks parent ROs then policy row, and rechecks before carryover write/commit. No billing_month value is changed. Real SQL concurrency QA remains pending. |
-| `jobs/ownerActivityDigest.js`, `services/ownerActivity.js` digest, immediate critical alerts, preference overrides | Phase 3: service entry guard and per-recipient SMTP check cover scheduled/direct digest, overrides and detached critical alerts. Scheduler enumeration and pre-service digest-date claim still include fixtures; local event writes remain. |
-| `jobs/feedbackDailyAudit.js`, `routes/feedback.js`, superadmin helpdesk totals | Phase 6 excludes superadmin helpdesk/feedback aggregates and feedback lookup. feedbackDailyAudit and feedback route consumers remain pending; job updates feedback only, with no provider send found. |
+| `jobs/ownerActivityDigest.js`, `services/ownerActivity.js` digest, immediate critical alerts, preference overrides | Phase 3: service entry guard and per-recipient SMTP check cover scheduled/direct digest, overrides and detached critical alerts. Phase 7 filters scheduler enumeration and checks locked persisted policy in the claim transaction; refusals consume no date. Local event writes remain. |
+| `jobs/feedbackDailyAudit.js`, `routes/feedback.js`, superadmin helpdesk totals | Phase 6 excludes superadmin helpdesk/feedback aggregates and feedback lookup. Phase 7 guards feedback entry/routing and scoped lists, filters the global list, and audits only strict-FALSE shops with locked per-shop mutation checks. No provider sender is present in this job. |
 | `services/shopPolicy.js`; `services/sms.js` sendSMS/sendStaffSMS | Phase 2 implemented: strict persisted resolver, entry/final send guards before config/client/provider resolution, including supplied config and staff capability. Getter-only config/diagnostic APIs do not send. Zero-client synthetic tests and ordinary SMS suites pass. |
 | `routes/sms.js` test/direct/thread sends and inbound webhook; `services/smsAutoReply.js` | Outbound paths converge on guarded sendSMS; direct/auto-reply negative tests executed. Inbound signature/callback and local STOP/START processing unchanged; no TwiML outbound reply added. |
 | `services/customerOptInConfirmation.js`, `services/partsNotifications.js`, `routes/ros.js` status/tracking/supplement sends, `routes/portal.js` tracking, `routes/timeclock.js` staff SMS | Central exclusion implemented; executed real handler/service tests cover RO, portal, status, opt-in, parts SMS and staff wrapper suppression. Timeclock uses the guarded staff wrapper. Parts email is fail-closed unsupported in phase 3 because its caller omits shop ID; no ordinary send until conversion. |
 | `services/smsProvisioning.js` manual/force and automatic entry; `services/smsProvisioningQueue.js` discovery, due/claim, session guard, purchase/retry/publish/alerts; `services/smsProvisioningProvider.js`; `services/smsProvisioningEvents.js` | Phase 2 implemented: discovery/due/attention filters, manual/automatic entry, direct claim, locked transaction/worker checks, provider factory/retained adapter checks and failure/ops-alert suppression. Preexisting jobs, retries/intents, force, late policy changes and ordinary callback/idempotency behavior tested with synthetic adapters. Signed registration receiver itself remains local-only and unchanged. Legacy unexported createTwilioClient defect remains; not counted as a guard. |
 | `services/mailer.js` Resend and `services/email.js` SMTP/helpers | Phase 3: mandatory trusted shop ID, persisted policy before provider/client/SDK/network. Missing/ambiguous/unconverted tenancy refuses delivery. See exact transport result contract below. |
 | Mail callers: `routes/auth.js`, `routes/ros.js` status/review/invoice/manager approval, `routes/payments.js`, `services/customerBilling.js`, `services/partsNotifications.js`, `services/ownerActivity.js` | Phase 3 converts auth, all four RO mail call sites, closed-paid invoice and owner activity. Payments receipt and parts email intentionally remain unsupported/fail-closed at Resend; see remaining-consumer table below. |
-| `utils/discord.js`; callers `routes/auth.js`, `routes/leads.js`, `routes/waitlist.js`, `routes/public.js` estimate intake | Phase 3: Discord requires a separate trusted shop ID. Registration converted. Public lead/waitlist and unconverted public-intake notifications are disabled at this boundary for all callers; no body flags or recipient-derived identity. |
+| `utils/discord.js`; callers `routes/auth.js`, `routes/leads.js`, `routes/waitlist.js`, `routes/public.js` estimate intake | Phase 3: Discord requires a separate trusted shop ID. Registration converted. Public lead/waitlist remain disabled at this boundary for all callers; phase 7 converts public estimate intake using persisted link tenancy and fresh pre-notification policy. No body flags or recipient-derived identity. |
 | `services/notifyOps.js`; callers `routes/insuranceOcr.js`, `services/smsProvisioningQueue.js` | SMS provisioning caller guarded in phase 2, including error fallback and late checks. Phase 3 guards generic notifyOps using context.shop_id from server-owned callers, covering late OCR failure alerts and rechecking queue alerts. Unresolved/global alerts stay local. |
 | Frontend `components/LeadCaptureForm.jsx`, `pages/LeadsDashboard.jsx` | **Additional bypass:** lead form writes directly to Firestore before an unauthenticated backend Discord request; dashboard reads/exports all Firestore leads. Requires separate server-authorized fixture isolation and tests; a backend-only flag cannot cover this direct write. Firebase configuration/credentials were not opened. |
 | `services/notifications.js`, `routes/notifications.js`, local notification writes in `routes/timeclock.js`; `routes/comms.js`, `routes/inspections.js` send marker; agreement/approval links | Inspected paths are local rows/link/marker operations, not outbound push transports. No push sender found in backend/frontend source search. Still verify downstream notification consumption before enabling fixtures. |
 | `jobs/mediaIntegrity.js`, `services/mediaStorage.js`, upload routes; `services/openai.js`, catalog/tracking provider services and their routes | Broader zero-external-effect requirement: object-store mirror/restore, AI, supplier/tracking calls also need exclusion or a genuinely isolated fixture environment. Global media sweep mirrors files independently of shop-reference queries. Frontend Settings also has direct geocoding. These are not covered by messaging guards. |
-| `routes/apiV1.js`, `middleware/apiKeyAuth.js`, `routes/export.js` | Alternate API-key reads/exports inspected; no designation setter found. Include in later reporting/export and fixture coverage, not just JWT routes. |
+| `routes/apiV1.js`, `middleware/apiKeyAuth.js`, `routes/export.js` | Phase 7 guards both JWT exports. Global-key API list filters strict-FALSE membership; direct reads resolve minimal persisted RO tenancy before guarded, shop-bound payload reads. Catalog/inspections mounts remain separate pending consumers. |
 
 ## Next session in this SAME lane
 
-Keep the database hold and account HELD. Phases 5/6 close selected invoice/QuickBooks/carryover and reporting/usage boundaries (receipts below), without claiming full billing/reporting exclusion. Next address owner digest enumeration/pre-service claim, unsupported payments/parts/public-intake mail consumers and legacy fixtures, other scheduler/reporting exclusions and a reviewed server-authorized public fixture path. Reuse the persisted resolver; do not accept body/JWT policy flags or infer fixture identity from email. Background jobs, public token routes, unscoped mail and direct Firestore writes still need their own boundaries. Billing/reporting/provider/metrics/scheduler rows marked pending above remain acceptance gaps.
+Keep the database hold and account HELD. Phases 5/6 close selected invoice/QuickBooks/carryover and reporting/usage boundaries (receipts below), without claiming full billing/reporting exclusion. Phase 7 closes owner digest claims, feedback routing/audit, public estimate notifications and the selected ordinary route/export surfaces. Next address unsupported payments/parts mail consumers, legacy fixtures, remaining scheduler/reporting/provider exclusions and a reviewed server-authorized public fixture path. Reuse the persisted resolver; do not accept body/JWT policy flags or infer fixture identity from email. Background jobs, public token routes, unscoped mail and direct Firestore writes still need their own boundaries. Billing/reporting/provider/metrics/scheduler rows marked pending above remain acceptance gaps.
 
 Subsequent billing/reporting and scheduler batches must cover the rows above. Only after all exclusions and zero-provider tests are complete may a candidate replace the hold and add designated provisioning. That mechanism must use a dedicated server-side script, runtime env/vault password only, transaction + normalized-email concurrency protection, deterministic idempotent receipt, and one owner tenancy with no global/admin role. Refuse collisions with an existing ordinary account/shop; never convert/backfill customers or attach Stripe/Twilio identities. Repeating provisioning must not reset a password or mutate unrelated data. The receipt must contain only identity, true flag and verified exclusions, never credentials. Creating `zordon+revvqa@mail.grokbot.com` remains outside this build and HELD for separately authorized reviewed installation.
 
@@ -1039,3 +1039,221 @@ only `git add` of the ten paths above and one local, non-amending commit on the
 current branch, with hooks/signing disabled for that invocation. No push, merge,
 canonical checkout edit or release is included. Final handoff verifies full SHA,
 exact parent, ten committed paths and clean worktree.
+
+
+## Phase-7 dispatch and validation receipt — 2026-10-21
+
+Sequential phase 7, task `t_6002e02f`, implementation lane only. Preflight found
+clean exact parent `c9c4e9d64d46ebb8ec719c46066c2b6f5b8faee1` on
+`codex/t_6002e02f-revv-test-shop` in the assigned isolated worktree
+`/Users/zordon/.hermes/kanban/workspaces/t_6002e02f/source`.
+`git merge-base --is-ancestor 35e49ddc01d6ef7605f602d85faa9591308915ff HEAD`
+exited 0. Common Git metadata resolves to canonical REVV. Read the current
+CLAUDE.md dispatch/runtime safeguards, QA-CHECKLIST.md, this inventory/receipts
+and ACTIVE-WORK ownership. This is the phase dispatch log within the path cap;
+historical CLAUDE.md remains unchanged. No duplicate worker or lifecycle call.
+
+Exactly ten paths: the eight requested production files below,
+`backend/test/ordinarySurfacesPolicy.test.js`, and this document. Every named
+production file has a relevant consumer; none was omitted.
+
+### Contracts and selected-file coverage
+
+The existing `services/shopPolicy.js` is unchanged. Exactly one matching persisted
+shop row with Boolean FALSE is required. TRUE gives `INTERNAL_TEST_SHOP`; missing,
+duplicate, mismatched, null, omitted, string/numeric flags, invalid IDs/results and
+query failures give `SHOP_POLICY_UNAVAILABLE`. No client/body/JWT policy flag,
+email, plan, role, force field or provider option authorizes ordinary behavior.
+
+Tenant HTTP refusal is 409 for fixtures or 503 for unavailable policy, with
+`{error:reason,excluded:true}`. API-v1 retains its error envelope:
+`{success:false,error:{code:reason,message:reason},excluded:true}`. No successful
+business/export payload, ordinary zero, file header or provider call accompanies
+initial refusal. Read responses recheck policy after preparation. Existing auth,
+roles, token signatures, validation, pagination and ordinary response structures
+are retained. Anonymous feedback now explicitly returns unavailable rather than
+inserting a globally routed row. Unknown well-formed public profile IDs likewise
+return unavailable; malformed IDs still return 404 before SQL.
+
+| File (relative to backend/src) | Exact scope and identity |
+| --- | --- |
+| `routes/customers.js` | All five GET handlers: list/counts, full, history, autofill, detail. Entry checks precede customer/vehicle/RO queries; final checks precede response. DELETE checks before connection and its RO count, so an initially excluded fixture cannot be deleted. Existing local POST/PUT consent behavior is untouched; the policy import is lazy for these unaffected paths. |
+| `routes/reviews.js` | Authenticated list and summary average/count/distribution are guarded before reads and response. Public context/submit use the verified signed token's shop ID, then persisted policy; submit rechecks the stored RO shop before INSERT. Existing token expiry, rating validation, duplicates and ordinary review values are retained. |
+| `routes/public.js` | Intake metadata resolves the persisted link before policy. Public profile checks before business reads; shop query, rating AVG/COUNT query and recent-review query each independently require strict FALSE. Estimate intake checks after persisted link resolution, before INSERT, after INSERT, and in the detached notification callback. Discord receives a separate trusted persisted shop argument and only the existing ID/type fields. Caller body/email flags cannot select or authorize a shop. Initial refusal creates no intake row or notification. |
+| `routes/export.js` | Both `/ro/:id` complete JSON bundle and `/shop/ros` JSON index check authenticated `req.user.shop_id` before any business read and before response. Child reads, monetary calculations, role-based notes, since filter, order, 500-row cap and response shape are unchanged. The earlier inventory's description of this index as CSV was incorrect; this file returns JSON. |
+| `routes/apiV1.js` | Actual API-key middleware authenticates a global service key and supplies **no tenant identity**. The global `/estimates` list preserves its scope with strict-FALSE persisted shop membership in SQL. Detail/status first read only the stored RO's `shop_id`, check its policy, then repeat that identity in the business WHERE and final policy check. Body/query/header shop IDs are ignored. No synthetic tenant configuration or arbitrary first-shop fallback was introduced. Missing resources retain their 404 contract. |
+| `routes/feedback.js` | POST obtains shop identity only from the verified auth token and checks before INSERT/routing. Scoped GET checks before reads and final response. Superadmin `/all` filters strict-FALSE shop membership, preserving limit/offset, and checks linked actor policy; an authenticated global superadmin remains global. Existing fixture/null-shop feedback is retained locally but excluded from this operational list and audit. |
+| `jobs/feedbackDailyAudit.js` | Both exported operations and their coordinator accept an optional direct shop ID; absent target enumerates only strict-FALSE shops. Each target independently checks policy before connection, takes a shop FOR SHARE lock and rechecks on that transaction connection before UPDATE and COMMIT. Every UPDATE repeats shop binding and strict-FALSE membership. Suppressed targets produce no committed status/routing/date mutation or operational rowCount. Noise rules, assigned routes and aggregate result shape remain. No external escalation sender exists in this file. |
+| `jobs/ownerActivityDigest.js` | Enumeration requires strict FALSE and existing enabled preference. Before the claim, current policy is checked again on the same transaction connection under a shop FOR SHARE lock. The date upsert still serializes daily claims and now rechecks enabled/time preferences. A pre-service policy check and post-service policy check, plus inspection of service/individual transport refusal results, roll back the pending date on suppression. Ordinary provider exceptions retain the daily attempted date as before; ordinary skipped/no-recipient results retain existing claim behavior. |
+
+Digest policy stays locked through its claim and service call so designation cannot
+race a committed claim. No initial or locked refusal consumes a date or invokes
+the service; a synthetic later refusal rolls back the pending claim. No fixture
+records are deleted, rewritten, cleaned up or designated by these jobs. Transaction
+rollback on unavailable policy is deliberate, including uncertainty after a send.
+An external provider send and a DB commit cannot be made atomic by this change:
+a provider success followed by a DB/connection failure can remain uncertain and
+needs operational reconciliation. Real PostgreSQL concurrency/locking/provider
+failure QA is still pending; no exactly-once delivery guarantee is claimed.
+
+HTTP read guards are current entry/final boundaries, not a global atomic
+designation protocol. A policy change after an authorized local intake INSERT
+suppresses subsequent notification but retains that local row; the tests pin this
+behavior. Detached notification suppression logs only the enum reason. The database
+TRUE hold remains necessary. No new supported fixture creation path exists.
+
+### Deterministic evidence and exact commands
+
+Node **v22.23.2**, synthetic data/adapters only, scrubbed environment. No app
+bootstrap, actual DB/account/provider, secret/.env read, listener, network access
+or dependency installation. `/private/tmp/revv-t6002-phase7/deny-network.cjs`
+throws `TEST_NETWORK_PROHIBITED` on net connect/listen, TLS, HTTP(S) request/get
+and fetch. It also substitutes no-read dotenv and an unused synthetic pg Pool
+that throws on query/connect, because two legacy pure-helper suites import db/index.
+The focused suite uses closed-import VM adapters, the actual policy resolver,
+roles, public-shop resolver, review-token crypto and API-key middleware. SQL
+membership/transaction adapters are synthetic models, **not a SQL engine**.
+
+Focused final (`focused-final.log`): **exit 0, 298/298 passed, 0 failed/skipped**.
+Tests cover all selected handlers, forged ordinary fields, ten denied policy
+variants, no export/business payload/provider/notification mutation, persisted
+API tenancy, global SQL membership, public AVG/COUNT filters, pagination, exact
+parent response parity, direct jobs, stale enumeration/locked/pre-service policy,
+rolled-back routing/dates, duplicate claims, preferences and ordinary failure
+idempotency. The API key invalid-case test runs the actual middleware.
+
+```sh
+env -i PATH=/opt/homebrew/opt/node@22/bin:/opt/homebrew/bin:/usr/bin:/bin NODE_ENV=test CI=1 node --require /private/tmp/revv-t6002-phase7/deny-network.cjs --test --test-concurrency=1 backend/test/ordinarySurfacesPolicy.test.js
+```
+
+Policy/foundation regression (`policy-regression.log`): **exit 0, 775/775 passed,
+0 failed/skipped**. The named real-PostgreSQL cases are intentionally excluded;
+Node omits name-filtered cases from its counts, so they are not passed tests.
+
+```sh
+env -i PATH=/opt/homebrew/opt/node@22/bin:/opt/homebrew/bin:/usr/bin:/bin NODE_ENV=test CI=1 node --require /private/tmp/revv-t6002-phase7/deny-network.cjs --test --test-concurrency=1 --test-skip-pattern='real PostgreSQL' backend/test/metricsShopPolicy.test.js backend/test/emailShopPolicy.test.js backend/test/billingShopPolicy.test.js backend/test/internalTestShop.test.js backend/test/productionStartup.test.js backend/test/idTypeCastGuard.test.js
+```
+
+Relevant existing customers/public/feedback/audit/owner suites plus consent PUT:
+**raw candidate remains RED: exit 1, 51 tests, 38 passed / 13 failed, 0 skipped**
+(`existing-recovery.log`). No standalone legacy reviews/export/api-v1 route suite
+or owner-digest scheduler suite was found; these paths have actual-handler/job
+coverage in the new focused file. OwnerActivity's existing suite covers helpers.
+
+```sh
+env -i PATH=/opt/homebrew/opt/node@22/bin:/opt/homebrew/bin:/usr/bin:/bin NODE_ENV=test CI=1 node --require /private/tmp/revv-t6002-phase7/deny-network.cjs --test --test-concurrency=1 backend/src/__tests__/customerOptInConfirmation.test.js backend/src/__tests__/productionIncidents.jul12.test.js backend/src/__tests__/publicIntake.test.js backend/src/__tests__/feedback.auth.test.js backend/src/__tests__/feedback.sanitize.test.js backend/src/__tests__/feedbackDailyAudit.test.js backend/src/__tests__/ownerActivity.test.js backend/test/consentPhone.phaseA.test.js
+```
+
+The same exact existing-suite command with
+`--require /private/tmp/revv-t6002-phase7/parent-source.cjs` immediately after the
+deny preload: **exit 0, 51/51, 0 failed/skipped** (`existing-parent.log`). This
+preload substitutes only the eight production files from exact parent c9c4e9d,
+using read-only git show; it does not change tracked files.
+
+The same exact existing-suite command instead adding
+`--require /private/tmp/revv-t6002-phase7/legacy-fixtures.cjs` after the deny preload:
+**exit 0, 51/51, 0 failed/skipped** (`existing-adapted-recovery.log`). This temporary
+adapter changes only test sources: supplies strict-FALSE synthetic persisted rows
+without polluting business query-count assertions, supplies the job's transactional
+DB fixture, and updates anonymous-feedback/unavailable-profile/error and metadata
+SQL expectations to the explicit new contract. It never mocks production policy
+as allowed or alters production code. The real rate limiter still reaches 429.
+These are separately labeled compatibility results; unchanged tracked legacy
+suites remain RED until their fixtures are migrated in a later bounded slice.
+
+Nine changed JS paths individually checked: **9/9 exit 0**. Diff check and
+byte-preservation comparison: **exit 0**. Executed each command via a Python driver
+with individual return-code capture; equivalent exact shell commands:
+
+```sh
+for file in backend/src/routes/customers.js backend/src/routes/reviews.js backend/src/routes/public.js backend/src/routes/export.js backend/src/routes/apiV1.js backend/src/routes/feedback.js backend/src/jobs/feedbackDailyAudit.js backend/src/jobs/ownerActivityDigest.js backend/test/ordinarySurfacesPolicy.test.js; do
+  env -i PATH=/opt/homebrew/opt/node@22/bin:/opt/homebrew/bin:/usr/bin:/bin NODE_ENV=test CI=1 node --check "$file" || exit "$?"
+done
+git diff --check
+git diff --exit-code c9c4e9d64d46ebb8ec719c46066c2b6f5b8faee1 -- backend/src/services/shopPolicy.js backend/src/db/internalTestShop.js backend/src/db/index.js backend/src/db/migrate.js backend/src/db/schema.pg.sql backend/src/app.js backend/src/routes/auth.js
+```
+
+### Failure history and verified recovery
+
+- Combined guidance/search output was truncated; bounded follow-up reads recovered
+  relevant current guidance and selected source. The no-AGENTS-file search returned
+  no matches. No editing or success decision relied on truncated evidence.
+- First focused command: **exit 1, 284/285 passed**, `focused-first.log`. The test
+  DB classifier mistook a nested public SQL membership query for scheduler shop
+  enumeration. Anchored that synthetic matcher; **285/285 exit 0** in
+  `focused-recovery.log`. Expanded coverage passed 297/297, then final 298/298.
+- First existing-suite run: **exit 1, 24/51 passed, 27 failed**,
+  `existing-first.log`. Fourteen closed-import consent fixtures rejected the eager
+  customers policy dependency even though PUT does not use it. Lazy loading at
+  the guarded customer read boundary recovered those 14 without changing PUT.
+  Raw final remains **38/51**: missing policy rows, absent audit dbAll/transaction
+  fixture, and legacy anonymous/unknown-profile assumptions explain the remaining
+  failures. Exact-parent 51/51 verifies this comparison.
+- First temporarily adapted run: **exit 1, 49/51 passed**,
+  `existing-adapted.log`. One repeated anonymous-feedback assertion still expected
+  201, and metadata expected the old SQL without the new predicate. Updated those
+  two test-only expectations; verified recovery **51/51**. No production guard
+  was relaxed to satisfy legacy fixtures.
+- Staged review caught a log-hash replacement also changing the historical phase-6
+  focused-log hash. Restored it from the exact parent and verified historical
+  equality before commit; code/tests were unaffected.
+- All observed failures were reported while working. No final focused, policy
+  regression, syntax or diff-check failure remains. No full-suite green claim.
+
+### Remaining gaps / HELD scope
+
+- Lead/waitlist backend Discord callers still lack trusted tenancy and remain
+  unsupported/fail-closed for ordinary delivery. Frontend lead capture and dashboard
+  still write/read/export direct Firestore; that bypass remains unisolated.
+- Detached payment receipt and parts email still omit trusted shop identity and
+  remain unsupported at the guarded mail transport. No change to these consumers.
+- API-v1 mounts `/catalog` and `/inspections` are separate consumers, not covered by
+  its three direct read handlers. Other AI, supplier/catalog/tracking/geocoding,
+  media/object-store mirrors/restores, uploads and provider/usage consumers remain
+  pending. Global API-key credential configuration/authentication is unchanged.
+- RO job-cost, carryover-pending, turnaround counts and other RO list/detail/labor
+  metrics, payment history/ledger, direct profit/economics helpers, planGuard,
+  mediaIntegrity sweep and other previously inventoried unexcluded consumers remain.
+  Existing remote Stripe/Twilio identities cannot be isolated by local guards alone.
+- Existing local customer POST/PUT, local activity/notifications and other
+  unconverted public intake (including appointment paths) are not a reviewed
+  fixture-designation or full zero-effect environment. No fixture records were
+  deleted/backfilled to satisfy operational counts.
+- Legacy fixture migration remains: the 13 raw failures above, earlier dashboard/AI
+  fixture debt, and earlier unsupported-email/privacy/money fixture gaps. Temporary
+  compatibility adapters are evidence, not committed fixture repairs.
+- Real SQL execution, lock contention/concurrency, browser/frontend, full backend,
+  Spark advisory, independent exact-SHA review and release verification were not
+  performed or claimed. Hermes/Oracle owns those gates and shipping.
+
+Safety-sensitive persisted-policy/tenant/routing changes across more than two
+files. `shops_internal_test_shop_hold CHECK (is_internal_test_shop IS FALSE)` is
+byte-identical and active in source. Requested account and full feature remain
+**HELD**; no provisioning/designation. No frontend, manifest/lockfile, seed/demo,
+production configuration, cron/provider/model/profile changes, real DB/account/
+customer effects, secret reads, Hermes/Kanban/messaging/delegation, push/merge/
+deploy or protected-work edits. `job5feaddc2bfaf` is preserved and `t_59894b65`
+remains **DO NOT APPLY**.
+
+Local commit uses only the user's authorized narrow Git escalation for this
+linked worktree's canonical `.git/worktrees/source2` index-lock boundary: explicit
+add of these ten files and one non-amending local commit, hooks/signing disabled
+for that invocation. No canonical checkout/source changes or release. Full SHA,
+exact parent, committed path count and clean worktree are verified in the handoff.
+
+Phase-7 temporary evidence SHA-256 identities (no secrets or live data):
+
+```text
+deny-network.cjs               9faeaf8417b5c2c46382990e9741bda9df582e2e205baef5938b42b2c1bbd18b
+parent-source.cjs              fde72341d98d60e47dd4312573b423ed108228fa18f110d984e0c33e1f7fd08a
+legacy-fixtures.cjs            d33d549f75363547c2a83c1b2447c569fb8f62eda9bf27f1f67adcb2341494ab
+focused-first.log              f1afbacf7f4cc1b0fa2b8297c5ccb7079f440e8088dae63a283fcdc8a71f226d
+focused-recovery.log           fc795eb284b4c21e7c3f2f56af3bfca0a0ea63c1462891a7b9c30cfd685e09a5
+focused-final.log              0c7eeb14ea916dcf57919fdbc201f25c92b040afe739629cdfde3f3cbbe07b04
+policy-regression.log          0af8bf68881302791303fb6ab434c6ca0723482a38bafd0c75262f319ec170a6
+existing-first.log             66e079c61e2871a57e616cc41abe6e24f4e6999f0dfb9209ecea5b399ce7b504
+existing-recovery.log          9a8d633bd39ab00855f2dc1f9b64c79a61ec4b0d3fe3b591230165aa18f87d84
+existing-parent.log            867ac8f1da7ccac907d77c19ec96e9b443870ba4dc83485c2f6aba4e7a311208
+existing-adapted.log           19da1a01249a346e63efc596fb9cb4aad8372234c91825af6737aa9b8e25959f
+existing-adapted-recovery.log  dec6198448a0543a61d1037924273cd5763d6987c2e6bdd6ccd3dcccdc88d742
+```

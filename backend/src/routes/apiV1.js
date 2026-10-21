@@ -2,6 +2,16 @@ const router = require('express').Router();
 const { dbAll, dbGet } = require('../db');
 const apiKeyAuth = require('../middleware/apiKeyAuth');
 const catalogRouter = require('./catalog');
+const { resolveShopPolicy } = require('../services/shopPolicy');
+
+async function allowShopData(shopId, res) {
+  const policy = await resolveShopPolicy(shopId);
+  if (policy.allowExternalEffects) return true;
+  res.status(policy.reason === 'INTERNAL_TEST_SHOP' ? 409 : 503).json({
+    success: false, error: { code: policy.reason, message: policy.reason }, excluded: true,
+  });
+  return false;
+}
 
 router.use(apiKeyAuth);
 router.use('/catalog', catalogRouter);
@@ -93,15 +103,21 @@ const BASE_ESTIMATE_SELECT = `
 
 router.get('/estimates/:id', async (req, res) => {
   try {
+    // The global agent key supplies no tenant claim. Resolve the stored resource,
+    // never body/query/header shop IDs, before reading its business payload.
+    const identity = await dbGet('SELECT shop_id FROM repair_orders WHERE id = $1', [req.params.id]);
+    if (!identity) return fail(res, 404, 'ESTIMATE_NOT_FOUND', 'Estimate not found.');
+    if (!await allowShopData(identity.shop_id, res)) return;
     const row = await dbGet(
-      `${BASE_ESTIMATE_SELECT} WHERE ro.id = $1`,
-      [req.params.id]
+      `${BASE_ESTIMATE_SELECT} WHERE ro.id = $1 AND ro.shop_id = $2`,
+      [req.params.id, identity.shop_id]
     );
 
     if (!row) {
       return fail(res, 404, 'ESTIMATE_NOT_FOUND', 'Estimate not found.');
     }
 
+    if (!await allowShopData(identity.shop_id, res)) return;
     return ok(res, mapEstimate(row));
   } catch (err) {
     return fail(res, 500, 'INTERNAL_ERROR', 'Failed to load estimate.', { message: err.message });
@@ -110,7 +126,9 @@ router.get('/estimates/:id', async (req, res) => {
 
 router.get('/estimates', async (req, res) => {
   try {
-    const filters = [];
+    const filters = [
+      'EXISTS (SELECT 1 FROM shops s WHERE s.id::text = ro.shop_id::text AND s.is_internal_test_shop IS FALSE)',
+    ];
     const params = [];
 
     if (req.query.status) {
@@ -149,6 +167,9 @@ router.get('/estimates', async (req, res) => {
 
 router.get('/jobs/:id/status', async (req, res) => {
   try {
+    const identity = await dbGet('SELECT shop_id FROM repair_orders WHERE id = $1', [req.params.id]);
+    if (!identity) return fail(res, 404, 'JOB_NOT_FOUND', 'Job not found.');
+    if (!await allowShopData(identity.shop_id, res)) return;
     const job = await dbGet(
       `SELECT
         id,
@@ -159,14 +180,15 @@ router.get('/jobs/:id/status', async (req, res) => {
         actual_delivery,
         updated_at
        FROM repair_orders
-       WHERE id = $1`,
-      [req.params.id]
+       WHERE id = $1 AND shop_id = $2`,
+      [req.params.id, identity.shop_id]
     );
 
     if (!job) {
       return fail(res, 404, 'JOB_NOT_FOUND', 'Job not found.');
     }
 
+    if (!await allowShopData(identity.shop_id, res)) return;
     return ok(res, {
       id: job.id,
       ro_number: job.ro_number,

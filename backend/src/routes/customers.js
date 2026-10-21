@@ -1,3 +1,12 @@
+async function allowShopData(shopId, res) {
+  const { resolveShopPolicy } = require('../services/shopPolicy');
+  const policy = await resolveShopPolicy(shopId);
+  if (policy.allowExternalEffects) return true;
+  res.status(policy.reason === 'INTERNAL_TEST_SHOP' ? 409 : 503)
+    .json({ error: policy.reason, excluded: true });
+  return false;
+}
+
 const router = require('express').Router();
 const { pool, dbGet, dbAll, dbRun } = require('../db');
 const auth = require('../middleware/auth');
@@ -9,6 +18,7 @@ const { hasConfirmedSmsConsent, consentMutation, normalizePreferredContactMethod
 
 router.get('/', auth, async (req, res) => {
   try {
+    if (!await allowShopData(req.user?.shop_id, res)) return;
     const customers = await dbAll(
       `SELECT
          c.id,
@@ -44,6 +54,7 @@ router.get('/', auth, async (req, res) => {
        ORDER BY LOWER(c.name) ASC`,
       [req.user.shop_id]
     );
+    if (!await allowShopData(req.user?.shop_id, res)) return;
     res.json({ customers });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -52,6 +63,7 @@ router.get('/', auth, async (req, res) => {
 
 router.get('/:id/full', auth, async (req, res) => {
   try {
+    if (!await allowShopData(req.user?.shop_id, res)) return;
     const customer = await dbGet('SELECT * FROM customers WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
     if (!customer) return res.status(404).json({ error: 'Not found' });
     const vehicles = await dbAll(
@@ -62,6 +74,7 @@ router.get('/:id/full', auth, async (req, res) => {
       'SELECT ro_number, id, status, job_type, created_at, updated_at, total, notes FROM repair_orders WHERE customer_id::text = $1::text AND shop_id::text = $2::text ORDER BY created_at DESC',
       [customer.id, req.user.shop_id]
     );
+    if (!await allowShopData(req.user?.shop_id, res)) return;
     res.json({ customer, vehicles, ros });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -70,6 +83,7 @@ router.get('/:id/full', auth, async (req, res) => {
 
 router.get('/:id/history', auth, async (req, res) => {
   try {
+    if (!await allowShopData(req.user?.shop_id, res)) return;
     const customer = await dbGet('SELECT id, name FROM customers WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
     if (!customer) return res.status(404).json({ error: 'Not found' });
 
@@ -106,6 +120,7 @@ router.get('/:id/history', auth, async (req, res) => {
       [req.user.shop_id, req.params.id, excludeRoId, limit]
     );
 
+    if (!await allowShopData(req.user?.shop_id, res)) return;
     return res.json({
       customer,
       history,
@@ -117,6 +132,7 @@ router.get('/:id/history', auth, async (req, res) => {
 
 router.get('/:id/autofill', auth, async (req, res) => {
   try {
+    if (!await allowShopData(req.user?.shop_id, res)) return;
     const customer = await dbGet(
       'SELECT id, name, phone, sms_consent, sms_consent_at, sms_consent_method, sms_consent_by, email, email_consent, preferred_contact_method, insurance_company, policy_number FROM customers WHERE id = $1 AND shop_id = $2',
       [req.params.id, req.user.shop_id]
@@ -155,6 +171,7 @@ router.get('/:id/autofill', auth, async (req, res) => {
       [customer.id, req.user.shop_id]
     );
 
+    if (!await allowShopData(req.user?.shop_id, res)) return;
     return res.json({
       customer,
       vehicles,
@@ -168,6 +185,7 @@ router.get('/:id/autofill', auth, async (req, res) => {
 
 router.get('/:id', auth, async (req, res) => {
   try {
+    if (!await allowShopData(req.user?.shop_id, res)) return;
     const customer = await dbGet('SELECT * FROM customers WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
     if (!customer) return res.status(404).json({ error: 'Not found' });
     const vehicles = await dbAll(
@@ -178,6 +196,7 @@ router.get('/:id', auth, async (req, res) => {
       'SELECT ro_number, status, job_type, created_at FROM repair_orders WHERE customer_id::text = $1::text AND shop_id::text = $2::text ORDER BY created_at DESC',
       [customer.id, req.user.shop_id]
     );
+    if (!await allowShopData(req.user?.shop_id, res)) return;
     res.json({ ...customer, vehicles, ros });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -287,6 +306,7 @@ router.put('/:id', auth, requireTechnician, async (req, res) => {
 router.delete('/:id', auth, requireTechnician, async (req, res) => {
   let client;
   try {
+    if (!await allowShopData(req.user?.shop_id, res)) return;
     client = await pool.connect();
     await client.query('BEGIN');
 

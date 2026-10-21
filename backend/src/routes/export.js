@@ -1,3 +1,13 @@
+const { resolveShopPolicy } = require('../services/shopPolicy');
+
+async function allowShopData(shopId, res) {
+  const policy = await resolveShopPolicy(shopId);
+  if (policy.allowExternalEffects) return true;
+  res.status(policy.reason === 'INTERNAL_TEST_SHOP' ? 409 : 503)
+    .json({ error: policy.reason, excluded: true });
+  return false;
+}
+
 /**
  * GET /api/export/ro/:id
  *
@@ -21,6 +31,7 @@ const { dbGet, dbAll } = require('../db');
 
 router.get('/ro/:id', auth, async (req, res) => {
   try {
+    if (!await allowShopData(req.user?.shop_id, res)) return;
     const { id } = req.params;
     const shopId = req.user.shop_id;
 
@@ -152,6 +163,7 @@ router.get('/ro/:id', auth, async (req, res) => {
     const suggestedFolder = `${dateSlug} / RO-${roNum} — ${vehicle} (${customerSlug})`;
 
     // ── Response ─────────────────────────────────────────────────────────────
+    if (!await allowShopData(shopId, res)) return;
     return res.json({
       success: true,
       exported_at: new Date().toISOString(),
@@ -228,6 +240,7 @@ router.get('/ro/:id', auth, async (req, res) => {
  */
 router.get('/shop/ros', auth, async (req, res) => {
   try {
+    if (!await allowShopData(req.user?.shop_id, res)) return;
     const { since } = req.query; // ISO timestamp — only return ROs updated after this
     const shopId = req.user.shop_id;
 
@@ -247,6 +260,7 @@ router.get('/shop/ros', auth, async (req, res) => {
       params
     );
 
+    if (!await allowShopData(shopId, res)) return;
     return res.json({
       success: true,
       count: rows.length,

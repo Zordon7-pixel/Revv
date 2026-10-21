@@ -1,3 +1,13 @@
+const { resolveShopPolicy } = require('../services/shopPolicy');
+
+async function allowShopData(shopId, res) {
+  const policy = await resolveShopPolicy(shopId);
+  if (policy.allowExternalEffects) return true;
+  res.status(policy.reason === 'INTERNAL_TEST_SHOP' ? 409 : 503)
+    .json({ error: policy.reason, excluded: true });
+  return false;
+}
+
 const router = require('express').Router();
 const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
@@ -52,6 +62,7 @@ router.get('/context/:token', publicReviewLimiter, async (req, res) => {
   }
 
   try {
+    if (!await allowShopData(payload.shop_id, res)) return;
     const shop = await dbGet('SELECT name FROM shops WHERE id = $1', [payload.shop_id]);
     if (!shop) return res.status(404).json({ error: 'Shop not found.' });
 
@@ -61,6 +72,7 @@ router.get('/context/:token', publicReviewLimiter, async (req, res) => {
     );
     if (existing) return res.status(409).json({ error: 'Feedback was already submitted for this repair.' });
 
+    if (!await allowShopData(payload.shop_id, res)) return;
     return res.json({ shop_name: shop.name });
   } catch (err) {
     return res.status(500).json({ error: err.message });
@@ -84,6 +96,7 @@ router.post('/submit/:token', publicReviewLimiter, async (req, res) => {
   }
 
   try {
+    if (!await allowShopData(payload.shop_id, res)) return;
     const ro = await dbGet(
       `SELECT ro.id, ro.shop_id, c.name AS customer_name
        FROM repair_orders ro
@@ -99,6 +112,7 @@ router.post('/submit/:token', publicReviewLimiter, async (req, res) => {
     );
     if (existing) return res.status(409).json({ error: 'Feedback was already submitted for this repair.' });
 
+    if (!await allowShopData(ro.shop_id, res)) return;
     await dbRun(
       `INSERT INTO shop_reviews (shop_id, ro_id, rating, comment, customer_name)
        VALUES ($1, $2, $3, $4, $5)`,
@@ -113,6 +127,7 @@ router.post('/submit/:token', publicReviewLimiter, async (req, res) => {
 
 router.get('/', auth, requireAdmin, async (req, res) => {
   try {
+    if (!await allowShopData(req.user?.shop_id, res)) return;
     const reviews = await dbAll(
       `SELECT id, ro_id, rating, comment, customer_name, submitted_at
        FROM shop_reviews
@@ -120,6 +135,7 @@ router.get('/', auth, requireAdmin, async (req, res) => {
        ORDER BY submitted_at DESC`,
       [req.user.shop_id]
     );
+    if (!await allowShopData(req.user?.shop_id, res)) return;
     return res.json({ reviews });
   } catch (err) {
     return res.status(500).json({ error: err.message });
@@ -128,6 +144,7 @@ router.get('/', auth, requireAdmin, async (req, res) => {
 
 router.get('/summary', auth, async (req, res) => {
   try {
+    if (!await allowShopData(req.user?.shop_id, res)) return;
     const summary = await dbGet(
       `SELECT ROUND(AVG(rating)::numeric, 1) AS average_rating, COUNT(*)::int AS total_reviews
        FROM shop_reviews
@@ -145,6 +162,7 @@ router.get('/summary', auth, async (req, res) => {
     const distribution = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
     for (const row of rows) distribution[row.rating] = row.count;
 
+    if (!await allowShopData(req.user?.shop_id, res)) return;
     return res.json({
       average_rating: Number(summary?.average_rating || 0),
       total_reviews: Number(summary?.total_reviews || 0),
