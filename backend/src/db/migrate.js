@@ -32,6 +32,7 @@ async function runMigrations() {
     }
 
     await ensureShopTwilioNumber({ query });
+    await require('./internalTestShop').up(require('./postgres').pool);
     await require('./customerConsent').up({ query });
     if (process.env.REVV_SMS_AUTOPROVISION === 'true') await require('./smsProvisioning').up({ query });
     await require('./paymentReservations').up(require('./postgres').pool);
@@ -612,7 +613,8 @@ async function runMigrations() {
 
     console.log('[migrate] All idempotent migrations complete.');
   } catch (err) {
-    if (err.code === SHOP_TWILIO_SCHEMA_REQUIRED || err.code === 'ESTIMATE_AI_SCHEMA_REQUIRED') throw err;
+    if (err.code === SHOP_TWILIO_SCHEMA_REQUIRED || err.code === 'ESTIMATE_AI_SCHEMA_REQUIRED'
+        || err.code === 'INTERNAL_TEST_SHOP_SCHEMA_REQUIRED') throw err;
     console.error('[migrate] Fatal migration error:', err.message);
   }
 }

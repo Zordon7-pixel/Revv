@@ -376,7 +376,7 @@ test('shop registration explicitly inserts the randomBytes slug instead of relyi
   });
   assert.equal(response.status, 201);
   const insert = writes.find(({ sql }) => sql.startsWith('INSERT INTO shops'));
-  assert.equal(insert.sql, 'INSERT INTO shops (id, name, public_intake_slug) VALUES ($1, $2, $3)');
+  assert.equal(insert.sql, 'INSERT INTO shops (id, name, public_intake_slug, is_internal_test_shop) VALUES ($1, $2, $3, FALSE)');
   assert.deepEqual(insert.params, [response.json.user.shop_id, 'Synthetic Shop', '77777777777777777777777774']);
   for (const id of ['../services/publicShop', '../routes/auth', 'bcryptjs']) delete require.cache[require.resolve(id)];
 });

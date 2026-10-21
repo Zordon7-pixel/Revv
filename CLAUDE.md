@@ -1,3 +1,35 @@
+## Dispatch Log — 2026-10-21 Internal test-shop foundation (t_6002e02f)
+
+10:25 EDT / 14:25 UTC. PARTIAL IMPLEMENTATION, no provisioning or release.
+Started clean on assigned `codex/t_6002e02f-revv-test-shop` at immutable base
+`35e49ddc01d6ef7605f602d85faa9591308915ff`. Consumer scope exceeds ten files;
+this ten-file slice adds default-false schema, public registration FALSE,
+transactional startup validation and an explicit database hold rejecting ALL true
+flags until exclusions are complete. Existing ordinary update allowlists are tested.
+No supported designation/provisioning path is enabled; the requested account stays HELD.
+
+Files: this log; `docs/INTERNAL-TEST-SHOP.md`; backend `src/app.js`,
+`src/db/{index.js,migrate.js,schema.pg.sql,internalTestShop.js}`,
+`src/routes/auth.js`, `src/__tests__/publicIntake.test.js`, `test/internalTestShop.test.js`.
+Consumer inventory, acceptance gaps and SAME-lane continuation are in the new doc.
+Focused synthetic/real disposable PostgreSQL TEXT+UUID/startup/id-type suite:
+49 passed, 0 failed/skipped, exit 0. Final native suite: 283/283 passed;
+ordinary SMS/provisioning/settings/payments/parts tests: 560/560 passed;
+parser suite: 3 files/7 tests passed; all exit 0. Pre-existing real-DB startup,
+consent and payment suites explicitly excluded, not claimed passed. Initial
+missing-dependency failures recovered through exact-lockfile public npm install
+with empty task-only configs, no credentials or version change. Two regression
+failures corrected: old registration SQL assertion, existing migration check order.
+Full failure history and exact commands are in the inventory/receipt document.
+Local PostgreSQL sandbox/locale/socket failures recovered with narrow test-only
+escalation and LC_ALL=C; no existing database was accessed. No review verdict claimed.
+
+Safety-sensitive schema/auth/billing-policy preparation; over two files. No agents,
+Hermes/kanban calls, external messages, account installation, customer mutation,
+provider/live sends, push/merge/deploy, canonical edits, protected task/job changes,
+credential access, or cron/provider/model/profile changes. Hermes/Oracle owns
+lifecycle, remaining gates and release; this candidate is not feature-complete.
+
 ## Dispatch Log — 2026-10-12 SMS test recipient PREP ONLY
 
 Task `t_e147d8b2`, run501 sole owner; 15:04 EDT / 19:04 UTC dispatch note.

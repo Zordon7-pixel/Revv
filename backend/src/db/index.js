@@ -99,6 +99,8 @@ async function initDb() {
     CREATE TABLE IF NOT EXISTS shops (
       id UUID PRIMARY KEY,
       name TEXT NOT NULL,
+      is_internal_test_shop BOOLEAN NOT NULL DEFAULT FALSE
+        CONSTRAINT shops_internal_test_shop_hold CHECK (is_internal_test_shop IS FALSE),
       onboarded BOOLEAN DEFAULT FALSE,
       phone TEXT,
       logo_url TEXT,
@@ -656,6 +658,7 @@ async function initDb() {
   await pool.query(`ALTER TABLE ro_comms ALTER COLUMN channel SET DEFAULT 'call'`).catch(() => {});
   await pool.query(`ALTER TABLE ro_comms ALTER COLUMN summary SET DEFAULT ''`).catch(() => {});
 
+  await require('./internalTestShop').up(pool);
   await require('./customerConsent').up(pool);
   if (process.env.REVV_SMS_AUTOPROVISION === 'true') await require('./smsProvisioning').up(pool);
   await require('./paymentReservations').up(pool);

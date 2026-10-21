@@ -89,7 +89,9 @@ router.post('/shop-register', async (req, res) => {
     const shopId = uuidv4();
     const userId = uuidv4();
 
-    await dbRun('INSERT INTO shops (id, name, public_intake_slug) VALUES ($1, $2, $3)', [shopId, shop_name.trim(), newPublicIntakeSlug()]);
+    // Public registration can only create ordinary shops. Never copy designation
+    // fields from the request, JWT, email spelling, or global provider settings.
+    await dbRun('INSERT INTO shops (id, name, public_intake_slug, is_internal_test_shop) VALUES ($1, $2, $3, FALSE)', [shopId, shop_name.trim(), newPublicIntakeSlug()]);
     await dbRun(
       'INSERT INTO users (id, shop_id, name, email, password_hash, role) VALUES ($1, $2, $3, $4, $5, $6)',
       [userId, shopId, name.trim(), emailNorm, bcrypt.hashSync(password, 10), 'owner']
