@@ -5,6 +5,7 @@
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
 const FROM = process.env.RESEND_FROM || 'REVV <noreply@revvshop.app>';
+const { resolveShopPolicy } = require('./shopPolicy');
 
 if (RESEND_API_KEY) {
   console.log('[Mailer] Resend configured');
@@ -12,7 +13,16 @@ if (RESEND_API_KEY) {
   console.log('[Mailer] RESEND_API_KEY not set — email notifications disabled');
 }
 
-async function sendMail(to, subject, html) {
+// shopId must come from authenticated tenancy or a persisted resource, never
+// request body/recipient spelling. Unconverted/unscoped callers are unsupported.
+async function sendMail(to, subject, html, shopId) {
+  const policy = await resolveShopPolicy(shopId);
+  if (!policy.allowExternalEffects) {
+    console.warn('[Mailer] Suppressed:', policy.reason);
+    throw Object.assign(new Error(policy.reason), {
+      reason: policy.reason, suppressed: true, provider_attempted: false,
+    });
+  }
   if (!RESEND_API_KEY) {
     console.log('[Mailer] No-op: Resend not configured');
     return null;

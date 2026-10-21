@@ -1,5 +1,6 @@
 const lastSentByCode = new Map();
 const THROTTLE_MS = 5 * 60 * 1000;
+const { resolveShopPolicy } = require('./shopPolicy');
 
 function sanitizeContext(context) {
   if (!context || typeof context !== 'object') return {};
@@ -19,6 +20,14 @@ async function notifyOps(severity, code, context = {}) {
   };
 
   console.error('[OPS]', JSON.stringify(payload));
+
+  // Read current persisted policy even on late failure callbacks. Suppression
+  // stays local and does not consume the ordinary alert throttle.
+  const policy = await resolveShopPolicy(safeContext.shop_id);
+  if (!policy.allowExternalEffects) {
+    console.warn('[OPS] External alert suppressed:', policy.reason);
+    return { ok: false, suppressed: true, provider_attempted: false, reason: policy.reason };
+  }
 
   const webhook = process.env.OPS_DISCORD_WEBHOOK;
   if (!webhook) return;

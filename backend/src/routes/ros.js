@@ -251,6 +251,9 @@ function queueQuickBooksSync(roId, shopId) {
 function queueStatusEmail(roId, shopId, toStatus) {
   setImmediate(async () => {
     try {
+      // Deny before building a tracking/payment link; the transport checks again
+      // after all asynchronous preparation, immediately before external delivery.
+      await require('../services/shopPolicy').assertExternalEffectsAllowed(shopId);
       const emailContext = await dbGet(
         `SELECT ro.ro_number, ro.payment_status, ro.payment_received, c.email AS customer_email, c.name AS customer_name,
                 COALESCE(c.email_consent, FALSE) AS customer_email_consent,
@@ -284,6 +287,7 @@ function queueStatusEmail(roId, shopId, toStatus) {
       let finalHtml = html;
       // The status API and ready-for-pickup email template use delivery.
       if (['delivery', 'ready'].includes(toStatus) && !['paid', 'succeeded'].includes(normalizedPaymentStatus(emailContext.payment_status, emailContext.payment_received))) {
+        await require('../services/shopPolicy').assertExternalEffectsAllowed(shopId);
         const linkResult = await createPaymentCheckoutLinkForRo({
           roId,
           shopId,
@@ -302,7 +306,7 @@ function queueStatusEmail(roId, shopId, toStatus) {
         }
       }
 
-      sendMail(emailContext.customer_email, subject, finalHtml).catch((e) => {
+      sendMail(emailContext.customer_email, subject, finalHtml, shopId).catch((e) => {
         console.error('[Email] status notification failed:', e.message);
       });
     } catch (err) {
@@ -351,7 +355,8 @@ async function queueClosedReviewEmail(roId) {
     await sendMail(
       reviewContext.customer_email,
       `How was your experience at ${shopName}?`,
-      html
+      html,
+      reviewContext.shop_id
     ).catch((e) => console.error('[Email] review request failed:', e.message));
   } catch (err) {
     console.error(`[Email] Review request failed for RO ${roId}:`, err.message);
@@ -1427,7 +1432,7 @@ router.post('/:id/email-invoice', auth, requireTechnician, async (req, res) => {
       <p>Thank you for your business.${shop?.phone ? ` Contact us: ${shop.phone}` : ''}</p>
     `;
 
-    const sent = await sendMail(customer.email, subject, html);
+    const sent = await sendMail(customer.email, subject, html, ro.shop_id);
     if (!sent) {
       console.log('[InvoiceEmail] Email skipped: mail not configured', { roId: ro.id, customer: customer.email });
       return res.json({ ok: true, skipped: true, reason: 'email_not_configured' });
@@ -2603,7 +2608,7 @@ router.post('/:id/approve-estimate', auth, requireTechnician, async (req, res) =
           const managerEmails = shopUsers.map(u => u.email).filter(e => e);
           const estimateApprovedHtml = `<p>Estimate approved by ${shopUser?.name || 'Team Member'}.</p><p>RO: ${ro.ro_number}</p>`;
           for (const email of managerEmails) {
-            await sendMail(email, `Estimate Approved - ${ro.ro_number}`, estimateApprovedHtml).catch(e => console.error(`[Email] Manager notification failed for ${email}:`, e.message));
+            await sendMail(email, `Estimate Approved - ${ro.ro_number}`, estimateApprovedHtml, ro.shop_id).catch(e => console.error('[Email] Manager notification failed:', e.message));
           }
         }
       } catch (err) {

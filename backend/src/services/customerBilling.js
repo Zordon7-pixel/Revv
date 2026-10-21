@@ -2,6 +2,7 @@ const { v4: uuidv4 } = require('uuid');
 const { dbGet, dbRun } = require('../db');
 const { getStripeClient } = require('./stripe');
 const { sendMail } = require('./mailer');
+const { assertExternalEffectsAllowed } = require('./shopPolicy');
 const { closedPaidInvoiceEmail } = require('./emailTemplates');
 const { getRoMoneySummary } = require('./roMoney');
 const { PaymentError, reservePayment, metadataFor, recordProviderResult } = require('./paymentReservations');
@@ -79,6 +80,7 @@ async function createPaymentCheckoutLinkForRo({ roId, shopId, customerEmail = nu
 }
 
 async function sendClosedPaidInvoiceEmail({ roId, shopId, force = false }) {
+  await assertExternalEffectsAllowed(shopId);
   const ctx = await dbGet(
     `SELECT ro.id, ro.shop_id, ro.ro_number, ro.status, ro.payment_status, ro.payment_received,
             ro.invoice_emailed_at, c.email AS customer_email, c.name AS customer_name, s.name AS shop_name
@@ -106,7 +108,7 @@ async function sendClosedPaidInvoiceEmail({ roId, shopId, force = false }) {
     trackUrl,
   });
 
-  await sendMail(ctx.customer_email, subject, html);
+  await sendMail(ctx.customer_email, subject, html, ctx.shop_id);
   await dbRun(
     'UPDATE repair_orders SET invoice_emailed_at = $1 WHERE id = $2 AND shop_id = $3',
     [new Date().toISOString(), ctx.id, ctx.shop_id]

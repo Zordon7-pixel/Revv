@@ -1,4 +1,4 @@
-const nodemailer = require('nodemailer');
+const { resolveShopPolicy } = require('./shopPolicy');
 
 function isConfigured() {
   return !!(process.env.EMAIL_HOST && process.env.EMAIL_USER && process.env.EMAIL_PASS);
@@ -9,7 +9,7 @@ function isProduction() {
 }
 
 function getTransporter() {
-  return nodemailer.createTransport({
+  return require('nodemailer').createTransport({
     host: process.env.EMAIL_HOST,
     port: parseInt(process.env.EMAIL_PORT || '587'),
     secure: parseInt(process.env.EMAIL_PORT) === 465,
@@ -20,7 +20,13 @@ function getTransporter() {
   });
 }
 
-async function sendEmail(to, subject, html) {
+// No unscoped operational bypass: every current caller is shop-related.
+async function sendEmail(to, subject, html, shopId) {
+  const policy = await resolveShopPolicy(shopId);
+  if (!policy.allowExternalEffects) {
+    console.warn('[EMAIL] Suppressed:', policy.reason);
+    return { ok: false, suppressed: true, provider_attempted: false, reason: policy.reason };
+  }
   if (!isConfigured()) {
     if (isProduction()) {
       console.error('[EMAIL] Provider is not configured; refusing to simulate email in production.');
@@ -44,7 +50,7 @@ async function sendEmail(to, subject, html) {
   }
 }
 
-async function sendStatusUpdate(customerEmail, customerName, roNumber, newStatus, shopName) {
+async function sendStatusUpdate(customerEmail, customerName, roNumber, newStatus, shopName, shopId) {
   const statusLabels = {
     intake: 'checked in',
     estimate: 'in the estimate phase',
@@ -65,10 +71,10 @@ async function sendStatusUpdate(customerEmail, customerName, roNumber, newStatus
       <p>Thank you for choosing ${shopName}.</p>
     </div>
   `;
-  return sendEmail(customerEmail, `Update on your repair — ${roNumber}`, html);
+  return sendEmail(customerEmail, `Update on your repair — ${roNumber}`, html, shopId);
 }
 
-async function sendEstimateLink(customerEmail, customerName, estimateUrl, shopName, jobType, total) {
+async function sendEstimateLink(customerEmail, customerName, estimateUrl, shopName, jobType, total, shopId) {
   const html = `
     <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px">
       <h2 style="color:#1e293b">Your Estimate from ${shopName}</h2>
@@ -83,10 +89,10 @@ async function sendEstimateLink(customerEmail, customerName, estimateUrl, shopNa
       <p style="color:#64748b;font-size:13px">Or copy this link: ${estimateUrl}</p>
     </div>
   `;
-  return sendEmail(customerEmail, `Estimate ready — ${shopName}`, html);
+  return sendEmail(customerEmail, `Estimate ready — ${shopName}`, html, shopId);
 }
 
-async function sendReviewRequest(customerEmail, customerName, shopName, googleReviewUrl) {
+async function sendReviewRequest(customerEmail, customerName, shopName, googleReviewUrl, shopId) {
   const html = `
     <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px">
       <h2 style="color:#1e293b">How was your experience at ${shopName}?</h2>
@@ -100,7 +106,7 @@ async function sendReviewRequest(customerEmail, customerName, shopName, googleRe
       <p>Thank you for your business!</p>
     </div>
   `;
-  return sendEmail(customerEmail, `Thanks for choosing ${shopName} — share your experience!`, html);
+  return sendEmail(customerEmail, `Thanks for choosing ${shopName} — share your experience!`, html, shopId);
 }
 
 module.exports = { sendEmail, sendStatusUpdate, sendEstimateLink, sendReviewRequest, isConfigured };

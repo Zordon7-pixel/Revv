@@ -2,7 +2,16 @@
  * Discord webhook utility — sends embeds to DISCORD_WEBHOOK_URL
  */
 
-async function sendDiscordEmbed({ title, description, color = 0x6366f1, fields = [], footer }) {
+const { resolveShopPolicy } = require('../services/shopPolicy');
+
+// Public lead/waitlist payloads cannot establish fixture provenance. Until a
+// reviewed server-owned path exists, missing tenancy disables external delivery.
+async function sendDiscordEmbed({ title, description, color = 0x6366f1, fields = [], footer }, shopId) {
+  const policy = await resolveShopPolicy(shopId);
+  if (!policy.allowExternalEffects) {
+    console.warn('[Discord] Suppressed:', policy.reason);
+    return { ok: false, suppressed: true, provider_attempted: false, reason: policy.reason };
+  }
   const url = process.env.DISCORD_WEBHOOK_URL;
   if (!url) return;
 

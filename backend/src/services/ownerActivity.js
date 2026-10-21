@@ -1,6 +1,7 @@
 const { v4: uuidv4 } = require('uuid');
 const { dbAll, dbGet, dbRun } = require('../db');
 const { sendEmail } = require('./email');
+const { resolveShopPolicy } = require('./shopPolicy');
 
 const SENSITIVE_KEY_RE = /(password|token|secret|key|authorization|cookie|body|html|raw|jwt|signature)/i;
 
@@ -60,6 +61,8 @@ async function recordOwnerActivity({
 }
 
 async function sendImmediateOwnerActivityAlert({ shopId, summary, actor }) {
+  const policy = await resolveShopPolicy(shopId);
+  if (!policy.allowExternalEffects) return { ok: false, skipped: true, sent: 0, reason: policy.reason };
   const prefs = await getOwnerActivityPreferences(shopId);
   if (!prefs.owner_activity_immediate_alerts_enabled) return { ok: true, skipped: true };
   const [shop, ownerRows] = await Promise.all([
@@ -85,10 +88,11 @@ async function sendImmediateOwnerActivityAlert({ shopId, summary, actor }) {
       <p style="margin:0;color:#6b7280;font-size:13px;">Triggered by ${escapeHtml(actorLabel(actor))}.</p>
     </div>
   `;
+  const results = [];
   for (const recipient of recipients) {
-    await sendEmail(recipient, subject, html);
+    results.push(await sendEmail(recipient, subject, html, shopId));
   }
-  return { ok: true, sent: recipients.length };
+  return { ok: results.every(result => result?.ok !== false), sent: results.filter(result => result?.ok === true).length, results };
 }
 
 async function getOwnerActivityPreferences(shopId) {
@@ -178,6 +182,8 @@ function escapeHtml(value) {
 }
 
 async function sendOwnerActivityDigest({ shopId, since, until, recipientOverride = null }) {
+  const policy = await resolveShopPolicy(shopId);
+  if (!policy.allowExternalEffects) return { ok: false, skipped: true, sent: 0, reason: policy.reason };
   const prefs = await getOwnerActivityPreferences(shopId);
   if (!recipientOverride && !prefs.owner_activity_digest_enabled) return { ok: true, skipped: true };
 
@@ -218,9 +224,9 @@ async function sendOwnerActivityDigest({ shopId, since, until, recipientOverride
   const subject = `REVV daily activity digest - ${shop?.name || 'Your shop'}`;
   const results = [];
   for (const recipient of uniqueRecipients) {
-    results.push(await sendEmail(recipient, subject, html));
+    results.push(await sendEmail(recipient, subject, html, shopId));
   }
-  return { ok: results.every((result) => result?.ok !== false), sent: results.length, events: events.length, results };
+  return { ok: results.every((result) => result?.ok !== false), sent: results.filter(result => result?.ok === true).length, events: events.length, results };
 }
 
 module.exports = {

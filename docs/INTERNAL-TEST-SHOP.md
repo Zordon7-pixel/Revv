@@ -1,9 +1,9 @@
 # Internal test shops â€” t_6002e02f staged implementation
 
 Base: `35e49ddc01d6ef7605f602d85faa9591308915ff` (`origin/main`).
-Lane: `codex/t_6002e02f-revv-test-shop`. **Foundation + phase-2 SMS safety; NOT feature-complete or release-ready.**
+Lane: `codex/t_6002e02f-revv-test-shop`. **Foundation + phase-2 SMS + phase-3 email/notification safety; NOT feature-complete or release-ready.**
 Phase 2 starts at `67dbe8fdfa362c5fdb264870fdd4c9ff25f6c1aa` and changes exactly ten files.
-No account installation or designation is included. The phase-2 dispatch/validation log is
+No account installation or designation is included. Phase-2/3 dispatch/validation logs are
 kept here within the user's ten-file cap; the phase-1 `CLAUDE.md` log remains historical.
 
 ## Implemented safety boundary
@@ -65,13 +65,13 @@ Paths below are relative to `backend/src/` unless otherwise stated. â€œPendingâ€
 
 | Consumer inspected | Finding / coverage / next change |
 | --- | --- |
-| `routes/auth.js` registration, retired customer registration, onboarding, login, password reset | Registration now forces FALSE; ordinary update allowlists covered. Password-reset email still pending shop-aware suppression. Login/JWT does not authorize a designation. |
+| `routes/auth.js` registration, retired customer registration, onboarding, login, password reset | Registration now forces FALSE; ordinary update allowlists covered. Phase 3: password-reset email resolves policy using the persisted user shop_id; registration Discord uses the newly inserted shop ID. Token issuance/redemption and generic response remain unchanged. Login/JWT does not authorize a designation. |
 | `routes/market.js` PUT shop, logo; `routes/settings.js` PATCH, slug rotation; `routes/users.js` create/update/self/assistant; `routes/superadmin.js` account/password/impersonation tooling | No designation setter exists; settings/update allowlists neutralize forged fields. Do not reuse privileged user tooling for designated provisioning. Logo/media and ordinary notification setting behavior require later test-shop policy. |
 | `db/index.js`, `db/schema.pg.sql`, `db/migrate.js`, new `db/internalTestShop.js`, `app.js` | Changed: false schema/default, database hold, required migration and startup refusal. UUID/TEXT parent conventions retained. No request-time DDL. |
 | `db/seed.js`, `db/seed.pg.js`, repository `scripts/seed-demo.js`; `backend/test/productionStartup.test.js` | Legacy demo/superadmin mechanisms are unsuitable for designated provisioning. Production entrypoint is seedless (8 existing tests pass). None of these seed scripts was executed. New dedicated server-only provisioning is pending. |
 | `routes/subscriptions.js` status, ensureStripeCustomer, checkout, billing portal, subscription-created/updated/deleted webhooks | Pending: block customer/subscription/portal creation before Stripe calls; ignore test-shop webhook writes with verified stored tenancy. Stripe owns recurring charging; designated provisioning must never create or attach billing identities. |
 | `routes/payments.js` intent/create-intent aliases, links, reconcile, webhook receipts, history/RO totals; `services/stripe.js` | Pending: deny provider charge/intent/checkout/reconciliation for flagged shops at the server boundary. Preserve ordinary integer-cent accounting and verified webhook semantics. |
-| `services/customerBilling.js` checkout link, tracking token and closed-paid invoice email | Pending: block billing link/invoice generation and mail before any reservation/provider call. |
+| `services/customerBilling.js` checkout link, tracking token and closed-paid invoice email | Phase 3: closed-paid invoice mail checks policy before tracking-token preparation and again at transport, including force; suppressed mail cannot set invoice_emailed_at. Direct checkout creation, reservation/provider work and standalone tracking-token calls remain pending. |
 | `services/paymentReservations.js` reserve, settle, reconcileAttempt/reconcileLocked, manual/deletion locks | Pending: authoritative shop check under parent locks, including lazy/provider reconciliation. Do not release uncertain ordinary reservations or alter payment history. No standalone scheduled Stripe billing job was found. |
 | `routes/invoice.js` authenticated invoice, repair-order PDF and public token invoice; `routes/ros.js` invoice mail, close/paid/manual settlement and queued QB sync | Pending: deny invoice generation/send for test tenancy through both public and authenticated entry points. Preserve ordinary print and money authority. |
 | `routes/accounting.js`, `services/quickbooks.js` OAuth/token refresh, qbRequest, customer/item creation, single/batch invoice sync, disconnect | Pending: prevent external invoice/customer/provider effects, including queued sync after RO closure. |
@@ -82,16 +82,16 @@ Paths below are relative to `backend/src/` unless otherwise stated. â€œPendingâ€
 | `routes/customers.js` customer/vehicle/RO counts; `routes/reviews.js` summary; `routes/public.js` public shop ratings | Pending: customer/review/business metrics exclusion. Ordinary tenant filtering alone is insufficient. |
 | `middleware/roLimitGuard.js`, `middleware/planGuard.js`, `services/estimateAiPolicy.js` admissions/budgets | Pending: usage exclusion and explicit test-shop provider denial; no paid-plan/admin privilege should be granted to bypass ordinary limits. |
 | `app.js` runCarryoverForActiveShops; `jobs/monthCarryover.js` | Pending: startup enumerates ALL shops and marks billing-month carryovers. Guard both enumeration and direct consumer. |
-| `jobs/ownerActivityDigest.js`, `services/ownerActivity.js` digest, immediate critical alerts, preference overrides | Pending: scheduler enumeration AND direct send guard; preference/global ON/recipient overrides must not bypass. |
+| `jobs/ownerActivityDigest.js`, `services/ownerActivity.js` digest, immediate critical alerts, preference overrides | Phase 3: service entry guard and per-recipient SMTP check cover scheduled/direct digest, overrides and detached critical alerts. Scheduler enumeration and pre-service digest-date claim still include fixtures; local event writes remain. |
 | `jobs/feedbackDailyAudit.js`, `routes/feedback.js`, superadmin helpdesk totals | Pending: prevent fixture feedback contaminating operational reporting/routing. Job updates feedback only; no provider sends found in the job itself. |
 | `services/shopPolicy.js`; `services/sms.js` sendSMS/sendStaffSMS | Phase 2 implemented: strict persisted resolver, entry/final send guards before config/client/provider resolution, including supplied config and staff capability. Getter-only config/diagnostic APIs do not send. Zero-client synthetic tests and ordinary SMS suites pass. |
 | `routes/sms.js` test/direct/thread sends and inbound webhook; `services/smsAutoReply.js` | Outbound paths converge on guarded sendSMS; direct/auto-reply negative tests executed. Inbound signature/callback and local STOP/START processing unchanged; no TwiML outbound reply added. |
-| `services/customerOptInConfirmation.js`, `services/partsNotifications.js`, `routes/ros.js` status/tracking/supplement sends, `routes/portal.js` tracking, `routes/timeclock.js` staff SMS | Central exclusion implemented; executed real handler/service tests cover RO, portal, status, opt-in, parts SMS and staff wrapper suppression. Timeclock uses the guarded staff wrapper. Parts email remains pending independently. |
+| `services/customerOptInConfirmation.js`, `services/partsNotifications.js`, `routes/ros.js` status/tracking/supplement sends, `routes/portal.js` tracking, `routes/timeclock.js` staff SMS | Central exclusion implemented; executed real handler/service tests cover RO, portal, status, opt-in, parts SMS and staff wrapper suppression. Timeclock uses the guarded staff wrapper. Parts email is fail-closed unsupported in phase 3 because its caller omits shop ID; no ordinary send until conversion. |
 | `services/smsProvisioning.js` manual/force and automatic entry; `services/smsProvisioningQueue.js` discovery, due/claim, session guard, purchase/retry/publish/alerts; `services/smsProvisioningProvider.js`; `services/smsProvisioningEvents.js` | Phase 2 implemented: discovery/due/attention filters, manual/automatic entry, direct claim, locked transaction/worker checks, provider factory/retained adapter checks and failure/ops-alert suppression. Preexisting jobs, retries/intents, force, late policy changes and ordinary callback/idempotency behavior tested with synthetic adapters. Signed registration receiver itself remains local-only and unchanged. Legacy unexported createTwilioClient defect remains; not counted as a guard. |
-| `services/mailer.js` Resend and `services/email.js` SMTP/helpers | **Phase 3 pending:** transports currently lack shop context. Thread trusted tenancy through callers; unknown test-fixture scope must fail closed. Global provider absence is insufficient. These boundaries cannot safely fit in this phase's ten-file cap. |
-| Mail callers: `routes/auth.js`, `routes/ros.js` status/review/invoice/manager approval, `routes/payments.js`, `services/customerBilling.js`, `services/partsNotifications.js`, `services/ownerActivity.js` | Pending: cover customer, staff, owner and auth emails, including asynchronous sends and override recipients. |
-| `utils/discord.js`; callers `routes/auth.js`, `routes/leads.js`, `routes/waitlist.js`, `routes/public.js` estimate intake | Pending: public leads/waitlist have no authoritative shop context. Do not trust a client test flag or infer it from an email string; introduce a reviewed server-authorized fixture path. |
-| `services/notifyOps.js`; callers `routes/insuranceOcr.js`, `services/smsProvisioningQueue.js` | SMS provisioning caller guarded in phase 2, including error fallback and late checks. Generic notifyOps and insurance OCR caller remain pending; no global shop-policy transport claim. |
+| `services/mailer.js` Resend and `services/email.js` SMTP/helpers | Phase 3: mandatory trusted shop ID, persisted policy before provider/client/SDK/network. Missing/ambiguous/unconverted tenancy refuses delivery. See exact transport result contract below. |
+| Mail callers: `routes/auth.js`, `routes/ros.js` status/review/invoice/manager approval, `routes/payments.js`, `services/customerBilling.js`, `services/partsNotifications.js`, `services/ownerActivity.js` | Phase 3 converts auth, all four RO mail call sites, closed-paid invoice and owner activity. Payments receipt and parts email intentionally remain unsupported/fail-closed at Resend; see remaining-consumer table below. |
+| `utils/discord.js`; callers `routes/auth.js`, `routes/leads.js`, `routes/waitlist.js`, `routes/public.js` estimate intake | Phase 3: Discord requires a separate trusted shop ID. Registration converted. Public lead/waitlist and unconverted public-intake notifications are disabled at this boundary for all callers; no body flags or recipient-derived identity. |
+| `services/notifyOps.js`; callers `routes/insuranceOcr.js`, `services/smsProvisioningQueue.js` | SMS provisioning caller guarded in phase 2, including error fallback and late checks. Phase 3 guards generic notifyOps using context.shop_id from server-owned callers, covering late OCR failure alerts and rechecking queue alerts. Unresolved/global alerts stay local. |
 | Frontend `components/LeadCaptureForm.jsx`, `pages/LeadsDashboard.jsx` | **Additional bypass:** lead form writes directly to Firestore before an unauthenticated backend Discord request; dashboard reads/exports all Firestore leads. Requires separate server-authorized fixture isolation and tests; a backend-only flag cannot cover this direct write. Firebase configuration/credentials were not opened. |
 | `services/notifications.js`, `routes/notifications.js`, local notification writes in `routes/timeclock.js`; `routes/comms.js`, `routes/inspections.js` send marker; agreement/approval links | Inspected paths are local rows/link/marker operations, not outbound push transports. No push sender found in backend/frontend source search. Still verify downstream notification consumption before enabling fixtures. |
 | `jobs/mediaIntegrity.js`, `services/mediaStorage.js`, upload routes; `services/openai.js`, catalog/tracking provider services and their routes | Broader zero-external-effect requirement: object-store mirror/restore, AI, supplier/tracking calls also need exclusion or a genuinely isolated fixture environment. Global media sweep mirrors files independently of shop-reference queries. Frontend Settings also has direct geocoding. These are not covered by messaging guards. |
@@ -99,7 +99,7 @@ Paths below are relative to `backend/src/` unless otherwise stated. â€œPendingâ€
 
 ## Next session in this SAME lane
 
-Keep the database hold and account HELD. Phase 3 must thread trusted tenancy through `services/mailer.js`, `services/email.js` and their auth/customer/staff/owner callers, including asynchronous failure/ops paths. Reuse the persisted resolver; do not accept body/JWT policy flags or infer fixture identity from email. Background jobs, public token routes, unscoped mail and direct Firestore writes still need their own boundaries. Billing/reporting/provider/metrics/scheduler rows marked pending above remain acceptance gaps.
+Keep the database hold and account HELD. Phase 3 adds transport boundaries and selected caller conversion (receipt below). Next convert unsupported payments/parts/public-intake consumers and legacy test fixtures, finish scheduler exclusion and design a reviewed server-authorized public fixture path. Reuse the persisted resolver; do not accept body/JWT policy flags or infer fixture identity from email. Background jobs, public token routes, unscoped mail and direct Firestore writes still need their own boundaries. Billing/reporting/provider/metrics/scheduler rows marked pending above remain acceptance gaps.
 
 Subsequent billing/reporting and scheduler batches must cover the rows above. Only after all exclusions and zero-provider tests are complete may a candidate replace the hold and add designated provisioning. That mechanism must use a dedicated server-side script, runtime env/vault password only, transaction + normalized-email concurrency protection, deterministic idempotent receipt, and one owner tenancy with no global/admin role. Refuse collisions with an existing ordinary account/shop; never convert/backfill customers or attach Stripe/Twilio identities. Repeating provisioning must not reset a password or mutate unrelated data. The receipt must contain only identity, true flag and verified exclusions, never credentials. Creating `zordon+revvqa@mail.grokbot.com` remains outside this build and HELD for separately authorized reviewed installation.
 
@@ -235,3 +235,152 @@ No real account created/designated/enabled, deployment, push, merge, live provid
 call/send, credential access, production/customer-data mutation, cron/provider/
 model/profile configuration change, board/messaging call, canonical repository
 edit, or change to `job5feaddc2bfaf` / `t_59894b65` occurred.
+
+
+## Phase-3 dispatch and validation receipt â€” 2026-10-21
+
+Task `t_6002e02f`, SAME isolated source and branch. Preflight verified clean exact
+HEAD `ce8d869bf55c79b090b525229dae97c9ac15f202` on
+`codex/t_6002e02f-revv-test-shop`. This is the new candidate's parent;
+immutable base `35e49ddc01d6ef7605f602d85faa9591308915ff` remains an ancestor.
+No lifecycle/board/messaging/delegation calls. Hermes owns QA, review and release.
+This receipt serves as the phase-3 dispatch log within the ten-file cap;
+`CLAUDE.md` remains the historical phase-1 log.
+
+Exactly ten changed files:
+
+1. `backend/src/services/mailer.js`
+2. `backend/src/services/email.js`
+3. `backend/src/utils/discord.js`
+4. `backend/src/services/notifyOps.js`
+5. `backend/src/routes/auth.js`
+6. `backend/src/routes/ros.js`
+7. `backend/src/services/customerBilling.js`
+8. `backend/src/services/ownerActivity.js`
+9. `backend/test/emailShopPolicy.test.js`
+10. `docs/INTERNAL-TEST-SHOP.md`
+
+### Transport contract and converted callers
+
+All four boundaries use the unchanged phase-2 `resolveShopPolicy`. Only exactly
+one matching persisted Boolean FALSE authorizes an external effect. TRUE yields
+`INTERNAL_TEST_SHOP`; absent/invalid/duplicate/mismatched/failed policy yields
+`SHOP_POLICY_UNAVAILABLE`. No caller policy flag, email spelling, recipient
+override, environment enable flag or object-shaped tenancy can bypass it.
+Authenticated tenancy IDs and persisted resource/user/job shop IDs identify the
+lookup; JWT policy claims are never consulted. These are internal functions, not
+new public APIs. Never pass a body-supplied shop ID to them.
+
+`sendMail(to, subject, html, shopId)` throws an Error with fixed `reason`,
+`suppressed: true` and `provider_attempted: false` on suppression, before the
+Resend configuration/send path. This preserves existing rejection handling and
+prevents a truthy suppression object from being mistaken for provider success.
+`sendEmail(..., shopId)`, `sendDiscordEmbed(embed, shopId)` and
+`notifyOps(severity, code, { shop_id, ro_id })` return
+`{ ok: false, suppressed: true, provider_attempted: false, reason }`.
+SMTP loads nodemailer only after policy allows; no SDK import, client construction
+or provider call occurs on suppression. Missing tenancy is unsupported even when
+no provider is configured. There is **no non-shop operational bypass**: no
+inspected unscoped caller established genuinely non-fixture provenance. Ops
+failures retain local sanitized diagnostics, without external fallback or throttle
+consumption. Every send resolves current policy; there is no cache.
+
+- Auth: forgot-password selects the stored user's `shop_id`, retaining token
+  creation, expiry, generic response, password validation/redemption and ordinary
+  recipients/content. Accounts without a resolvable shop cannot receive reset
+  mail in this candidate. Registration Discord receives the newly persisted ID;
+  public FALSE remains mandatory and caller flags cannot designate a fixture.
+- RO: queued status mail uses its authenticated shop argument, checks before
+  preparation and again before the unpaid delivery payment-link branch, then
+  rechecks at Resend. Closed review uses stored RO tenancy. Explicit invoice and
+  asynchronous manager approval use the persisted scoped RO's shop ID. Every
+  manager send checks separately; no recipient-derived policy.
+- Customer billing: closed-paid invoice (including force) checks before tracking
+  token preparation and again at send; rejection prevents the emailed marker.
+  Existing ordinary eligibility/idempotency checks and payloads remain intact.
+- Owner: digest and immediate alert check before preference/recipient work, then
+  SMTP rechecks each send. Overrides cannot bypass. Detached critical activity and
+  scheduled digest converge on these service guards. Suppressed/failed recipients
+  are not counted as sent; ordinary recipients/content remain unchanged.
+- Ops: existing insurance OCR late error callbacks already supply authenticated
+  `req.user.shop_id`; queue alerts supply persisted job identity. The transport
+  rechecks current policy after upstream asynchronous work. Discord registration
+  is scoped; all other inspected Discord callers currently fail closed.
+
+### Remaining consumers and release limitations
+
+| Consumer | Exact remaining behavior / next work |
+| --- | --- |
+| `routes/payments.js` detached payment confirmation | Still calls sendMail without shop ID. Resend rejects `SHOP_POLICY_UNAVAILABLE` for ordinary and fixture shops; existing catch logs failure. Synthetic real-handler test proves zero external calls after mocked settlement. Forward the already verified settlement shop ID in a later batch. Closed-paid invoice in that callback uses the converted service. Stripe webhook parsing/settlement itself is not excluded by this phase. |
+| `services/partsNotifications.js` email | Still omits shop ID. Resend logs/throws explicit `SHOP_POLICY_UNAVAILABLE`, never sends. Existing catch persists `unknown / verify_before_retry` and retains cooldown/event claim; it does not expose the enum or falsely record acceptance. Synthetic real-service test verifies this conservative outcome. Later convert trusted tenancy and map marked suppression explicitly. Ordinary parts email is also disabled until then. Existing SMS remains guarded independently. |
+| `routes/public.js` estimate notification | Has a server-resolved shop but does not yet pass it to Discord; external notification is disabled for ordinary and fixture callers. Existing local intake behavior is unchanged. |
+| Public lead/waitlist and direct Firestore | Discord without trusted tenancy is disabled, including forged body IDs/flags and fixture-looking emails. Local waitlist storage and frontend direct `addDoc` are NOT isolated by this backend guard. No designated fixture may use these public flows, and no fixture account can be enabled under the unchanged DB TRUE hold. Tests pin that hold and explicitly identify the unresolved Firestore bypass; they do not claim runtime Firestore isolation. A reviewed server-authorized fixture path is required before enabling/designating accounts. No unsafe public test flag was added. |
+| Owner digest job | Service guards block email, but enumeration and pre-service digest-date claim still include fixtures; local event capture remains. Scheduler/reporting isolation is pending. |
+| Other provider/billing/reporting inventory | Direct checkout/Stripe, reservations/reconciliation, invoice generation, QuickBooks, AI/media/catalog, reporting/metrics/export and other rows above remain open. The status email guards do not constitute an atomic or system-wide billing exclusion. |
+| Legacy test fixtures | `src/__tests__/email.production.test.js` and `notificationLogging.privacy.test.js` omit mail tenancy/persisted policy; `test/paymentReservations.remyA.test.js` has a closed import map lacking the new billing policy dependency. They were inspected, not run or claimed passing in this phase. Adapt their synthetic fixtures in a later batch; never weaken production fail-closed behavior to satisfy an unscoped fixture. Full backend/frontend/browser and real-DB QA remain Hermes-owned. |
+
+This candidate is intentionally **not release-ready**: unconverted ordinary mail
+and notifications are disabled, and broader fixture exclusions remain incomplete.
+The new tests exercise the actual transports/resolver and converted handlers/services
+with synthetic rows, including force, override, detached work, late policy changes,
+provider failures, no-provider behavior, ordinary payloads/recipients and consent.
+Existing provider/idempotency algorithms were not rewritten. No separate global
+notification sender or non-shop escape was introduced.
+
+### Deterministic commands and outcomes
+
+Node v22.23.2; scrubbed environment; no real database, SDK or network providers.
+The deny-network preload is copied unchanged from phase 2 and replaces
+`net.Socket.prototype.connect`, `tls.connect`, `http[s].request/get` and global
+`fetch` with `TEST_NETWORK_PROHIBITED`. Test VM fetch/SMTP and DB adapters are
+synthetic. No app bootstrap, dotenv/config/credential read or live provider send
+is used by the new suite.
+
+```sh
+env -i PATH=/opt/homebrew/opt/node@22/bin:/opt/homebrew/bin:/usr/bin:/bin NODE_ENV=test CI=1 node --require /private/tmp/revv-t6002-phase3/deny-network.cjs --test backend/test/emailShopPolicy.test.js
+```
+
+Final exit **0**: **42 tests, 42 passed, 0 failed/cancelled/skipped/todo**.
+Log: `/private/tmp/revv-t6002-phase3/focused-final.log`.
+
+```sh
+env -i PATH=/opt/homebrew/opt/node@22/bin:/opt/homebrew/bin:/usr/bin:/bin NODE_ENV=test CI=1 node --require /private/tmp/revv-t6002-phase3/deny-network.cjs --test --test-concurrency=1 --test-skip-pattern='real PostgreSQL' backend/test/smsTestRecipient.test.js backend/test/smsConsent.phase2.test.js backend/test/smsProvisioning.auto.test.js backend/test/smsProvisioning.events.test.js backend/test/internalTestShop.test.js backend/test/productionStartup.test.js backend/test/idTypeCastGuard.test.js backend/test/partsNotifications.test.js
+```
+
+Exit **0**: **190 tests, 190 passed, 0 failed/cancelled/skipped/todo**.
+Log: `/private/tmp/revv-t6002-phase3/regression.log`. Named real-PostgreSQL cases
+are explicitly excluded, not counted as passing. The existing parts suite uses
+mock adapters for ordinary behavior; the new suite separately tests the actual
+unconverted email caller against the real guarded transport.
+
+Syntax: each of the nine changed `.js` paths above, individually with
+`env -i PATH=/opt/homebrew/opt/node@22/bin:/opt/homebrew/bin:/usr/bin:/bin NODE_ENV=test CI=1 node --check <path>`.
+Final checks and commit identity are verified in the handoff. The database hold,
+initializer/schema/startup files and phase-2 policy/SMS/provisioning files remain
+byte-identical to parent. No provisioning/designation path is added.
+
+### Failure and recovery history
+
+- Initial combined guidance read exceeded output limits; bounded reads recovered
+  required guidance and relevant code. Later oversized inventory output was also
+  bounded to the relevant callers. No check result was inferred from truncation.
+- One test-file search had a zsh unmatched glob (`backend/test/*auth*`); subsequent
+  `rg`/explicit-path searches recovered. No edit or test execution was affected.
+- First new-suite run: **35 passed, 1 failed**. The harness used a fixed microtask
+  count and inspected the detached owner alert before its second recipient
+  completed. Replaced that timing assumption with a host event-loop turn.
+  First shell wrapper returned the tail command's status (0), not the test runner's
+  failure status; the TAP failure was reported immediately. Subsequent commands
+  explicitly capture and return the runner status. Expanded rerun: **40/40**, exit
+  0; final with unpaid-status/omitted-helper-scope coverage: **42/42**, exit 0.
+- No production behavior was relaxed for a test. Added a second status policy
+  check before the payment-link branch after reviewing late-change coverage.
+
+No account was created, designated or enabled. The requested account remains
+**HELD** and `shops_internal_test_shop_hold CHECK (is_internal_test_shop IS FALSE)`
+remains in force. No push/merge/deploy, live send/provider call, production or
+customer DB access/mutation, secrets access, config/cron/model/profile change,
+board/messaging call, canonical checkout source edit, or protected job/task change.
+Safety-sensitive outbound/auth policy, more than two files: Hermes owns host QA,
+Spark disposition, one independent exact-SHA review and release. No reviewer
+verdict is claimed; this is a local implementation candidate only.

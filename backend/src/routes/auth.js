@@ -109,7 +109,7 @@ router.post('/shop-register', async (req, res) => {
         { name: 'Email', value: emailNorm, inline: true },
       ],
       footer: 'REVV Lead Tracking',
-    });
+    }, shopId);
 
     res.status(201).json({
       token,
@@ -139,7 +139,7 @@ router.post('/forgot-password', forgotPasswordLimiter, async (req, res) => {
   try {
     const { email } = req.body;
     if (!email?.trim()) return res.status(400).json({ error: 'Email is required.' });
-    const user = await dbGet('SELECT id, email FROM users WHERE LOWER(email) = $1', [email.trim().toLowerCase()]);
+    const user = await dbGet('SELECT id, email, shop_id FROM users WHERE LOWER(email) = $1', [email.trim().toLowerCase()]);
     if (user) {
       const token = crypto.randomBytes(32).toString('hex');
       const expiresAt = new Date(Date.now() + 3600000).toISOString();
@@ -151,7 +151,8 @@ router.post('/forgot-password', forgotPasswordLimiter, async (req, res) => {
           'Reset your REVV password',
           `<p>You requested a password reset for your REVV account.</p>
 <p><a href="${resetUrl}" style="color:#6366f1;font-weight:bold;">Click here to reset your password</a></p>
-<p>This link expires in 1 hour. If you did not request this, you can safely ignore this email.</p>`
+<p>This link expires in 1 hour. If you did not request this, you can safely ignore this email.</p>`,
+          user.shop_id
         );
         console.log('[Auth] Password reset email sent:', result?.id);
       } catch (mailErr) {
