@@ -1,3 +1,4 @@
+const { assertExternalEffectsAllowed, isShopPolicyError } = require('../services/shopPolicy');
 const router = require('express').Router();
 const { dbGet, dbAll } = require('../db');
 const auth = require('../middleware/auth');
@@ -12,6 +13,7 @@ function toCsvValue(value) {
 
 router.get('/summary', auth, requireTechnician, requireAdmin, async (req, res) => {
   try {
+    await assertExternalEffectsAllowed(req.user?.shop_id);
     const sid = req.user.shop_id;
     const scope = String(req.query?.scope || 'month').trim().toLowerCase();
     const allScope = scope === 'all';
@@ -98,6 +100,7 @@ router.get('/summary', auth, requireTechnician, requireAdmin, async (req, res) =
       [sid]
     );
 
+    await assertExternalEffectsAllowed(req.user.shop_id);
     res.json({
       scope: allScope ? 'all' : 'month',
       total: totalRow.n,
@@ -120,12 +123,17 @@ router.get('/summary', auth, requireTechnician, requireAdmin, async (req, res) =
       },
     });
   } catch (err) {
+    if (isShopPolicyError(err)) {
+      return res.status(err.reason === 'INTERNAL_TEST_SHOP' ? 409 : 503)
+        .json({ error: err.reason, excluded: true });
+    }
     res.status(500).json({ error: err.message });
   }
 });
 
 router.get('/monthly/:yearMonth', auth, requireTechnician, requireAdmin, async (req, res) => {
   try {
+    await assertExternalEffectsAllowed(req.user?.shop_id);
     const { yearMonth } = req.params;
     if (!/^\d{4}-\d{2}$/.test(yearMonth)) {
       return res.status(400).json({ error: 'Invalid month format. Use YYYY-MM' });
@@ -166,6 +174,7 @@ router.get('/monthly/:yearMonth', auth, requireTechnician, requireAdmin, async (
       return acc;
     }, {});
 
+    await assertExternalEffectsAllowed(req.user.shop_id);
     return res.json({
       summary: {
         year_month: yearMonth,
@@ -179,12 +188,17 @@ router.get('/monthly/:yearMonth', auth, requireTechnician, requireAdmin, async (
       ros,
     });
   } catch (err) {
+    if (isShopPolicyError(err)) {
+      return res.status(err.reason === 'INTERNAL_TEST_SHOP' ? 409 : 503)
+        .json({ error: err.reason, excluded: true });
+    }
     return res.status(500).json({ error: err.message });
   }
 });
 
 router.get('/monthly/:yearMonth/csv', auth, requireTechnician, requireAdmin, async (req, res) => {
   try {
+    await assertExternalEffectsAllowed(req.user?.shop_id);
     const { yearMonth } = req.params;
     if (!/^\d{4}-\d{2}$/.test(yearMonth)) {
       return res.status(400).json({ error: 'Invalid month format. Use YYYY-MM' });
@@ -243,16 +257,22 @@ router.get('/monthly/:yearMonth/csv', auth, requireTechnician, requireAdmin, asy
 
     const csv = `${header}\n${rows.join('\n')}\n`;
 
+    await assertExternalEffectsAllowed(req.user.shop_id);
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="revv-report-${yearMonth}.csv"`);
     return res.send(csv);
   } catch (err) {
+    if (isShopPolicyError(err)) {
+      return res.status(err.reason === 'INTERNAL_TEST_SHOP' ? 409 : 503)
+        .json({ error: err.reason, excluded: true });
+    }
     return res.status(500).json({ error: err.message });
   }
 });
 
 router.get('/tech-workload', auth, requireTechnician, requireAdmin, async (req, res) => {
   try {
+    await assertExternalEffectsAllowed(req.user?.shop_id);
     const sid = req.user.shop_id;
 
     const [techs, ros] = await Promise.all([
@@ -338,17 +358,23 @@ router.get('/tech-workload', auth, requireTechnician, requireAdmin, async (req, 
         return a.tech_name.localeCompare(b.tech_name);
       });
 
+    await assertExternalEffectsAllowed(req.user.shop_id);
     return res.json({
       total_active_ros: ros.length,
       columns,
     });
   } catch (err) {
+    if (isShopPolicyError(err)) {
+      return res.status(err.reason === 'INTERNAL_TEST_SHOP' ? 409 : 503)
+        .json({ error: err.reason, excluded: true });
+    }
     return res.status(500).json({ error: err.message });
   }
 });
 
 router.get('/:tab', auth, requireTechnician, requireAdmin, async (req, res) => {
   try {
+    await assertExternalEffectsAllowed(req.user?.shop_id);
     const sid = req.user.shop_id;
     const { tab } = req.params;
 
@@ -376,6 +402,7 @@ router.get('/:tab', auth, requireTechnician, requireAdmin, async (req, res) => {
         ORDER BY revenue DESC LIMIT 3
       `, [sid]);
 
+      await assertExternalEffectsAllowed(req.user.shop_id);
       return res.json({
         monthly,
         total: parseFloat(totalRow.total),
@@ -409,6 +436,7 @@ router.get('/:tab', auth, requireTechnician, requireAdmin, async (req, res) => {
         WHERE shop_id = $1 AND DATE_TRUNC('month', created_at) = DATE_TRUNC('month', NOW() - INTERVAL '1 month')
       `, [sid]);
 
+      await assertExternalEffectsAllowed(req.user.shop_id);
       return res.json({
         byStatus,
         avgDays: parseFloat(avgRow.avg_days) || 0,
@@ -419,6 +447,7 @@ router.get('/:tab', auth, requireTechnician, requireAdmin, async (req, res) => {
 
     if (tab === 'performance') {
       const summary = await dbGet('SELECT COUNT(*)::int as n FROM repair_orders WHERE shop_id = $1', [sid]);
+      await assertExternalEffectsAllowed(req.user.shop_id);
       return res.json({ redirect: '/performance', count: summary.n });
     }
 
@@ -467,6 +496,7 @@ router.get('/:tab', auth, requireTechnician, requireAdmin, async (req, res) => {
         [sid]
       );
 
+      await assertExternalEffectsAllowed(req.user.shop_id);
       return res.json({
         totalInsuranceJobs: thisMonthJobs?.count || 0,
         approvedAmountCents: Number(approvedVsBilled?.approved_cents || 0),
@@ -480,6 +510,10 @@ router.get('/:tab', auth, requireTechnician, requireAdmin, async (req, res) => {
 
     return res.status(400).json({ error: 'Unknown tab' });
   } catch (err) {
+    if (isShopPolicyError(err)) {
+      return res.status(err.reason === 'INTERNAL_TEST_SHOP' ? 409 : 503)
+        .json({ error: err.reason, excluded: true });
+    }
     res.status(500).json({ error: err.message });
   }
 });

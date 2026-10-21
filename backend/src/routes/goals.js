@@ -1,3 +1,4 @@
+const { assertExternalEffectsAllowed, isShopPolicyError } = require('../services/shopPolicy');
 const router = require('express').Router();
 const { v4: uuidv4 } = require('uuid');
 const { dbGet, dbRun } = require('../db');
@@ -23,6 +24,7 @@ function previousMonth(yearMonth) {
 }
 
 async function ensureGoalForMonth(shopId, yearMonth) {
+  await assertExternalEffectsAllowed(shopId);
   let goal = await dbGet(
     `SELECT id, shop_id, year_month, revenue_goal, ro_goal, created_at
      FROM monthly_goals
@@ -59,6 +61,7 @@ async function ensureGoalForMonth(shopId, yearMonth) {
   const revenueGoal = lastGoal?.revenue_goal ?? Number(shop?.monthly_revenue_target || 0);
   const roGoal = lastGoal?.ro_goal ?? defaultRoGoal;
 
+  await assertExternalEffectsAllowed(shopId);
   const id = uuidv4();
   await dbRun(
     `INSERT INTO monthly_goals (id, shop_id, year_month, revenue_goal, ro_goal)
@@ -80,20 +83,27 @@ async function ensureGoalForMonth(shopId, yearMonth) {
 
 router.get('/:yearMonth', auth, async (req, res) => {
   try {
+    await assertExternalEffectsAllowed(req.user?.shop_id);
     const { yearMonth } = req.params;
     if (!isValidYearMonth(yearMonth)) {
       return res.status(400).json({ error: 'Invalid month format. Use YYYY-MM' });
     }
 
     const goal = await ensureGoalForMonth(req.user.shop_id, yearMonth);
+    await assertExternalEffectsAllowed(req.user.shop_id);
     return res.json({ goal });
   } catch (err) {
+    if (isShopPolicyError(err)) {
+      return res.status(err.reason === 'INTERNAL_TEST_SHOP' ? 409 : 503)
+        .json({ error: err.reason, excluded: true });
+    }
     return res.status(500).json({ error: err.message });
   }
 });
 
 router.put('/:yearMonth', auth, requireAdmin, async (req, res) => {
   try {
+    await assertExternalEffectsAllowed(req.user?.shop_id);
     const { yearMonth } = req.params;
     const { revenue_goal, ro_goal } = req.body || {};
 
@@ -117,10 +127,11 @@ router.put('/:yearMonth', auth, requireAdmin, async (req, res) => {
       [req.user.shop_id, yearMonth]
     );
 
+    await assertExternalEffectsAllowed(req.user.shop_id);
     if (existing) {
       await dbRun(
-        'UPDATE monthly_goals SET revenue_goal = $1, ro_goal = $2 WHERE id = $3',
-        [revenue, ro, existing.id]
+        'UPDATE monthly_goals SET revenue_goal = $1, ro_goal = $2 WHERE id = $3 AND shop_id = $4',
+        [revenue, ro, existing.id, req.user.shop_id]
       );
     } else {
       await dbRun(
@@ -137,8 +148,13 @@ router.put('/:yearMonth', auth, requireAdmin, async (req, res) => {
       [req.user.shop_id, yearMonth]
     );
 
+    await assertExternalEffectsAllowed(req.user.shop_id);
     return res.json({ goal });
   } catch (err) {
+    if (isShopPolicyError(err)) {
+      return res.status(err.reason === 'INTERNAL_TEST_SHOP' ? 409 : 503)
+        .json({ error: err.reason, excluded: true });
+    }
     return res.status(500).json({ error: err.message });
   }
 });

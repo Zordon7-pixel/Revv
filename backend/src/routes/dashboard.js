@@ -1,3 +1,4 @@
+const { assertExternalEffectsAllowed, isShopPolicyError } = require('../services/shopPolicy');
 const router = require('express').Router();
 const { dbGet, dbAll } = require('../db');
 const auth = require('../middleware/auth');
@@ -15,6 +16,7 @@ function requireOwnerAdminOnly(req, res, next) {
 }
 
 async function getMonthlySupplementOpportunity(shopId) {
+  await assertExternalEffectsAllowed(shopId);
   return dbGet(
     `SELECT
        COALESCE(SUM(
@@ -38,6 +40,7 @@ async function getMonthlySupplementOpportunity(shopId) {
 
 router.get('/instruments', auth, requireOwnerAdminOnly, async (req, res) => {
   try {
+    await assertExternalEffectsAllowed(req.user?.shop_id);
     const shopId = req.user.shop_id;
     const [moneyRow, goalRow, supplementRow] = await Promise.all([
       dbGet(
@@ -69,6 +72,7 @@ router.get('/instruments', auth, requireOwnerAdminOnly, async (req, res) => {
       ? Math.round((trueProfitCents * 10000) / revenueMtdCents)
       : 0;
 
+    await assertExternalEffectsAllowed(req.user.shop_id);
     return res.json({
       revenue_mtd_cents: revenueMtdCents,
       revenue_goal_cents: revenueGoalCents,
@@ -80,6 +84,10 @@ router.get('/instruments', auth, requireOwnerAdminOnly, async (req, res) => {
       ro_count: Number(moneyRow?.ro_count || 0),
     });
   } catch (err) {
+    if (isShopPolicyError(err)) {
+      return res.status(err.reason === 'INTERNAL_TEST_SHOP' ? 409 : 503)
+        .json({ error: err.reason, excluded: true });
+    }
     console.error('[Dashboard] instrument KPIs error:', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
@@ -87,12 +95,14 @@ router.get('/instruments', auth, requireOwnerAdminOnly, async (req, res) => {
 
 router.get('/supplements/monthly-opportunity', auth, requireOwnerAdminOnly, async (req, res) => {
   try {
+    await assertExternalEffectsAllowed(req.user?.shop_id);
     const shopId = req.user.shop_id;
 
     // Phase 1 does not persist analyze snapshots. Until a shop-scoped analyze-results
     // table exists, compute the month-to-date opportunity from stored RO estimate lines.
     const row = await getMonthlySupplementOpportunity(shopId);
 
+    await assertExternalEffectsAllowed(req.user.shop_id);
     return res.json({
       success: true,
       month_start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString(),
@@ -102,6 +112,10 @@ router.get('/supplements/monthly-opportunity', auth, requireOwnerAdminOnly, asyn
       source: 'estimate_line_items',
     });
   } catch (err) {
+    if (isShopPolicyError(err)) {
+      return res.status(err.reason === 'INTERNAL_TEST_SHOP' ? 409 : 503)
+        .json({ error: err.reason, excluded: true });
+    }
     console.error('[Dashboard] supplement monthly opportunity error:', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
@@ -109,6 +123,7 @@ router.get('/supplements/monthly-opportunity', auth, requireOwnerAdminOnly, asyn
 
 router.get('/owner-kpis', auth, requireOwnerAdminOnly, async (req, res) => {
   try {
+    await assertExternalEffectsAllowed(req.user?.shop_id);
     const shopId = req.user.shop_id;
 
     const [cycleTimeByStage, supplementCapture, techEfficiency] = await Promise.all([
@@ -214,6 +229,7 @@ router.get('/owner-kpis', auth, requireOwnerAdminOnly, async (req, res) => {
     const capturedCents = Number(supplementCapture?.captured_cents || 0);
     const requestedCents = Number(supplementCapture?.requested_cents || 0);
 
+    await assertExternalEffectsAllowed(req.user.shop_id);
     return res.json({
       cycle_time_by_stage: cycleTimeByStage || [],
       supplement_capture: {
@@ -225,6 +241,10 @@ router.get('/owner-kpis', auth, requireOwnerAdminOnly, async (req, res) => {
       tech_efficiency: techEfficiency || [],
     });
   } catch (err) {
+    if (isShopPolicyError(err)) {
+      return res.status(err.reason === 'INTERNAL_TEST_SHOP' ? 409 : 503)
+        .json({ error: err.reason, excluded: true });
+    }
     console.error('[Dashboard] owner KPIs error:', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
@@ -232,6 +252,7 @@ router.get('/owner-kpis', auth, requireOwnerAdminOnly, async (req, res) => {
 
 router.get('/weekly', auth, requireTechnician, async (req, res) => {
   try {
+    await assertExternalEffectsAllowed(req.user?.shop_id);
     const shopId = req.user.shop_id;
 
     const counts = await dbGet(
@@ -307,6 +328,7 @@ router.get('/weekly', auth, requireTechnician, async (req, res) => {
       [shopId]
     );
 
+    await assertExternalEffectsAllowed(req.user.shop_id);
     return res.json({
       week: {
         start: counts?.week_start,
@@ -329,6 +351,10 @@ router.get('/weekly', auth, requireTechnician, async (req, res) => {
       },
     });
   } catch (err) {
+    if (isShopPolicyError(err)) {
+      return res.status(err.reason === 'INTERNAL_TEST_SHOP' ? 409 : 503)
+        .json({ error: err.reason, excluded: true });
+    }
     return res.status(500).json({ error: err.message });
   }
 });

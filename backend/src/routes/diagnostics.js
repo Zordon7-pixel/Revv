@@ -1,3 +1,4 @@
+const { assertExternalEffectsAllowed, isShopPolicyError } = require('../services/shopPolicy');
 const router = require('express').Router();
 const auth = require('../middleware/auth');
 const { requireAdmin } = require('../middleware/roles');
@@ -5,6 +6,7 @@ const { dbGet, dbAll, dbRun, pool } = require('../db');
 
 router.get('/', auth, requireAdmin, async (req, res) => {
   try {
+    await assertExternalEffectsAllowed(req.user?.shop_id);
     const checks = [];
     let canHeal = false;
 
@@ -29,8 +31,8 @@ router.get('/', auth, requireAdmin, async (req, res) => {
     }
 
     // 3. Seed data present
-    const shopRow = await dbGet('SELECT COUNT(*)::int as c FROM shops', []);
-    const userRow = await dbGet('SELECT COUNT(*)::int as c FROM users', []);
+    const shopRow = await dbGet('SELECT COUNT(*)::int as c FROM shops WHERE is_internal_test_shop IS FALSE', []);
+    const userRow = await dbGet('SELECT COUNT(*)::int as c FROM users WHERE EXISTS (SELECT 1 FROM shops policy_shop WHERE policy_shop.id = users.shop_id AND policy_shop.is_internal_test_shop IS FALSE)', []);
     const shopCount = shopRow.c;
     const userCount = userRow.c;
     checks.push({ name: 'Shop Record', ok: shopCount > 0, detail: `${shopCount} shop(s)` });
@@ -44,7 +46,8 @@ router.get('/', auth, requireAdmin, async (req, res) => {
       const badRow = await dbGet(
         `SELECT COUNT(*)::int as c
          FROM repair_orders
-         WHERE COALESCE(NULLIF(LOWER(TRIM(status)), ''), '__missing__') NOT IN (${placeholders})`,
+         WHERE EXISTS (SELECT 1 FROM shops policy_shop WHERE policy_shop.id = repair_orders.shop_id AND policy_shop.is_internal_test_shop IS FALSE)
+           AND COALESCE(NULLIF(LOWER(TRIM(status)), ''), '__missing__') NOT IN (${placeholders})`,
         validStatuses
       );
       checks.push({ name: 'RO Status Validity', ok: badRow.c === 0, detail: badRow.c > 0 ? `${badRow.c} invalid status(es)` : 'all valid' });
@@ -54,44 +57,48 @@ router.get('/', auth, requireAdmin, async (req, res) => {
     }
 
     // 5. Admin user exists
-    const adminRow = await dbGet("SELECT COUNT(*)::int as c FROM users WHERE role IN ('owner','admin')", []);
+    const adminRow = await dbGet("SELECT COUNT(*)::int as c FROM users WHERE EXISTS (SELECT 1 FROM shops policy_shop WHERE policy_shop.id = users.shop_id AND policy_shop.is_internal_test_shop IS FALSE) AND role IN ('owner','admin')", []);
     checks.push({ name: 'Admin Account', ok: adminRow.c > 0, detail: `${adminRow.c} admin(s)` });
     if (adminRow.c === 0) canHeal = true;
 
     const allOk = checks.every(c => c.ok);
+    await assertExternalEffectsAllowed(req.user.shop_id);
     res.json({ ok: allOk, canHeal: !allOk, checks });
   } catch (err) {
+    if (isShopPolicyError(err)) {
+      return res.status(err.reason === 'INTERNAL_TEST_SHOP' ? 409 : 503)
+        .json({ error: err.reason, excluded: true });
+    }
     res.status(500).json({ error: err.message });
   }
 });
 
 router.post('/heal', auth, requireAdmin, async (req, res) => {
   try {
+    await assertExternalEffectsAllowed(req.user?.shop_id);
     const actions = [];
 
     const validStatuses = ['intake', 'estimate', 'approval', 'parts', 'repair', 'paint', 'qc', 'delivery', 'closed'];
     try {
       const placeholders = validStatuses.map((_, i) => `$${i + 1}`).join(',');
+      await assertExternalEffectsAllowed(req.user.shop_id);
       const result = await dbRun(
         `UPDATE repair_orders
          SET status='intake'
-         WHERE COALESCE(NULLIF(LOWER(TRIM(status)), ''), '__missing__') NOT IN (${placeholders})`,
+         WHERE EXISTS (SELECT 1 FROM shops policy_shop WHERE policy_shop.id = repair_orders.shop_id AND policy_shop.is_internal_test_shop IS FALSE)
+           AND COALESCE(NULLIF(LOWER(TRIM(status)), ''), '__missing__') NOT IN (${placeholders})`,
         validStatuses
       );
       if (result.rowCount > 0) actions.push(`Fixed ${result.rowCount} invalid RO status(es) → reset to intake`);
     } catch (e) {
+      if (isShopPolicyError(e)) throw e;
       actions.push(`⚠️ Could not fix RO statuses: ${e.message}`);
     }
 
-    const shopRow = await dbGet('SELECT COUNT(*)::int as c FROM shops', []);
-    const userRow = await dbGet('SELECT COUNT(*)::int as c FROM users', []);
+    const shopRow = await dbGet('SELECT COUNT(*)::int as c FROM shops WHERE is_internal_test_shop IS FALSE', []);
+    const userRow = await dbGet('SELECT COUNT(*)::int as c FROM users WHERE EXISTS (SELECT 1 FROM shops policy_shop WHERE policy_shop.id = users.shop_id AND policy_shop.is_internal_test_shop IS FALSE)', []);
     if (shopRow.c === 0 || userRow.c === 0) {
-      try {
-        await require('../db/seed').runSeed();
-        actions.push('Re-seeded missing shop and user data');
-      } catch (e) {
-        actions.push(`⚠️ Re-seed failed: ${e.message}`);
-      }
+      actions.push('Ordinary shop/user records missing; automatic seeding suppressed');
     }
 
     if (actions.length === 0) actions.push('No issues found — everything looks healthy');
@@ -113,8 +120,13 @@ router.post('/heal', auth, requireAdmin, async (req, res) => {
       console.error('[diagnostics] suppressed:', e.message);
     }
 
+    await assertExternalEffectsAllowed(req.user.shop_id);
     res.json({ ok: true, actions });
   } catch (err) {
+    if (isShopPolicyError(err)) {
+      return res.status(err.reason === 'INTERNAL_TEST_SHOP' ? 409 : 503)
+        .json({ error: err.reason, excluded: true });
+    }
     res.status(500).json({ error: err.message });
   }
 });

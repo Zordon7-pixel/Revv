@@ -1,3 +1,4 @@
+const { assertExternalEffectsAllowed, isShopPolicyError } = require('../services/shopPolicy');
 const router = require('express').Router();
 const { dbGet, dbAll } = require('../db');
 const auth = require('../middleware/auth');
@@ -5,6 +6,7 @@ const { requireAdmin } = require('../middleware/roles');
 
 router.get('/', auth, requireAdmin, async (req, res) => {
   try {
+    await assertExternalEffectsAllowed(req.user?.shop_id);
     const { month } = req.query; // YYYY-MM format
     if (!month || !/^\d{4}-\d{2}$/.test(month)) {
       return res.status(400).json({ error: 'month param required in YYYY-MM format' });
@@ -97,8 +99,13 @@ router.get('/', auth, requireAdmin, async (req, res) => {
     // Filter to only show techs with completed ROs
     const filtered = result.filter(t => t.ros_completed > 0).sort((a, b) => b.ros_completed - a.ros_completed);
 
+    await assertExternalEffectsAllowed(req.user.shop_id);
     res.json({ month, stats: filtered });
   } catch (err) {
+    if (isShopPolicyError(err)) {
+      return res.status(err.reason === 'INTERNAL_TEST_SHOP' ? 409 : 503)
+        .json({ error: err.reason, excluded: true });
+    }
     res.status(500).json({ error: err.message });
   }
 });

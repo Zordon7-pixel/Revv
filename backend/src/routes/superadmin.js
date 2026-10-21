@@ -1,3 +1,4 @@
+const { assertExternalEffectsAllowed, isShopPolicyError } = require('../services/shopPolicy');
 const router = require('express').Router();
 const { dbAll, dbGet, dbRun } = require('../db');
 const superadmin = require('../middleware/superadmin');
@@ -6,6 +7,20 @@ const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
 
 router.use(superadmin);
+// Global support identities may be unscoped; linked identities must resolve to
+// an ordinary persisted shop. A JWT role/plan/flag cannot exempt a fixture.
+router.use(async (req, res, next) => {
+  try {
+    if (req.user?.shop_id != null) await assertExternalEffectsAllowed(req.user.shop_id);
+    return next();
+  } catch (err) {
+    if (isShopPolicyError(err)) {
+      return res.status(err.reason === 'INTERNAL_TEST_SHOP' ? 409 : 503)
+        .json({ error: err.reason, excluded: true });
+    }
+    return next(err);
+  }
+});
 
 const FEEDBACK_STATUSES = new Set(['new', 'triaged', 'assigned', 'in_progress', 'ready_for_qa', 'fixed', 'qa_passed', 'shipped', 'closed', 'wont_fix']);
 const RESOLVED_FEEDBACK_STATUSES = new Set(['shipped', 'closed', 'wont_fix']);
@@ -72,6 +87,7 @@ router.get('/accounts', async (req, res) => {
     const search = String(req.query.q || '').trim().toLowerCase();
     const searchLike = search ? `%${search}%` : '';
     const shopId = String(req.query.shop_id || '').trim();
+    if (shopId) await assertExternalEffectsAllowed(shopId);
 
     const accounts = await dbAll(
       `SELECT
@@ -85,7 +101,7 @@ router.get('/accounts', async (req, res) => {
          s.city AS shop_city,
          s.state AS shop_state
        FROM users u
-       INNER JOIN shops s ON s.id = u.shop_id
+       INNER JOIN shops s ON s.id = u.shop_id AND s.is_internal_test_shop IS FALSE
        WHERE u.role <> 'superadmin'
          AND ($1 = '' OR u.shop_id = $1)
          AND (
@@ -112,6 +128,10 @@ router.get('/accounts', async (req, res) => {
 
     res.json({ accounts });
   } catch (err) {
+    if (isShopPolicyError(err)) {
+      return res.status(err.reason === 'INTERNAL_TEST_SHOP' ? 409 : 503)
+        .json({ error: err.reason, excluded: true });
+    }
     res.status(500).json({ error: err.message });
   }
 });
@@ -120,6 +140,7 @@ router.get('/accounts', async (req, res) => {
 router.get('/helpdesk', async (req, res) => {
   try {
     const shopId = String(req.query.shop_id || '').trim();
+    if (shopId) await assertExternalEffectsAllowed(shopId);
     const parsedLimit = Number(req.query.limit);
     const limit = Number.isFinite(parsedLimit) ? Math.max(25, Math.min(500, Math.trunc(parsedLimit))) : 200;
 
@@ -145,7 +166,7 @@ router.get('/helpdesk', async (req, res) => {
            COALESCE(stats.closed_issue_count, 0) AS closed_issue_count,
            stats.last_issue_at
          FROM users u
-         INNER JOIN shops s ON s.id = u.shop_id
+         INNER JOIN shops s ON s.id = u.shop_id AND s.is_internal_test_shop IS FALSE
          LEFT JOIN (
            SELECT
              f.shop_id,
@@ -157,7 +178,7 @@ router.get('/helpdesk', async (req, res) => {
              COUNT(*) FILTER (WHERE NOT ${activeIssueSql})::int AS closed_issue_count,
              MAX(f.created_at) AS last_issue_at
            FROM feedback f
-           WHERE f.shop_id IS NOT NULL AND f.shop_id <> ''
+           WHERE EXISTS (SELECT 1 FROM shops policy_shop WHERE policy_shop.id::text = f.shop_id AND policy_shop.is_internal_test_shop IS FALSE)
            GROUP BY f.shop_id
          ) stats ON stats.shop_id = u.shop_id::text
          WHERE u.role = 'owner'
@@ -189,7 +210,7 @@ router.get('/helpdesk', async (req, res) => {
          f.created_at,
          CASE WHEN ${issueTypeSql} THEN 'error' ELSE 'feedback' END AS issue_type
        FROM feedback f
-       LEFT JOIN shops s ON s.id::text = f.shop_id
+       INNER JOIN shops s ON s.id::text = f.shop_id AND s.is_internal_test_shop IS FALSE
        WHERE ($1 = '' OR f.shop_id = $1)
        ORDER BY f.created_at DESC
        LIMIT $2`,
@@ -207,7 +228,8 @@ router.get('/helpdesk', async (req, res) => {
          COUNT(*) FILTER (WHERE COALESCE(NULLIF(LOWER(TRIM(f.status)), ''), 'new') = 'qa_passed')::int AS qa_passed_issues,
          COUNT(*) FILTER (WHERE NOT ${activeIssueSql})::int AS closed_issues
        FROM feedback f
-       WHERE ($1 = '' OR f.shop_id = $1)`,
+       WHERE EXISTS (SELECT 1 FROM shops policy_shop WHERE policy_shop.id::text = f.shop_id AND policy_shop.is_internal_test_shop IS FALSE)
+         AND ($1 = '' OR f.shop_id = $1)`,
       [shopId]
     );
 
@@ -221,6 +243,7 @@ router.get('/helpdesk', async (req, res) => {
              u.created_at
            FROM users u
            WHERE u.shop_id = $1
+             AND EXISTS (SELECT 1 FROM shops policy_shop WHERE policy_shop.id = u.shop_id AND policy_shop.is_internal_test_shop IS FALSE)
              AND u.role <> 'superadmin'
              AND u.role <> 'customer'
            ORDER BY
@@ -254,6 +277,10 @@ router.get('/helpdesk', async (req, res) => {
       },
     });
   } catch (err) {
+    if (isShopPolicyError(err)) {
+      return res.status(err.reason === 'INTERNAL_TEST_SHOP' ? 409 : 503)
+        .json({ error: err.reason, excluded: true });
+    }
     return res.status(500).json({ error: err.message });
   }
 });
@@ -280,7 +307,7 @@ router.patch('/feedback/:feedbackId', async (req, res) => {
          f.expected,
          f.created_at
        FROM feedback f
-       LEFT JOIN shops s ON s.id::text = f.shop_id
+       INNER JOIN shops s ON s.id::text = f.shop_id AND s.is_internal_test_shop IS FALSE
        WHERE f.id = $1`,
       [feedbackId]
     );
@@ -339,6 +366,10 @@ router.patch('/feedback/:feedbackId', async (req, res) => {
       agent_prompt: buildFeedbackAgentPrompt(issue),
     });
   } catch (err) {
+    if (isShopPolicyError(err)) {
+      return res.status(err.reason === 'INTERNAL_TEST_SHOP' ? 409 : 503)
+        .json({ error: err.reason, excluded: true });
+    }
     return res.status(500).json({ error: err.message });
   }
 });
@@ -353,17 +384,24 @@ router.get('/shops', async (req, res) => {
       LEFT JOIN (
         SELECT shop_id, COUNT(*)::int AS ro_count
         FROM repair_orders
+        WHERE EXISTS (SELECT 1 FROM shops policy_shop WHERE policy_shop.id = repair_orders.shop_id AND policy_shop.is_internal_test_shop IS FALSE)
         GROUP BY shop_id
       ) ro_counts ON ro_counts.shop_id = s.id
       LEFT JOIN (
         SELECT shop_id, COUNT(*)::int AS user_count
         FROM users
+        WHERE EXISTS (SELECT 1 FROM shops policy_shop WHERE policy_shop.id = users.shop_id AND policy_shop.is_internal_test_shop IS FALSE)
         GROUP BY shop_id
       ) user_counts ON user_counts.shop_id = s.id
+      WHERE s.is_internal_test_shop IS FALSE
       ORDER BY s.created_at DESC
     `);
     res.json({ shops });
   } catch (err) {
+    if (isShopPolicyError(err)) {
+      return res.status(err.reason === 'INTERNAL_TEST_SHOP' ? 409 : 503)
+        .json({ error: err.reason, excluded: true });
+    }
     res.status(500).json({ error: err.message });
   }
 });
@@ -371,26 +409,28 @@ router.get('/shops', async (req, res) => {
 router.get('/shops/:shopId', async (req, res) => {
   try {
     const { shopId } = req.params;
+    await assertExternalEffectsAllowed(shopId);
     const shop = await dbGet(
-      'SELECT id, name, phone, address, city, state, zip, created_at FROM shops WHERE id = $1',
+      'SELECT id, name, phone, address, city, state, zip, created_at FROM shops WHERE id = $1 AND is_internal_test_shop IS FALSE',
       [shopId]
     );
     if (!shop) return res.status(404).json({ error: 'Shop not found' });
 
     const users = await dbAll(
-      'SELECT id, name, email, role FROM users WHERE shop_id = $1 ORDER BY role, name',
+      'SELECT id, name, email, role FROM users WHERE shop_id = $1 AND EXISTS (SELECT 1 FROM shops policy_shop WHERE policy_shop.id = users.shop_id AND policy_shop.is_internal_test_shop IS FALSE) ORDER BY role, name',
       [shopId]
     );
     const recentRos = await dbAll(
       `SELECT id, status, job_type, created_at
        FROM repair_orders
        WHERE shop_id = $1
+         AND EXISTS (SELECT 1 FROM shops policy_shop WHERE policy_shop.id = repair_orders.shop_id AND policy_shop.is_internal_test_shop IS FALSE)
        ORDER BY created_at DESC
        LIMIT 10`,
       [shopId]
     );
     const roCount = await dbGet(
-      'SELECT COUNT(*)::int AS count FROM repair_orders WHERE shop_id = $1',
+      'SELECT COUNT(*)::int AS count FROM repair_orders WHERE shop_id = $1 AND EXISTS (SELECT 1 FROM shops policy_shop WHERE policy_shop.id = repair_orders.shop_id AND policy_shop.is_internal_test_shop IS FALSE)',
       [shopId]
     );
 
@@ -401,6 +441,10 @@ router.get('/shops/:shopId', async (req, res) => {
       ro_count: roCount?.count || 0
     });
   } catch (err) {
+    if (isShopPolicyError(err)) {
+      return res.status(err.reason === 'INTERNAL_TEST_SHOP' ? 409 : 503)
+        .json({ error: err.reason, excluded: true });
+    }
     res.status(500).json({ error: err.message });
   }
 });
@@ -409,13 +453,17 @@ router.get('/stats', async (req, res) => {
   try {
     const stats = await dbGet(`
       SELECT
-        (SELECT COUNT(*)::int FROM shops) AS total_shops,
-        (SELECT COUNT(*)::int FROM users) AS total_users,
-        (SELECT COUNT(*)::int FROM repair_orders) AS total_ros,
-        (SELECT COUNT(*)::int FROM customers) AS total_customers
+        (SELECT COUNT(*)::int FROM shops WHERE is_internal_test_shop IS FALSE) AS total_shops,
+        (SELECT COUNT(*)::int FROM users WHERE EXISTS (SELECT 1 FROM shops policy_shop WHERE policy_shop.id = users.shop_id AND policy_shop.is_internal_test_shop IS FALSE)) AS total_users,
+        (SELECT COUNT(*)::int FROM repair_orders WHERE EXISTS (SELECT 1 FROM shops policy_shop WHERE policy_shop.id = repair_orders.shop_id AND policy_shop.is_internal_test_shop IS FALSE)) AS total_ros,
+        (SELECT COUNT(*)::int FROM customers WHERE EXISTS (SELECT 1 FROM shops policy_shop WHERE policy_shop.id = customers.shop_id AND policy_shop.is_internal_test_shop IS FALSE)) AS total_customers
     `);
     res.json(stats);
   } catch (err) {
+    if (isShopPolicyError(err)) {
+      return res.status(err.reason === 'INTERNAL_TEST_SHOP' ? 409 : 503)
+        .json({ error: err.reason, excluded: true });
+    }
     res.status(500).json({ error: err.message });
   }
 });
@@ -436,17 +484,24 @@ router.get('/ratings', async (req, res) => {
       LEFT JOIN (
         SELECT shop_id, COUNT(*)::int AS ro_count
         FROM repair_orders
+        WHERE EXISTS (SELECT 1 FROM shops policy_shop WHERE policy_shop.id = repair_orders.shop_id AND policy_shop.is_internal_test_shop IS FALSE)
         GROUP BY shop_id
       ) ro_counts ON ro_counts.shop_id = s.id
       LEFT JOIN (
         SELECT shop_id, AVG(rating)::numeric(2,1) AS avg_rating, COUNT(*)::int AS review_count
         FROM ro_ratings
+        WHERE EXISTS (SELECT 1 FROM shops policy_shop WHERE policy_shop.id = ro_ratings.shop_id AND policy_shop.is_internal_test_shop IS FALSE)
         GROUP BY shop_id
       ) rating_stats ON rating_stats.shop_id = s.id
+      WHERE s.is_internal_test_shop IS FALSE
       ORDER BY avg_rating DESC NULLS LAST, review_count DESC
     `);
     res.json({ shops });
   } catch (err) {
+    if (isShopPolicyError(err)) {
+      return res.status(err.reason === 'INTERNAL_TEST_SHOP' ? 409 : 503)
+        .json({ error: err.reason, excluded: true });
+    }
     res.status(500).json({ error: err.message });
   }
 });

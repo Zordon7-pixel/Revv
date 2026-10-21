@@ -1,5 +1,6 @@
 'use strict';
 
+const { resolveShopPolicy } = require('./shopPolicy');
 const { pool } = require('../db');
 const WINDOW_MS = 10 * 60 * 1000;
 const SHOP_ADMISSIONS = 15;
@@ -7,17 +8,28 @@ const SHOP_ADMISSIONS = 15;
 // Internal API: the caller supplies ONLY the authenticated shop ID, never body
 // policy, user identity, quota or time. No provider imports/calls and no DDL here.
 async function admitEstimateAi(shopId) {
-  if (typeof shopId !== 'string' || !shopId.trim()) return { status: 'unavailable' };
+  const denied = policy => ({ status: policy.reason === 'INTERNAL_TEST_SHOP' ? 'excluded' : 'unavailable',
+    reason: policy.reason, excluded: true });
+  const policy = await resolveShopPolicy(shopId);
+  if (!policy.allowExternalEffects) return denied(policy);
   let client;
   let discard = false;
   try {
     client = await pool.connect();
     await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
-    const { rows: [shop] } = await client.query(
+    const { rows: shops } = await client.query(
       'SELECT id::text AS id, estimate_ai_enabled FROM shops WHERE id = $1 FOR UPDATE', [shopId]);
-    if (!shop || typeof shop.estimate_ai_enabled !== 'boolean') {
+    const shop = shops[0];
+    if (shops.length !== 1 || shop?.id !== shopId || typeof shop.estimate_ai_enabled !== 'boolean') {
       await client.query('ROLLBACK');
       return { status: 'unavailable' };
+    }
+    // Same connection as the locked shop row: denial precedes eligibility and budgets.
+    const readPolicyRows = async (sql, args) => (await client.query(sql, args)).rows;
+    const lockedPolicy = await resolveShopPolicy(shopId, readPolicyRows);
+    if (!lockedPolicy.allowExternalEffects) {
+      await client.query('ROLLBACK');
+      return denied(lockedPolicy);
     }
     if (shop.estimate_ai_enabled !== true) {
       await client.query('ROLLBACK');
@@ -46,6 +58,11 @@ async function admitEstimateAi(shopId) {
     }
     const start = !budget || expired ? now : budget.window_started_at;
     const count = !budget || expired ? 1 : budget.admission_count + 1;
+    const writePolicy = await resolveShopPolicy(shopId, readPolicyRows);
+    if (!writePolicy.allowExternalEffects) {
+      await client.query('ROLLBACK');
+      return denied(writePolicy);
+    }
     const returning = 'RETURNING window_started_at, admission_count, pg_typeof(shop_id)::text AS identity_type';
     const result = !budget
       ? await client.query(`INSERT INTO estimate_ai_budgets (shop_id, window_started_at, admission_count)
@@ -56,6 +73,11 @@ async function admitEstimateAi(shopId) {
     if (result.rowCount !== 1 || saved?.identity_type !== 'text'
         || saved.admission_count !== count || !(saved.window_started_at instanceof Date)
         || saved.window_started_at.getTime() !== start.getTime()) throw new Error('Budget write failed');
+    const commitPolicy = await resolveShopPolicy(shopId, readPolicyRows);
+    if (!commitPolicy.allowExternalEffects) {
+      await client.query('ROLLBACK');
+      return denied(commitPolicy);
+    }
     await client.query('COMMIT');
     return { status: 'admitted' };
   } catch {
