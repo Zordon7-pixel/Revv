@@ -11,7 +11,10 @@ const { PaymentError, withLockedRo, getPaymentBalance, reconcileReservations, re
 
 const { getRoMoneySummary, getPaidCents } = require('../services/roMoney');
 
+const { assertExternalEffectsAllowed, isShopPolicyError } = require('../services/shopPolicy');
 const router = express.Router();
+const policyResponse = (res, err) => res.status(err.reason === 'INTERNAL_TEST_SHOP' ? 409 : 503)
+  .json({ error: err.reason, reason: err.reason, suppressed: true });
 
 function normalizedPaymentStatus(ro) {
   if (ro?.payment_status) return ro.payment_status;
@@ -23,14 +26,15 @@ async function handleCreateIntent(req, res) {
   try {
     const { ro_id: roId, amount, allow_partial } = req.body || {};
     if (!roId) return res.status(400).json({ error: 'ro_id is required' });
-    if (!getStripeClient()) return res.status(503).json({ error: 'Stripe payments are not configured' });
+    if (!await getStripeClient(req.user.shop_id)) return res.status(503).json({ error: 'Stripe payments are not configured' });
     const attempt = await reservePayment({ roId, shopId: req.user.shop_id, kind: 'intent', amount, allowPartial: allow_partial });
-    const paymentIntent = await createPaymentIntent(attempt.amountCents, 'usd', metadataFor(attempt), attempt.idempotencyKey);
+    const paymentIntent = await createPaymentIntent(attempt.amountCents, 'usd', metadataFor(attempt), attempt.idempotencyKey, attempt.ro.shop_id);
     if (!paymentIntent) return res.status(503).json({ error: 'Stripe payments are not configured' });
     await recordProviderResult(attempt, paymentIntent);
     return res.json({ clientSecret: paymentIntent.client_secret, paymentIntentId: paymentIntent.id,
       amountCents: attempt.amountCents, amountOwedCents: attempt.remainingCents });
   } catch (err) {
+    if (isShopPolicyError(err)) return policyResponse(res, err);
     return res.status(err instanceof PaymentError ? err.status : 500).json({
       error: err instanceof PaymentError ? err.message : 'Failed to create payment intent' });
   }
@@ -45,6 +49,7 @@ router.post('/reconcile/:roId', auth, (req, res, next) => {
     const result = await reconcileReservations({ roId: req.params.roId, shopId: req.user.shop_id, actorId: req.user.id });
     return res.json(result);
   } catch (error) {
+    if (isShopPolicyError(error)) return policyResponse(res, error);
     return res.status(error instanceof PaymentError ? error.status : 500).json({
       error: error instanceof PaymentError ? error.message : 'Could not reconcile payments' });
   }
@@ -64,6 +69,7 @@ router.post('/create-intent', auth, requireTechnician, async (req, res) => {
 
 router.post('/link/:roId', auth, requireTechnician, async (req, res) => {
   try {
+    await assertExternalEffectsAllowed(req.user.shop_id);
     const ro = await dbGet(
       `SELECT ro.id, ro.shop_id, ro.ro_number, c.email AS customer_email, c.name AS customer_name
        FROM repair_orders ro
@@ -80,6 +86,7 @@ router.post('/link/:roId', auth, requireTechnician, async (req, res) => {
       customerName: ro.customer_name || null,
     });
     if (!result.ok) {
+      if (isShopPolicyError(result)) return policyResponse(res, result);
       const status = result.error === 'Repair order not found' ? 404
         : result.error === 'Repair order is already paid' ? 400
           : result.error === 'Stripe is not configured' ? 503
@@ -94,6 +101,7 @@ router.post('/link/:roId', auth, requireTechnician, async (req, res) => {
       trackingToken: result.trackingToken,
     });
   } catch (err) {
+    if (isShopPolicyError(err)) return policyResponse(res, err);
     return res.status(500).json({ error: 'Could not create payment link' });
   }
 });
@@ -112,6 +120,7 @@ router.post('/webhook', async (req, res) => {
     if (settled) {
       const { roId, shopId, amountPaid, ro } = settled;
       const owners = await dbAll('SELECT id FROM users WHERE shop_id = $1 AND role = $2', [shopId, 'owner']);
+      await assertExternalEffectsAllowed(shopId);
       await Promise.all(
         owners.map((owner) =>
           createNotification(
@@ -162,6 +171,7 @@ router.post('/webhook', async (req, res) => {
 
     return res.json({ received: true });
   } catch (err) {
+    if (isShopPolicyError(err)) return policyResponse(res, err);
     return res.status(400).json({ error: 'Payment webhook could not be processed' });
   }
 });
@@ -197,6 +207,7 @@ router.get('/history/:shopId', auth, requireTechnician, async (req, res) => {
 
     return res.json({ payments });
   } catch (err) {
+    if (isShopPolicyError(err)) return policyResponse(res, err);
     return res.status(500).json({ error: 'Could not load payments' });
   }
 });
@@ -246,6 +257,7 @@ router.get('/ro/:roId', auth, requireTechnician, async (req, res) => {
     });
     return res.json(payload);
   } catch (err) {
+    if (isShopPolicyError(err)) return policyResponse(res, err);
     return res.status(err instanceof PaymentError ? err.status : 500).json({ error: 'Could not load payments' });
   }
 });

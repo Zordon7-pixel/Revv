@@ -61,12 +61,13 @@ function providers() {
 }
 function wire(db, p, auth = (_q,_s,next)=>next()) {
   const money=load('services/roMoney.js',{'../db':db});
+  const policy=load('services/shopPolicy.js',{'../db':db});
   const notifications=load('services/notifications.js',{'../db':db});
-  const reservations=load('services/paymentReservations.js',{'../db':db,'./roMoney':money,'./stripe':p.stripe,'./notifications':notifications});
+  const reservations=load('services/paymentReservations.js',{'../db':db,'./shopPolicy':policy,'./roMoney':money,'./stripe':p.stripe,'./notifications':notifications});
   const billing=load('services/customerBilling.js',{'../db':db,'./stripe':p.stripe,'./roMoney':money,
-    './paymentReservations':reservations,'./mailer':{sendMail:async()=>{}},'./emailTemplates':{}});
+    './shopPolicy':policy,'./paymentReservations':reservations,'./mailer':{sendMail:async()=>{}},'./emailTemplates':{}});
   const shared={'../db':db,'../middleware/auth':auth,'../middleware/roles':roles,
-    '../services/paymentReservations':reservations,'../services/roMoney':money,'../services/customerBilling':billing};
+    '../services/shopPolicy':policy,'../services/paymentReservations':reservations,'../services/roMoney':money,'../services/customerBilling':billing};
   const payments=load('routes/payments.js',{...shared,'../services/stripe':p.stripe,
     '../services/notifications':{createNotification:async()=>{}},'../services/mailer':{},'../services/emailTemplates':{}});
   const mocks={...shared, '../middleware/roLimitGuard':(_q,_s,next)=>next(),
@@ -91,11 +92,12 @@ async function invoke(router, route, body={}, role='owner', shop='shop') {
   next();await Promise.all(pending);return res;
 }
 function memoryFixture() {
-  const state={ro:{id:'ro',shop_id:'shop',ro_number:'TEST',status:'ready',payment_status:'unpaid',amount_paid_cents:0},attempts:[],ledger:[],audit:[],investigations:[],notifications:[]};
+  const state={shops:[{id:'shop',is_internal_test_shop:false},{id:'other',is_internal_test_shop:false}],ro:{id:'ro',shop_id:'shop',ro_number:'TEST',status:'ready',payment_status:'unpaid',amount_paid_cents:0},attempts:[],ledger:[],audit:[],investigations:[],notifications:[]};
   const queries=[];
   const query=async(sql,a=[])=> {
     queries.push(sql);let rows=[];
-    if (/SELECT \* FROM repair_orders/.test(sql)) rows=a[1] && a[1]!=='shop'?[]:[state.ro];
+    if (/SELECT id::text AS id, is_internal_test_shop FROM shops/.test(sql)) rows=state.shops.filter(r=>r.id===a[0]);
+    else if (/SELECT \* FROM repair_orders/.test(sql)) rows=a[1] && a[1]!=='shop'?[]:[state.ro];
     else if (/SELECT \* FROM ro_payment_attempts/.test(sql)) {
       rows=state.attempts.filter(r=> /WHERE id =/.test(sql)?r.id===a[0]:/WHERE shop_id =/.test(sql)?
         (r.stripe_payment_intent_id===a[2] || r.stripe_checkout_session_id===a[3]):true);
@@ -126,7 +128,7 @@ function memoryFixture() {
     else if (/UPDATE repair_orders\s+SET payment_received/.test(sql)) Object.assign(state.ro,{payment_status:'paid',amount_paid_cents:a[3],payment_received:1});
     return {rows,rowCount:rows.length};
   };
-  const db={pool:{connect:async()=>({query,release(){}})},dbGet:async(sql,a)=>/row_to_json|quickbooks|invoice_emailed/.test(sql)?null:/portal_tokens/.test(sql)?{token:'mock'}:(await query(sql,a)).rows[0],dbAll:async()=>[],dbRun:query};
+  const db={pool:{connect:async()=>({query,release(){}})},dbGet:async(sql,a)=>/row_to_json|quickbooks|invoice_emailed/.test(sql)?null:/portal_tokens/.test(sql)?{token:'mock'}:(await query(sql,a)).rows[0],dbAll:async(sql,a)=>(await query(sql,a)).rows,dbRun:query};
   const p=providers();return {...wire(db,p),...p,state,queries,db};
 }
 const reserveIntent=f=>invoke(f.payments,'/intent',{ro_id:'ro'});
@@ -625,3 +627,15 @@ test('real PostgreSQL mounted ready -> auto link -> cash, audit/tenant/concurren
     await admin.end();if(previousSecret===undefined)delete process.env.JWT_SECRET;else process.env.JWT_SECRET=previousSecret;
   }
 });
+
+for (const flag of [true, null]) for (const route of ['/:id/mark-paid', '/:id/approve-estimate']) {
+  test(`persisted policy ${flag}: real RO ${route} stops before locked writes`, async () => {
+    const f = memoryFixture();
+    f.state.shops = flag === null ? [] : [{ id: 'shop', is_internal_test_shop: flag }];
+    const result = await invoke(f.ros, route, { payment_method: 'cash', is_internal_test_shop: false, plan: 'agency' });
+    assert.equal(result.statusCode, flag === true ? 409 : 503);
+    assert.equal(f.calls.length, 0);
+    assert.equal(f.queries.filter(sql => /^\s*(INSERT|UPDATE|DELETE)/.test(sql)).length, 0);
+    assert.equal(f.queries.at(-1), 'ROLLBACK');
+  });
+}

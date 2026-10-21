@@ -364,7 +364,7 @@ test('public lead and waitlist cannot authorize fixture notifications using body
   assert.match(form, /addDoc/); // Explicit unresolved bypass: no designated fixture may be enabled.
 });
 
-test('unconverted payment receipt fails closed even after successful synthetic webhook settlement', async () => {
+test('payment receipt is unsupported for ordinary mail and fixture callbacks stop before notifications', async () => {
   for (const flag of [false, true]) {
     const h = harness(flag);
     const router = h.router('routes/payments.js', {
@@ -375,8 +375,9 @@ test('unconverted payment receipt fails closed even after successful synthetic w
       '../services/roMoney': {},
     });
     const result = await router.call('/webhook');
-    assert.equal(result.statusCode, 200); zero(h);
-    assert.ok(h.state.logs.some(args => args.includes('SHOP_POLICY_UNAVAILABLE')));
+    assert.equal(result.statusCode, flag ? 409 : 200); zero(h);
+    if (flag) assert.equal(result.body.reason, 'INTERNAL_TEST_SHOP');
+    else assert.ok(h.state.logs.some(args => args.includes('SHOP_POLICY_UNAVAILABLE')));
   }
 });
 test('unconverted parts email fails closed and retains its conservative unknown outcome/cooldown', async () => {

@@ -1,9 +1,9 @@
 # Internal test shops — t_6002e02f staged implementation
 
 Base: `35e49ddc01d6ef7605f602d85faa9591308915ff` (`origin/main`).
-Lane: `codex/t_6002e02f-revv-test-shop`. **Foundation + phase-2 SMS + phase-3 email/notification safety; NOT feature-complete or release-ready.**
+Lane: `codex/t_6002e02f-revv-test-shop`. **Foundation + phase-2 SMS + phase-3 email + phase-4 Stripe/billing boundaries; NOT feature-complete or release-ready.**
 Phase 2 starts at `67dbe8fdfa362c5fdb264870fdd4c9ff25f6c1aa` and changes exactly ten files.
-No account installation or designation is included. Phase-2/3 dispatch/validation logs are
+No account installation or designation is included. Phase-2/3/4 dispatch/validation logs are
 kept here within the user's ten-file cap; the phase-1 `CLAUDE.md` log remains historical.
 
 ## Implemented safety boundary
@@ -69,10 +69,10 @@ Paths below are relative to `backend/src/` unless otherwise stated. “Pending�
 | `routes/market.js` PUT shop, logo; `routes/settings.js` PATCH, slug rotation; `routes/users.js` create/update/self/assistant; `routes/superadmin.js` account/password/impersonation tooling | No designation setter exists; settings/update allowlists neutralize forged fields. Do not reuse privileged user tooling for designated provisioning. Logo/media and ordinary notification setting behavior require later test-shop policy. |
 | `db/index.js`, `db/schema.pg.sql`, `db/migrate.js`, new `db/internalTestShop.js`, `app.js` | Changed: false schema/default, database hold, required migration and startup refusal. UUID/TEXT parent conventions retained. No request-time DDL. |
 | `db/seed.js`, `db/seed.pg.js`, repository `scripts/seed-demo.js`; `backend/test/productionStartup.test.js` | Legacy demo/superadmin mechanisms are unsuitable for designated provisioning. Production entrypoint is seedless (8 existing tests pass). None of these seed scripts was executed. New dedicated server-only provisioning is pending. |
-| `routes/subscriptions.js` status, ensureStripeCustomer, checkout, billing portal, subscription-created/updated/deleted webhooks | Pending: block customer/subscription/portal creation before Stripe calls; ignore test-shop webhook writes with verified stored tenancy. Stripe owns recurring charging; designated provisioning must never create or attach billing identities. |
-| `routes/payments.js` intent/create-intent aliases, links, reconcile, webhook receipts, history/RO totals; `services/stripe.js` | Pending: deny provider charge/intent/checkout/reconciliation for flagged shops at the server boundary. Preserve ordinary integer-cent accounting and verified webhook semantics. |
-| `services/customerBilling.js` checkout link, tracking token and closed-paid invoice email | Phase 3: closed-paid invoice mail checks policy before tracking-token preparation and again at transport, including force; suppressed mail cannot set invoice_emailed_at. Direct checkout creation, reservation/provider work and standalone tracking-token calls remain pending. |
-| `services/paymentReservations.js` reserve, settle, reconcileAttempt/reconcileLocked, manual/deletion locks | Pending: authoritative shop check under parent locks, including lazy/provider reconciliation. Do not release uncertain ordinary reservations or alter payment history. No standalone scheduled Stripe billing job was found. |
+| `routes/subscriptions.js` status, ensureStripeCustomer, checkout, billing portal, subscription-created/updated/deleted webhooks | Phase 4: strict persisted policy before lazy SDK/client access and each customer/checkout/portal call; status refuses fixture paid-plan representation. Both webhook aliases locally verify signatures, require unique persisted customer ownership, then recheck policy before shop-scoped writes. Suppression is explicit 409/503, never a mutating acknowledgement. Existing remote recurring charges cannot be stopped by local guards; designation remains forbidden. |
+| `routes/payments.js` intent/create-intent aliases, links, reconcile, webhook receipts, history/RO totals; `services/stripe.js` | Phase 4: intent/create-intent, link, reconciliation and signed settlement converge on guarded adapter/reservation boundaries. SDK loading/client creation is lazy and allowed only with persisted FALSE; retained methods recheck. History remains readable (reporting exclusion pending). Payment callbacks verify raw signatures without importing Stripe. |
+| `services/customerBilling.js` checkout link, tracking token and closed-paid invoice email | Phases 3/4: closed-paid mail and force are guarded; phase 4 also guards direct checkout, standalone tracking-token creation and invoice_emailed_at persistence after send. Stripe payload, cents and reservation key remain unchanged. PDF generation is a separate pending consumer. |
+| `services/paymentReservations.js` reserve, settle, reconcileAttempt/reconcileLocked, manual/deletion locks | Phase 4: current policy on the same connection after parent lock, before each service billing mutation, before every reconciliation provider call, and before commit. Direct/locked reconcile, lazy expiry, binding, legacy adoption, settlement, investigations and audit are guarded. Policy refusal is rethrown, never stored as unknown/released. Cash/approval callbacks using withLockedRo reject at entry and roll back at the final policy gate. No standalone scheduled Stripe billing job was found. |
 | `routes/invoice.js` authenticated invoice, repair-order PDF and public token invoice; `routes/ros.js` invoice mail, close/paid/manual settlement and queued QB sync | Pending: deny invoice generation/send for test tenancy through both public and authenticated entry points. Preserve ordinary print and money authority. |
 | `routes/accounting.js`, `services/quickbooks.js` OAuth/token refresh, qbRequest, customer/item creation, single/batch invoice sync, disconnect | Pending: prevent external invoice/customer/provider effects, including queued sync after RO closure. |
 | `routes/reports.js` summary, monthly JSON/CSV, tech workload, revenue/RO/performance/insurance tabs | Pending: exclude flagged tenancy before aggregation/export, with deliberate empty/excluded response contracts. |
@@ -99,7 +99,7 @@ Paths below are relative to `backend/src/` unless otherwise stated. “Pending�
 
 ## Next session in this SAME lane
 
-Keep the database hold and account HELD. Phase 3 adds transport boundaries and selected caller conversion (receipt below). Next convert unsupported payments/parts/public-intake consumers and legacy test fixtures, finish scheduler exclusion and design a reviewed server-authorized public fixture path. Reuse the persisted resolver; do not accept body/JWT policy flags or infer fixture identity from email. Background jobs, public token routes, unscoped mail and direct Firestore writes still need their own boundaries. Billing/reporting/provider/metrics/scheduler rows marked pending above remain acceptance gaps.
+Keep the database hold and account HELD. Phase 4 adds the selected billing boundaries (receipt below), without claiming full billing exclusion. Next address the exact remaining billing/provider paths in the phase-4 table, unsupported payments/parts/public-intake mail consumers and legacy fixtures, scheduler exclusion and a reviewed server-authorized public fixture path. Reuse the persisted resolver; do not accept body/JWT policy flags or infer fixture identity from email. Background jobs, public token routes, unscoped mail and direct Firestore writes still need their own boundaries. Billing/reporting/provider/metrics/scheduler rows marked pending above remain acceptance gaps.
 
 Subsequent billing/reporting and scheduler batches must cover the rows above. Only after all exclusions and zero-provider tests are complete may a candidate replace the hold and add designated provisioning. That mechanism must use a dedicated server-side script, runtime env/vault password only, transaction + normalized-email concurrency protection, deterministic idempotent receipt, and one owner tenancy with no global/admin role. Refuse collisions with an existing ordinary account/shop; never convert/backfill customers or attach Stripe/Twilio identities. Repeating provisioning must not reset a password or mutate unrelated data. The receipt must contain only identity, true flag and verified exclusions, never credentials. Creating `zordon+revvqa@mail.grokbot.com` remains outside this build and HELD for separately authorized reviewed installation.
 
@@ -384,3 +384,207 @@ board/messaging call, canonical checkout source edit, or protected job/task chan
 Safety-sensitive outbound/auth policy, more than two files: Hermes owns host QA,
 Spark disposition, one independent exact-SHA review and release. No reviewer
 verdict is claimed; this is a local implementation candidate only.
+
+
+## Phase-4 dispatch and validation receipt — 2026-10-21 11:02 EDT / 15:02 UTC
+
+Sequential phase 4 of `t_6002e02f`; implementation only. Preflight verified **clean**
+`codex/t_6002e02f-revv-test-shop` at exact parent
+`d1c38e5e65e0f4f877b0aff188ee414fb7b3ef28` and original base
+`35e49ddc01d6ef7605f602d85faa9591308915ff` is an ancestor. Work stayed in
+`/Users/zordon/.hermes/kanban/workspaces/t_6002e02f/source`. This receipt is the
+phase dispatch log; historical CLAUDE.md is unchanged to respect the path cap.
+The local commit containing this receipt is identified by its full SHA in the handoff.
+
+Exactly **10 changed paths**, including tests/docs:
+
+1. `backend/src/routes/subscriptions.js`
+2. `backend/src/routes/payments.js`
+3. `backend/src/services/paymentReservations.js`
+4. `backend/src/services/stripe.js`
+5. `backend/src/services/customerBilling.js`
+6. `backend/test/billingShopPolicy.test.js`
+7. `backend/test/paymentReservations.remyA.test.js`
+8. `backend/test/payments.phase4.test.js`
+9. `backend/test/emailShopPolicy.test.js`
+10. `docs/INTERNAL-TEST-SHOP.md`
+
+### Persisted policy and callback contract
+
+The unchanged `shopPolicy.js` remains authoritative: exactly one matching stored
+shop with Boolean `false` permits effects. TRUE returns `INTERNAL_TEST_SHOP`;
+missing, invalid, duplicate, mismatched or failed lookup returns
+`SHOP_POLICY_UNAVAILABLE`. Caller body/JWT flags, email, plan, admin claims,
+provider metadata flags and supplied tracking tokens cannot override that lookup.
+No paid-plan privileges, fixture admin role or designation path is introduced.
+
+- `getStripeClient(shopId, readRows)` is now asynchronous and loads the Stripe SDK
+  only after current policy allows. All production callers were converted. Its
+  retained adapter checks current policy before every SDK method, including nested
+  customer/subscription/checkout/portal, intent, refund, invoice and reconciliation
+  methods. The transaction reader is an internal server-owned adapter, never a
+  request option. `createPaymentIntent` requires a separate trusted shop ID as its
+  fifth argument; payload metadata is not policy authority. No raw client export.
+- Subscriptions cover status, checkout, customer creation and customer-ID saving,
+  portal, `/` and `/webhook`. Subscription callbacks resolve the signed customer
+  ID to exactly one persisted shop, then use both customer and shop ID in UPDATE.
+  Signed metadata cannot select a different tenant. Customer-mapping query failure
+  also fails closed. The original known-price plan mapping and ordinary metadata
+  fallback are unchanged; fixtures cannot reach any plan write.
+- Payments cover `/intent`, backward-compatible `/create-intent`, `/link/:roId`,
+  owner/admin `/reconcile/:roId`, the payment webhook, direct checkout service,
+  reservation creation, provider-result binding, direct/locked reconciliation,
+  lazy expiry, legacy adoption, settlement/failure/investigation and audit writes.
+  The same connection checks policy after the existing tenant-scoped parent lock,
+  before each service mutation and before COMMIT. No shop lock is added, avoiding
+  inversion with tax edits. Payment policy refusal is explicit and does not become
+  a reconciliation unknown/released audit outcome. Ordinary cents, max-paid floor,
+  active holds, parent locks, provider keys, tenant checks, exact currency/amount,
+  failed-checkout retry behavior and duplicate/stale callback rules remain intact.
+- The shared locked wrapper also denies fixture cash/manual mark-paid and estimate
+  approval before their callbacks execute; a late policy failure at its final gate
+  rolls the transaction back. These routes retain their existing error format.
+  Direct tracking-token creation checks before lookup and INSERT; closed-paid invoice
+  mail rechecks before persisting its sent marker after the send await.
+
+Webhook signatures are verified **locally before any policy lookup/mutation**, using
+Node crypto over exact raw bytes with SHA-256 HMAC, timing-safe v1 comparison, multiple
+v1 signatures for rotation, and the existing Stripe 300-second past-age tolerance.
+Only raw Buffer/string payloads are accepted; parsed bodies, missing signature/secret,
+invalid signature and expired payloads are rejected. Installed Stripe verifier source
+was inspected read-only to check the signing/tolerance contract; no SDK was executed
+for verification. Duplicate/malformed timestamp headers are conservatively rejected.
+Existing raw-body mounts in `app.js` are unchanged. `/api/subscriptions/webhook`
+mounts router `/`; the router's `/webhook` alias is also covered. The authenticated
+base mount receiving an already-parsed callback still fails closed, as before.
+
+Supported, authenticated fixture callbacks return HTTP **409** with
+`{ error: "INTERNAL_TEST_SHOP", reason: "INTERNAL_TEST_SHOP", suppressed: true }`.
+Unresolvable policy/ownership returns **503** with the analogous
+`SHOP_POLICY_UNAVAILABLE` enum. The selected synchronous routes use the same contract;
+checkout service returns `ok: false` plus the enum/suppressed fields. No successful
+acknowledgement, subscription/payment/reservation/invoice/identity mutation, provider
+follow-up, release, refund, or delivery marker is produced for suppressed callbacks.
+Provider retries are deliberately not disguised as success. Unrelated verified event
+types and subscription-mode checkout events with no RO identity remain no-op
+acknowledgements. Missing Stripe API configuration no longer silently acknowledges an
+unverified callback: signing secret and valid signature are required independently.
+
+Late changes are checked at each next boundary. Already completed ordinary effects
+cannot be undone: e.g. policy changing during provider creation leaves the previously
+committed reservation held, suppresses identity binding, and performs no release or
+new provider request. Changing during customer creation suppresses customer-ID save
+and checkout; it does not delete the provider customer. These are intentionally
+conservative uncertainty outcomes, not a promise of zero earlier ordinary effects.
+Policy snapshots do not implement an atomic designation protocol or cancel remote
+recurring billing. The database TRUE hold remains mandatory.
+
+### Exact remaining bypasses and release limitations
+
+The following are **pending**, not covered by a full billing-exclusion claim:
+
+| Path / entry | Remaining behavior |
+| --- | --- |
+| `routes/invoice.js`: GET `/public/:token`, `/:roId/repair-order`, `/:roId`; `loadInvoiceContext` / `streamDocumentPdf` | Invoice/repair-order PDF generation remains available for eligible persisted fixture records, including preexisting public tokens. No provider charge is involved, but the invoice-generation exclusion is unfinished. |
+| `routes/ros.js`: GET `/:id/invoice`, POST `/:id/email-invoice` | Invoice JSON/content is still prepared without a fixture exclusion. Phase-3 Resend guard denies external email, but this is not an invoice-generation guard. |
+| `routes/accounting.js`: QuickBooks connect-url/callback, disconnect, sync-enabled, sync/ro/:id and sync/batch; `services/quickbooks.js` | `exchangeCodeForTokens`, `refreshTokens`, `saveTokens`, `ensureAccessToken`, `qbRequest`, `ensureIncomeItem`, `ensureCustomer`, `syncInvoiceForRo`, `disconnect` and `setSyncEnabled` still lack persisted fixture policy. They can exchange/store billing credentials, create external customers/items/invoices and sync bookkeeping. The verified OAuth state is not a fixture exclusion. |
+| `routes/ros.js`: `queueQuickBooksSync` on PUT `/:id`, POST `/:id/status` and `/:id/mark-paid` | Existing detached QB sync can still reach the unguarded QuickBooks service. Fixture manual settlement is blocked by the shared lock wrapper, but other status/edit callers and policy changes after an ordinary commit are not protected at the QB boundary. |
+| `routes/ros.js` cash callback inside `withLockedRo` | Entry and final commit policy gates protect durable cash writes. Individual callback-local writes are not each preceded by policy reads; a change during its balance await may execute SQL before the final rollback. No atomic concurrent designation guarantee is claimed. |
+| `routes/payments.js` GET `/history/:shopId`, `routes/export.js`, reporting/dashboard/money aggregation and `jobs/monthCarryover.js` / startup enumeration | Fixture ledger reads, exports, business totals and billing-month writes remain unexcluded; read-only collection behavior is not full reporting isolation. `withLockedRo` now refuses fixture GET `/ro/:roId`. |
+| `routes/payments.js` detached receipt email | Still omits the trusted shop argument at sendMail, so ordinary receipts remain explicitly unsupported at the phase-3 mail transport. This phase preserves that held limitation; fixture callbacks now stop before notifications/detached mail. Closed-paid mail uses its guarded helper. |
+| Existing remote Stripe identities/subscriptions/links | Local refusal cannot stop a preexisting external subscription from charging. Never attach/convert a shop with live identities to a fixture. Reviewed provisioning and disposition of existing external identities are still absent and not authorized here. |
+| Earlier inventory: parts/public-intake mail, direct Firestore, jobs, metrics, AI/media/catalog and entitlements | All earlier uncompleted rows remain pending. No paid-feature/admin bypass was added; general entitlement isolation is still unfinished. |
+
+No other production Stripe SDK import/client consumer was found in `backend/src`:
+all `getStripeClient` / `createPaymentIntent` / webhook callers there now converge
+on this guarded adapter. Scripts, frontend, real providers and account lifecycle
+remain outside scope. Full feature and requested account remain **HELD**.
+
+### Deterministic commands and evidence
+
+Node **v22.23.2**. All runs use `env -i` and synthetic DB/provider adapters.
+No app bootstrap, dotenv, secret file, real database (including disposable PG),
+account or provider was accessed. `/private/tmp/revv-t6002-phase4/deny-network.cjs`
+replaces `net.Socket.prototype.connect`, `tls.connect`, `http[s].request/get` and
+`globalThis.fetch` with a function throwing `TEST_NETWORK_PROHIBITED`. No dependency,
+lockfile, manifest, frontend, seed/demo or production configuration changes.
+
+Focused final command (**exit 0**, log `focused-expanded.log` in that directory):
+
+```sh
+env -i PATH=/opt/homebrew/opt/node@22/bin:/opt/homebrew/bin:/usr/bin:/bin NODE_ENV=test CI=1 node --require /private/tmp/revv-t6002-phase4/deny-network.cjs --test --test-concurrency=1 --test-skip-pattern='real PostgreSQL' backend/test/billingShopPolicy.test.js backend/test/paymentReservations.remyA.test.js backend/test/payments.phase4.test.js backend/test/emailShopPolicy.test.js
+```
+
+Tail: **tests 697; pass 697; fail 0; cancelled 0; skipped 0; todo 0**.
+Includes **182** new billing policy cases, **4** new actual manual/approval route
+cases, existing **469** payment cases and **42** email cases. The two named
+real-PostgreSQL payment tests are explicitly excluded, not counted as passing.
+Their real-DB fixtures have not been adapted or verified in this phase. The new
+suite loads actual resolver/routes/adapter/reservation/billing modules with a closed
+import map and explicit stored policy rows; absent rows never default to ordinary.
+It verifies initial zero imports/clients/calls/writes, aliases, signed callbacks,
+forged fields, all policy failure shapes, retained refund/invoice/subscription
+methods, late changes/query failures, direct services, ordinary cents/provider keys,
+settlement idempotency and conservative cancellation timeout behavior. Existing
+ordinary suites retain transaction identity, accounting, locks and data-loss checks.
+
+Regression command (**exit 0**, log `regression.log`):
+
+```sh
+env -i PATH=/opt/homebrew/opt/node@22/bin:/opt/homebrew/bin:/usr/bin:/bin NODE_ENV=test CI=1 node --require /private/tmp/revv-t6002-phase4/deny-network.cjs --test --test-concurrency=1 --test-skip-pattern='real PostgreSQL' backend/test/smsTestRecipient.test.js backend/test/smsConsent.phase2.test.js backend/test/smsProvisioning.auto.test.js backend/test/smsProvisioning.events.test.js backend/test/internalTestShop.test.js backend/test/productionStartup.test.js backend/test/idTypeCastGuard.test.js backend/test/partsNotifications.test.js
+```
+
+Tail: **tests 190; pass 190; fail 0; cancelled 0; skipped 0; todo 0**.
+Named real-PostgreSQL consent/foundation cases are excluded, not counted as passing.
+Combined final deterministic evidence: **887 passed, zero failed**. Full backend,
+real-DB concurrency, frontend/browser QA, Spark advisory and independent exact-SHA
+review were not run or claimed. Legacy fixtures elsewhere that omit policy require
+separate review; fail-closed production behavior was not weakened for tests.
+
+Each of the nine changed JS paths was checked individually (**9/9 exit 0**):
+
+```sh
+for file in backend/src/routes/subscriptions.js backend/src/routes/payments.js backend/src/services/paymentReservations.js backend/src/services/stripe.js backend/src/services/customerBilling.js backend/test/billingShopPolicy.test.js backend/test/paymentReservations.remyA.test.js backend/test/payments.phase4.test.js backend/test/emailShopPolicy.test.js; do
+  env -i PATH=/opt/homebrew/opt/node@22/bin:/opt/homebrew/bin:/usr/bin:/bin NODE_ENV=test CI=1 node --check "$file" || exit "$?"
+done
+git diff --check
+```
+
+The executed syntax driver used Python `subprocess.run` to run these same nine
+`node --check` invocations with exactly the environment above and stop on failure.
+`git diff --check`: **exit 0**. `git diff --exit-code d1c38e5e65e0f4f877b0aff188ee414fb7b3ef28 -- backend/src/db/internalTestShop.js backend/src/db/index.js backend/src/db/migrate.js backend/src/db/schema.pg.sql backend/src/app.js backend/src/routes/auth.js backend/src/services/shopPolicy.js`:
+**exit 0**, confirming hold/schema/startup/public-FALSE/resolver byte preservation.
+
+### Failure and recovery history
+
+- Initial combined guidance output was truncated. Bounded reads recovered current
+  instructions, relevant runtime safeguards, QA checklist and the full phase receipt
+  document before implementation. No test result was inferred from truncation.
+- First ordinary run (`ordinary-first.log`), same focused command without the new
+  billing or email test files: **exit 1, 469 tests, 464 passed / 5 failed**.
+  Four manual-payment assertions saw an unrelated notification SELECT after COMMIT
+  because the synthetic dbAll adapter newly routed all reads into the transaction
+  query log. Restricted that fixture forwarding to actual policy SELECTs, preserving
+  the original COMMIT assertion. One Stripe-helper fixture lacked the real policy
+  dependency and trusted argument; added explicit strict-FALSE stored rows and the
+  fifth shop argument. No production guard was relaxed.
+- First combined rerun (`focused-first.log`), same final focused command without
+  email suite: **exit 0, 627/627**. Expanded final run above: **697/697**, exit 0.
+  No failed syntax/diff/regression check. Every failed test attempt was reported
+  promptly and retained here; no retry erased the initial failure.
+
+- Initial local stage/commit command exited **128** before staging: sandbox denied
+  `/Volumes/Zordon Storage /openclaw-workspace/Revv/.git/worktrees/source2/index.lock`.
+  No commit was created by that attempt. Recovery is the user-authorized narrow
+  escalation for `git add` of only the ten paths above and local `git commit` on
+  the current branch, with hooks/signing disabled for this invocation. No canonical
+  checkout source edit, push, merge or deployment is included. The final handoff
+  verifies the resulting full SHA, exact parent, ten paths and clean worktree.
+
+No Hermes/Kanban, messaging, delegation, cron, provider/model/profile/config,
+deployment, push, merge, production service, real send, account creation, backfill,
+customer-data mutation or secret access occurred. `job5feaddc2bfaf` and `t_59894b65`
+remain DO NOT APPLY. Safety-sensitive billing/signature/financial-history changes,
+more than two files: Hermes/Oracle owns lifecycle, independent QA, review and release.
+No external review verdict is claimed. The deliberate
+`shops_internal_test_shop_hold CHECK (is_internal_test_shop IS FALSE)` is unchanged.

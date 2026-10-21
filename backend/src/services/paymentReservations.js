@@ -1,10 +1,22 @@
 'use strict';
+const { assertExternalEffectsAllowed, isShopPolicyError } = require('./shopPolicy');
 const { randomUUID } = require('node:crypto');
 const { getRoMoneySummary, getPaidCents, reconcilePaymentStatus } = require('./roMoney');
 
 class PaymentError extends Error {
   constructor(message, status = 400) { super(message); this.status = status; }
 }
+// Use the existing transaction connection; no shop lock/order inversion or cache.
+const policyRows = client => async (sql, args) => (await client.query(sql, args)).rows;
+async function assertBillingPolicy(shopId, client) {
+  try { await assertExternalEffectsAllowed(shopId, policyRows(client)); }
+  catch (error) {
+    if (!isShopPolicyError(error)) throw error;
+    throw Object.assign(new PaymentError(error.reason, error.reason === 'INTERNAL_TEST_SHOP' ? 409 : 503),
+      { reason: error.reason, suppressed: true });
+  }
+}
+
 const fail = (message = 'Payment requires manual reconciliation', status = 409) => { throw new PaymentError(message, status); };
 const released = row => row.status === 'released';
 const succeeded = row => ['paid', 'succeeded'].includes(String(row.status || '').toLowerCase());
@@ -20,7 +32,9 @@ async function withLockedRo(roId, shopId, work) {
     // Take only the RO lock here: shop-after-RO would invert that order.
     const ro = (await client.query('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2 FOR UPDATE', [roId, shopId])).rows[0];
     if (!ro) fail('Repair order not found', 404);
+    await assertBillingPolicy(ro.shop_id, client);
     result = await work(client, ro);
+    await assertBillingPolicy(ro.shop_id, client);
     await client.query('COMMIT');
   } catch (error) {
     await client.query('ROLLBACK');
@@ -85,6 +99,7 @@ async function reservePayment({ roId, shopId, kind, amount, allowPartial = false
       if (amountCents > balance.availableCents) fail('Payment amount exceeds the remaining balance', 400);
       if (amountCents !== balance.availableCents && allowPartial !== true) fail('Payment amount must match the server-calculated amount owed', 400);
       const id = randomUUID(), idempotencyKey = `ro-payment-${id}`;
+      await assertBillingPolicy(ro.shop_id, client);
       await client.query(`INSERT INTO ro_payment_attempts (id, shop_id, ro_id, idempotency_key, amount_cents, kind)
         VALUES ($1,$2,$3,$4,$5,$6)`, [id, shopId, roId, idempotencyKey, amountCents, kind]);
       return { id, idempotencyKey, amountCents, remainingCents: balance.remainingCents, ro, kind };
@@ -102,6 +117,7 @@ function providerId(value) { return typeof value === 'string' ? value : value?.i
 async function bindProvider(client, attempt, intentId, sessionId, status) {
   if ((attempt.stripe_payment_intent_id && intentId && attempt.stripe_payment_intent_id !== intentId) ||
       (attempt.stripe_checkout_session_id && sessionId && attempt.stripe_checkout_session_id !== sessionId)) fail();
+  await assertBillingPolicy(attempt.shop_id, client);
   await client.query(`UPDATE ro_payment_attempts SET
     stripe_payment_intent_id = COALESCE(stripe_payment_intent_id, $1),
     stripe_checkout_session_id = COALESCE(stripe_checkout_session_id, $2),
@@ -140,6 +156,8 @@ async function settlePaymentEvent(event, locked = null) {
   const amount = Number(checkout ? object.amount_total : (success ? object.amount_received : object.amount));
   if (!cents(amount) || amount <= 0 || object.currency !== 'usd' || (!intentId && success)) fail();
   const work = async (client, ro) => {
+    if (String(ro.id) !== roId || String(ro.shop_id) !== shopId) fail();
+    await assertBillingPolicy(ro.shop_id, client);
     let attempt;
     if (metadata.paymentAttemptId) {
       attempt = (await client.query('SELECT * FROM ro_payment_attempts WHERE id = $1 AND shop_id = $2 AND ro_id = $3 FOR UPDATE',
@@ -159,6 +177,7 @@ async function settlePaymentEvent(event, locked = null) {
       // capacity on failures too. Actual historical success must remain accounted.
       attempt = { id: randomUUID(), shop_id: shopId, ro_id: roId, amount_cents: amount,
         status: 'reserved', kind: checkout ? 'checkout' : 'intent' };
+      await assertBillingPolicy(ro.shop_id, client);
       await client.query(`INSERT INTO ro_payment_attempts (id, shop_id, ro_id, idempotency_key, amount_cents, kind)
         VALUES ($1,$2,$3,$4,$5,$6)`, [attempt.id, shopId, roId, `legacy-${attempt.id}`, amount, checkout ? 'checkout' : 'intent']);
     }
@@ -175,11 +194,13 @@ async function settlePaymentEvent(event, locked = null) {
               ((checkout ? object.amount_total : object.amount_received) !== Number(attempt.amount_cents)) ||
               (!checkout && object.amount !== Number(attempt.amount_cents)) ||
               (payment && payment.currency !== 'usd')) fail();
+          await assertBillingPolicy(ro.shop_id, client);
           const investigation = await client.query(`INSERT INTO ro_payment_investigations
             (id, shop_id, ro_id, attempt_id, event_type) VALUES ($1,$2,$3,$4,$5)
             ON CONFLICT (shop_id, attempt_id) DO NOTHING RETURNING id`,
           [randomUUID(), shopId, roId, attempt.id, event.type]);
           if (investigation.rowCount) {
+            await assertBillingPolicy(ro.shop_id, client);
             await require('./notifications').createPaymentInvestigationNotifications(client, shopId, roId);
           }
           // withLockedRo commits this deliberate refusal; thrown DB/notification
@@ -191,8 +212,11 @@ async function settlePaymentEvent(event, locked = null) {
       await bindProvider(client, attempt, intentId, sessionId, success ? 'settled' : 'open');
     }
     if (!success) {
-      if (event.type !== 'checkout.session.completed' && payment && !succeeded(payment)) await client.query(`UPDATE ro_payments SET status = 'failed', failure_message = 'Payment failed', updated_at = NOW()
+      if (event.type !== 'checkout.session.completed' && payment && !succeeded(payment)) {
+        await assertBillingPolicy(ro.shop_id, client);
+        await client.query(`UPDATE ro_payments SET status = 'failed', failure_message = 'Payment failed', updated_at = NOW()
         WHERE id = $1 AND shop_id = $2 AND ro_id = $3 AND LOWER(COALESCE(status,'')) NOT IN ('paid','succeeded')`, [payment.id, shopId, roId]);
+      }
       // Checkout owns retries on its existing session. A decline/async failure
       // is not terminal proof and must never invoke active expire/cancel logic.
       // Staff, cash and expiry reconciliation still intentionally close attempts.
@@ -214,15 +238,18 @@ async function settlePaymentEvent(event, locked = null) {
     if (!cents(previousLedgerPaid) || !cents(previousManualPaid)) fail();
     const paidCents = Math.max(previousLedgerPaid, previousManualPaid) + amount;
     if (payment) {
+      await assertBillingPolicy(ro.shop_id, client);
       await client.query(`UPDATE ro_payments SET status = 'succeeded', payment_method = 'card', paid_at = $1, updated_at = NOW()
         WHERE id = $2 AND shop_id = $3 AND ro_id = $4`, [paidAt, payment.id, shopId, roId]);
     } else {
+      await assertBillingPolicy(ro.shop_id, client);
       await client.query(`INSERT INTO ro_payments (id, shop_id, ro_id, stripe_payment_intent_id, amount_cents, currency, status, payment_method, paid_at)
         VALUES ($1,$2,$3,$4,$5,'usd','succeeded','card',$6)`, [randomUUID(), shopId, roId, intentId, amount, paidAt]);
     }
     const money = await getRoMoneySummary(roId, shopId, client);
     if (!cents(paidCents) || !cents(money.totalCents)) fail();
     const status = reconcilePaymentStatus({ paidCents, owedCents: money.totalCents });
+    await assertBillingPolicy(ro.shop_id, client);
     await client.query(`UPDATE repair_orders SET payment_status = $1, stripe_payment_intent_id = $2,
       payment_received = $3, payment_received_at = $4, payment_method = 'card', paid_at = $5,
       paid_amount = $6, amount_paid_cents = $7, amount_owed_cents = $8, updated_at = NOW()
@@ -237,11 +264,12 @@ async function settlePaymentEvent(event, locked = null) {
 // Only terminal provider proof releases capacity. In particular requires_payment_method
 // still accepts confirmation with the old client secret, so cancel it before retrying.
 async function reconcileAttempt(client, ro, attempt, { actorId = null, reason, terminalObject = null }) {
+  await assertBillingPolicy(ro.shop_id, client);
   if (['settled', 'released'].includes(attempt.status)) return;
   let outcome = 'unknown';
   let settledEvent = null;
   try {
-    const stripe = require('./stripe').getStripeClient();
+    const stripe = await require('./stripe').getStripeClient(ro.shop_id, policyRows(client));
     let intentId = attempt.stripe_payment_intent_id;
     const check = (object, id, checkout = false) => {
       if (!object || object.id !== id || object.currency !== 'usd' ||
@@ -274,14 +302,17 @@ async function reconcileAttempt(client, ro, attempt, { actorId = null, reason, t
       await bindProvider(client, attempt, intentId, null, attempt.status);
     } else if (outcome !== 'released') fail();
   } catch (error) {
+    if (isShopPolicyError(error)) throw error;
     // Never store provider messages, request bodies, client secrets or customer PII.
     // Cancellation timeouts and unidentified objects remain chargeable until proven otherwise.
     outcome = 'unknown';
   }
   if (settledEvent) await settlePaymentEvent(settledEvent, { client, ro });
+  await assertBillingPolicy(ro.shop_id, client);
   await client.query(`UPDATE ro_payment_attempts SET status = $1, updated_at = NOW()
     WHERE id = $2 AND shop_id = $3 AND ro_id = $4 AND status NOT IN ('settled','released')`,
   [outcome, attempt.id, ro.shop_id, ro.id]);
+  await assertBillingPolicy(ro.shop_id, client);
   await client.query(`INSERT INTO ro_payment_attempt_audit
     (id, shop_id, ro_id, attempt_id, actor_id, action, prior_state, outcome)
     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
@@ -289,6 +320,7 @@ async function reconcileAttempt(client, ro, attempt, { actorId = null, reason, t
 }
 
 async function reconcileLocked(client, ro, { actorId = null, reason = 'staff' } = {}) {
+  await assertBillingPolicy(ro.shop_id, client);
   const args = [ro.id, ro.shop_id];
   const attempts = (await client.query('SELECT * FROM ro_payment_attempts WHERE ro_id = $1 AND shop_id = $2', args)).rows;
   const ledger = (await client.query('SELECT * FROM ro_payments WHERE ro_id = $1 AND shop_id = $2', args)).rows;
@@ -299,6 +331,7 @@ async function reconcileLocked(client, ro, { actorId = null, reason = 'staff' } 
     const attempt = { id: randomUUID(), shop_id: ro.shop_id, ro_id: ro.id, kind: 'intent',
       amount_cents: payment.amount_cents, status: 'reserved', created_at: payment.created_at,
       stripe_payment_intent_id: payment.stripe_payment_intent_id };
+    await assertBillingPolicy(ro.shop_id, client);
     await client.query(`INSERT INTO ro_payment_attempts (id, shop_id, ro_id, idempotency_key, amount_cents, kind)
       VALUES ($1,$2,$3,$4,$5,$6)`, [attempt.id, ro.shop_id, ro.id, `legacy-${attempt.id}`, attempt.amount_cents, 'intent']);
     await bindProvider(client, attempt, payment.stripe_payment_intent_id, null, 'unknown');

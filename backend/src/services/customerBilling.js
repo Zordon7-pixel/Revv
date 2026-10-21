@@ -2,7 +2,7 @@ const { v4: uuidv4 } = require('uuid');
 const { dbGet, dbRun } = require('../db');
 const { getStripeClient } = require('./stripe');
 const { sendMail } = require('./mailer');
-const { assertExternalEffectsAllowed } = require('./shopPolicy');
+const { assertExternalEffectsAllowed, isShopPolicyError } = require('./shopPolicy');
 const { closedPaidInvoiceEmail } = require('./emailTemplates');
 const { getRoMoneySummary } = require('./roMoney');
 const { PaymentError, reservePayment, metadataFor, recordProviderResult } = require('./paymentReservations');
@@ -18,6 +18,7 @@ function normalizedPaymentStatus(ro) {
 }
 
 async function ensureTrackingToken(roId, shopId) {
+  await assertExternalEffectsAllowed(shopId);
   const existing = await dbGet(
     'SELECT token FROM portal_tokens WHERE ro_id = $1 AND shop_id = $2 ORDER BY created_at DESC LIMIT 1',
     [roId, shopId]
@@ -25,6 +26,7 @@ async function ensureTrackingToken(roId, shopId) {
   if (existing?.token) return existing.token;
 
   const token = uuidv4().replace(/-/g, '');
+  await assertExternalEffectsAllowed(shopId);
   await dbRun(
     'INSERT INTO portal_tokens (id, ro_id, shop_id, token) VALUES ($1, $2, $3, $4)',
     [uuidv4(), roId, shopId, token]
@@ -34,7 +36,7 @@ async function ensureTrackingToken(roId, shopId) {
 
 async function createPaymentCheckoutLinkForRo({ roId, shopId, customerEmail = null, customerName = null, trackingToken = null }) {
   try {
-    const stripe = getStripeClient();
+    const stripe = await getStripeClient(shopId);
     if (!stripe) return { ok: false, error: 'Stripe is not configured' };
     const attempt = await reservePayment({ roId, shopId, kind: 'checkout' });
     const { ro, amountCents } = attempt;
@@ -75,6 +77,7 @@ async function createPaymentCheckoutLinkForRo({ roId, shopId, customerEmail = nu
       expiresAt: session.expires_at ? new Date(session.expires_at * 1000).toISOString() : null,
     };
   } catch (error) {
+    if (isShopPolicyError(error)) return { ok: false, error: error.reason, reason: error.reason, suppressed: true };
     return { ok: false, error: error instanceof PaymentError ? error.message : 'Could not create payment link' };
   }
 }
@@ -109,6 +112,7 @@ async function sendClosedPaidInvoiceEmail({ roId, shopId, force = false }) {
   });
 
   await sendMail(ctx.customer_email, subject, html, ctx.shop_id);
+  await assertExternalEffectsAllowed(ctx.shop_id);
   await dbRun(
     'UPDATE repair_orders SET invoice_emailed_at = $1 WHERE id = $2 AND shop_id = $3',
     [new Date().toISOString(), ctx.id, ctx.shop_id]

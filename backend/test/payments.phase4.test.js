@@ -39,23 +39,26 @@ function consumers(db, money, provider = {}) {
     } } } }),
     constructWebhookEvent: body => body,
   };
+  const policy=load('services/shopPolicy.js',{'../db':db});
   const notifications = load('services/notifications.js', { '../db': db });
-  const reservations = load('services/paymentReservations.js', { '../db': db, './roMoney': money, './stripe': stripe, './notifications': notifications });
+  const reservations = load('services/paymentReservations.js', { '../db': db, './shopPolicy':policy, './roMoney': money, './stripe': stripe, './notifications': notifications });
   const billing = load('services/customerBilling.js', { '../db': db, './stripe': stripe, './roMoney': money,
-    './paymentReservations': reservations, './mailer': {}, './emailTemplates': {} });
+    './shopPolicy':policy, './paymentReservations': reservations, './mailer': {}, './emailTemplates': {} });
   const router = load('routes/payments.js', {
     '../db': db, '../middleware/auth': (req,res,next) => next(), '../middleware/roles': roles,
-    '../services/paymentReservations': reservations, '../services/roMoney': money, '../services/stripe': stripe,
+    '../services/shopPolicy':policy, '../services/paymentReservations': reservations, '../services/roMoney': money, '../services/stripe': stripe,
     '../services/notifications': {}, '../services/mailer': {}, '../services/emailTemplates': {}, '../services/customerBilling': billing,
   });
   return { router, calls, reservations, billing };
 }
 function fixture({ total=10000, paid=2500, ro: overrides={}, ledger=[], attempts=[], provider={}, failPersistence=false }={}) {
   const writes=[], queries=[];
+  const shops=[{id:'shop',is_internal_test_shop:false},{id:'other',is_internal_test_shop:false}];
   const ro = { id:'ro', shop_id:'shop', payment_status:'unpaid', ...overrides };
   let committed = false;
   const client = { release() {}, query: async (sql, params=[]) => {
     queries.push(sql);
+    if (/SELECT id::text AS id, is_internal_test_shop FROM shops/.test(sql)) return {rows:shops.filter(r=>r.id===params[0])};
     if (sql === 'COMMIT') committed = true;
     if (/INSERT|UPDATE/.test(sql) && !/SELECT/.test(sql)) writes.push({sql,params});
     if (/SELECT \* FROM repair_orders/.test(sql)) {
@@ -79,7 +82,7 @@ function fixture({ total=10000, paid=2500, ro: overrides={}, ledger=[], attempts
     return {rows:[]};
   } };
   const db = { pool: { connect: async()=>client, query: ()=>{throw Error('Money escaped transaction');} },
-    dbGet: async()=>({token:'mock'}), dbAll:async()=>[], dbRun:async()=>{} };
+    dbGet: async()=>({token:'mock'}), dbAll:async(sql,a)=>/is_internal_test_shop/.test(sql)?(await client.query(sql,a)).rows:[], dbRun:async()=>{} };
   const actualMoney = load('services/roMoney.js', { '../db': db });
   const money = {...actualMoney,getRoMoneySummary:async (id,shop,usedClient)=> {
     assert.equal(usedClient,client); assert.equal(id,'ro'); assert.equal(shop,'shop');
@@ -638,11 +641,13 @@ test('Stripe helper forwards optional stable idempotency key to mocked SDK',asyn
   const before=process.env.STRIPE_SECRET_KEY, calls=[];
   try {
     process.env.STRIPE_SECRET_KEY='synthetic-test-key';
-    const stripe=load('services/stripe.js',{'stripe':class {
+    const shops=[{id:'shop',is_internal_test_shop:false}];
+    const policy=load('services/shopPolicy.js',{'../db':{dbAll:async(_sql,args)=>shops.filter(r=>r.id===args[0])}});
+    const stripe=load('services/stripe.js',{'./shopPolicy':policy,'stripe':class {
       constructor() {this.paymentIntents={create:async(...args)=>{calls.push(args);return {id:'pi_mock'};}};}
     }});
-    await stripe.createPaymentIntent(123,'usd',{paymentAttemptId:'stable'},'ro-payment-stable');
-    await stripe.createPaymentIntent(456);
+    await stripe.createPaymentIntent(123,'usd',{paymentAttemptId:'stable'},'ro-payment-stable','shop');
+    await stripe.createPaymentIntent(456,'usd',{},undefined,'shop');
     assert.deepEqual(calls[0][1],{idempotencyKey:'ro-payment-stable'});
     assert.equal(calls[0][0].metadata.paymentAttemptId,'stable');
     assert.equal(calls[1][1],undefined);
