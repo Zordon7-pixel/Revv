@@ -52,6 +52,14 @@ mockModule('../db', {
   },
   dbAll: async (sql, params) => {
     calls.dbAll.push({ sql, params });
+    if (sql === 'SELECT id::text AS id, is_internal_test_shop FROM shops WHERE id::text = $1') {
+      return params[0] === 'shop-1' ? [{ id: 'shop-1', is_internal_test_shop: false }] : [];
+    }
+    if (sql === 'SELECT id::text AS id, shop_id::text AS shop_id FROM repair_orders WHERE id::text = $1 AND shop_id::text = $2') {
+      const ro = state.updatedRo;
+      return ro && params[0] === ro.id && params[1] === ro.shop_id
+        ? [{ id: ro.id, shop_id: ro.shop_id }] : [];
+    }
     return [];
   },
 });
@@ -62,7 +70,6 @@ mockModule('../middleware/roles', {
   requireAdmin: (req, res, next) => next(),
   requireTechnician: (req, res, next) => next(),
 });
-mockModule('../services/profit', { calculateProfit: () => ({ trueProfit: 123 }) });
 mockModule('../services/sms', {
   sendSMS: async (...args) => {
     calls.sendSMS.push(args);
@@ -216,10 +223,10 @@ test('GET /ros classifies total_loss as completed, not open', async () => {
 
   let res = await runRoute('/', 'get', { query: { status: 'completed' } });
   assert.equal(res.statusCode, 200);
-  assert.match(calls.dbAll[0].sql, /IN \('closed', 'completed', 'total_loss'\)/);
+  assert.match(calls.dbAll.find(call => /FROM repair_orders ro/.test(call.sql)).sql, /IN \('closed', 'completed', 'total_loss'\)/);
 
   resetCalls();
   res = await runRoute('/', 'get', { query: { status: 'open' } });
   assert.equal(res.statusCode, 200);
-  assert.match(calls.dbAll[0].sql, /NOT IN \('closed', 'completed', 'total_loss'\)/);
+  assert.match(calls.dbAll.find(call => /FROM repair_orders ro/.test(call.sql)).sql, /NOT IN \('closed', 'completed', 'total_loss'\)/);
 });

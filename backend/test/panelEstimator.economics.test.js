@@ -139,6 +139,10 @@ test('L3 job-cost handler projects only owner/admin rows from the already loaded
   let selectedReads = 0, rowReads = 0;
   try {
     stub('../src/db', { pool: { query: () => assert.fail('Unexpected extra database read') }, dbAll: async (sql, params) => {
+      if (sql === 'SELECT id::text AS id, is_internal_test_shop FROM shops WHERE id::text = $1') {
+        assert.deepEqual(params, ['synthetic-shop']);
+        return [{ id: 'synthetic-shop', is_internal_test_shop: false }];
+      }
       rowReads++;
       assert.match(sql, /WHERE ro.shop_id = \$1/); assert.deepEqual(params, ['synthetic-shop']);
       return rows;

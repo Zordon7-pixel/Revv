@@ -85,6 +85,11 @@ mockModule('../db', {
     if (String(sql) === 'SELECT id::text AS id, is_internal_test_shop FROM shops WHERE id::text = $1') {
       return params[0] === 'shop-1' ? [{ id: 'shop-1', is_internal_test_shop: false }] : [];
     }
+    if (String(sql) === 'SELECT id::text AS id, shop_id::text AS shop_id FROM repair_orders WHERE id::text = $1 AND shop_id::text = $2') {
+      const ro = state.ro;
+      return ro && params[0] === ro.id && params[1] === ro.shop_id
+        ? [{ id: ro.id, shop_id: ro.shop_id }] : [];
+    }
     return [];
   },
 });
@@ -95,7 +100,6 @@ mockModule('../middleware/roles', {
   requireAdmin: (_req, _res, next) => next(),
   requireTechnician: (_req, _res, next) => next(),
 });
-mockModule('../services/profit', { calculateProfit: () => ({ trueProfit: 0 }) });
 mockModule('../services/sms', { sendSMS: async () => ({}), isConfiguredForShop: async () => true });
 mockModule('../services/mailer', { sendMail: async () => ({}) });
 mockModule('../services/emailTemplates', { statusChangeEmail: () => ({ subject: '', html: '' }) });
