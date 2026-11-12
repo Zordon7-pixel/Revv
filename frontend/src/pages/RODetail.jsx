@@ -31,6 +31,23 @@ import { safeExternalErrorMessage } from '../lib/safeErrors'
 import PhotoLightbox from '../components/PhotoLightbox'
 import AppOverlay from '../components/AppOverlay'
 
+// Keep aligned with the explicit zero-settlement header guard in routes/ros.js.
+// This only chooses the prompt; the locked server operation authorizes settlement.
+const ZERO_CLOSE_MONEY_FIELDS = [
+  'total', 'parts_cost', 'labor_cost', 'sublet_cost', 'tax',
+  'amount_owed_cents', 'amount_paid_cents', 'paid_amount',
+  'deductible', 'deductible_waived', 'referral_fee', 'goodwill_repair_cost',
+  'true_profit', 'insurance_approved_amount', 'supplement_amount',
+  'total_insurer_owed', 'estimate_amount', 'actual_amount',
+]
+function hasZeroHeaderMoney(ro) {
+  return ZERO_CLOSE_MONEY_FIELDS.every(field => {
+    const value = ro[field]
+    return value == null || (['number', 'string'].includes(typeof value) &&
+      !Object.is(value, -0) && /^0+(?:\.0+)?$/.test(String(value).trim()))
+  })
+}
+
 const PART_STATUS_META = {
   shipped: { label: 'Shipped', cls: 'border-brand/40 bg-brand/10 text-brand', icon: Truck },
   partially_received: { label: 'Partially received', cls: 'border-brand/40 bg-brand/10 text-brand', icon: Package },
@@ -490,6 +507,7 @@ export default function RODetail() {
       setShowZeroCloseModal(false)
       await load()
     } catch (err) {
+      setShowZeroCloseModal(false)
       const reason = err?.response?.data?.error || 'Could not update repair order status'
       const guidance = status === 'closed' && !confirmZeroSettlement && !['paid', 'succeeded'].includes(paymentStatus)
         ? (canMarkPaymentFromRo
@@ -506,7 +524,7 @@ export default function RODetail() {
   function requestStatus(status) {
     if (statusRequestPending.current) return
     if (status === 'closed') {
-      if (!['paid', 'succeeded'].includes(paymentStatus) && displayedRemainingCents === 0) {
+      if (!['paid', 'succeeded'].includes(paymentStatus) && displayedRemainingCents === 0 && hasZeroHeaderMoney(ro)) {
         setShowZeroCloseModal(true)
         return
       }

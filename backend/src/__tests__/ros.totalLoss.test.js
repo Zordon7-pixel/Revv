@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 
 const calls = {
+  transaction: [],
   dbGet: [],
   dbRun: [],
   dbAll: [],
@@ -25,11 +26,32 @@ function mockModule(relativePath, exports) {
 }
 
 mockModule('../db', {
-  pool: {},
+  pool: {
+    async connect() {
+      const snapshot = structuredClone(state.updatedRo);
+      return {
+        release() { calls.transaction.push('RELEASE'); },
+        async query(sql, params = []) {
+          calls.transaction.push(sql);
+          if (sql === 'ROLLBACK') { state.updatedRo = snapshot; return { rows: [] }; }
+          if (/^(BEGIN|COMMIT)/.test(sql)) return { rows: [] };
+          if (sql.startsWith('SELECT')) {
+            assert.match(sql, /WHERE id = \$1 AND shop_id = \$2 FOR UPDATE$/);
+            const row = await require('../db').dbGet(sql, params);
+            return { rows: row ? [row] : [] };
+          }
+          if (/UPDATE repair_orders SET status/.test(sql)) {
+            Object.assign(state.updatedRo, { status: params[0], updated_at: params[1], actual_delivery: params[2] });
+          }
+          return require('../db').dbRun(sql, params);
+        },
+      };
+    },
+  },
   dbGet: async (sql, params) => {
     calls.dbGet.push({ sql, params });
     if (/FROM repair_orders\s+WHERE id = \$1 AND shop_id = \$2/.test(sql)) {
-      return state.initialRo;
+      return calls.transaction.includes('COMMIT') ? state.updatedRo : state.initialRo;
     }
     if (/SELECT \* FROM repair_orders WHERE id = \$1$/.test(sql)) {
       return state.updatedRo;
@@ -180,6 +202,9 @@ test('PUT /ros/:id/status total_loss stamps close date, logs status, and skips i
   assert.match(update.sql, /WHERE id = \$4 AND shop_id = \$5/);
   assert.deepEqual(update.params.slice(0, 1), ['total_loss']);
   assert.equal(update.params[4], 'shop-1');
+  assert.equal(update.params[2], update.params[1].split('T')[0]);
+  assert.equal(res.body.actual_delivery, update.params[2]);
+  assert.deepEqual(calls.transaction.slice(-2), ['COMMIT', 'RELEASE']);
   assert.doesNotMatch(update.sql, /total\s*=|true_profit|payment_received|payment_status/);
 
   const log = calls.dbRun.find((call) => /INSERT INTO job_status_log/.test(call.sql));
@@ -205,6 +230,7 @@ test('PUT /ros/:id/status is scoped to shop_id and cannot total another shop RO'
   assert.equal(res.statusCode, 404);
   assert.deepEqual(res.body, { error: 'Not found' });
   assert.equal(calls.dbRun.length, 0);
+  assert.deepEqual(calls.transaction.slice(-2), ['ROLLBACK', 'RELEASE']);
   assert.match(calls.dbGet[0].sql, /WHERE id = \$1 AND shop_id = \$2/);
   assert.deepEqual(calls.dbGet[0].params, ['other-shop-ro', 'shop-1']);
 });
@@ -222,4 +248,21 @@ test('GET /ros classifies total_loss as completed, not open', async () => {
   res = await runRoute('/', 'get', { query: { status: 'open' } });
   assert.equal(res.statusCode, 200);
   assert.match(calls.dbAll[0].sql, /NOT IN \('closed', 'completed', 'total_loss'\)/);
+});
+
+test('PUT /ros/:id/status missing RO preserves the 404 contract and writes nothing', async () => {
+  resetCalls();
+  state.initialRo = null;
+  state.updatedRo = null;
+  const res = await runRoute('/:id/status', 'put', {
+    params: { id: 'missing-ro' }, body: { status: 'closed', confirm_zero_settlement: true },
+  });
+  assert.equal(res.statusCode, 404);
+  assert.deepEqual(res.body, { error: 'Not found' });
+  assert.equal(calls.dbRun.length, 0);
+  assert.deepEqual(calls.dbGet[0].params, ['missing-ro', 'shop-1']);
+  assert.match(calls.dbGet[0].sql, /FOR UPDATE$/);
+  assert.deepEqual(calls.transaction.slice(-2), ['ROLLBACK', 'RELEASE']);
+  assert.equal(calls.sendSMS.length, 0);
+  assert.equal(calls.sendClosedPaidInvoiceEmail.length, 0);
 });

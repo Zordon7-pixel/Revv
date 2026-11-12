@@ -164,11 +164,14 @@ function renderRODetail() {
 }
 
 
+const headerMoneyFields = ['total', 'parts_cost', 'labor_cost', 'sublet_cost', 'tax', 'amount_owed_cents', 'amount_paid_cents', 'paid_amount', 'deductible', 'deductible_waived', 'referral_fee', 'goodwill_repair_cost', 'true_profit', 'insurance_approved_amount', 'supplement_amount', 'total_insurer_owed', 'estimate_amount', 'actual_amount']
+const zeroHeaderMoney = Object.fromEntries(headerMoneyFields.map(field => [field, 0]))
+
 const prompt = 'This ticket shows a $0 balance. Was it paid in full or settled (e.g. by insurance)?'
 async function openClose(overrides = {}, admin = false) {
   isAdmin.mockReturnValue(admin)
   getTokenPayload.mockReturnValue({ id: 'tech-1', role: admin ? 'admin' : 'technician' })
-  stubApi(makeRo({ status: 'delivery', total: 0, amount_owed_cents: 0, amount_paid_cents: 0, ...overrides }))
+  stubApi(makeRo({ ...zeroHeaderMoney, status: 'delivery', ...overrides }))
   renderRODetail()
   await screen.findByText('RO-1')
   await userEvent.setup().click(screen.getByRole('button', { name: 'Close ticket' }))
@@ -199,7 +202,7 @@ describe('RODetail explicit close and status errors', () => {
     isAdmin.mockReturnValue(false)
     isAssistant.mockReturnValue(true)
     getTokenPayload.mockReturnValue({ id: 'assistant-1', role: 'assistant' })
-    stubApi(makeRo({ status: 'delivery', total: 0, amount_owed_cents: 0, amount_paid_cents: 0 }))
+    stubApi(makeRo({ ...zeroHeaderMoney, status: 'delivery' }))
     renderRODetail()
     await userEvent.setup().click(await screen.findByRole('button', { name: 'Close ticket' }))
     expect(screen.getByText(prompt)).toBeInTheDocument()
@@ -222,12 +225,52 @@ describe('RODetail explicit close and status errors', () => {
     expect(api.post).not.toHaveBeenCalled()
   })
 
-  it.each(['Only a zero remaining balance can be settled and closed', 'This RO is under SIU investigation. Clear the SIU hold before changing status.'])('shows stale/server refusal: %s', async reason => {
-    await openClose()
-    api.put.mockRejectedValueOnce({ response: { data: { error: reason } } })
-    await userEvent.setup().click(screen.getByRole('button', { name: 'Yes, paid - close ticket' }))
-    expect(await screen.findByRole('alert')).toHaveTextContent(reason)
-    expect(screen.getByText(prompt)).toBeInTheDocument()
+  it.each([
+    [409, 'Cannot settle and close while a payment is open or requires reconciliation'],
+    [400, 'Payment must be received before closing this RO'],
+    [400, 'This RO is under SIU investigation. Clear the SIU hold before changing status.'],
+  ])('confirmation refusal %s exposes exact error and allows cancel then explicit retry: %s', async (status, reason) => {
+    const unhandled = vi.fn()
+    window.addEventListener('unhandledrejection', unhandled)
+    try {
+      await openClose()
+      api.put.mockRejectedValueOnce({ response: { status, data: { error: reason } } })
+      const user = userEvent.setup()
+      await user.click(screen.getByRole('button', { name: 'Yes, paid - close ticket' }))
+      const alert = await screen.findByRole('alert')
+      expect(alert).toBeVisible()
+      expect(alert.textContent).toBe(reason)
+      expect(screen.queryByRole('dialog', { name: 'Confirm zero balance close' })).not.toBeInTheDocument()
+      expect(screen.queryByText(prompt)).not.toBeInTheDocument()
+      expect(api.put).toHaveBeenCalledTimes(1)
+      expect(screen.getByRole('button', { name: 'Close ticket' })).toBeEnabled()
+      await user.click(screen.getByRole('button', { name: 'Close ticket' }))
+      await user.click(screen.getByRole('button', { name: 'No, keep open' }))
+      expect(screen.queryByText(prompt)).not.toBeInTheDocument()
+      expect(api.put).toHaveBeenCalledTimes(1)
+      await user.click(screen.getByRole('button', { name: 'Close ticket' }))
+      await user.click(screen.getByRole('button', { name: 'Yes, paid - close ticket' }))
+      await waitFor(() => expect(screen.queryByText(prompt)).not.toBeInTheDocument())
+      expect(api.put).toHaveBeenCalledTimes(2)
+      expect(api.put).toHaveBeenLastCalledWith('/ros/ro-1/status', { status: 'closed', confirm_zero_settlement: true })
+      expect(api.post).not.toHaveBeenCalled()
+      expect(unhandled).not.toHaveBeenCalled()
+    } finally {
+      window.removeEventListener('unhandledrejection', unhandled)
+    }
+  })
+
+  it.each(headerMoneyFields.flatMap(field => [9114.40, -1, 'NaN', 'Infinity', 'invalid', ''].map(value => [field, value])))('header %s=%s with zero owed and no items never offers zero confirmation', async (field, value) => {
+    isAdmin.mockReturnValue(false)
+    stubApi(makeRo({ ...zeroHeaderMoney, status: 'delivery', [field]: value }))
+    api.put.mockRejectedValueOnce({ response: { status: 400, data: { error: 'Payment must be received before closing this RO' } } })
+    renderRODetail()
+    await userEvent.setup().click(await screen.findByRole('button', { name: 'Close ticket' }))
+    expect(screen.queryByText(prompt)).not.toBeInTheDocument()
+    expect(await screen.findByRole('alert')).toBeVisible()
+    expect(screen.getByRole('alert')).toHaveTextContent('Payment must be received before closing this RO')
+    expect(screen.getByRole('alert')).toHaveTextContent('ask an admin to Mark Paid')
+    expect(api.put).toHaveBeenCalledExactlyOnceWith('/ros/ro-1/status', { status: 'closed' })
     expect(api.post).not.toHaveBeenCalled()
   })
 

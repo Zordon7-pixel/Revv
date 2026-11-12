@@ -2364,8 +2364,23 @@ router.put('/:id/status', auth, requireTechnician, async (req, res) => {
       const now = new Date().toISOString();
       let historyNote = note || null;
       if (confirm_zero_settlement === true) {
+        // Ticket amounts from schema.pg.sql and the legacy RO migrations, not
+        // rates, percentages, mileage or flags. Missing nullable legacy amounts
+        // are allowed; supplied amounts must be literal finite decimal zero.
+        const headerMoneyFields = [
+          'total', 'parts_cost', 'labor_cost', 'sublet_cost', 'tax',
+          'amount_owed_cents', 'amount_paid_cents', 'paid_amount',
+          'deductible', 'deductible_waived', 'referral_fee', 'goodwill_repair_cost',
+          'true_profit', 'insurance_approved_amount', 'supplement_amount',
+          'total_insurer_owed', 'estimate_amount', 'actual_amount',
+        ];
+        if (headerMoneyFields.some(field => {
+          const value = lockedRo[field];
+          return value != null && (!['number', 'string'].includes(typeof value) ||
+            Object.is(value, -0) || !/^0+(?:\.0+)?$/.test(String(value).trim()));
+        })) throw new PaymentError('Payment must be received before closing this RO', 400);
         const balance = await getPaymentBalance(client, lockedRo, { allowZeroBalance: true });
-        if (balance.remainingCents !== 0) throw new PaymentError('Only a zero remaining balance can be settled and closed', 400);
+        if (balance.money.totalCents !== 0 || balance.paidCents !== 0 || balance.remainingCents !== 0) throw new PaymentError('Only a zero remaining balance can be settled and closed', 400);
         if (balance.hasOpenPayments || balance.occupiedCents !== 0) {
           throw new PaymentError('Cannot settle and close while a payment is open or requires reconciliation', 409);
         }
@@ -2420,7 +2435,7 @@ router.put('/:id/status', auth, requireTechnician, async (req, res) => {
     }
   } catch (err) {
     res.status(err instanceof PaymentError ? err.status : 500).json({
-      error: err instanceof PaymentError ? err.message : 'Could not update repair order status',
+      error: err instanceof PaymentError ? (err.status === 404 ? 'Not found' : err.message) : 'Could not update repair order status',
     });
   }
 });

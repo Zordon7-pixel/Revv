@@ -362,16 +362,54 @@ test('server-authoritative balance rejects positive, negative, already-paid and 
   }
 });
 
-test('zero remaining uses max of successful ledger and legacy paid cents, including selected authority', async () => {
+test('nonzero tickets paid down to zero cannot use explicit zero settlement', async () => {
   for (const selected of [false, true]) {
+    for (const legacyPaid of [0, 100]) {
+      reset({ status: 'delivery' });
+      state.totalCents = 100; state.lineCount = 1;
+      if (selected) { state.totalCents = 999; state.selectedMoney = { totalCents: 100, lineCount: 1 }; }
+      state.ledger = [{ status: 'succeeded', amount_cents: 100 }];
+      state.ro.amount_paid_cents = legacyPaid;
+      const before = structuredClone(state.ro);
+      assert.equal((await close()).statusCode, 400);
+      assert.deepEqual(state.ro, before);
+      assert.equal(state.persisted.length, 0);
+      assert.equal(state.ledger.length, 1);
+      assert.equal(state.transactions.at(-1), 'ROLLBACK');
+    }
+  }
+});
+
+const headerMoneyFields = ['total', 'parts_cost', 'labor_cost', 'sublet_cost', 'tax', 'amount_owed_cents', 'amount_paid_cents', 'paid_amount', 'deductible', 'deductible_waived', 'referral_fee', 'goodwill_repair_cost', 'true_profit', 'insurance_approved_amount', 'supplement_amount', 'total_insurer_owed', 'estimate_amount', 'actual_amount'];
+for (const field of headerMoneyFields) {
+  for (const value of [9114.40, -1, NaN, Infinity, -Infinity, 'invalid', '', false, [], {}, '-0', -0, '1e-999']) {
+    test(`zero settlement refuses header ${field}=${String(value)} without writes`, async () => {
+      reset({ status: 'delivery' });
+      Object.assign(state.ro, { amount_owed_cents: 0, amount_paid_cents: 0, [field]: value });
+      const before = structuredClone(state.ro);
+      const result = await close();
+      assert.equal(result.statusCode, 400);
+      assert.equal(result.body.error, 'Payment must be received before closing this RO');
+      assert.deepEqual(state.ro, before);
+      assert.equal(state.lineCount, 0);
+      assert.equal(state.persisted.length, 0, 'no data, audit or status-history writes');
+      assert.equal(state.ledger.length, 0);
+      assert.equal(calls.stripe.length, 0);
+      assert.equal(calls.dbRun.length, 0);
+      assert.equal(state.transactions.at(-1), 'ROLLBACK');
+    });
+  }
+}
+
+test('legacy nullable and decimal zero header money remains eligible regardless of non-money counters', async () => {
+  for (const value of [undefined, null, 0, '0.00']) {
     reset({ status: 'delivery' });
-    state.totalCents = 100; state.lineCount = 1;
-    if (selected) { state.totalCents = 999; state.selectedMoney = { totalCents: 100, lineCount: 1 }; }
-    state.ledger = [{ status: 'succeeded', amount_cents: 100 }];
-    state.ro.amount_paid_cents = 100;
+    for (const field of headerMoneyFields) state.ro[field] = value;
+    Object.assign(state.ro, { delivery_miles: 10, storage_rate_per_day: 50, is_drp: true });
     assert.equal((await close()).statusCode, 200);
-    assert.equal(state.ro.amount_paid_cents, 100);
-    assert.equal(state.ledger.length, 1);
+    assert.equal(state.ro.status, 'closed');
+    assert.equal(state.ro.payment_status, 'paid');
+    assert.equal(state.ledger.length, 0);
     await nextImmediate();
   }
 });
