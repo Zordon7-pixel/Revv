@@ -290,7 +290,15 @@ describe('redesign token conformance', () => {
     expect(detail).toMatch(/api\.post\(`\/ros\/\$\{id\}\/mark-paid`/)
     expect(detail).toMatch(/api\.post\('\/sms\/send'/)
     expect(detail).toMatch(/api\.post\(`\/photos\/ro\/\$\{id\}\/predropoff`/)
-    expect(detail.match(/<AppOverlay/g)?.length).toBe(4)
+    const overlayLabels = [...detail.matchAll(/<AppOverlay\s+label="([^"]+)"/g)].map((match) => match[1])
+    expect(detail.match(/<AppOverlay/g)?.length).toBe(5)
+    expect(overlayLabels).toEqual([
+      'Log communication',
+      'Confirm zero balance close',
+      'Mark as paid',
+      'Mark total loss',
+      'Bill storage',
+    ])
     expect(detail).toMatch(/<SupplementFinderPanel[\s\S]*variant="hero"/)
     expect(detail).toMatch(/<Money cents=\{ro\.amount_owed_cents/)
   })
