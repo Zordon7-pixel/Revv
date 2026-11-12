@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 
 const calls = {
+  stripe: [],
   dbGet: [],
   dbRun: [],
   dbAll: [],
@@ -27,6 +28,14 @@ function reset({ status = 'repair', payment_received = false } = {}) {
   Object.values(calls).forEach((list) => {
     list.length = 0;
   });
+  state.attempts = [];
+  state.ledger = [];
+  state.totalCents = 0;
+  state.lineCount = 0;
+  state.selectedMoney = null;
+  state.failOn = null;
+  state.persisted = [];
+  state.transactions = [];
   state.ro = {
     id: 'ro-1',
     shop_id: 'shop-1',
@@ -40,7 +49,48 @@ function reset({ status = 'repair', payment_received = false } = {}) {
 }
 
 mockModule('../db', {
-  pool: {},
+  pool: {
+    async connect() {
+      // Synthetic transaction adapter: serialize parent locks and undo all writes
+      // on failure. The real withLockedRo and money authority execute unchanged.
+      let unlock;
+      const predecessor = state.lock || Promise.resolve();
+      state.lock = new Promise(resolve => { unlock = resolve; });
+      await predecessor;
+      const snapshot = structuredClone({ ro: state.ro, persisted: state.persisted });
+      return {
+        release() { unlock(); },
+        async query(sql, params = []) {
+          const text = String(sql);
+          state.transactions.push(text);
+          if (state.failOn && text.includes(state.failOn)) throw new Error('Synthetic write failure');
+          if (text === 'ROLLBACK') { Object.assign(state, snapshot); return { rows: [] }; }
+          if (/^(BEGIN|COMMIT)/.test(text)) return { rows: [] };
+          if (text.includes("to_regclass('ro_panel_estimator_revisions')")) return { rows: [{ revisions: !!state.selectedMoney, pointer: !!state.selectedMoney }] };
+          if (text.includes('SELECT d.active_revision_id')) return { rows: [{ active_revision_id: 'revision-1', accounting_snapshot: { money: state.selectedMoney } }] };
+          if (text.includes('FROM estimate_line_items')) {
+            assert.deepEqual(params, ['ro-1', 'shop-1']);
+            return { rows: [{ subtotal: state.totalCents / 100, line_count: state.lineCount }] };
+          }
+          if (text.includes('AS paid_cents')) return { rows: [{ paid_cents: state.ledger.filter(p => ['paid', 'succeeded'].includes(p.status)).reduce((n, p) => n + p.amount_cents, 0) }] };
+          if (text.startsWith('SELECT * FROM ro_payment')) {
+            assert.deepEqual(params, ['ro-1', 'shop-1']);
+            return { rows: text.includes('ro_payment_attempts') ? state.attempts : state.ledger };
+          }
+          if (text.includes("SET payment_status = 'paid'")) {
+            assert.deepEqual(params.slice(3), ['ro-1', 'shop-1']);
+            Object.assign(state.ro, { payment_status: 'paid', payment_received: 1, amount_paid_cents: params[1], amount_owed_cents: params[2] });
+          }
+          if (/^(UPDATE|INSERT)/.test(text)) {
+            state.persisted.push({ sql: text, params });
+            return require('../db').dbRun(sql, params);
+          }
+          const row = await require('../db').dbGet(sql, params);
+          return { rows: row ? [row] : [] };
+        },
+      };
+    },
+  },
   dbGet: async (sql, params = []) => {
     calls.dbGet.push({ sql: String(sql), params });
     const text = String(sql);
@@ -86,12 +136,7 @@ mockModule('../db', {
   },
 });
 mockModule('../middleware/auth', (req, _res, next) => next());
-mockModule('../middleware/roles', {
-  ROLE_RANK: { superadmin: 5, owner: 4, admin: 3, assistant: 3, technician: 2 },
-  getRoleRank: (role) => ({ superadmin: 5, owner: 4, admin: 3, assistant: 3, technician: 2 }[role] ?? -1),
-  requireAdmin: (_req, _res, next) => next(),
-  requireTechnician: (_req, _res, next) => next(),
-});
+mockModule('../services/stripe', { getStripeClient: () => { calls.stripe.push('access'); throw new Error('Unexpected provider access'); } });
 mockModule('../services/profit', { calculateProfit: () => ({ trueProfit: 0 }) });
 mockModule('../services/sms', { sendSMS: async () => ({}), isConfiguredForShop: async () => true });
 mockModule('../services/mailer', { sendMail: async () => ({}) });
@@ -136,6 +181,7 @@ function runRoute(routePath, method, { params = {}, body = {}, user = {} } = {})
       ...user,
     },
   };
+  let finish;
   const res = {
     statusCode: 200,
     body: null,
@@ -145,11 +191,13 @@ function runRoute(routePath, method, { params = {}, body = {}, user = {} } = {})
     },
     json(payload) {
       this.body = payload;
+      finish?.(this);
       return this;
     },
   };
 
   return new Promise((resolve, reject) => {
+    finish = resolve;
     let index = 0;
     const next = (err) => {
       if (err) return reject(err);
@@ -245,4 +293,107 @@ test('PUT /ros/:id/status allows a legitimate paid close and fires closed side e
   assert.deepEqual(calls.sendClosedPaidInvoiceEmail[0], [{ roId: 'ro-1', shopId: 'shop-1' }]);
   assert.equal(calls.syncInvoiceForRo.length, 1);
   assert.deepEqual(calls.syncInvoiceForRo[0], ['shop-1', 'ro-1']);
+});
+
+const close = (body = {}, user = {}) => runRoute('/:id/status', 'put', {
+  params: { id: 'ro-1' }, body: { status: 'closed', confirm_zero_settlement: true, ...body }, user,
+});
+
+test('explicit zero settlement permits every existing technician-gate role, without charging', async () => {
+  for (const role of ['technician', 'employee', 'staff', 'assistant', 'admin', 'owner', 'superadmin']) {
+    reset({ status: 'delivery' });
+    const result = await close({}, { role });
+    assert.equal(result.statusCode, 200, role);
+    assert.equal(state.ro.status, 'closed');
+    assert.equal(state.ro.payment_status, 'paid');
+    assert.equal(state.ro.amount_paid_cents, 0);
+    assert.equal(state.ledger.length, 0);
+    assert.equal(calls.stripe.length, 0);
+    assert.ok(!state.transactions.some(sql => /INSERT INTO ro_payments|INSERT INTO ro_payment_attempts/.test(sql)));
+    const audit = state.persisted.find(p => p.sql.includes('INSERT INTO audit_log'));
+    assert.equal(audit.params[2], 'user-1');
+    assert.equal(audit.params[3], 'shop-1');
+    assert.equal(JSON.parse(audit.params[4]).explicit_confirmation, true);
+    assert.match(state.persisted.find(p => p.sql.includes('INSERT INTO job_status_log')).params[5], /without charge/);
+    assert.equal(state.transactions.at(-1), 'COMMIT');
+    await nextImmediate();
+  }
+});
+
+test('confirmation must be literal true and closed; unauthorized and cross-shop requests refuse', async () => {
+  for (const body of [{ confirm_zero_settlement: false }, { confirm_zero_settlement: 'true' }, { status: 'repair' }, { confirm_zero_settlement: undefined }]) {
+    reset({ status: 'delivery' });
+    assert.equal((await close(body)).statusCode, 400);
+    assert.equal(state.persisted.length, 0);
+  }
+  for (const [user, status] of [[{ role: 'customer' }, 403], [{ role: 'unknown' }, 403], [{ shop_id: 'other-shop' }, 404]]) {
+    reset({ status: 'delivery' });
+    assert.equal((await close({}, user)).statusCode, status);
+    assert.equal(state.persisted.length, 0);
+  }
+});
+
+test('server-authoritative balance rejects positive, negative, already-paid and unresolved money', async () => {
+  const cases = [
+    () => { state.totalCents = 1; state.lineCount = 1; },
+    () => { state.totalCents = -1; state.lineCount = 1; },
+    () => { state.ro.amount_paid_cents = 1; },
+    () => { state.ro.payment_status = 'paid'; },
+    () => { state.ro.payment_status = 'succeeded'; },
+    () => { state.ro.payment_received = 1; },
+    ...['pending', 'unknown', 'open'].map(status => () => { state.ro.payment_status = status; }),
+    () => { state.ro.stripe_payment_intent_id = 'dangling'; },
+    ...['open', 'reserved', 'unknown', 'retryable', 'pending'].map(status => () => { state.attempts = [{ status, amount_cents: 0 }]; }),
+    ...['pending', 'failed', 'unknown'].map(status => () => { state.ledger = [{ status, amount_cents: 0 }]; }),
+    () => { state.attempts = [{ status: 'settled', amount_cents: 0 }]; },
+    () => { state.selectedMoney = { totalCents: 100, lineCount: 1 }; },
+  ];
+  for (const setup of cases) {
+    reset({ status: 'delivery' }); setup();
+    const before = structuredClone(state.ro);
+    const result = await close({ amount_owed_cents: 0, amount_paid_cents: 0, balance: 0 });
+    assert.ok([400, 409].includes(result.statusCode), JSON.stringify(result));
+    assert.deepEqual(state.ro, before);
+    assert.equal(state.persisted.length, 0);
+    assert.equal(state.transactions.at(-1), 'ROLLBACK');
+  }
+});
+
+test('zero remaining uses max of successful ledger and legacy paid cents, including selected authority', async () => {
+  for (const selected of [false, true]) {
+    reset({ status: 'delivery' });
+    state.totalCents = 100; state.lineCount = 1;
+    if (selected) { state.totalCents = 999; state.selectedMoney = { totalCents: 100, lineCount: 1 }; }
+    state.ledger = [{ status: 'succeeded', amount_cents: 100 }];
+    state.ro.amount_paid_cents = 100;
+    assert.equal((await close()).statusCode, 200);
+    assert.equal(state.ro.amount_paid_cents, 100);
+    assert.equal(state.ledger.length, 1);
+    await nextImmediate();
+  }
+});
+
+test('SIU message unchanged and settlement, audit and history all roll back on write failure', async () => {
+  reset({ status: 'siu_hold' });
+  const siu = await close();
+  assert.deepEqual(siu.body, { error: 'This RO is under SIU investigation. Clear the SIU hold before changing status.' });
+  assert.equal(state.persisted.length, 0);
+  for (const sql of ['INSERT INTO audit_log', 'UPDATE repair_orders SET status', 'INSERT INTO job_status_log', 'COMMIT']) {
+    reset({ status: 'delivery' });
+    const before = structuredClone(state.ro);
+    state.failOn = sql;
+    assert.equal((await close()).statusCode, 500);
+    assert.deepEqual(state.ro, before);
+    assert.equal(state.persisted.length, 0);
+    assert.equal(calls.sendClosedPaidInvoiceEmail.length, 0);
+  }
+});
+
+test('repeat and concurrent confirmations settle only once under the parent lock', async () => {
+  reset({ status: 'delivery' });
+  const results = await Promise.all([close(), close()]);
+  assert.deepEqual(results.map(r => r.statusCode).sort(), [200, 400]);
+  assert.equal((await close()).statusCode, 400);
+  assert.equal(state.persisted.filter(p => p.sql.includes('INSERT INTO audit_log')).length, 1);
+  assert.equal(state.persisted.filter(p => p.sql.includes('INSERT INTO job_status_log')).length, 1);
 });

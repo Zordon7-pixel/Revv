@@ -31,17 +31,21 @@ async function withLockedRo(roId, shopId, work) {
   return result;
 }
 
-async function getPaymentBalance(client, ro) {
+async function getPaymentBalance(client, ro, { allowZeroBalance = false } = {}) {
   const money = await getRoMoneySummary(ro.id, ro.shop_id, client);
   const ledgerPaid = await getPaidCents(ro.id, ro.shop_id, client);
   const legacyPaid = Number(ro.amount_paid_cents || 0);
   const paidCents = Math.max(ledgerPaid, legacyPaid);
   const remainingCents = money.totalCents - paidCents;
-  if (!money.lineCount || !cents(money.totalCents) || money.totalCents <= 0 ||
-      !cents(ledgerPaid) || !cents(legacyPaid) || !Number.isSafeInteger(remainingCents) || remainingCents <= 0 ||
+  if ((!allowZeroBalance && (!money.lineCount || money.totalCents === 0)) || !cents(money.totalCents) ||
+      !cents(ledgerPaid) || !cents(legacyPaid) || !Number.isSafeInteger(remainingCents) ||
+      (allowZeroBalance ? remainingCents < 0 : remainingCents <= 0) ||
       ['paid', 'succeeded'].includes(String(ro.payment_status || '').trim().toLowerCase()) || ro.payment_received === true || Number(ro.payment_received) > 0) {
     fail('Repair order is already paid or has an invalid balance', 400);
   }
+  // Zero settlement never reconciles provider state or clears an unexplained
+  // payment status. Keep this stricter attestation rule opt-in only.
+  if (allowZeroBalance && !['', 'unpaid', 'partial'].includes(String(ro.payment_status || '').trim().toLowerCase())) fail();
   const params = [ro.id, ro.shop_id];
   const attempts = (await client.query('SELECT * FROM ro_payment_attempts WHERE ro_id = $1 AND shop_id = $2', params)).rows;
   const ledger = (await client.query('SELECT * FROM ro_payments WHERE ro_id = $1 AND shop_id = $2', params)).rows;

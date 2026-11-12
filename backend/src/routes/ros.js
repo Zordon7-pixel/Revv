@@ -2348,20 +2348,52 @@ router.put('/:id', auth, requireTechnician, async (req, res) => {
 
 router.put('/:id/status', auth, requireTechnician, async (req, res) => {
   try {
-    const { status, note } = req.body;
+    const { status, note, confirm_zero_settlement } = req.body || {};
     if (!STATUSES.includes(status)) return res.status(400).json({ error: 'Invalid status' });
-    const ro = await dbGet('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
-    if (!ro) return res.status(404).json({ error: 'Not found' });
-    const transitionViolation = await assertStatusTransitionAllowed(ro, status, req.user);
-    if (transitionViolation) return res.status(transitionViolation.status).json({ error: transitionViolation.error });
-    const fromStatus = ro.status;
-    const now = new Date().toISOString();
-    if (status === 'delivery' || status === 'total_loss') {
-      await dbRun('UPDATE repair_orders SET status = $1, updated_at = $2, actual_delivery = $3 WHERE id = $4 AND shop_id = $5', [status, now, now.split('T')[0], req.params.id, req.user.shop_id]);
-    } else {
-      await dbRun('UPDATE repair_orders SET status = $1, updated_at = $2 WHERE id = $3 AND shop_id = $4', [status, now, req.params.id, req.user.shop_id]);
+    if (confirm_zero_settlement !== undefined && (confirm_zero_settlement !== true || status !== 'closed')) {
+      return res.status(400).json({ error: 'Zero balance settlement requires explicit confirmation to close' });
     }
-    await dbRun('INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by, note) VALUES ($1, $2, $3, $4, $5, $6)', [uuidv4(), req.params.id, fromStatus, status, req.user.id, note || null]);
+    const ro = await withLockedRo(req.params.id, req.user.shop_id, async (client, lockedRo) => {
+      // Only this explicit operation can satisfy the payment gate. SIU and all
+      // other transition rules still run before any mutation.
+      const transitionViolation = await assertStatusTransitionAllowed(
+        confirm_zero_settlement === true ? { ...lockedRo, payment_status: 'paid' } : lockedRo,
+        status, req.user
+      );
+      if (transitionViolation) throw new PaymentError(transitionViolation.error, transitionViolation.status);
+      const now = new Date().toISOString();
+      let historyNote = note || null;
+      if (confirm_zero_settlement === true) {
+        const balance = await getPaymentBalance(client, lockedRo, { allowZeroBalance: true });
+        if (balance.remainingCents !== 0) throw new PaymentError('Only a zero remaining balance can be settled and closed', 400);
+        if (balance.hasOpenPayments || balance.occupiedCents !== 0) {
+          throw new PaymentError('Cannot settle and close while a payment is open or requires reconciliation', 409);
+        }
+        // No reconciliation/provider call or ledger insertion: this records the
+        // staff attestation, preserving existing paid cents and payment method.
+        await client.query(`UPDATE repair_orders SET payment_status = 'paid', payment_received = 1,
+          payment_received_at = $1, amount_paid_cents = $2, amount_owed_cents = $3, updated_at = $1
+          WHERE id = $4 AND shop_id = $5`,
+        [now, balance.paidCents, balance.money.totalCents, req.params.id, req.user.shop_id]);
+        historyNote = 'Confirmed paid in full or settled at $0 balance; closed without charge';
+        await client.query(`INSERT INTO audit_log (id, action, actor_id, target_shop_id, metadata, created_at)
+          VALUES ($1, $2, $3, $4, $5, NOW())`,
+        [uuidv4(), 'ro_zero_balance_settled_closed', req.user.id, req.user.shop_id, JSON.stringify({
+          ro_id: lockedRo.id, from_status: lockedRo.status, to_status: status,
+          previous_payment_status: lockedRo.payment_status, payment_status: 'paid',
+          remaining_cents: balance.remainingCents, paid_cents: balance.paidCents,
+          total_cents: balance.money.totalCents, explicit_confirmation: true,
+        })]);
+      }
+      if (status === 'delivery' || status === 'total_loss') {
+        await client.query('UPDATE repair_orders SET status = $1, updated_at = $2, actual_delivery = $3 WHERE id = $4 AND shop_id = $5', [status, now, now.split('T')[0], req.params.id, req.user.shop_id]);
+      } else {
+        await client.query('UPDATE repair_orders SET status = $1, updated_at = $2 WHERE id = $3 AND shop_id = $4', [status, now, req.params.id, req.user.shop_id]);
+      }
+      await client.query('INSERT INTO job_status_log (id, ro_id, from_status, to_status, changed_by, note) VALUES ($1, $2, $3, $4, $5, $6)', [uuidv4(), req.params.id, lockedRo.status, status, req.user.id, historyNote]);
+      return lockedRo;
+    });
+    const fromStatus = ro.status;
     recordOwnerActivity({
       shopId: req.user.shop_id,
       roId: req.params.id,
@@ -2376,7 +2408,7 @@ router.put('/:id/status', auth, requireTechnician, async (req, res) => {
     queueStatusSMS(req.params.id, req.user.shop_id, status);
     queueStatusEmail(req.params.id, req.user.shop_id, status);
 
-    const updatedRO = await dbGet('SELECT * FROM repair_orders WHERE id = $1', [req.params.id]);
+    const updatedRO = await dbGet('SELECT * FROM repair_orders WHERE id = $1 AND shop_id = $2', [req.params.id, req.user.shop_id]);
     res.json(await enrichRO(updatedRO));
 
     if (status === 'closed') {
@@ -2385,7 +2417,9 @@ router.put('/:id/status', auth, requireTechnician, async (req, res) => {
       queueQuickBooksSync(req.params.id, req.user.shop_id);
     }
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err instanceof PaymentError ? err.status : 500).json({
+      error: err instanceof PaymentError ? err.message : 'Could not update repair order status',
+    });
   }
 });
 

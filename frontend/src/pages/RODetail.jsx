@@ -1,5 +1,5 @@
 import { isPanelSelected, rowEconomics, EconomicsMoney, EconomicsSource, economicsPercent } from './JobCosting'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Pencil, Save, X, Package, PackageCheck, PackageX, Plus, CheckCircle, AlertCircle, Clock, Truck, RefreshCw, ExternalLink, Car, DollarSign, ClipboardList, Smartphone, AlertTriangle, Copy, Printer, User, Phone, MessageSquare, Mail, Users, CreditCard, Search, Camera, Trash2, ChevronDown, ChevronUp, MoreHorizontal, ChevronRight } from 'lucide-react'
@@ -147,6 +147,9 @@ export default function RODetail() {
   const [approvingEstimate, setApprovingEstimate] = useState(false)
   const [sendingForApproval, setSendingForApproval] = useState(false)
   const [approvalLink, setApprovalLink] = useState('')
+  const [showZeroCloseModal, setShowZeroCloseModal] = useState(false)
+  const [changingStatus, setChangingStatus] = useState(false)
+  const statusRequestPending = useRef(false)
   const [showMarkPaidModal, setShowMarkPaidModal] = useState(false)
   const [paymentMethod, setPaymentMethod] = useState('cash')
   const [markingPaid, setMarkingPaid] = useState(false)
@@ -475,24 +478,52 @@ export default function RODetail() {
     }
   }
 
-  async function advance() {
-    const idx = STAGES.indexOf(ro.status)
-    if (idx < STAGES.length - 1) {
-      try {
-        await api.put(`/ros/${id}/status`, { status: STAGES[idx+1] })
-        load()
-      } catch (err) {
-        showFeedback('error', err?.response?.data?.error || 'Failed to advance status')
-      }
+  async function changeStatus(status, confirmZeroSettlement = false) {
+    if (statusRequestPending.current) return
+    statusRequestPending.current = true
+    setChangingStatus(true)
+    try {
+      await api.put(`/ros/${id}/status`, {
+        status,
+        ...(confirmZeroSettlement ? { confirm_zero_settlement: true } : {}),
+      })
+      setShowZeroCloseModal(false)
+      await load()
+    } catch (err) {
+      const reason = err?.response?.data?.error || 'Could not update repair order status'
+      const guidance = status === 'closed' && !confirmZeroSettlement && !['paid', 'succeeded'].includes(paymentStatus)
+        ? (canMarkPaymentFromRo
+          ? ' Use the Payment panel or Mark Paid after receiving payment, then close the ticket.'
+          : ' Use the Payment panel or ask an admin to Mark Paid after receiving payment, then close the ticket.')
+        : ''
+      showFeedback('error', reason + guidance)
+    } finally {
+      statusRequestPending.current = false
+      setChangingStatus(false)
     }
   }
 
-  async function goBack() {
+  function requestStatus(status) {
+    if (statusRequestPending.current) return
+    if (status === 'closed') {
+      if (!['paid', 'succeeded'].includes(paymentStatus) && displayedRemainingCents === 0) {
+        setShowZeroCloseModal(true)
+        return
+      }
+      if (!window.confirm('Close this ticket and mark vehicle as delivered?')) return
+    }
+    return changeStatus(status)
+  }
+
+  function advance() {
     const idx = STAGES.indexOf(ro.status)
-    if (idx > 0) {
-      if (!window.confirm(`Move back to "${STATUS_LABELS[STAGES[idx-1]]}"?`)) return
-      await api.put(`/ros/${id}/status`, { status: STAGES[idx-1] })
-      load()
+    if (idx >= 0 && idx < STAGES.length - 1) return requestStatus(STAGES[idx + 1])
+  }
+
+  function goBack() {
+    const idx = STAGES.indexOf(ro.status)
+    if (idx > 0 && window.confirm(`Move back to "${STATUS_LABELS[STAGES[idx-1]]}"?`)) {
+      return requestStatus(STAGES[idx - 1])
     }
   }
 
@@ -926,7 +957,10 @@ export default function RODetail() {
   const isTerminalStatus = ['total_loss', 'siu_hold'].includes(ro.status) || (ro.status === 'closed' && !userIsAdmin)
   const canStepBack = currentIdx > 0 && !isTerminalStatus
   const canAdvance = currentIdx >= 0 && currentIdx < STAGES.indexOf('delivery') && !userIsAssistant && !(ro.status === 'closed' && !userIsAdmin)
-  const paymentStatus = normalizePaymentStatus(ro.payment_status, ro.payment_received)
+  const paymentStatus = String(normalizePaymentStatus(ro.payment_status, ro.payment_received)).trim().toLowerCase()
+  const canCloseTicket = ['superadmin', 'owner', 'admin', 'assistant', 'technician', 'employee', 'staff'].includes(currentUserRole)
+  // Presentation only; the server recalculates under lock before settling.
+  const displayedRemainingCents = Number(ro.amount_owed_cents ?? Math.round(Number(ro.total || 0) * 100)) - Number(ro.amount_paid_cents ?? 0)
   const paymentAmount = Number(ro.total || ro.parts_cost || 0)
   const canMarkPaymentFromRo = userIsAdmin && !userIsAssistant
   const hideHeaderFinancialForTech = currentUserIsTechRole
@@ -1051,14 +1085,11 @@ export default function RODetail() {
                     Advance <ChevronRight size={14} /> {STATUS_LABELS[STAGES[currentIdx + 1]]}
                   </button>
                 )}
-                {ro.status === 'delivery' && !userIsAssistant && (
+                {ro.status === 'delivery' && canCloseTicket && (
                   <button
                     type="button"
-                    onClick={async () => {
-                      if (!window.confirm('Close this ticket and mark vehicle as delivered?')) return
-                      await api.put(`/ros/${id}/status`, { status: 'closed' })
-                      load()
-                    }}
+                    disabled={changingStatus}
+                    onClick={() => requestStatus('closed')}
                     className="revv-btn revv-btn-primary"
                   >
                     <CheckCircle size={14} /> Close ticket
@@ -1130,8 +1161,8 @@ export default function RODetail() {
                 <button
                   key={stage}
                   type="button"
-                  disabled={!canClick}
-                  onClick={() => canClick && api.put(`/ros/${id}/status`, { status: stage }).then(() => load())}
+                  disabled={!canClick || changingStatus}
+                  onClick={() => canClick && requestStatus(stage)}
                   className="group relative flex min-w-0 flex-1 flex-col items-center gap-2 px-1 text-center"
                 >
                   {index > 0 && <span className={`absolute right-1/2 top-2.5 h-px w-full ${complete || current ? 'bg-brand' : 'bg-line-2'}`} aria-hidden="true" />}
@@ -2764,6 +2795,18 @@ export default function RODetail() {
         </AppOverlay>
       )}
 
+      {showZeroCloseModal && (
+        <AppOverlay label="Confirm zero balance close" onClose={() => !statusRequestPending.current && setShowZeroCloseModal(false)} className="bg-black/50 p-4">
+          <div className="bg-panel border border-line-2 rounded-instrument p-6 max-w-md w-full space-y-4">
+            <p className="text-sm text-ink">This ticket shows a $0 balance. Was it paid in full or settled (e.g. by insurance)?</p>
+            <div className="flex gap-2">
+              <button type="button" disabled={changingStatus} onClick={() => changeStatus('closed', true)} className="revv-btn revv-btn-primary">Yes, paid - close ticket</button>
+              <button type="button" disabled={changingStatus} onClick={() => setShowZeroCloseModal(false)} className="revv-btn">No, keep open</button>
+            </div>
+          </div>
+        </AppOverlay>
+      )}
+
       {/* Mark as Paid Modal */}
       {showMarkPaidModal && (
         <AppOverlay label="Mark as paid" onClose={() => setShowMarkPaidModal(false)} className="bg-black/50 p-4">
@@ -2772,7 +2815,7 @@ export default function RODetail() {
               <DollarSign size={20} className="text-good" />
               <h2 className="text-lg font-bold text-ink">Mark as Paid</h2>
             </div>
-            <p className="text-sm text-muted">Select payment method and confirm. This will mark the RO as paid and close it.</p>
+            <p className="text-sm text-muted">Select payment method and confirm. This marks the RO as paid. It does not close the ticket; use Close ticket when ready.</p>
             <div className="space-y-2">
               <label className="text-xs text-faint block">Payment Method</label>
               <select

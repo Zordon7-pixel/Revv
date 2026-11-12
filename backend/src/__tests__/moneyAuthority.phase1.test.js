@@ -84,7 +84,17 @@ function installRosMocks({ paymentStatus = 'partial' } = {}) {
 
   const calls = { dbRun: [] };
   installMock('../db', {
-    pool: {},
+    pool: { async connect() { return {
+      release() {},
+      async query(sql, params) {
+        if (/^(BEGIN|COMMIT|ROLLBACK)/.test(sql)) return { rows: [] };
+        if (/^SELECT/.test(sql)) {
+          const row = await require('../db').dbGet(sql, params);
+          return { rows: row ? [row] : [] };
+        }
+        return require('../db').dbRun(sql, params);
+      },
+    }; } },
     async dbGet(sql, params = []) {
       const text = String(sql);
       if (/SELECT \* FROM repair_orders WHERE id = \$1 AND shop_id = \$2/.test(text)) {
