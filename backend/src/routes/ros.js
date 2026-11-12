@@ -2371,10 +2371,12 @@ router.put('/:id/status', auth, requireTechnician, async (req, res) => {
         }
         // No reconciliation/provider call or ledger insertion: this records the
         // staff attestation, preserving existing paid cents and payment method.
+        // Legacy payment_received_at is TEXT while updated_at is TIMESTAMPTZ;
+        // separate parameters let PostgreSQL infer each column's own type.
         await client.query(`UPDATE repair_orders SET payment_status = 'paid', payment_received = 1,
-          payment_received_at = $1, amount_paid_cents = $2, amount_owed_cents = $3, updated_at = $1
-          WHERE id = $4 AND shop_id = $5`,
-        [now, balance.paidCents, balance.money.totalCents, req.params.id, req.user.shop_id]);
+          payment_received_at = $1, amount_paid_cents = $2, amount_owed_cents = $3, updated_at = $4
+          WHERE id = $5 AND shop_id = $6`,
+        [now, balance.paidCents, balance.money.totalCents, now, req.params.id, req.user.shop_id]);
         historyNote = 'Confirmed paid in full or settled at $0 balance; closed without charge';
         await client.query(`INSERT INTO audit_log (id, action, actor_id, target_shop_id, metadata, created_at)
           VALUES ($1, $2, $3, $4, $5, NOW())`,

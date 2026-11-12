@@ -78,8 +78,11 @@ mockModule('../db', {
             return { rows: text.includes('ro_payment_attempts') ? state.attempts : state.ledger };
           }
           if (text.includes("SET payment_status = 'paid'")) {
-            assert.deepEqual(params.slice(3), ['ro-1', 'shop-1']);
-            Object.assign(state.ro, { payment_status: 'paid', payment_received: 1, amount_paid_cents: params[1], amount_owed_cents: params[2] });
+            assert.deepEqual(params.slice(4), ['ro-1', 'shop-1']);
+            assert.equal(params[0], params[3]);
+            assert.match(text, /payment_received_at = \$1,/);
+            assert.match(text, /updated_at = \$4\s+WHERE id = \$5 AND shop_id = \$6/);
+            Object.assign(state.ro, { payment_status: 'paid', payment_received: 1, payment_received_at: params[0], updated_at: params[3], amount_paid_cents: params[1], amount_owed_cents: params[2] });
           }
           if (/^(UPDATE|INSERT)/.test(text)) {
             state.persisted.push({ sql: text, params });
@@ -396,4 +399,62 @@ test('repeat and concurrent confirmations settle only once under the parent lock
   assert.equal((await close()).statusCode, 400);
   assert.equal(state.persisted.filter(p => p.sql.includes('INSERT INTO audit_log')).length, 1);
   assert.equal(state.persisted.filter(p => p.sql.includes('INSERT INTO job_status_log')).length, 1);
+});
+
+test('real PostgreSQL accepts the route settlement query with legacy TEXT and TIMESTAMPTZ columns', {
+  skip: !process.env.PANEL_ESTIMATOR_TEST_DATABASE_URL,
+  timeout: 15000,
+}, async () => {
+  assert.equal(process.env.PANEL_ESTIMATOR_TEST_DATABASE_URL,
+    'postgresql://revv_panel@127.0.0.1:55459/revv_panel_test',
+    'Only the dedicated loopback disposable database is allowed');
+
+  // Capture the executed route query, not a hand-maintained copy of its SQL.
+  // Existing route tests cover guards, money authority, rollback and concurrency.
+  reset({ status: 'delivery' });
+  assert.equal((await close()).statusCode, 200);
+  await nextImmediate();
+  const update = state.persisted.find(p => p.sql.includes("SET payment_status = 'paid'"));
+  assert.ok(update);
+
+  const { Client } = require('pg');
+  const client = new Client({
+    host: '127.0.0.1', port: 55459, user: 'revv_panel', database: 'revv_panel_test',
+    password: async () => '', ssl: false, connectionTimeoutMillis: 3000, statement_timeout: 5000,
+  });
+  let transactionStarted = false;
+  try {
+    await client.connect();
+    await client.query('BEGIN');
+    transactionStarted = true;
+    // Session-local synthetic table only; never resolve a persistent app table.
+    await client.query('SET LOCAL search_path TO pg_temp');
+    await client.query(`CREATE TEMP TABLE repair_orders (
+      id TEXT, shop_id TEXT, payment_status TEXT DEFAULT 'unpaid',
+      payment_received INTEGER DEFAULT 0, payment_received_at TEXT,
+      amount_paid_cents BIGINT DEFAULT 0, amount_owed_cents BIGINT DEFAULT 0,
+      updated_at TIMESTAMPTZ DEFAULT '2000-01-01T00:00:00Z',
+      PRIMARY KEY (id, shop_id)
+    ) ON COMMIT DROP`);
+    await client.query(`INSERT INTO repair_orders (id, shop_id)
+      VALUES ('ro-1', 'shop-1'), ('ro-1', 'other-shop')`);
+    const otherBefore = (await client.query("SELECT * FROM repair_orders WHERE shop_id = 'other-shop'")).rows[0];
+
+    const result = await client.query(update.sql, update.params);
+    assert.equal(result.rowCount, 1);
+    const row = (await client.query("SELECT * FROM repair_orders WHERE shop_id = 'shop-1'")).rows[0];
+    assert.equal(row.payment_status, 'paid');
+    assert.equal(row.payment_received, 1);
+    assert.equal(row.amount_paid_cents, '0');
+    assert.equal(row.amount_owed_cents, '0');
+    assert.equal(row.payment_received_at, update.params[0]);
+    assert.equal(row.updated_at.toISOString(), row.payment_received_at);
+    assert.deepEqual((await client.query("SELECT * FROM repair_orders WHERE shop_id = 'other-shop'")).rows[0], otherBefore);
+  } finally {
+    try {
+      if (transactionStarted) await client.query('ROLLBACK');
+    } finally {
+      await client.end();
+    }
+  }
 });
